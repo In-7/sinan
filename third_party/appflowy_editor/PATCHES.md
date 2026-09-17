@@ -8,9 +8,30 @@
 >    最新只有 **0.1.12**，与官方 6.2.0 天差地别；
 > 2. 可就地打补丁（依赖冲突、平台适配），不必等上游。
 
-## 本目录是一个 git 仓库（2026-09-10 重建）
+## 历史形态：曾是独立仓库，**2026-09-17 已并入主仓库**
 
-历史结构（`git log`）：
+> **现状**：本目录现在是主仓库里的**普通目录**——父仓库直接跟踪这里的 851 个文件
+> （无 `.git`、无 gitlink）。下面记的"独立仓库"是它的**历史形态**，那段历史一条都没丢，
+> 完整保存在备份 bundle 里（见下方「历史在哪 / 怎么还原」）。
+>
+> **为什么并进来**：它原先是一个**没有 `.gitmodules` 的嵌套仓库**（父仓库里只记着一个
+> gitlink 提交号），而 `pubspec.yaml` 又以 `path:` 依赖它 ⇒ **克隆主仓库后这个目录是空的、
+> 项目构建不了**，也没法 `submodule update`（没有远程地址）。并入后主仓库自包含：
+> `git clone` 即可构建，任何回滚都能还原 vendored 源码。
+
+### 历史在哪 / 怎么还原
+
+那段"上游基线 → 我们的补丁"的历史现存在**备份 bundle** 里（含 `refs/tags/6.2.0`）：
+
+```bash
+git clone "<备份>/vendored-history/appflowy_editor-final.bundle" /tmp/afe
+cd /tmp/afe && git log --oneline        # 上游 pristine → 补丁 → 本文件
+git diff 6.2.0 main --stat              # "补丁是否失控"的足迹指标（见下）
+```
+
+还原是只读的、可反复做；**改代码不要在那个临时仓库里改**——本目录的文件由主仓库跟踪。
+
+### 曾经的独立仓库历史（`git log`）
 
 ```
 <补丁>     sinan: register analyzer exclude line + correct verify workflow docs
@@ -23,12 +44,12 @@
   基线内容取自 pub 缓存的原始包
   `%LOCALAPPDATA%\Pub\Cache\hosted\pub.flutter-io.cn\appflowy_editor-6.2.0`
   （**不是** GitHub，直连会超时）。
-- 我们与上游的**已提交**差异 = `git diff 6.2.0 HEAD` → 应恒为
-  **5 个被改文件（见下方补丁列表）+ 本文件（PATCHES.md）**。
-  这是判断"补丁是否失控"的唯一指标——数字变大就说明混进了非预期改动。
-- ⚠️ **另有尚未提交、也未登记入档的 2026-09-11~14 补丁**（见文末「工作区未提交
-  的补丁」）：判断完整足迹要用 `git diff HEAD --stat` + `git status --short`
-  （后者才会列出新增文件）。
+- 我们与上游的差异 = `git diff 6.2.0 main` ——⚠️ **这个命令现在只能在"还原出的临时
+  仓库"里跑**（见上方「历史在哪 / 怎么还原」）。判据：结果应恰好是**下方补丁列表里
+  提到的文件 + 本文件**（`example/` 原样保留，不该出现它的增删）。数字变大就说明
+  混进了非预期改动——这是判断"补丁是否失控"的唯一指标。
+- ✅ **2026-09-11~14 那批"未入档"补丁已于 2026-09-17 提交**（嵌套仓库 `0bd3e53`，
+  内容随后并入主仓库 `cc8a9f8`），文末那一节已随之改写为「已入档」。
 
 ### 为什么值得建这个仓库
 
@@ -378,11 +399,18 @@ askia 的 6.2.0 副本缺少该方法实现（编译期报 Missing concrete impl
 
 ## 同步上游的操作指南（git 化）
 
+> ⚠️ **2026-09-17 起本目录不再是 git 仓库** ⇒ 下面这些 `git` 命令**不能就地跑**。
+> 先在**临时目录**还原那段历史（`git clone <备份>/vendored-history/appflowy_editor-final.bundle`，
+> 见文首「历史在哪 / 怎么还原」），在**那里**做基线/重放，最后把结果**拷回**本目录
+> （本目录的文件改动由主仓库跟踪、由主仓库提交）。
+
 > 网络约束：GitHub 直连在本机会超时 → 优先从 pub 镜像缓存取包
 > （`%LOCALAPPDATA%\Pub\Cache\hosted\pub.flutter-io.cn\appflowy_editor-<version>`）。
 
 ```bash
-cd third_party/appflowy_editor
+# 0. 一次性：还原历史到临时目录（只读用途，别在这里长期开发）
+git clone "<备份>/vendored-history/appflowy_editor-final.bundle" /tmp/afe
+cd /tmp/afe
 
 # 1. 把新版本内容放到一个独立分支，作为新的上游基线（tag 6.3.0 之类）
 #    （从 pub 缓存拷入工作区，先删干净旧文件再拷，避免残留）
@@ -395,9 +423,9 @@ git tag <version>
 git checkout main
 git rebase --onto <version> 6.2.0 main
 
-# 3. 验证
-flutter analyze lib --no-pub          # 应零 error
-cd ../.. && flutter pub get && flutter analyze --no-pub && flutter test
+# 3. 把重放结果拷回 third_party/appflowy_editor，然后在**主仓库根**验证
+#    （别在 vendored 目录里单独跑 pub/analyze，见下一节）
+flutter pub get && flutter analyze --no-pub && flutter test
 
 # 4. 若某条补丁上游已修 → 在 rebase 时丢弃该提交，并更新本文件的「何时可撤销」
 ```
@@ -440,13 +468,18 @@ flutter build windows --debug
 
 报错落在 vendored 代码里时，先怀疑"Flutter 加了接口"，而不是"上游写错了"。
 
-## 工作区未提交的补丁（**待处理**）
+## 工作区未提交的补丁（**已入档：2026-09-17**）
 
-上面各条补丁（含补丁 10、11、12）目前都还躺在工作区、**未提交**；用
-`git diff HEAD --stat` 看改动、`git status --short` 看新增文件（`diff` 不含后者）。
+这批改动此前一直躺在工作区、未提交。**2026-09-17 已提交归档**：
 
-其中下面这些**不属于任何一条已登记的补丁**——是 2026-09-11~14 陆续改的，
-按本文件的约定属于"足迹未入档"：
+- 嵌套仓库提交 `0bd3e53`（21 项：补丁 10~15 涉及的文件 + 新增
+  `lib/src/flutter/scrollable_positioned_list/src/extent_aware_sliver_delegate.dart`）；
+- 随后随"并入主仓库"进入主仓库提交 `cc8a9f8`。
+
+于是足迹指标恢复**完整**可用：`git diff 6.2.0 main` 现在反映的是"补丁 1~15 + 本文件"
+的全量足迹（仍要在**还原出的临时仓库**里跑，见文首「历史在哪 / 怎么还原」）。
+
+下面这张表保留作**索引**（哪些文件属于哪些功能），不再表示"未入档"：
 
 | 文件 | 线索 |
 |---|---|
