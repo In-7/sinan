@@ -1,0 +1,119 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
+import 'package:window_manager/window_manager.dart';
+
+/// 桌面窗口能力的唯一出口。
+///
+/// 业务层不直接接触 window_manager——所有窗口操作都收在这里。
+/// window_manager 官方已挂出迁往 libnativeapi/nativeapi 的通知，
+/// 届时只需改本文件，上层零改动。
+abstract final class WindowService {
+  // 默认 1300×800：侧栏收为 300 后，在「侧栏 300 + 正文（标准 720 列，
+  // 窄窗下收缩）+ TOC 248」三栏**同时显示**的前提下尽量收小——窗口 ≥1100
+  // 即开 TOC（见 note_editor_view 的显隐阈值），1300 下编辑器正文约 750px
+  // （≈45 字/行，标准档甜点区）。比 1440×900 略小、更紧凑。
+  static const Size _initialSize = Size(1340, 800);
+  static const Size _minimumSize = Size(720, 560);
+
+  /// 当前平台是否具备桌面窗口能力（移动端/Web 恒为 false）。
+  static bool get isSupported =>
+      !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+
+  /// 是否 **Win11 及以上**（build ≥ 22000）。
+  ///
+  /// 这个门槛一次带来两项我们依赖的 DWM 能力（同批 Win11 能力）：
+  /// **Mica 背板** 与 **窗口原生圆角**。
+  ///
+  /// ⚠️ 不能靠版本名字符串判断：Win11 的 `operatingSystemVersion` 仍写着
+  /// "Windows 10"（微软没改版本名），只能看 build 号。
+  static bool get isWindows11 {
+    final int? build = _windowsBuild();
+    return build != null && build >= _win11MinBuild;
+  }
+
+  /// 窗口圆角政策（2026-09-10 定）：**Win11 交给系统，Win10 保持直角**。
+  ///
+  /// 试过并**否决**的做法：Win10 上把窗口改透明（`WindowEffect.transparent`）
+  /// 再由 Flutter 自绘圆角。问题在于 Win10 的 DWM 只按**窗口矩形**画影子，而
+  /// 透明窗口的四角仍属于窗口 ⇒ 四角留下方角的透明区：影子是方的、角上还会抢
+  /// 点击（俗称"透明耳朵"，实测踩过）。
+  ///
+  /// 要在 Win10 上真圆角，只能 `SetWindowRgn` 裁**窗口区域**——但那是整数像素、
+  /// **没有抗锯齿**，弧线带锯齿。权衡后不采用：**Win10 直角 + Win11 系统圆角**
+  /// 是问题最少的组合。
+  ///
+  /// Win11 的窗口圆角与 Mica 背板是同一批 DWM 能力（见 [isWindows11]），
+  /// 系统会把两者一起裁好，我们不需要做任何事。
+
+  /// Win11 首个正式版的 build 号。
+  static const int _win11MinBuild = 22000;
+
+  /// 解析 Windows build 号；非 Windows 平台或解析失败返回 null。
+  ///
+  /// `Platform.operatingSystemVersion` 形如
+  /// `"Windows 10 Home China" 10.0 (Build 26200)`（Win11 也写 "Windows 10"）。
+  static int? _windowsBuild() {
+    if (!Platform.isWindows) return null;
+    final RegExpMatch? match = RegExp(
+      r'Build (\d+)',
+    ).firstMatch(Platform.operatingSystemVersion);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
+  /// 必须在 runApp 之前调用；非桌面平台自动跳过。
+  static Future<void> init() async {
+    if (!isSupported) return;
+
+    await windowManager.ensureInitialized();
+
+    const WindowOptions options = WindowOptions(
+      size: _initialSize,
+      minimumSize: _minimumSize,
+      center: true,
+      // 透明背景让 flutter_acrylic 的 Mica / solid 效果能够透出。
+      // Win10 无 Mica，flutter_acrylic 会自动回退为不透明纯色底，
+      // 不会出现"透明耳朵"或直角毛边。
+      backgroundColor: Color(0x00000000),
+      titleBarStyle: TitleBarStyle.hidden,
+    );
+
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+
+    // ⚠️ 这里**不要**加 `window_manager.setPreventClose(true)` 去自己拦关闭：
+    // 关窗口在 Windows 上由 Flutter 引擎接管（`WM_CLOSE` → `System.requestAppExit`
+    // → `WidgetsBindingObserver.didRequestAppExit`，收口见 `app/pending_saves.dart`
+    // 的 `flushThenExit`）。preventClose 会**先吞掉** WM_CLOSE（原生 `return -1`），
+    // 引擎的官方流程根本收不到，于是只剩"自己 `PostQuitMessage`"这条半拆解的路
+    // ——2026-09-17 实测：改完内容立刻关窗口，窗口卡在 "(未响应)"。
+  }
+
+  static Future<void> minimize() async {
+    if (!isSupported) return;
+    await windowManager.minimize();
+  }
+
+  static Future<void> toggleMaximize() async {
+    if (!isSupported) return;
+    if (await windowManager.isMaximized()) {
+      await windowManager.unmaximize();
+    } else {
+      await windowManager.maximize();
+    }
+  }
+
+  /// 请求关闭窗口（标题栏关闭按钮 / 菜单里的"退出"）。
+  ///
+  /// ⚠️ 它不是"立刻关闭"：原生侧是 `WM_SYSCOMMAND/SC_CLOSE`，系统会把它转成
+  /// `WM_CLOSE`，而**引擎**随后先问 Dart 是否放行退出（`didRequestAppExit`）——
+  /// 未落盘的编辑在那一问里写完，引擎再补发第二个 `WM_CLOSE` 才真正销毁窗口。
+  /// 整条链路见 `app/pending_saves.dart` 的 `flushThenExit`。
+  static Future<void> close() async {
+    if (!isSupported) return;
+    await windowManager.close();
+  }
+}

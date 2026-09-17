@@ -1,0 +1,67 @@
+name: sinan
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  material_ui: ^1.1.1
+  path: ^1.9.1
+  path_provider: ^2.1.6
+  # 插入图片：桌面文件选择对话框（唯一新增依赖；
+  # 图片渲染/存储用自建实现，机制对齐官方扩展）。
+  file_picker: ^12.2.0
+  sqlite3: ^3.5.2
+  uuid: ^4.6.0
+  window_manager: ^0.5.2
+  flutter_riverpod: 3.4.3
+  flutter_acrylic: ^1.1.4
+  # 公式渲染（KaTeX 的纯 Dart 实现，无 WebView）：编辑器公式嵌入用。
+  flutter_math_fork: ^0.7.2
+  # 语法高亮（纯 Dart highlighter）：代码块着色用（纯渲染层，不动文档）。
+  highlight: ^0.7.0
+  lucide_icons_flutter: ^3.1.18
+  win32: ^6.4.0
+  image: ^4.9.2
+  ffi: ^2.2.0
+  # 自定义块组件经 provider 取 EditorState（appflowy 官方组件同款做法：
+  # context.read<EditorState>()）。appflowy_editor 已依赖它，此处显式
+  # 声明——应用代码直接 import 的包必须自己声明。
+  provider: ^6.0.5
+  # 画布笔迹成形：tldraw 的 perfect-freehand 算法官方 Dart 移植
+  # （6.37k downloads/wk、MIT、零第三方依赖）。点列 + 压感 → 变宽轮廓多边形；
+  # 选型依据见 docs/canvas_architecture.md「依赖」一节。
+  perfect_freehand: ^2.5.2
+  # 本地补丁版 appflowy_editor（third_party/appflowy_editor，官方 6.2.0）：
+  # vendored 目的 = ① 不依赖 pub 的发版节奏/镜像陈旧（镜像最新只到
+  # 0.1.12，与官方 6.2.0 天差地别）② 可就地打补丁（见 PATCHES.md）。
+  appflowy_editor:
+    path: third_party/appflowy_editor
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  riverpod_lint: 3.1.9
+
+# 注：本地补丁版 quill（third_party/flutter_quill，改 text_line.dart 加
+# forceStrutHeight 修空行高度差）**仍在磁盘上保留备查**——quill 视图
+# 2026-09-10 退役归档后，依赖与 dependency_overrides 都已摘除，
+# 该目录不再参与构建（见 docs/editor_migration_spike.md 的「quill 归档」）。
+
+flutter:
+  uses-material-design: true
+  # 打包字体：霞鹜新晰黑·屏幕阅读版（轻微加粗、调整度量；SIL OFL 开源可
+  # 商用）。作为编辑器正文字体（AppTheme.editorFont）：自带中英全套字形 ⇒
+  # 中英混排同源、基线恒定；全平台同一份文件，观感一致（11MB）。
+  # 与原版霞鹜/南西新圆体的差异：轮廓轻微加粗（暗色主题不发虚）；
+  # 降部 0.120→0.244em、行盒 1.0→1.1719em（墨迹在自然行盒内更居中）。
+  # 水平度量逐项一致（拉丁/数字/CJK 宽度全同）⇒ 列宽、折行、预测器不变；
+  # 但基线在行盒内的位置变了 ⇒ cjkInkCompensation 已按新度量重标定（实测）。
+  fonts:
+    - family: LXGWNeoXiHeiScreen
+      fonts:
+        - asset: assets/fonts/LXGWNeoXiHeiScreen.ttf

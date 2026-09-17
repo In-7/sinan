@@ -1,0 +1,68 @@
+# Riverpod 专用规则（riverpod_lint 3.x 走 analysis_server_plugin，不再需要
+# custom_lint——后者与它的 analyzer_plugin 版本互斥，装了反而解不出依赖）。
+# 能揪出：provider 漏 const、watch 位置错误、多余重建、错误的 ref 用法等。
+plugins:
+  # ⚠️ 这里写**版本号**（riverpod_lint 3.x 的 analysis_server_plugin 约定），
+  # 不是 `enabled: true`——写错的话插件会被静默忽略。
+  riverpod_lint: 3.1.9
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - windows/**
+    # 本地补丁版第三方包（上游代码，lint 风格与本项目不同）。
+    # 注：`third_party/flutter_quill` 已随 quill 视图退役（依赖已摘除），
+    # 目录**保留备查**、不再参与构建。
+    - third_party/**
+    # quill 视图的源文件（退役后归档；保留未删，见
+    # docs/editor_migration_spike.md 的「quill 归档」一节）。
+    # 必须排除：它们 import 已摘除的 flutter_quill，否则分析报错。
+    - archive/**
+include: package:flutter_lints/flutter.yaml
+
+# ─── 本项目额外规则 ────────────────────────────────────────────────────────
+# 加入原则：**先量后装**——临时打开跑一遍，能清零的就留下当护栏（新代码写歪
+# 立刻被拦），清不零的先不装（否则警告泛滥 = 没人看）。下列规则在本项目均为
+# **零命中**（2026-09-17 实测），属于纯护栏。
+linter:
+  rules:
+    # ── 性能：const / 渲染 ──
+    - prefer_const_constructors
+    - prefer_const_literals_to_create_immutables
+    - prefer_const_declarations
+    - use_colored_box # Container(仅 color) → ColoredBox，少一层合成
+    - use_decorated_box # Container(仅 decoration) → DecoratedBox
+    # ── 不可变：能 final 就 final ──
+    - prefer_final_locals
+    # ── 异步正确性 ──
+    - unawaited_futures # 显式标记"故意不 await"
+    - avoid_void_async # async 但不返回 Future，调用方无法 await
+    - avoid_slow_async_io # 已读文件却用 exists() 等异步 IO
+    # 注：`prefer_final_parameters` / `unnecessary_await_in_return` 在 Dart 3.13
+    # 已**废弃**（启用会报 deprecated_lint），不要加回来。
+    # ── 类型安全 ──
+    - avoid_dynamic_calls # dynamic 上取属性/调方法：绕过类型检查
+    - always_declare_return_types
+    - collection_methods_unrelated_type
+    - unrelated_type_equality_checks
+    - avoid_type_to_string
+    # ── 现代语法 / 简洁 ──
+    - use_super_parameters
+    - implicit_call_tearoffs
+    - unnecessary_lambdas # (x) => f(x) → f
+    - unnecessary_parenthesis
+    - unnecessary_this
+    - unnecessary_statements
+    - unnecessary_to_list_in_spreads
+    # ── 逻辑陷阱 ──
+    - literal_only_boolean_expressions
+    - throw_in_finally
+    - curly_braces_in_flow_control_structures
+    - no_default_cases # 枚举 switch 用穷尽匹配，加枚举时编译器提醒
+    # 原暂缓项，2026-09-17 已逐个整改清零（`dart fix` 无自动修复，手工改）
+    # 后转入常开：
+    - avoid_redundant_argument_values # 传了等于默认值的参数
+    - discarded_futures # 丢掉的 Future 必须显式 unawaited（能揪出被吞掉的异常）
+    - avoid_catches_without_on_clauses # 裸 catch → `on Object catch`

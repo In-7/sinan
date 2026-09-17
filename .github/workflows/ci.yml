@@ -1,0 +1,71 @@
+name: CI
+
+# 目的：把本地那套护栏变成**提交时就必须过**的门槛。
+# 本地已有 20+ 条额外 lint（见 analysis_options.yaml），但规则靠自觉执行；
+# 这个流水线让"写歪了"在 PR 阶段就红，而不是merge 之后才发现。
+#
+# ⚠️ 两条刻意的选择（改动前务必先读）：
+#  1. **跑在 windows-latest**：本项目是 Windows 桌面应用，测试依赖
+#     sqlite3 原生库（来自 Flutter engine 产物）与 Windows 平台假设。
+#     换 ubuntu 会因缺原生库/window_manager 直接红。
+#  2. **不做 `dart format` 检查**：本仓库是**手工排版**风格（对齐、分组空行
+#     都是刻意的），`dart format` 会改动 99/117 个文件。加格式检查等于把
+#     整个仓库的排版推平，是破坏而非改进。
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# 同分支只保留最新一次运行：连续 push 时自动取消上一次，省 runner 时间。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 与本地开发环境同版本（`flutter --version`）。升级 Flutter 时两处一起改。
+  FLUTTER_VERSION: 3.47.4
+
+jobs:
+  analyze:
+    name: 静态检查
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      # --fatal-infos：让 info 级（即绝大多数 lint）也算失败——否则项目里那
+      # 20+ 条额外规则只是提示，CI 永远不会因为"写歪了"而红。
+      # --fatal-warnings：警告同样算失败。
+      - name: 分析（lint 不过就失败）
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+  test:
+    name: 测试
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 拉依赖
+        run: flutter pub get
+
+      - name: 跑测试
+        run: flutter test
