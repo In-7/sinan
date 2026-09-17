@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 本项目运行时产物：画布导出默认落在仓库根的 sinan_media/
+# （见 lib/src/canvas/canvas_surface.dart 的 exportCanvasToPng / exportCanvasBundle
+#   的 directory 参数）——是导出结果，不是源码，不入库。
+/sinan_media/
