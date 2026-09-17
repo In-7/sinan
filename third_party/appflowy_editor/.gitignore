@@ -1,0 +1,13 @@
+# vendored 包不保留依赖解析产物。
+#
+# 本目录是上游包的**逐字节拷贝 + 少量补丁**（见 PATCHES.md），
+# 以下产物由 pub get / Dart 分析服务生成，一旦入库会：
+#   ① 让本目录独立 `flutter analyze` 按旧依赖解析，报出与真实构建
+#      不符的错误；
+#   ② 污染「与上游的差异」对比（真正的补丁会被淹没在噪声里）。
+.dart_tool/
+pubspec.lock
+build/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
