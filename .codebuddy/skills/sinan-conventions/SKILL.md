@@ -28,10 +28,11 @@ allowed-tools: Read,Write,Bash
 |---|---|---|
 | `lib/src/canvas/**` | **自研**画布内核（文档 / 命令 / 绘制 / 导出 / 栅格化） | 内核**不读 `Theme`**、不依赖 UI 层；笔迹颜色经 `kThemeInk` + `resolveInk` 解析，主题墨色由宿主注入 |
 | `lib/src/editor/**`、`lib/src/notes/**` | 自研 UI，构建在 vendored 编辑器之上 | 框架级回调（如 `didRequestAppExit`）统一在 `lib/main.dart` 接线 |
-| `third_party/appflowy_editor`、`third_party/flutter_quill` | **vendored 第三方 + 本地补丁** | 改动必须走对应 `PATCHES.md` 的补丁流程；**不要**当上游 API 用，也不要直接升级 |
+| `third_party/appflowy_editor`、`third_party/flutter_quill` | **vendored 第三方 + 本地补丁** | 改动必须走对应 `PATCHES.md` 的补丁流程；**不要**当上游 API 用，也不要直接升级。`appflowy_editor` 曾是**独立仓库**、2026-09-17 已并入主仓库（原 gitlink 导致克隆后构建不了），其"上游基线 → 补丁"历史在备份 bundle 里，**还原方式见 `PATCHES.md` 文首** |
 | `lib/src/data/**` | SQLite 的**唯一出口** | 业务层不拼 SQL；视图不直写库（唯一写入者是 `NotesNotifier`） |
 | `lib/src/app/save_debounce.dart`、`lib/src/app/pending_saves.dart` | 落盘调度 / 退出前落盘 | 见 §4 |
 | `lib/src/window/**`、`lib/main.dart` | 窗口、材质、退出 | 见 §3 |
+| `tools/backup.ps1` | 离线备份（bundle 全量历史 + 工作区镜像 + vendored 历史） | 必须保持**纯 ASCII**：PS 5.1 读无 BOM 的 UTF-8 会按 GBK 解码，中文会让脚本解析失败（实测踩过）。`-Target` 应指向**第二块物理盘**——git 防不了盘坏 |
 
 ## 3. 窗口与材质：三个已验证事实
 
