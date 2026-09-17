@@ -103,7 +103,8 @@ class CanvasCamera {
         .min(usableW / world.width, usableH / world.height)
         .clamp(minScale, maxScale);
     final Offset nextTranslation =
-        Offset(viewport.width / 2, viewport.height / 2) - world.center * nextScale;
+        Offset(viewport.width / 2, viewport.height / 2) -
+        world.center * nextScale;
     if (nextScale == _scale && nextTranslation == _translation) return;
     _scale = nextScale;
     _translation = nextTranslation;
@@ -112,20 +113,20 @@ class CanvasCamera {
 
   /// 序列化（相机 = 视口状态，重载时还原"看哪、放大多少"）。
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'scale': scale,
-        'translation': <double>[translation.dx, translation.dy],
-        'minScale': minScale,
-        'maxScale': maxScale,
-      };
+    'scale': scale,
+    'translation': <double>[translation.dx, translation.dy],
+    'minScale': minScale,
+    'maxScale': maxScale,
+  };
 
   /// 反序列化。
   factory CanvasCamera.fromJson(Map<String, dynamic> j) => CanvasCamera(
-        scale: (j['scale'] as num).toDouble(),
-        translation: Offset(
-          ((j['translation'] as List)[0] as num).toDouble(),
-          ((j['translation'] as List)[1] as num).toDouble(),
-        ),
-        minScale: (j['minScale'] as num).toDouble(),
-        maxScale: (j['maxScale'] as num).toDouble(),
-      );
+    scale: (j['scale'] as num).toDouble(),
+    translation: Offset(
+      ((j['translation'] as List)[0] as num).toDouble(),
+      ((j['translation'] as List)[1] as num).toDouble(),
+    ),
+    minScale: (j['minScale'] as num).toDouble(),
+    maxScale: (j['maxScale'] as num).toDouble(),
+  );
 }

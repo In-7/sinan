@@ -36,11 +36,11 @@ void advanceItemIdSequence(Iterable<String> existingIds) {
 
 /// JSON 矩形 `[left, top, right, bottom]` → [Rect]。
 Rect _rectFromJson(List<dynamic> j) => Rect.fromLTRB(
-      (j[0] as num).toDouble(),
-      (j[1] as num).toDouble(),
-      (j[2] as num).toDouble(),
-      (j[3] as num).toDouble(),
-    );
+  (j[0] as num).toDouble(),
+  (j[1] as num).toDouble(),
+  (j[2] as num).toDouble(),
+  (j[3] as num).toDouble(),
+);
 
 /// 保存：运行时绝对路径 → 文档内**相对引用**（无 [media] 时原样写，保持旧行为）。
 String _refOf(String src, MediaResolver? media) =>
@@ -67,9 +67,12 @@ String _pathOf(dynamic raw, MediaResolver? media) {
 /// ## z 序
 /// item 画在笔迹**下方**（OneNote 口径：墨迹可以批注在图片上）。
 abstract class CanvasItem {
-  CanvasItem({String? id, required this.rect, this.angle = 0,
-      this.meta = const <String, dynamic>{}})
-      : id = id ?? '$_itemIdPrefix${_nextItemId++}';
+  CanvasItem({
+    String? id,
+    required this.rect,
+    this.angle = 0,
+    this.meta = const <String, dynamic>{},
+  }) : id = id ?? '$_itemIdPrefix${_nextItemId++}';
 
   final String id;
 
@@ -135,10 +138,7 @@ abstract class CanvasItem {
   void dispose() {}
 
   /// 反序列化入口：按 `type` 分发到具体子类。
-  static CanvasItem fromJson(
-    Map<String, dynamic> j, {
-    MediaResolver? media,
-  }) {
+  static CanvasItem fromJson(Map<String, dynamic> j, {MediaResolver? media}) {
     switch (j['type']) {
       case 'shape':
         return ShapeItem.fromJson(j, media: media);
@@ -155,7 +155,26 @@ abstract class CanvasItem {
 /// 形状种类。
 enum CanvasShapeKind { rectangle, ellipse }
 
+/// 形状样式的**纯值快照**：撤销命令持有"改动前 / 改动后"两份。
+///
+/// 与 `_ItemTransform` 同思路——命令只记**值**与 `id`，不持有实例引用，因此可
+/// 序列化、可重放，也不会因为实例被替换（如 AI 重生节点）而失效。
+class ShapeStyle {
+  const ShapeStyle({
+    required this.color,
+    required this.strokeWidth,
+    required this.filled,
+  });
+
+  final Color color;
+  final double strokeWidth;
+  final bool filled;
+}
+
 /// 矢量形状（矩形 / 椭圆）：空心描边或填充。
+///
+/// 样式（[color] / [strokeWidth] / [filled]）与 [rect] 一样是**可变**的：选中后由
+/// 属性面板就地改，改动前后的值由 `CanvasDocument.setItemStyles` 的命令持有。
 class ShapeItem extends CanvasItem {
   ShapeItem({
     super.id,
@@ -169,12 +188,26 @@ class ShapeItem extends CanvasItem {
   });
 
   final CanvasShapeKind kind;
-  final Color color;
 
-  /// 描边宽（世界单位），空心时生效。
-  final double strokeWidth;
+  /// 描边 / 填充色。**可变**（理由见类文档）。
+  Color color;
 
-  final bool filled;
+  /// 描边宽（世界单位），空心时生效。**可变**（理由见类文档）。
+  double strokeWidth;
+
+  /// 是否填充。**可变**（理由见类文档）。
+  bool filled;
+
+  /// 当前样式的快照：改之前先取一份交给撤销命令。
+  ShapeStyle get style =>
+      ShapeStyle(color: color, strokeWidth: strokeWidth, filled: filled);
+
+  /// 就地写回一份样式快照（撤销 / 重做走这里）。
+  void applyStyle(ShapeStyle s) {
+    color = s.color;
+    strokeWidth = s.strokeWidth;
+    filled = s.filled;
+  }
 
   @override
   bool hitTest(Offset world, double radius) {
@@ -184,8 +217,7 @@ class ShapeItem extends CanvasItem {
     if (filled) return true;
     return switch (kind) {
       // 空心矩形：靠近四条边之一。
-      CanvasShapeKind.rectangle =>
-        _nearRectEdge(local, radius),
+      CanvasShapeKind.rectangle => _nearRectEdge(local, radius),
       // 空心椭圆：归一化半径落在边带内（边带厚 [radius]，按平均半径近似——
       // 命中容差本来就是模糊量，不值得做精确的椭圆距离）。
       CanvasShapeKind.ellipse => _nearEllipseEdge(local, radius),
@@ -197,9 +229,11 @@ class ShapeItem extends CanvasItem {
         world.dx >= rect.left - radius && world.dx <= rect.right + radius;
     final bool withinY =
         world.dy >= rect.top - radius && world.dy <= rect.bottom + radius;
-    final bool nearVertical = (world.dx - rect.left).abs() <= radius ||
+    final bool nearVertical =
+        (world.dx - rect.left).abs() <= radius ||
         (rect.right - world.dx).abs() <= radius;
-    final bool nearHorizontal = (world.dy - rect.top).abs() <= radius ||
+    final bool nearHorizontal =
+        (world.dy - rect.top).abs() <= radius ||
         (rect.bottom - world.dy).abs() <= radius;
     return (nearVertical && withinY) || (nearHorizontal && withinX);
   }
@@ -236,21 +270,18 @@ class ShapeItem extends CanvasItem {
 
   @override
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-        'type': 'shape',
-        'id': id,
-        'kind': kind.name,
-        'color': color.toARGB32(),
-        'strokeWidth': strokeWidth,
-        'filled': filled,
-        'angle': angle,
-        'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
-        'meta': meta,
-      };
+    'type': 'shape',
+    'id': id,
+    'kind': kind.name,
+    'color': color.toARGB32(),
+    'strokeWidth': strokeWidth,
+    'filled': filled,
+    'angle': angle,
+    'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    'meta': meta,
+  };
 
-  factory ShapeItem.fromJson(
-    Map<String, dynamic> j, {
-    MediaResolver? media,
-  }) =>
+  factory ShapeItem.fromJson(Map<String, dynamic> j, {MediaResolver? media}) =>
       ShapeItem(
         id: j['id'] as String,
         rect: _rectFromJson(j['rect'] as List),
@@ -275,7 +306,13 @@ class ShapeItem extends CanvasItem {
 /// 换算只发生在序列化边界（`toJson`/`fromJson`），内存里始终是绝对路径，
 /// 绘制与加载路径无需感知。
 class ImageItem extends CanvasItem implements ImageSink {
-  ImageItem({super.id, required super.rect, super.angle, this.src = '', super.meta});
+  ImageItem({
+    super.id,
+    required super.rect,
+    super.angle,
+    this.src = '',
+    super.meta,
+  });
 
   /// 图片的**运行时绝对路径**；落盘时由 `toJson` 换算成相对引用（见类文档）。
   /// 生成中的 AI 层可暂为空。
@@ -294,12 +331,24 @@ class ImageItem extends CanvasItem implements ImageSink {
 
   bool _loading = false;
 
+  /// 是否**已经试过**加载（含"src 为空 ⇒ 无从加载"与"读了但坏了"两种）。
+  ///
+  /// ⚠️ 少了它就是一个**无限重建**：`src` 为空时既不置 [_loading] 也不置 [_image]，
+  /// 于是每次 rebuild 都会再进来一次 → [onLoaded] → `notifyListeners` → rebuild …
+  /// 空转到底（AI 生成中的 item 正好是 `src` 为空；坏图则是反复读盘）。
+  /// 2026-09-17 由形状属性面板的用例撞出来（"选中图片"那条直接 pumpAndSettle 超时）。
+  bool _attempted = false;
+
   /// 懒加载：仅解码一次；完成后通过 [onLoaded] 通知重绘（如
   /// `controller.notifyListeners`）。[src] 读不到时静默失败（占位框保留），
   /// 不让单张坏图拖垮整页。
+  ///
+  /// **每个 item 只尝试一次**（见 [_attempted]）：失败或 `src` 为空都不再重试，
+  /// 否则调用方"加载完就重绘"的写法会把这里变成无限循环。
   @override
   Future<void> load({required void Function() onLoaded}) async {
-    if (_image != null || _loading) return;
+    if (_image != null || _loading || _attempted) return;
+    _attempted = true;
     if (src.isEmpty) {
       // 尚在生成中（src 未定）或本地图缺失：保留占位框，不抛。
       onLoaded();
@@ -332,6 +381,8 @@ class ImageItem extends CanvasItem implements ImageSink {
   @override
   void setSrc(String src) {
     this.src = src;
+    // src 有值了 ⇒ 允许再试一次加载（此前那次可能是"src 还空着"的空转）。
+    _attempted = false;
   }
 
   @override
@@ -373,18 +424,15 @@ class ImageItem extends CanvasItem implements ImageSink {
 
   @override
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-        'type': 'image',
-        'id': id,
-        'angle': angle,
-        'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
-        'src': _refOf(src, media),
-        'meta': meta,
-      };
+    'type': 'image',
+    'id': id,
+    'angle': angle,
+    'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    'src': _refOf(src, media),
+    'meta': meta,
+  };
 
-  factory ImageItem.fromJson(
-    Map<String, dynamic> j, {
-    MediaResolver? media,
-  }) =>
+  factory ImageItem.fromJson(Map<String, dynamic> j, {MediaResolver? media}) =>
       ImageItem(
         id: j['id'] as String,
         rect: _rectFromJson(j['rect'] as List),
@@ -413,27 +461,26 @@ class AiImageItem extends ImageItem {
 
   @override
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-        'type': 'aiImage',
-        'id': id,
-        'angle': angle,
-        'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
-        'src': _refOf(src, media),
-        'gen': gen.toJson(),
-        'meta': meta,
-      };
+    'type': 'aiImage',
+    'id': id,
+    'angle': angle,
+    'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    'src': _refOf(src, media),
+    'gen': gen.toJson(),
+    'meta': meta,
+  };
 
   factory AiImageItem.fromJson(
     Map<String, dynamic> j, {
     MediaResolver? media,
-  }) =>
-      AiImageItem(
-        id: j['id'] as String?,
-        rect: _rectFromJson(j['rect'] as List),
-        angle: (j['angle'] as num?)?.toDouble() ?? 0,
-        src: _pathOf(j['src'], media),
-        gen: GenRecipe.fromJson(j['gen'] as Map<String, dynamic>),
-        meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
-      );
+  }) => AiImageItem(
+    id: j['id'] as String?,
+    rect: _rectFromJson(j['rect'] as List),
+    angle: (j['angle'] as num?)?.toDouble() ?? 0,
+    src: _pathOf(j['src'], media),
+    gen: GenRecipe.fromJson(j['gen'] as Map<String, dynamic>),
+    meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+  );
 }
 
 /// 选中 item 四角的缩放手柄。
@@ -453,11 +500,11 @@ abstract final class CanvasHandles {
 
   /// 世界坐标四角，顺序与 [CanvasHandle.values] 一致。
   static List<Offset> corners(Rect rect) => <Offset>[
-        rect.topLeft,
-        rect.topRight,
-        rect.bottomLeft,
-        rect.bottomRight,
-      ];
+    rect.topLeft,
+    rect.topRight,
+    rect.bottomLeft,
+    rect.bottomRight,
+  ];
 
   /// 屏幕坐标下的手柄命中；[cornersScreen] 即 [corners] 经相机变换后的四角。
   static CanvasHandle? hitTest(List<Offset> cornersScreen, Offset point) {
@@ -515,7 +562,11 @@ abstract final class CanvasHandles {
     if (du.abs() < minSize) du = du.sign * minSize;
     if (dv.abs() < minSize) dv = dv.sign * minSize;
     final Offset newCenter = fixed + u * (du / 2) + v * (dv / 2);
-    return Rect.fromCenter(center: newCenter, width: du.abs(), height: dv.abs());
+    return Rect.fromCenter(
+      center: newCenter,
+      width: du.abs(),
+      height: dv.abs(),
+    );
   }
 
   /// 绕 [pivot] 缩放矩形（各角按 (sx, sy) 比例）。
@@ -544,18 +595,18 @@ abstract final class CanvasHandles {
       resizeRotated(original, 0, handle, world);
 
   static CanvasHandle _opposite(CanvasHandle h) => switch (h) {
-        CanvasHandle.topLeft => CanvasHandle.bottomRight,
-        CanvasHandle.topRight => CanvasHandle.bottomLeft,
-        CanvasHandle.bottomLeft => CanvasHandle.topRight,
-        CanvasHandle.bottomRight => CanvasHandle.topLeft,
-      };
+    CanvasHandle.topLeft => CanvasHandle.bottomRight,
+    CanvasHandle.topRight => CanvasHandle.bottomLeft,
+    CanvasHandle.bottomLeft => CanvasHandle.topRight,
+    CanvasHandle.bottomRight => CanvasHandle.topLeft,
+  };
 
   static Offset _corner(Rect rect, CanvasHandle h) => switch (h) {
-        CanvasHandle.topLeft => rect.topLeft,
-        CanvasHandle.topRight => rect.topRight,
-        CanvasHandle.bottomLeft => rect.bottomLeft,
-        CanvasHandle.bottomRight => rect.bottomRight,
-      };
+    CanvasHandle.topLeft => rect.topLeft,
+    CanvasHandle.topRight => rect.topRight,
+    CanvasHandle.bottomLeft => rect.bottomLeft,
+    CanvasHandle.bottomRight => rect.bottomRight,
+  };
 
   static Offset _rotatedCorner(Rect rect, double angle, CanvasHandle h) {
     final Offset base = _corner(rect, h);

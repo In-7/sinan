@@ -65,14 +65,16 @@ class CanvasDocument {
   int revision = 0;
 
   /// 笔迹集合（按 z 序）；仅供渲染/序列化读取，写入走 [addStroke]/[removeStrokes]。
-  List<InkStroke> get strokes =>
-      <InkStroke>[for (final String id in _strokeOrder) _strokes[id]!];
+  List<InkStroke> get strokes => <InkStroke>[
+    for (final String id in _strokeOrder) _strokes[id]!,
+  ];
 
   /// item 集合（按 z 序，**列表顺序即 z 序**，后加的在上）。绘制在笔迹**下方**
   /// （OneNote 口径：墨迹批注在图片上），但**命中优先于笔迹**——框选工具
   /// 下点到的"能整体拖走的对象"优先响应。
-  List<CanvasItem> get items =>
-      <CanvasItem>[for (final String id in _itemOrder) _items[id]!];
+  List<CanvasItem> get items => <CanvasItem>[
+    for (final String id in _itemOrder) _items[id]!,
+  ];
 
   bool get canUndo => _undoStack.isNotEmpty;
 
@@ -92,17 +94,18 @@ class CanvasDocument {
     }
     for (final String id in _itemOrder) {
       final CanvasItem item = _items[id]!;
-      result = result == null ? item.bounds : result.expandToInclude(item.bounds);
+      result = result == null
+          ? item.bounds
+          : result.expandToInclude(item.bounds);
     }
     return result;
   }
 
   /// 与 [worldViewport] 相交的笔迹（绘制与命中测试的输入）。
   List<InkStroke> strokesIn(Rect worldViewport) => <InkStroke>[
-        for (final String id in _strokeOrder)
-          if (_strokes[id]!.bounds?.overlaps(worldViewport) ?? false)
-            _strokes[id]!,
-      ];
+    for (final String id in _strokeOrder)
+      if (_strokes[id]!.bounds?.overlaps(worldViewport) ?? false) _strokes[id]!,
+  ];
 
   /// 按 id 稳定查表（生成器做 img2img 时按 [GenRecipe.inputs] 找引用节点）。
   CanvasItem? itemById(String id) => _items[id];
@@ -110,9 +113,9 @@ class CanvasDocument {
   /// 与 [worldViewport] 相交的 item（绘制与框选的输入；item 数量少，
   /// 不值得再做缓存）。
   List<CanvasItem> itemsIn(Rect worldViewport) => <CanvasItem>[
-        for (final String id in _itemOrder)
-          if (_items[id]!.bounds.overlaps(worldViewport)) _items[id]!,
-      ];
+    for (final String id in _itemOrder)
+      if (_items[id]!.bounds.overlaps(worldViewport)) _items[id]!,
+  ];
 
   /// 最上层命中的 item（框选工具的点击选择）。没有则 null。
   CanvasItem? hitItemAt(Offset world, double radius) {
@@ -164,22 +167,32 @@ class CanvasDocument {
   ///
   /// 命令内部改为**按 id 寻址**（[ _ItemTransform.id]），撤销/重做时回查节点——
   /// 不再持有实例引用，从而可序列化、可重放。
-  void setItemTransforms(
-    List<(CanvasItem, Rect, double)> changes,
-  ) {
+  void setItemTransforms(List<(CanvasItem, Rect, double)> changes) {
     final List<_ItemTransform> entries = <_ItemTransform>[
       for (final (CanvasItem item, Rect oldRect, double oldAngle) in changes)
         if (item.rect != oldRect || item.angle != oldAngle)
-          _ItemTransform(
-            item.id,
-            oldRect,
-            oldAngle,
-            item.rect,
-            item.angle,
-          ),
+          _ItemTransform(item.id, oldRect, oldAngle, item.rect, item.angle),
     ];
     if (entries.isEmpty) return;
     _push(_SetItemTransforms(entries));
+    revision++;
+  }
+
+  /// 改**形状样式**结束后的落账：[changes] 为 (item, 改动前样式) 二元组，
+  /// item 的样式此时已是新值。一次面板操作（点色块 / 拖滑杆）= 一条命令，
+  /// 与 [setItemTransforms] 同范式。
+  ///
+  /// 值没真变的项不进命令——滑杆拖动会连发很多次，值相同的那些不该各占一条历史。
+  void setItemStyles(List<(ShapeItem, ShapeStyle)> changes) {
+    final List<_ItemStyle> entries = <_ItemStyle>[
+      for (final (ShapeItem item, ShapeStyle oldStyle) in changes)
+        if (item.color != oldStyle.color ||
+            item.strokeWidth != oldStyle.strokeWidth ||
+            item.filled != oldStyle.filled)
+          _ItemStyle(item.id, oldStyle, item.style),
+    ];
+    if (entries.isEmpty) return;
+    _push(_SetItemStyles(entries));
     revision++;
   }
 
@@ -191,12 +204,11 @@ class CanvasDocument {
   }
 
   /// 橡皮（OneNote「笔画橡皮」口径：命中即整条删除）。返回被删掉的笔迹。
-  List<InkStroke> eraseAt(Offset world, double radius) => removeStrokes(
-        <InkStroke>[
-          for (final String id in _strokeOrder)
-            if (_strokes[id]!.hitTest(world, radius)) _strokes[id]!,
-        ],
-      );
+  List<InkStroke> eraseAt(Offset world, double radius) =>
+      removeStrokes(<InkStroke>[
+        for (final String id in _strokeOrder)
+          if (_strokes[id]!.hitTest(world, radius)) _strokes[id]!,
+      ]);
 
   /// 删除指定笔迹（框选后删除 / 橡皮共用）。返回实际删掉的。
   List<InkStroke> removeStrokes(Iterable<InkStroke> victims) {
@@ -266,7 +278,9 @@ class CanvasDocument {
     _detachedStrokes.removeWhere(
       (String id, InkStroke value) => !live.contains(id),
     );
-    _detachedItems.removeWhere((String id, CanvasItem value) => !live.contains(id));
+    _detachedItems.removeWhere(
+      (String id, CanvasItem value) => !live.contains(id),
+    );
   }
 
   /// 记录移出"在场"（进暂存区，等还原）。返回被移出的原件。
@@ -305,17 +319,17 @@ class CanvasDocument {
   /// 不传 [media] 则完全保持旧行为（`src` 写绝对路径、无侧表），既有调用方与
   /// 测试无需改动。
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-        'schemaVersion': 2,
-        'strokes': <String, dynamic>{
-          for (final String id in _strokeOrder) id: _strokes[id]!.toJson(),
-        },
-        'items': <String, dynamic>{
-          for (final String id in _itemOrder) id: _items[id]!.toJson(media: media),
-        },
-        'strokeOrder': List<String>.from(_strokeOrder),
-        'itemOrder': List<String>.from(_itemOrder),
-        if (media != null) 'media': _mediaManifest(media),
-      };
+    'schemaVersion': 2,
+    'strokes': <String, dynamic>{
+      for (final String id in _strokeOrder) id: _strokes[id]!.toJson(),
+    },
+    'items': <String, dynamic>{
+      for (final String id in _itemOrder) id: _items[id]!.toJson(media: media),
+    },
+    'strokeOrder': List<String>.from(_strokeOrder),
+    'itemOrder': List<String>.from(_itemOrder),
+    if (media != null) 'media': _mediaManifest(media),
+  };
 
   /// 媒体侧表：文档引用到的每个媒体文件 → `{mime}`。
   ///
@@ -353,8 +367,10 @@ class CanvasDocument {
         doc._strokeOrder.add(st.id);
       }
       for (final dynamic i in (itemsRaw as List)) {
-        final CanvasItem it =
-            CanvasItem.fromJson(i as Map<String, dynamic>, media: media);
+        final CanvasItem it = CanvasItem.fromJson(
+          i as Map<String, dynamic>,
+          media: media,
+        );
         doc._items[it.id] = it;
         doc._itemOrder.add(it.id);
       }
@@ -365,12 +381,15 @@ class CanvasDocument {
         doc._strokes[st.id] = st;
       });
       (itemsRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
-        final CanvasItem it =
-            CanvasItem.fromJson(v as Map<String, dynamic>, media: media);
+        final CanvasItem it = CanvasItem.fromJson(
+          v as Map<String, dynamic>,
+          media: media,
+        );
         doc._items[it.id] = it;
       });
-      doc._strokeOrder
-          .addAll((j['strokeOrder'] as List<dynamic>).cast<String>());
+      doc._strokeOrder.addAll(
+        (j['strokeOrder'] as List<dynamic>).cast<String>(),
+      );
       doc._itemOrder.addAll((j['itemOrder'] as List<dynamic>).cast<String>());
     }
     // ⚠️ 载入即**把 id 发生器推到已有 id 之后**：存档里的 id 来自之前的进程，
@@ -432,8 +451,9 @@ class _RemoveStrokes extends CanvasCommand {
   final List<_IndexedStroke> entries;
 
   @override
-  Iterable<String> get retainedIds =>
-      <String>[for (final _IndexedStroke e in entries) e.id];
+  Iterable<String> get retainedIds => <String>[
+    for (final _IndexedStroke e in entries) e.id,
+  ];
 
   @override
   void undo(CanvasDocument document) {
@@ -488,8 +508,9 @@ class _RemoveItems extends CanvasCommand {
   final List<_IndexedItem> entries;
 
   @override
-  Iterable<String> get retainedIds =>
-      <String>[for (final _IndexedItem e in entries) e.id];
+  Iterable<String> get retainedIds => <String>[
+    for (final _IndexedItem e in entries) e.id,
+  ];
 
   @override
   void undo(CanvasDocument document) {
@@ -563,4 +584,37 @@ class _ItemTransform {
   final double oldAngle;
   final Rect newRect;
   final double newAngle;
+}
+
+/// 一次样式修改（属性面板）= 一条撤销命令。范式同 [_SetItemTransforms]：
+/// 只存 `id` + 前后样式，撤销/重做时回查节点。
+class _SetItemStyles extends CanvasCommand {
+  const _SetItemStyles(this.entries);
+
+  final List<_ItemStyle> entries;
+
+  @override
+  void undo(CanvasDocument document) {
+    for (final _ItemStyle e in entries) {
+      final CanvasItem? item = document._items[e.id];
+      if (item is ShapeItem) item.applyStyle(e.oldStyle);
+    }
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    for (final _ItemStyle e in entries) {
+      final CanvasItem? item = document._items[e.id];
+      if (item is ShapeItem) item.applyStyle(e.newStyle);
+    }
+  }
+}
+
+class _ItemStyle {
+  const _ItemStyle(this.id, this.oldStyle, this.newStyle);
+
+  /// 目标节点 id（稳定引用，同 [_ItemTransform]）。
+  final String id;
+  final ShapeStyle oldStyle;
+  final ShapeStyle newStyle;
 }

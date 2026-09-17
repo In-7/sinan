@@ -156,7 +156,11 @@ class ItemPainter extends CustomPainter {
       if (total <= 0) return;
       final Offset dir = (b - a) / total;
       for (double t = 0; t < total; t += dash + gap) {
-        canvas.drawLine(a + dir * t, a + dir * math.min(t + dash, total), paint);
+        canvas.drawLine(
+          a + dir * t,
+          a + dir * math.min(t + dash, total),
+          paint,
+        );
       }
     }
 
@@ -182,7 +186,9 @@ class ItemPainter extends CustomPainter {
     for (int i = 0; i < items.length; i++) {
       final CanvasItem before = oldDelegate.items[i];
       final CanvasItem after = items[i];
-      if (before != after || before.rect != after.rect || before.angle != after.angle) {
+      if (before != after ||
+          before.rect != after.rect ||
+          before.angle != after.angle) {
         return true;
       }
     }
@@ -276,6 +282,8 @@ class OverlayPainter extends CustomPainter {
     required this.camera,
     required this.color,
     this.marquee,
+    this.shapeDraft,
+    this.shapeDraftKind,
     this.eraserCenter,
     this.eraserRadius,
     this.selectedItems = const <CanvasItem>[],
@@ -292,6 +300,12 @@ class OverlayPainter extends CustomPainter {
   /// 框选矩形（世界坐标）。
   final Rect? marquee;
 
+  /// 形状工具拖拽中的预览框（世界坐标）；没在拖就是 null。
+  final Rect? shapeDraft;
+
+  /// 预览要画的形状种类（椭圆工具预览的就该是椭圆，而不是一个方框）。
+  final CanvasShapeKind? shapeDraftKind;
+
   final Offset? eraserCenter;
 
   /// 橡皮半径（世界单位）。
@@ -303,6 +317,29 @@ class OverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 形状工具的预览：半透明填充 + 描边，与框选共用一套"临时框"视觉语言。
+    // 预览形状必须与最终落下来的形状一致——不一致的话，拖的时候根本没法判断
+    // 自己在画什么（椭圆尤其明显）。
+    final Rect? draft = shapeDraft;
+    if (draft != null) {
+      final Rect screenRect = Rect.fromPoints(
+        camera.worldToScreen(draft.topLeft),
+        camera.worldToScreen(draft.bottomRight),
+      );
+      final ui.Paint fill = ui.Paint()..color = color.withValues(alpha: 0.10);
+      final ui.Paint edge = ui.Paint()
+        ..color = color
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 1.5;
+      if (shapeDraftKind == CanvasShapeKind.ellipse) {
+        canvas.drawOval(screenRect, fill);
+        canvas.drawOval(screenRect, edge);
+      } else {
+        canvas.drawRect(screenRect, fill);
+        canvas.drawRect(screenRect, edge);
+      }
+    }
+
     final Rect? box = marquee;
     if (box != null) {
       final Offset topLeft = camera.worldToScreen(box.topLeft);
@@ -329,16 +366,19 @@ class OverlayPainter extends CustomPainter {
     if (selectedItems.isNotEmpty) {
       if (selectedItems.length == 1) {
         final CanvasItem item = selectedItems.single;
-        final List<Offset> corners = CanvasHandles.rotatedCorners(item.rect, item.angle)
-            .map(camera.worldToScreen)
-            .toList(growable: false);
+        final List<Offset> corners = CanvasHandles.rotatedCorners(
+          item.rect,
+          item.angle,
+        ).map(camera.worldToScreen).toList(growable: false);
         _drawPolygon(canvas, corners, outline);
         for (final Offset c in corners) {
           _drawHandle(canvas, c, color);
         }
         final Offset topMid = (corners[0] + corners[1]) / 2;
         final Offset rot = CanvasHandles.rotationHandlePos(
-            corners, CanvasHandles.rotateHandleDistance);
+          corners,
+          CanvasHandles.rotateHandleDistance,
+        );
         _drawRotateHandle(canvas, rot, topMid, color);
       } else {
         Rect group = selectedItems.first.bounds;
@@ -354,7 +394,9 @@ class OverlayPainter extends CustomPainter {
         }
         final Offset topMid = (corners[0] + corners[1]) / 2;
         final Offset rot = CanvasHandles.rotationHandlePos(
-            corners, CanvasHandles.rotateHandleDistance);
+          corners,
+          CanvasHandles.rotateHandleDistance,
+        );
         _drawRotateHandle(canvas, rot, topMid, color);
       }
     }
@@ -397,11 +439,18 @@ class OverlayPainter extends CustomPainter {
     canvas.drawRect(square, border);
   }
 
-  void _drawRotateHandle(Canvas canvas, Offset rot, Offset topMid, Color color) {
+  void _drawRotateHandle(
+    Canvas canvas,
+    Offset rot,
+    Offset topMid,
+    Color color,
+  ) {
     canvas.drawLine(
       topMid,
       rot,
-      ui.Paint()..color = color..strokeWidth = 1,
+      ui.Paint()
+        ..color = color
+        ..strokeWidth = 1,
     );
     canvas.drawCircle(rot, 5, ui.Paint()..color = const Color(0xFFFFFFFF));
     final ui.Paint border = ui.Paint()
@@ -415,6 +464,8 @@ class OverlayPainter extends CustomPainter {
   bool shouldRepaint(OverlayPainter oldDelegate) {
     if (oldDelegate.stamp != stamp ||
         oldDelegate.marquee != marquee ||
+        oldDelegate.shapeDraft != shapeDraft ||
+        oldDelegate.shapeDraftKind != shapeDraftKind ||
         oldDelegate.eraserCenter != eraserCenter ||
         oldDelegate.eraserRadius != eraserRadius ||
         oldDelegate.camera.translation != camera.translation ||

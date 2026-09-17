@@ -5,6 +5,7 @@ import '../theme/app_color_swatch.dart';
 import '../theme/app_popover.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'canvas_panel_widgets.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/ink_stroke.dart';
 
@@ -23,6 +24,20 @@ const List<Color> canvasPalette = <Color>[
   Color(0xFF8E4EC6), // 紫
   Color(0xFFE93D82), // 粉
 ];
+
+/// [canvasPalette] 的显示项：哨兵换成**当前主题墨色**。
+///
+/// 否则暗色浮层上的"当前色"是个近黑点，等于看不见（同 [AppColorOption.display]
+/// 的说明）。笔刷面板与形状属性面板都必须经这里取，别各写一份。
+List<AppColorOption> canvasPaletteOptions(Brightness brightness) =>
+    <AppColorOption>[
+      for (final Color color in canvasPalette)
+        AppColorOption(
+          value: color,
+          display: color == kThemeInk ? AppTheme.canvasInk(brightness) : color,
+          tooltip: color == kThemeInk ? '跟随主题（亮/暗自动）' : null,
+        ),
+    ];
 
 /// 工具条上的「笔刷」按钮：弹出 [CanvasBrushPanel]。
 ///
@@ -45,7 +60,10 @@ class CanvasBrushButton extends StatelessWidget {
                   tooltip: '笔刷：颜色 / 粗细 / 橡皮',
                   isSelected: isOpen,
                   onPressed: toggle,
-                  icon: _BrushIcon(ink: resolvedInkOf(context, controller)),
+                  icon: CanvasInkDotIcon(
+                    icon: LucideIcons.brush300,
+                    ink: resolvedInkOf(context, controller),
+                  ),
                 ),
         // 面板里滑杆要连着调，不需要"选完即关"，故忽略 close。
         builder: (BuildContext context, VoidCallback _) =>
@@ -55,43 +73,13 @@ class CanvasBrushButton extends StatelessWidget {
   }
 }
 
-/// 画笔图标 + 右下角当前墨色圆点。
-class _BrushIcon extends StatelessWidget {
-  const _BrushIcon({required this.ink});
-
-  final Color ink;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: <Widget>[
-        const Icon(LucideIcons.brush300, size: Tokens.iconSm),
-        Positioned(
-          right: 0,
-          bottom: 0,
-          child: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: ink,
-              shape: BoxShape.circle,
-              // 描边让浅色墨点在浅色工具条上也有轮廓。
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// 把 [CanvasController.penColor] 解析成**实际画出来的颜色**：哨兵 [kThemeInk]
 /// 按当前主题墨色显示，其余原样。浮层/按钮上的"当前色"都必须经它取。
 Color resolvedInkOf(BuildContext context, CanvasController controller) =>
-    resolveInk(controller.penColor, AppTheme.canvasInk(Theme.of(context).brightness));
+    resolveInk(
+      controller.penColor,
+      AppTheme.canvasInk(Theme.of(context).brightness),
+    );
 
 /// 笔刷设置面板：颜色 + 笔迹粗细 + 橡皮大小。
 ///
@@ -112,19 +100,6 @@ class CanvasBrushPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Brightness brightness = theme.brightness;
-    // 色板显示色：哨兵换成当前主题墨色，免得暗色浮层上"当前色"是个近黑点。
-    final List<AppColorOption> options = <AppColorOption>[
-      for (final Color color in canvasPalette)
-        AppColorOption(
-          value: color,
-          display: color == kThemeInk
-              ? AppTheme.canvasInk(brightness)
-              : color,
-          tooltip: color == kThemeInk ? '跟随主题（亮/暗自动）' : null,
-        ),
-    ];
-
     return ListenableBuilder(
       listenable: controller,
       builder: (BuildContext context, Widget? _) => Padding(
@@ -136,13 +111,13 @@ class CanvasBrushPanel extends StatelessWidget {
             _label(theme, '颜色'),
             const SizedBox(height: Tokens.spaceSm),
             AppColorGrid(
-              options: options,
+              options: canvasPaletteOptions(theme.brightness),
               selected: controller.penColor,
               onSelect: controller.setPenColor,
             ),
             const SizedBox(height: Tokens.spaceLg),
             _label(theme, '笔迹粗细  ${controller.penWidth.round()}'),
-            _Slider(
+            CanvasPanelSlider(
               key: penWidthKey,
               value: controller.penWidth,
               min: 1,
@@ -151,7 +126,7 @@ class CanvasBrushPanel extends StatelessWidget {
             ),
             const SizedBox(height: Tokens.spaceSm),
             _label(theme, '橡皮大小  ${controller.eraserRadius.round()}'),
-            _Slider(
+            CanvasPanelSlider(
               key: eraserSizeKey,
               value: controller.eraserRadius,
               min: 4,
@@ -170,36 +145,4 @@ class CanvasBrushPanel extends StatelessWidget {
       color: theme.colorScheme.onSurfaceVariant,
     ),
   );
-}
-
-/// 滑杆：统一紧凑高度（默认 `Slider` 的上下留白在浮层面板里太空）。
-class _Slider extends StatelessWidget {
-  const _Slider({
-    super.key,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final double value;
-  final double min;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        trackHeight: 3,
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-      ),
-      child: Slider(
-        value: value.clamp(min, max),
-        min: min,
-        max: max,
-        onChanged: onChanged,
-      ),
-    );
-  }
 }

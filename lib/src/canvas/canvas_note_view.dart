@@ -9,9 +9,11 @@ import '../app/providers.dart';
 import '../app/save_debounce.dart';
 import '../data/note_store.dart';
 import '../theme/tokens.dart';
+import 'canvas_import.dart';
 import 'canvas_surface.dart';
 import 'kernel/canvas_ai.dart';
 import 'kernel/canvas_ai_cache.dart';
+import 'kernel/canvas_bundle.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_media.dart';
 
@@ -28,9 +30,20 @@ import 'kernel/canvas_media.dart';
 /// 右侧内容区按当前笔记的 `kind` 二选一挂载：文档笔记 → 块编辑器，
 /// 画布笔记 → 本组件（见 `home_screen.dart` 的 `detailPane`）。
 class CanvasNoteView extends ConsumerStatefulWidget {
-  const CanvasNoteView({super.key, required this.noteId});
+  const CanvasNoteView({
+    super.key,
+    required this.noteId,
+    this.pickBundleText = pickCanvasBundleText,
+  });
 
   final String noteId;
+
+  /// 取一份 `.canvas.json` 的**文本**（用户取消返回 null）。
+  ///
+  /// 抽成可注入的点：真实实现要弹文件对话框，测试塞个"直接返回文本"的替身就能把
+  /// 导入链路（确认 → 还原 → 换文档 → 落盘）整条测完。同 `NoteSaver.isolateEncode`
+  /// 那类钩子。
+  final Future<String?> Function() pickBundleText;
 
   @override
   ConsumerState<CanvasNoteView> createState() => _CanvasNoteViewState();
@@ -48,7 +61,10 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
   /// or has been unmounted is unsafe.`）。而 notifier 由**容器**持有、寿命长于
   /// 本 widget，提前持有它是安全的，且调用它不经过 widget 的 ref。
   late final NotesNotifier _notes;
-  late final CanvasController _controller;
+
+  /// 当前文档的控制器。**非 final**：导入 `.canvas.json` 时整体换一份
+  /// （见 [_adoptController]）。
+  late CanvasController _controller;
 
   /// 落盘调度：一停手 600ms 就落盘，**连续运笔不停手时最迟 2s 也必落一次**
   /// （[SaveDebounce] 的硬上界——纯防抖在不停笔的情况下会一直不落盘）。
@@ -203,13 +219,13 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
     if (_dirty && !_loadFailed) {
       final String content = jsonEncode(_controller.toJson(media: _media));
       unawaited(
-        _notes
-            .saveContent(widget.noteId, content, plainText: '')
-            .catchError((Object _) {
-              unawaited(
-                _store.updateContent(widget.noteId, content, plainText: ''),
-              );
-            }),
+        _notes.saveContent(widget.noteId, content, plainText: '').catchError((
+          Object _,
+        ) {
+          unawaited(
+            _store.updateContent(widget.noteId, content, plainText: ''),
+          );
+        }),
       );
     }
     _controller.removeListener(_onChanged);
@@ -217,11 +233,79 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
     super.dispose();
   }
 
+  /// 导入 `.canvas.json`：**替换**当前画布。
+  ///
+  /// 顺序刻意是「先问、后选、再换」：替换是破坏性的（当前内容随后会被覆盖保存），
+  /// 先确认再让用户去挑文件，免得挑完才发现要覆盖、白挑一次。
+  ///
+  /// 语义是**换一份文档**而不是合并：撤销历史随旧文档一起丢掉——确认框里把这一点
+  /// 明说了（"保护数据的取舍必须可见告知"，同画布载入失败那条）。
+  Future<void> _import(BuildContext context) async {
+    // async gap 之前取出 messenger（同 _export / _insertImage）。
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final bool confirmed = await _confirmReplace(context) ?? false;
+    if (!confirmed || !mounted) return;
+    try {
+      final String? text = await widget.pickBundleText();
+      if (text == null) return; // 用户取消
+      final CanvasController imported = await importCanvasBundleText(
+        text,
+        media: _media,
+        generator: _generator,
+      );
+      if (!mounted) {
+        imported.dispose();
+        return;
+      }
+      _adoptController(imported);
+      messenger.showSnackBar(const SnackBar(content: Text('已导入画布文件')));
+    } on Object catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      }
+    }
+  }
+
+  /// 换掉当前控制器（导入用）：重新接线监听 + 标记待落盘。
+  ///
+  /// ⚠️ **必须置脏并排一次落盘**：否则这份导入的文档只活在内存里，退出/切笔记时
+  /// 会被丢弃；更糟的是防抖若正挂着，写回去的是**换掉前**的内容。
+  void _adoptController(CanvasController next) {
+    _controller.removeListener(_onChanged);
+    _controller.dispose();
+    _controller = next;
+    _controller.addListener(_onChanged);
+    // 新文档是**解析成功**的：载入失败的冻结闸必须解开，否则退出前落盘会被跳过。
+    _loadFailed = false;
+    _onChanged();
+    setState(() {});
+  }
+
+  /// 替换画布的确认框（破坏性动作必须先告知，见 [_import]）。
+  Future<bool?> _confirmReplace(BuildContext context) => showDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) => AlertDialog(
+      title: const Text('导入画布文件'),
+      content: const Text('导入会替换当前画布的内容，且替换后无法再撤销回原内容。继续吗？'),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('导入'),
+        ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final Widget surface = CanvasSurface(
       controller: _controller,
       media: _media,
+      onImport: () => _import(context),
     );
     // 载入失败必须**看得见**：自动保存已被冻结（见 [_loadFailed]），当前这张空白
     // 画布上的任何编辑都不会落库——不提示的话用户会以为一切正常，画完才发现白画。

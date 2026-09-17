@@ -55,8 +55,10 @@ Future<File> exportCanvasBundle(
   required MediaResolver media,
   required String directory,
 }) async {
-  final Map<String, dynamic> bundle =
-      await encodeCanvasBundle(controller, media: media);
+  final Map<String, dynamic> bundle = await encodeCanvasBundle(
+    controller,
+    media: media,
+  );
   final Directory dir = Directory(directory);
   if (!dir.existsSync()) dir.createSync(recursive: true);
   final File file = File(
@@ -115,11 +117,9 @@ Future<CanvasController> importCanvasBundleText(
   if (decoded is! Map<String, dynamic>) {
     throw const FormatException('画布文件的顶层不是 JSON 对象');
   }
-  final Map<String, dynamic> bundle =
-      await materializeCanvasBundle(decoded, media: media);
-  return CanvasController.fromJson(
-    bundle,
+  final Map<String, dynamic> bundle = await materializeCanvasBundle(
+    decoded,
     media: media,
-    generator: generator,
   );
+  return CanvasController.fromJson(bundle, media: media, generator: generator);
 }

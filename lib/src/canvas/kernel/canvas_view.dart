@@ -135,8 +135,9 @@ class _CanvasViewState extends State<CanvasView> {
                                   unawaited(
                                     item.load(
                                       onLoaded: () => WidgetsBinding.instance
-                                          .addPostFrameCallback((_) =>
-                                              controller.requestRepaint()),
+                                          .addPostFrameCallback(
+                                            (_) => controller.requestRepaint(),
+                                          ),
                                     ),
                                   );
                                 },
@@ -158,7 +159,10 @@ class _CanvasViewState extends State<CanvasView> {
                                 camera: controller.camera,
                                 color: widget.accentColor,
                                 marquee: controller.marquee,
-                                eraserCenter: controller.tool == CanvasTool.eraser
+                                shapeDraft: controller.shapeDraft,
+                                shapeDraftKind: controller.shapeKind,
+                                eraserCenter:
+                                    controller.tool == CanvasTool.eraser
                                     ? controller.eraserAt
                                     : null,
                                 eraserRadius: controller.eraserRadius,
@@ -189,8 +193,9 @@ class _CanvasViewState extends State<CanvasView> {
   Widget _aiGenerateButton(CanvasController controller, Size size) {
     final Rect world = controller.selectionBounds!;
     final Offset topLeft = controller.camera.worldToScreen(world.topLeft);
-    final Offset bottomRight =
-        controller.camera.worldToScreen(world.bottomRight);
+    final Offset bottomRight = controller.camera.worldToScreen(
+      world.bottomRight,
+    );
     final double left = (bottomRight.dx + 8).clamp(8.0, size.width - 110.0);
     final double top = (topLeft.dy - 36).clamp(8.0, size.height - 36.0);
     return Positioned(
@@ -218,10 +223,13 @@ class _CanvasViewState extends State<CanvasView> {
     );
   }
 
-  MouseCursor _cursorOf(CanvasController controller) => switch (controller.tool) {
+  MouseCursor _cursorOf(CanvasController controller) =>
+      switch (controller.tool) {
         CanvasTool.pen => SystemMouseCursors.precise,
         CanvasTool.eraser => SystemMouseCursors.precise,
         CanvasTool.select => SystemMouseCursors.basic,
         CanvasTool.pan => SystemMouseCursors.grab,
+        // 十字光标：形状工具是"落点定框"的绘制行为（同笔），不是选择行为。
+        CanvasTool.shape => SystemMouseCursors.precise,
       };
 }

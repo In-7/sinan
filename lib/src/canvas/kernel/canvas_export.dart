@@ -39,10 +39,7 @@ Future<File> exportCanvasToPng(
   final double scale = pixelRatio; // 1 世界单位 = pixelRatio 设备像素
   final CanvasCamera camera = CanvasCamera(
     scale: scale,
-    translation: Offset(
-      pad - bounds.left * scale,
-      pad - bounds.top * scale,
-    ),
+    translation: Offset(pad - bounds.left * scale, pad - bounds.top * scale),
   );
   final Size size = Size(
     bounds.width * scale + pad * 2,

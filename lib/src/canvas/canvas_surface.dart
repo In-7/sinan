@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'canvas_brush_panel.dart';
 import 'canvas_insert_panel.dart';
+import 'canvas_shape_panel.dart';
 import 'kernel/canvas_bundle.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_export.dart';
@@ -29,9 +30,14 @@ class CanvasSurface extends StatefulWidget {
     super.key,
     required this.controller,
     required this.media,
+    this.onImport,
   });
 
   final CanvasController controller;
+
+  /// 导入 `.canvas.json`（**会替换**当前画布）：由宿主提供，因为它要问确认框
+  /// 并换掉宿主持有的控制器（见 `CanvasNoteView._import`）。
+  final Future<void> Function()? onImport;
 
   /// 媒体引用解析器：导出**自包含 `.canvas.json`** 时要把磁盘上的图片读出来
   /// 内联，得先经它把相对引用换算成绝对路径。
@@ -57,6 +63,7 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
             onExport: () => _export(context, widget.controller),
             onExportBundle: () => _exportBundle(context, widget.controller),
             onInsertImage: () => _insertImage(context, widget.controller),
+            onImport: widget.onImport,
           ),
           Expanded(
             child: CanvasView(
@@ -90,15 +97,11 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
         pixelRatio: MediaQuery.of(context).devicePixelRatio,
       );
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已导出：${file.path}')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('已导出：${file.path}')));
       }
     } on Object catch (e) {
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
       }
     }
   }
@@ -117,15 +120,11 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
         directory: 'sinan_media',
       );
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('已导出画布文件：${file.path}')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('已导出画布文件：${file.path}')));
       }
     } on Object catch (e) {
       if (mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
+        messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
       }
     }
   }
@@ -166,7 +165,8 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
     }
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
-    final bool ctrl = HardwareKeyboard.instance.isControlPressed ||
+    final bool ctrl =
+        HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (ctrl && event.logicalKey == LogicalKeyboardKey.keyZ) {
       if (HardwareKeyboard.instance.isShiftPressed) {
@@ -179,6 +179,13 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
     if (event.logicalKey == LogicalKeyboardKey.delete ||
         event.logicalKey == LogicalKeyboardKey.backspace) {
       widget.controller.deleteSelection();
+      return KeyEventResult.handled;
+    }
+    // Esc：退出形状工具（回选择）。缺了它，形状工具下拖拽永远是"画新的"，
+    // 既点不中、也拖不动已有图形——用户会以为卡住了。
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
+        widget.controller.tool == CanvasTool.shape) {
+      widget.controller.setTool(CanvasTool.select);
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -195,6 +202,7 @@ class _CanvasToolbar extends StatelessWidget {
     this.onExport,
     this.onExportBundle,
     this.onInsertImage,
+    this.onImport,
   });
 
   final CanvasController controller;
@@ -208,17 +216,16 @@ class _CanvasToolbar extends StatelessWidget {
   /// 插入图片（拾取 + 落盘）的回调：需 BuildContext 做错误提示，故由面板提供。
   final Future<void> Function()? onInsertImage;
 
+  /// 导入 `.canvas.json`（替换当前画布）的回调，理由同 [onInsertImage]。
+  final Future<void> Function()? onImport;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return ListenableBuilder(
       listenable: controller,
       builder: (BuildContext context, Widget? child) {
-        Widget toolButton(
-          CanvasTool tool,
-          IconData icon,
-          String tooltip,
-        ) {
+        Widget toolButton(CanvasTool tool, IconData icon, String tooltip) {
           final bool selected = controller.tool == tool;
           return IconButton(
             icon: Icon(icon, size: Tokens.iconSm),
@@ -228,7 +235,9 @@ class _CanvasToolbar extends StatelessWidget {
                 selected ? scheme.secondaryContainer : Colors.transparent,
               ),
               foregroundColor: WidgetStatePropertyAll<Color>(
-                selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant,
+                selected
+                    ? scheme.onSecondaryContainer
+                    : scheme.onSurfaceVariant,
               ),
             ),
             onPressed: () => controller.setTool(tool),
@@ -236,23 +245,22 @@ class _CanvasToolbar extends StatelessWidget {
         }
 
         return Container(
-          height: 44,
+          // 单行时 44（与编辑器工具条同高）；按钮排不下才长高（见下面的 Wrap）。
+          constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
           decoration: BoxDecoration(
             color: AppTheme.contentCanvas(Theme.of(context).brightness),
-            border: Border(
-              bottom: BorderSide(color: AppTheme.divider(scheme)),
-            ),
+            border: Border(bottom: BorderSide(color: AppTheme.divider(scheme))),
           ),
-          child: Row(
+          // ⚠️ 用 Wrap 而不是固定高度的 Row：按钮排不下时**换行继续显示**。
+          // 实测反馈：先前的"横向滚动"版拖窄后"按钮看不到了"——滚动条在 44px 高的
+          // 条里既不显眼、又压内容。Wrap 一个都不会藏；单行放得下时与 Row 观感一致。
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
               toolButton(CanvasTool.pen, LucideIcons.pencil300, '笔'),
               toolButton(CanvasTool.eraser, LucideIcons.eraser300, '橡皮'),
-              toolButton(
-                CanvasTool.select,
-                LucideIcons.mousePointer2300,
-                '框选',
-              ),
+              toolButton(CanvasTool.select, LucideIcons.mousePointer2300, '框选'),
               toolButton(CanvasTool.pan, LucideIcons.hand300, '抓手（空格）'),
               // 笔刷设置（颜色 / 粗细 / 橡皮）与工具按钮同组：它改的就是"笔"这个
               // 工具的参数。按钮上叠一颗当前墨色圆点，改色有即时反馈。
@@ -261,20 +269,24 @@ class _CanvasToolbar extends StatelessWidget {
                 controller: controller,
                 onInsertImage: onInsertImage ?? () async {},
               ),
-              const VerticalDivider(width: 24),
+              // 图形属性：只在选中形状时出现（内部自判，未选中时渲染成空）。
+              CanvasShapeButton(controller: controller),
+              // Wrap 里给分隔线**显式高度**：VerticalDivider 默认不限高，
+              // 在不定高的 Wrap 里会直接报无限高度。
+              const SizedBox(height: 24, child: VerticalDivider(width: 24)),
               IconButton(
                 icon: const Icon(LucideIcons.undo2300, size: 18),
                 tooltip: '撤销（Ctrl+Z）',
-                onPressed:
-                    controller.document.canUndo ? controller.undo : null,
+                onPressed: controller.document.canUndo ? controller.undo : null,
               ),
               IconButton(
                 icon: const Icon(LucideIcons.redo2300, size: 18),
                 tooltip: '重做（Ctrl+Shift+Z）',
-                onPressed:
-                    controller.document.canRedo ? controller.redo : null,
+                onPressed: controller.document.canRedo ? controller.redo : null,
               ),
-              const VerticalDivider(width: 24),
+              // Wrap 里给分隔线**显式高度**：VerticalDivider 默认不限高，
+              // 在不定高的 Wrap 里会直接报无限高度。
+              const SizedBox(height: 24, child: VerticalDivider(width: 24)),
               IconButton(
                 icon: const Icon(LucideIcons.zoomOut300, size: 18),
                 tooltip: '缩小',
@@ -300,7 +312,11 @@ class _CanvasToolbar extends StatelessWidget {
                 tooltip: '导出画布文件（.canvas.json，含图片）',
                 onPressed: onExportBundle,
               ),
-              const Spacer(),
+              IconButton(
+                icon: const Icon(LucideIcons.import300, size: 18),
+                tooltip: '导入画布文件（.canvas.json，替换当前画布）',
+                onPressed: onImport,
+              ),
               if (controller.hasSelection)
                 IconButton(
                   icon: const Icon(LucideIcons.trash2300, size: 18),

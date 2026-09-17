@@ -27,8 +27,9 @@ import 'ink_stroke.dart';
 /// 预加载与 [world] 相交的图片 item，避免渲染时画出占位灰框。
 /// [world] 为 null 时处理文档内**全部** item。
 Future<void> ensureImagesLoaded(CanvasDocument document, {Rect? world}) async {
-  final Iterable<CanvasItem> items =
-      world == null ? document.items : document.itemsIn(world);
+  final Iterable<CanvasItem> items = world == null
+      ? document.items
+      : document.itemsIn(world);
   for (final CanvasItem item in items) {
     if (item is ImageItem && !item.loaded) {
       await item.load(onLoaded: () {});
@@ -70,7 +71,9 @@ Future<Uint8List> rasterizeWithCamera(
   InkPainter(camera: camera, picture: inkPicture).paint(canvas, pixelSize);
 
   final ui.Image image = await recorder.endRecording().toImage(pxW, pxH);
-  final ByteData? bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+  final ByteData? bytes = await image.toByteData(
+    format: ui.ImageByteFormat.png,
+  );
   image.dispose();
   if (bytes == null) throw StateError('rasterizeWithCamera: PNG 编码失败');
   return bytes.buffer.asUint8List();
@@ -169,9 +172,11 @@ String inputFingerprint(CanvasDocument document, Rect box) {
   final List<String> parts = <String>[];
   for (final CanvasItem item in document.itemsIn(box)) {
     if (item is AiImageItem) continue;
-    parts.add('i:${item.id}:${_n(item.rect.left)},${_n(item.rect.top)},'
-        '${_n(item.rect.right)},${_n(item.rect.bottom)}:${_n(item.angle)}'
-        '${item is ImageItem ? ':${item.src}' : ''}');
+    parts.add(
+      'i:${item.id}:${_n(item.rect.left)},${_n(item.rect.top)},'
+      '${_n(item.rect.right)},${_n(item.rect.bottom)}:${_n(item.angle)}'
+      '${item is ImageItem ? ':${item.src}' : ''}',
+    );
   }
   for (final InkStroke stroke in document.strokesIn(box)) {
     parts.add('s:${stroke.id}');

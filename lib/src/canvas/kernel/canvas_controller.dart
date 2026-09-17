@@ -48,6 +48,13 @@ enum CanvasTool {
 
   /// 抓手（平移视图）。
   pan,
+
+  /// 画形状：**按住拖拽定尺寸**；点一下则落一个默认大小。
+  ///
+  /// 它存在的直接原因是实测反馈——"点'矩形'只插入一个固定大小、还立刻切回框选，
+  /// 于是拖出来的是框选，矩形工具像假的"。只提供"插入一个矩形"不算一个**工具**：
+  /// 用户要的是"用当前笔刷画个框"。
+  shape,
 }
 
 /// 画布控制器：相机 + 文档 + 工具状态 + **输入流水线**。
@@ -66,8 +73,8 @@ class CanvasController extends ChangeNotifier {
     CanvasCamera? camera,
     CanvasDocument? document,
     this.generator = const LocalStubGenerator(),
-  })  : camera = camera ?? CanvasCamera(),
-        document = document ?? CanvasDocument();
+  }) : camera = camera ?? CanvasCamera(),
+       document = document ?? CanvasDocument();
 
   final CanvasCamera camera;
   final CanvasDocument document;
@@ -106,6 +113,19 @@ class CanvasController extends ChangeNotifier {
   Rect? _marquee;
   Rect? get marquee => _marquee;
 
+  /// 形状工具当前要画的种类（由插入面板选定）。
+  CanvasShapeKind _shapeKind = CanvasShapeKind.rectangle;
+  CanvasShapeKind get shapeKind => _shapeKind;
+
+  /// 形状工具**拖拽中的预览框**（世界坐标）；没在拖就是 null。
+  Rect? _shapeDraft;
+  Rect? get shapeDraft => _shapeDraft;
+
+  /// 本次形状拖拽的起点（世界坐标 + 屏幕坐标）。屏幕那份用来判定"这是点还是拖"
+  /// ——世界位移随缩放变化，当阈值不可靠。
+  Offset? _shapeStartWorld;
+  Offset? _shapeStartScreen;
+
   final List<InkStroke> _selection = <InkStroke>[];
   List<InkStroke> get selection => List<InkStroke>.unmodifiable(_selection);
 
@@ -123,7 +143,9 @@ class CanvasController extends ChangeNotifier {
     Rect? result;
     if (_marquee != null) result = _marquee!;
     for (final CanvasItem item in _selectedItems) {
-      result = result == null ? item.bounds : result.expandToInclude(item.bounds);
+      result = result == null
+          ? item.bounds
+          : result.expandToInclude(item.bounds);
     }
     for (final InkStroke stroke in _selection) {
       final Rect? b = stroke.bounds;
@@ -231,6 +253,15 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 进入形状工具（插入面板的"矩形 / 椭圆"调它）。
+  ///
+  /// 与"直接落一个图形"的区别：**不立刻落图形**，而是让接下来的拖拽去定尺寸
+  /// ——这才像个工具（见 [CanvasTool.shape] 的说明）。
+  void setShapeTool(CanvasShapeKind kind) {
+    _shapeKind = kind;
+    setTool(CanvasTool.shape);
+  }
+
   void setSpacePanning(bool value) {
     if (spacePanning == value) return;
     spacePanning = value;
@@ -286,6 +317,39 @@ class CanvasController extends ChangeNotifier {
     final Rect? bounds = document.bounds;
     if (bounds == null) return;
     camera.fit(bounds, _viewport);
+    notifyListeners();
+  }
+
+  /// 改**所选形状**的样式（属性面板的唯一入口）。一次调用 = 一条撤销命令。
+  ///
+  /// 只作用于选中的 [ShapeItem]（笔迹与图片没有这个面板）。参数传 null 表示
+  /// "这一项不动"——改色时不该顺带把粗细重置回默认值。
+  ///
+  /// 值没真变时不记命令（`setItemStyles` 内部按差异过滤），所以拖滑杆不会把
+  /// 撤销栈刷满。
+  void updateSelectedShapeStyle({
+    Color? color,
+    double? strokeWidth,
+    bool? filled,
+  }) {
+    final List<(ShapeItem, ShapeStyle)> changes = <(ShapeItem, ShapeStyle)>[];
+    for (final CanvasItem item in _selectedItems) {
+      if (item is! ShapeItem) continue;
+      final ShapeStyle before = item.style;
+      item.applyStyle(
+        ShapeStyle(
+          color: color ?? before.color,
+          // 只在**显式传入**时钳制：老存档里的越界值不该因为改个颜色被改掉。
+          strokeWidth: strokeWidth == null
+              ? before.strokeWidth
+              : strokeWidth.clamp(1, 24),
+          filled: filled ?? before.filled,
+        ),
+      );
+      changes.add((item, before));
+    }
+    if (changes.isEmpty) return;
+    document.setItemStyles(changes);
     notifyListeners();
   }
 
@@ -359,8 +423,9 @@ class CanvasController extends ChangeNotifier {
         if (region.maskRef != null) 'mask': region.maskRef!,
       },
       // 只有真有输入时才记指纹：纯文生图无输入可言 ⇒ 永不 stale。
-      inputFingerprint:
-          inputImages.isEmpty ? null : inputFingerprint(document, region.bbox),
+      inputFingerprint: inputImages.isEmpty
+          ? null
+          : inputFingerprint(document, region.bbox),
     );
 
     final AiImageItem item = AiImageItem(rect: region.bbox, gen: recipe);
@@ -426,8 +491,8 @@ class CanvasController extends ChangeNotifier {
     final Map<String, Uint8List> out = <String, Uint8List>{};
     final Rect box = region.bbox;
     if (box.width < 1 || box.height < 1) return out;
-    final bool hasContent = document.itemsIn(box).isNotEmpty ||
-        document.strokesIn(box).isNotEmpty;
+    final bool hasContent =
+        document.itemsIn(box).isNotEmpty || document.strokesIn(box).isNotEmpty;
     if (!hasContent) return out;
     out['image'] = await rasterizeRegion(document, box);
     if (region.maskRef != null) {
@@ -462,9 +527,8 @@ class CanvasController extends ChangeNotifier {
     if (_isPalm(event)) return;
 
     // 中键 / 空格 / 抓手工具 ⇒ 平移，优先级最高（不与绘制冲突）。
-    final bool wantsPan = _isMiddleButton(event) ||
-        spacePanning ||
-        tool == CanvasTool.pan;
+    final bool wantsPan =
+        _isMiddleButton(event) || spacePanning || tool == CanvasTool.pan;
     if (wantsPan) {
       _panPointer = event.pointer;
       _panLast = event.localPosition;
@@ -473,6 +537,15 @@ class CanvasController extends ChangeNotifier {
 
     final Offset world = camera.screenToWorld(event.localPosition);
     _activePointer = event.pointer;
+
+    // 形状工具：按下即开始定尺寸。不碰命中/选区——"拖出来变成框选"正是要修的问题。
+    if (tool == CanvasTool.shape) {
+      _shapeStartWorld = world;
+      _shapeStartScreen = event.localPosition;
+      _shapeDraft = Rect.fromPoints(world, world);
+      notifyListeners();
+      return;
+    }
 
     // 笔的橡皮端（inverted stylus）无条件当橡皮，与当前工具无关
     // —— 这是手写设备的通用约定。
@@ -489,8 +562,10 @@ class CanvasController extends ChangeNotifier {
       if (grip != null) {
         _beginGrip(grip, world);
       } else {
-        final CanvasItem? item =
-            document.hitItemAt(world, camera.toWorld(_itemHitTolerance));
+        final CanvasItem? item = document.hitItemAt(
+          world,
+          camera.toWorld(_itemHitTolerance),
+        );
         if (item != null) {
           // 已在多选集合内 ⇒ 保持选区整体拖动；否则单选该 item。
           if (!_selectedItems.contains(item)) {
@@ -530,6 +605,13 @@ class CanvasController extends ChangeNotifier {
     if (event.pointer != _activePointer) return;
 
     final Offset world = camera.screenToWorld(event.localPosition);
+
+    // 形状工具：拖拽更新预览框（视图据此画出"正在画的那个框"）。
+    if (_shapeStartWorld != null) {
+      _shapeDraft = Rect.fromPoints(_shapeStartWorld!, world);
+      notifyListeners();
+      return;
+    }
 
     // 缩放 / 旋转手势：优先于普通拖动。
     if (_gripKind != null) {
@@ -572,6 +654,12 @@ class CanvasController extends ChangeNotifier {
       return;
     }
     if (event.pointer != _activePointer) return;
+
+    // 形状工具：抬手时落账（拖出来的框，或"点一下"的默认大小）。
+    if (_shapeStartWorld != null) {
+      _commitShape(event);
+      return;
+    }
 
     final InkStroke? stroke = _activeStroke;
     if (stroke != null && stroke.points.isNotEmpty) {
@@ -620,6 +708,7 @@ class CanvasController extends ChangeNotifier {
       _erasing = false;
       _marqueeStart = null;
       _marquee = null;
+      _cancelShapeDraft();
       _activePointer = null;
       // item 拖拽/缩放/旋转：就地改过的 rect/angle 弹回起点快照。
       final Map<CanvasItem, Rect>? startRects = _moveStartRects;
@@ -656,6 +745,64 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// 悬停：只维护橡皮光标（笔工具下不画圈，避免干扰）。
+  /// 丢掉进行中的形状预览（取消、或已经落账）。
+  void _cancelShapeDraft() {
+    _shapeStartWorld = null;
+    _shapeStartScreen = null;
+    _shapeDraft = null;
+  }
+
+  /// 结束一次形状拖拽并落账：够大就按拖出来的框，几乎没动就落一个默认大小。
+  ///
+  /// "点一下也要能建"是刻意的（Excalidraw 同款）：只支持拖拽的话，习惯点击的用户
+  /// 会以为工具栏坏了。阈值按**屏幕**位移判定（世界位移随缩放变化，不能当阈值）。
+  void _commitShape(PointerEvent event) {
+    final Offset world = camera.screenToWorld(event.localPosition);
+    final Offset? startWorld = _shapeStartWorld;
+    final Offset? startScreen = _shapeStartScreen;
+    _cancelShapeDraft();
+    if (startWorld == null || startScreen == null) return;
+
+    // 屏幕像素：位移小于它算"点一下"。
+    const double clickSlop = 4;
+    // "点一下"落下的默认尺寸（**屏幕**尺寸，任何缩放级别观感一致）。
+    const Size defaultSize = Size(160, 120);
+
+    final bool isClick =
+        (event.localPosition - startScreen).distance < clickSlop;
+    final Rect rect = isClick
+        ? Rect.fromCenter(
+            // 落点取**按下**的位置：抬手那 1px 抖动不该把形状挪走。
+            center: startWorld,
+            width: defaultSize.width / camera.scale,
+            height: defaultSize.height / camera.scale,
+          )
+        : _clampDraftSize(Rect.fromPoints(startWorld, world));
+
+    final ShapeItem item = ShapeItem(
+      rect: rect,
+      kind: _shapeKind,
+      // 颜色跟随笔刷：形状工具就是"用当前笔刷画个框"（改色在笔刷面板）。
+      color: penColor,
+    );
+    document.addItem(item);
+    // 画完即选中：接着就能调色/调描边（图形属性面板也正是在选中形状时出现）。
+    // 工具**不切回**选择——连续画几个框是常态，切回去才是"矩形像框选"的老毛病。
+    selectItems(<CanvasItem>[item]);
+    notifyListeners();
+  }
+
+  /// 拖出来的框太小时钳到最小（屏幕上约 8px），免得落一个点不中的元素。
+  Rect _clampDraftSize(Rect rect) {
+    final double minWorld = 8 / camera.scale;
+    return Rect.fromLTWH(
+      rect.left,
+      rect.top,
+      rect.width < minWorld ? minWorld : rect.width,
+      rect.height < minWorld ? minWorld : rect.height,
+    );
+  }
+
   void onPointerHover(PointerHoverEvent event) {
     if (tool != CanvasTool.eraser) return;
     _eraserAt = camera.screenToWorld(event.localPosition);
@@ -667,13 +814,11 @@ class CanvasController extends ChangeNotifier {
   /// - 直接滚轮 = 平移（触控板双指滑动也走这条）。
   void onPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    final bool zoomIntent = HardwareKeyboard.instance.isControlPressed ||
+    final bool zoomIntent =
+        HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (zoomIntent) {
-      camera.zoomAt(
-        event.localPosition,
-        math.exp(-event.scrollDelta.dy / 300),
-      );
+      camera.zoomAt(event.localPosition, math.exp(-event.scrollDelta.dy / 300));
     } else {
       camera.panBy(-event.scrollDelta);
     }
@@ -692,16 +837,22 @@ class CanvasController extends ChangeNotifier {
     if (sel.isEmpty) return null;
     List<Offset> cornersWorld;
     if (sel.length == 1) {
-      cornersWorld = CanvasHandles.rotatedCorners(sel.single.rect, sel.single.angle);
+      cornersWorld = CanvasHandles.rotatedCorners(
+        sel.single.rect,
+        sel.single.angle,
+      );
     } else {
       final Rect group = _unionBounds(sel);
       if (group.isEmpty) return null;
       cornersWorld = CanvasHandles.corners(group);
     }
-    final List<Offset> cornersScreen =
-        cornersWorld.map<Offset>(camera.worldToScreen).toList(growable: false);
+    final List<Offset> cornersScreen = cornersWorld
+        .map<Offset>(camera.worldToScreen)
+        .toList(growable: false);
     final Offset rot = CanvasHandles.rotationHandlePos(
-        cornersScreen, CanvasHandles.rotateHandleDistance);
+      cornersScreen,
+      CanvasHandles.rotateHandleDistance,
+    );
     if (CanvasHandles.hitRotation(rot, screenPoint)) {
       return (kind: _GripKind.rotate, handle: null);
     }
@@ -714,7 +865,8 @@ class CanvasController extends ChangeNotifier {
   void _beginGrip(({_GripKind kind, CanvasHandle? handle}) grip, Offset world) {
     _gripKind = grip.kind;
     _transformStarts = <_TransformStart>[
-      for (final CanvasItem it in _selectedItems) _TransformStart(it, it.rect, it.angle),
+      for (final CanvasItem it in _selectedItems)
+        _TransformStart(it, it.rect, it.angle),
     ];
     if (grip.kind == _GripKind.corner) {
       if (_selectedItems.length == 1 && grip.handle != null) {
@@ -771,7 +923,12 @@ class CanvasController extends ChangeNotifier {
         if (sx.abs() * g.width < minSize) sx = sx.sign * minSize / g.width;
         if (sy.abs() * g.height < minSize) sy = sy.sign * minSize / g.height;
         for (final _TransformStart s in starts) {
-          s.item.rect = CanvasHandles.scaleAbout(s.rect, _gripFixedCorner!, sx, sy);
+          s.item.rect = CanvasHandles.scaleAbout(
+            s.rect,
+            _gripFixedCorner!,
+            sx,
+            sy,
+          );
         }
       }
     } else if (_gripKind == _GripKind.rotate &&
@@ -780,7 +937,11 @@ class CanvasController extends ChangeNotifier {
       final double cur = (world - _gripGroupCenter!).direction;
       final double delta = cur - _gripStartPointerAngle!;
       for (final _TransformStart s in starts) {
-        s.item.rect = CanvasHandles.rotateAbout(s.rect, _gripGroupCenter!, delta);
+        s.item.rect = CanvasHandles.rotateAbout(
+          s.rect,
+          _gripGroupCenter!,
+          delta,
+        );
         s.item.angle = s.angle + delta;
       }
     }
@@ -839,9 +1000,9 @@ class CanvasController extends ChangeNotifier {
   /// [media] 提供时图片路径写成**相对引用**（可移植），并随文档带一份媒体侧表；
   /// 不传则保持旧行为（绝对路径、无侧表）。
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-        'camera': camera.toJson(),
-        'document': document.toJson(media: media),
-      };
+    'camera': camera.toJson(),
+    'document': document.toJson(media: media),
+  };
 
   /// 反序列化：相机与文档整体重建（两者在控制器内为 final，故用工厂构造）。
   ///
@@ -852,15 +1013,14 @@ class CanvasController extends ChangeNotifier {
     Map<String, dynamic> j, {
     MediaResolver? media,
     AiGenerator? generator,
-  }) =>
-      CanvasController(
-        camera: CanvasCamera.fromJson(j['camera'] as Map<String, dynamic>),
-        document: CanvasDocument.fromJson(
-          j['document'] as Map<String, dynamic>,
-          media: media,
-        ),
-        generator: generator ?? const LocalStubGenerator(),
-      );
+  }) => CanvasController(
+    camera: CanvasCamera.fromJson(j['camera'] as Map<String, dynamic>),
+    document: CanvasDocument.fromJson(
+      j['document'] as Map<String, dynamic>,
+      media: media,
+    ),
+    generator: generator ?? const LocalStubGenerator(),
+  );
 
   /// 公开封装 [notifyListeners]，供视图层（如图片懒加载完成）在外部触发重绘
   /// —— [notifyListeners] 本身为 protected，不能在视图里直接调用。

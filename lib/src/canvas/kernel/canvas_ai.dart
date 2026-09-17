@@ -50,44 +50,43 @@ class GenRecipe {
     String? prompt,
     int? seed,
     String? inputFingerprint,
-  }) =>
-      GenRecipe(
-        model: model,
-        prompt: prompt ?? this.prompt,
-        negativePrompt: negativePrompt,
-        seed: seed ?? this.seed,
-        steps: steps,
-        inputs: inputs,
-        inputFingerprint: inputFingerprint ?? this.inputFingerprint,
-        status: status ?? this.status,
-        createdAt: createdAt,
-      );
+  }) => GenRecipe(
+    model: model,
+    prompt: prompt ?? this.prompt,
+    negativePrompt: negativePrompt,
+    seed: seed ?? this.seed,
+    steps: steps,
+    inputs: inputs,
+    inputFingerprint: inputFingerprint ?? this.inputFingerprint,
+    status: status ?? this.status,
+    createdAt: createdAt,
+  );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'model': model,
-        'prompt': prompt,
-        'negativePrompt': negativePrompt,
-        'seed': seed,
-        'steps': steps,
-        'inputs': inputs,
-        'inputFingerprint': inputFingerprint,
-        'status': status.name,
-        'createdAt': createdAt?.toIso8601String(),
-      };
+    'model': model,
+    'prompt': prompt,
+    'negativePrompt': negativePrompt,
+    'seed': seed,
+    'steps': steps,
+    'inputs': inputs,
+    'inputFingerprint': inputFingerprint,
+    'status': status.name,
+    'createdAt': createdAt?.toIso8601String(),
+  };
 
   factory GenRecipe.fromJson(Map<String, dynamic> j) => GenRecipe(
-        model: j['model'] as String,
-        prompt: j['prompt'] as String? ?? '',
-        negativePrompt: j['negativePrompt'] as String? ?? '',
-        seed: j['seed'] as int?,
-        steps: j['steps'] as int?,
-        inputs: (j['inputs'] as Map?)?.cast<String, String>() ?? const {},
-        inputFingerprint: j['inputFingerprint'] as String?,
-        status: GenStatus.values.byName(j['status'] as String? ?? 'loading'),
-        createdAt: j['createdAt'] == null
-            ? null
-            : DateTime.parse(j['createdAt'] as String),
-      );
+    model: j['model'] as String,
+    prompt: j['prompt'] as String? ?? '',
+    negativePrompt: j['negativePrompt'] as String? ?? '',
+    seed: j['seed'] as int?,
+    steps: j['steps'] as int?,
+    inputs: (j['inputs'] as Map?)?.cast<String, String>() ?? const {},
+    inputFingerprint: j['inputFingerprint'] as String?,
+    status: GenStatus.values.byName(j['status'] as String? ?? 'loading'),
+    createdAt: j['createdAt'] == null
+        ? null
+        : DateTime.parse(j['createdAt'] as String),
+  );
 }
 
 /// 选区即数据：框选 → 序列化成 [Region] → 喂给模型 → 产出 [AiImageItem]。
@@ -110,12 +109,12 @@ class Region {
   static String nextId() => 'region-${_counter++}';
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'bbox': <double>[bbox.left, bbox.top, bbox.right, bbox.bottom],
-        'nodeRef': nodeRef,
-        'maskRef': maskRef,
-        'prompt': prompt,
-      };
+    'id': id,
+    'bbox': <double>[bbox.left, bbox.top, bbox.right, bbox.bottom],
+    'nodeRef': nodeRef,
+    'maskRef': maskRef,
+    'prompt': prompt,
+  };
 
   factory Region.fromJson(Map<String, dynamic> j) {
     // 先定类型再取下标：直接 `j['bbox'][0]` 是 **dynamic 调用**（绕过类型
@@ -179,8 +178,11 @@ class LocalStubGenerator implements AiGenerator {
   const LocalStubGenerator();
 
   @override
-  Future<GeneratedResult> generate(GenRecipe recipe,
-      {required Region region, Map<String, Uint8List>? inputImages}) async {
+  Future<GeneratedResult> generate(
+    GenRecipe recipe, {
+    required Region region,
+    Map<String, Uint8List>? inputImages,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 600)); // 模拟推理耗时
     final int w = math.max(1, region.bbox.width.round());
     final int h = math.max(1, region.bbox.height.round());
@@ -244,15 +246,17 @@ class HttpAiGenerator implements AiGenerator {
       final HttpClientRequest req = await client.postUrl(Uri.parse(endpoint));
       if (inputImages == null || inputImages.isEmpty) {
         req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-        req.write(jsonEncode(<String, dynamic>{
-          'prompt': recipe.prompt,
-          'negative_prompt': recipe.negativePrompt,
-          'seed': recipe.seed,
-          'steps': recipe.steps,
-          'model': recipe.model,
-          'width': region.bbox.width.round(),
-          'height': region.bbox.height.round(),
-        }));
+        req.write(
+          jsonEncode(<String, dynamic>{
+            'prompt': recipe.prompt,
+            'negative_prompt': recipe.negativePrompt,
+            'seed': recipe.seed,
+            'steps': recipe.steps,
+            'model': recipe.model,
+            'width': region.bbox.width.round(),
+            'height': region.bbox.height.round(),
+          }),
+        );
       } else {
         _writeMultipart(req, recipe, region, inputImages);
       }
@@ -282,8 +286,7 @@ class HttpAiGenerator implements AiGenerator {
     Region region,
     Map<String, Uint8List> inputImages,
   ) {
-    final String boundary =
-        '----sinan${DateTime.now().microsecondsSinceEpoch}';
+    final String boundary = '----sinan${DateTime.now().microsecondsSinceEpoch}';
     req.headers.set(
       HttpHeaders.contentTypeHeader,
       'multipart/form-data; boundary=$boundary',
@@ -291,9 +294,9 @@ class HttpAiGenerator implements AiGenerator {
     final List<int> body = <int>[];
     void appendTextField(String name, String value) {
       body.addAll(utf8.encode('--$boundary\r\n'));
-      body.addAll(utf8.encode(
-        'Content-Disposition: form-data; name="$name"\r\n\r\n',
-      ));
+      body.addAll(
+        utf8.encode('Content-Disposition: form-data; name="$name"\r\n\r\n'),
+      );
       body.addAll(utf8.encode('$value\r\n'));
     }
 
@@ -311,9 +314,11 @@ class HttpAiGenerator implements AiGenerator {
 
     inputImages.forEach((String key, Uint8List bytes) {
       body.addAll(utf8.encode('--$boundary\r\n'));
-      body.addAll(utf8.encode(
-        'Content-Disposition: form-data; name="$key"; filename="$key.png"\r\n',
-      ));
+      body.addAll(
+        utf8.encode(
+          'Content-Disposition: form-data; name="$key"; filename="$key.png"\r\n',
+        ),
+      );
       body.addAll(utf8.encode('Content-Type: image/png\r\n\r\n'));
       body.addAll(bytes);
       body.addAll(utf8.encode('\r\n'));

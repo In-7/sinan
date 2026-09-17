@@ -165,9 +165,7 @@ class AiResultCache {
   /// 缓存键 ⇄ 文件名的互换（`<key>.png`）。
   static String _keyOf(String filePath) {
     final String name = Uri.file(filePath).pathSegments.last;
-    return name.endsWith('.png')
-        ? name.substring(0, name.length - 4)
-        : name;
+    return name.endsWith('.png') ? name.substring(0, name.length - 4) : name;
   }
 
   /// 命中则返回落盘路径；未命中或文件已被清理返回 null。
@@ -221,8 +219,10 @@ class AiResultCache {
     }
 
     // 最久未用的排前面（mtime = 最近一次写入或命中）。
-    files.sort((File a, File b) =>
-        a.statSync().modified.compareTo(b.statSync().modified));
+    files.sort(
+      (File a, File b) =>
+          a.statSync().modified.compareTo(b.statSync().modified),
+    );
 
     for (final File file in files) {
       if (kept <= maxEntries && total <= maxBytes) break;
@@ -281,8 +281,9 @@ class AiResultCache {
     }
     final ui.Image? image = result.image;
     if (image == null) return null;
-    final ByteData? bytes =
-        await image.toByteData(format: ui.ImageByteFormat.png);
+    final ByteData? bytes = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     if (bytes == null) return null;
     return store(key, bytes.buffer.asUint8List());
   }

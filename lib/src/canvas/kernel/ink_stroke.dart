@@ -60,11 +60,11 @@ class InkStroke {
     required this.baseWidth,
     this.simulatePressure = true,
     List<InkPoint>? points,
-  })  // ⚠️ 必须拷贝：调用方（如 JSON 载入、测试）传进来的常常是 const 列表，
-      // 直接持有的话 [add] 会抛 "Cannot add to an unmodifiable list"
-      // （`test/canvas_document_test.dart` 的抽稀用例抓出的）。
-      : id = id ?? 'stroke-${_nextStrokeId++}',
-        points = <InkPoint>[...?points];
+  }) // ⚠️ 必须拷贝：调用方（如 JSON 载入、测试）传进来的常常是 const 列表，
+    // 直接持有的话 [add] 会抛 "Cannot add to an unmodifiable list"
+    // （`test/canvas_document_test.dart` 的抽稀用例抓出的）。
+    : id = id ?? 'stroke-${_nextStrokeId++}',
+       points = <InkPoint>[...?points];
 
   /// 抽稀阈值（世界单位）：小于它的移动直接丢弃。
   ///
@@ -171,7 +171,11 @@ class InkStroke {
     if (box == null) return false;
     if (!box.inflate(radius).contains(world)) return false;
     for (int i = 0; i < points.length - 1; i++) {
-      if (_distanceToSegment(world, points[i].position, points[i + 1].position) <=
+      if (_distanceToSegment(
+            world,
+            points[i].position,
+            points[i + 1].position,
+          ) <=
           radius + baseWidth / 2) {
         return true;
       }
@@ -182,32 +186,32 @@ class InkStroke {
 
   /// 序列化（纯数据，不含已解码资源）。
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'id': id,
-        'version': version,
-        'color': color.toARGB32(),
-        'baseWidth': baseWidth,
-        'simulatePressure': simulatePressure,
-        'points': <List<double>>[
-          for (final InkPoint p in points)
-            <double>[p.position.dx, p.position.dy, p.pressure],
-        ],
-      };
+    'id': id,
+    'version': version,
+    'color': color.toARGB32(),
+    'baseWidth': baseWidth,
+    'simulatePressure': simulatePressure,
+    'points': <List<double>>[
+      for (final InkPoint p in points)
+        <double>[p.position.dx, p.position.dy, p.pressure],
+    ],
+  };
 
   /// 反序列化：点列重建后轮廓按需重算（[outline] 懒加载）。
   factory InkStroke.fromJson(Map<String, dynamic> j) => InkStroke(
-        id: j['id'] as String,
-        version: j['version'] as int? ?? 1,
-        color: Color(j['color'] as int),
-        baseWidth: (j['baseWidth'] as num).toDouble(),
-        simulatePressure: j['simulatePressure'] as bool? ?? true,
-        points: <InkPoint>[
-          for (final List<dynamic> p in (j['points'] as List))
-            InkPoint(
-              Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-              (p[2] as num).toDouble(),
-            ),
-        ],
-      );
+    id: j['id'] as String,
+    version: j['version'] as int? ?? 1,
+    color: Color(j['color'] as int),
+    baseWidth: (j['baseWidth'] as num).toDouble(),
+    simulatePressure: j['simulatePressure'] as bool? ?? true,
+    points: <InkPoint>[
+      for (final List<dynamic> p in (j['points'] as List))
+        InkPoint(
+          Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
+          (p[2] as num).toDouble(),
+        ),
+    ],
+  );
 
   static double _distanceToSegment(Offset p, Offset a, Offset b) {
     final Offset ab = b - a;
