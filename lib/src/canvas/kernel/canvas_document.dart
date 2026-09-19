@@ -1,7 +1,12 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/widgets.dart';
 
+import 'canvas_edge.dart';
 import 'canvas_item.dart';
 import 'canvas_media.dart';
+import 'canvas_migration.dart';
+import 'canvas_palette.dart';
 import 'ink_stroke.dart';
 
 /// 画布文档：笔迹集合 + 视口裁剪 + 撤销/重做。
@@ -17,7 +22,9 @@ import 'ink_stroke.dart';
 ///     由文档暂存（`_detached*`），撤销命令只记 `(index, id)`。
 ///
 /// 行为完全等价于重构前（items 恒在 strokes 下方，命中优先 items，撤销/重做
-/// 还原 z 序）。[toJson] 输出 schemaVersion=2；[fromJson] 兼容 v1 列表格式存档。
+/// 还原 z 序）。[toJson] 输出 [kCanvasSchemaVersion]（当前 2）；[fromJson] **先经
+/// [CanvasMigrations] 把任意旧存档升到当前版本**——历史格式的兼容收敛在迁移链里，
+/// 解析器只认当前版本。
 ///
 /// ## 为什么先只做笔迹
 /// 笔迹是画布里**唯一量大**（一页几千条）且决定性能下限的内容——先把它的
@@ -32,13 +39,26 @@ class CanvasDocument {
   final Map<String, InkStroke> _strokes = <String, InkStroke>{};
   final Map<String, CanvasItem> _items = <String, CanvasItem>{};
 
+  /// 自由连线（v9）。**端点存 id 不存坐标**（binding）：端点位置在绘制时才由
+  /// 两端 item 的当前 rect 推出 ⇒ 拖动卡片连线自动跟随，删卡片连线自动消失。
+  final Map<String, CanvasEdge> _edges = <String, CanvasEdge>{};
+
   /// z 序（底→顶）。绘制/命中/序列化均按此遍历；与 Map 配合保证稳定寻址下
   /// 仍能精确还原 z 序（撤销插入回原位）。
   final List<String> _strokeOrder = <String>[];
   final List<String> _itemOrder = <String>[];
 
+  /// 连线的**序列化顺序**（与 Map 配合，撤销插入能回原位）。连线没有 z 序语义，
+  /// 这条只保证往返稳定。
+  final List<String> _edgeOrder = <String>[];
+
   final List<CanvasCommand> _undoStack = <CanvasCommand>[];
   final List<CanvasCommand> _redoStack = <CanvasCommand>[];
+
+  /// 批处理中收集到的命令；**非 null 表示正处在 [batch] 里**。
+  ///
+  /// [batch] 期间 [_push] 只往这里记账，收尾时才合成一条入栈。
+  List<CanvasCommand>? _batching;
 
   /// **已移出但在等还原**的记录（id → 原件）。
   ///
@@ -56,6 +76,7 @@ class CanvasDocument {
   /// 见 [_gcRetained]。
   final Map<String, InkStroke> _detachedStrokes = <String, InkStroke>{};
   final Map<String, CanvasItem> _detachedItems = <String, CanvasItem>{};
+  final Map<String, CanvasEdge> _detachedEdges = <String, CanvasEdge>{};
 
   /// 内容版本号：任何增删改（含撤销/重做）都 +1。
   ///
@@ -74,6 +95,15 @@ class CanvasDocument {
   /// 下点到的"能整体拖走的对象"优先响应。
   List<CanvasItem> get items => <CanvasItem>[
     for (final String id in _itemOrder) _items[id]!,
+  ];
+
+  /// item 条数。**不分配列表**——[items] 每次都新建一个 List，而本 getter 要供
+  /// `CanvasController` 的 LOD（每次通知都读）这类热路径用，不能让它分配。
+  int get itemCount => _itemOrder.length;
+
+  /// 连线集合（按序列化顺序）。绘制不直接用它——端点要现算，见 [edgesIn]。
+  List<CanvasEdge> get edges => <CanvasEdge>[
+    for (final String id in _edgeOrder) _edges[id]!,
   ];
 
   bool get canUndo => _undoStack.isNotEmpty;
@@ -109,6 +139,21 @@ class CanvasDocument {
 
   /// 按 id 稳定查表（生成器做 img2img 时按 [GenRecipe.inputs] 找引用节点）。
   CanvasItem? itemById(String id) => _items[id];
+
+  /// 按**卡片内容 id**（`CardItem.blockId`）反查卡片。
+  ///
+  /// 连线存的是 blockId 而不是 item id（与 `canvas_edges.from_id` 外键
+  /// `blocks(id)` 同口径，见 [CanvasEdge.fromId]），所以绘制连线时要走这里。
+  /// 线性扫描即可：卡片是"少量大对象"，不值得为它维护一份索引。
+  ///
+  /// 端点卡片被删 ⇒ 返回 null ⇒ 那条边不画（悬空边，见 [edgesIn]）。
+  CanvasItem? itemByBlockId(String blockId) {
+    for (final String id in _itemOrder) {
+      final CanvasItem? item = _items[id];
+      if (item is CardItem && item.blockId == blockId) return item;
+    }
+    return null;
+  }
 
   /// 与 [worldViewport] 相交的 item（绘制与框选的输入；item 数量少，
   /// 不值得再做缓存）。
@@ -155,11 +200,187 @@ class CanvasDocument {
       final CanvasItem? item = _detachItem(e.id);
       if (item != null) removed.add(item);
     }
+    // binding：卡片没了，指向它的连线不该留下 —— 与数据库外键同语义
+    // （`canvas_edges.from_id/to_id` → `blocks(id) ON DELETE CASCADE`）。
+    // ⚠️ 同样**降序**删，撤销时按 cutEdges.reversed 插回。
+    // 被删对象的**连线身份**：卡片是 `blockId`（连线存的是它，见
+    // [CanvasEdge.fromId]），其它 item 是 item id —— **两者都要匹配**，
+    // 否则会出现"卡片删了、指向它的连线还留着"的悬空边。
+    final Set<String> victimIds = <String>{
+      for (final CanvasItem item in victims) item.id,
+      for (final CanvasItem item in victims)
+        if (item is CardItem) item.blockId,
+    };
+    final List<_IndexedEdge> cutEdges = <_IndexedEdge>[];
+    for (int i = _edgeOrder.length - 1; i >= 0; i--) {
+      final CanvasEdge? edge = _edges[_edgeOrder[i]];
+      if (edge == null) continue;
+      if (!victimIds.contains(edge.fromId) && !victimIds.contains(edge.toId)) {
+        continue;
+      }
+      _edgeOrder.removeAt(i);
+      _detachEdge(edge.id);
+      cutEdges.add(_IndexedEdge(i, edge.id));
+    }
+
+    // **分组框没了 ⇒ 成员必须解绑**：否则它们会留下指向不存在分组的 `groupId`
+    // （悬空），从此既进不了别的组、框也画不出来。与上面那条连线同理，必须放在
+    // 同一条命令里 —— 否则撤销后会"框回来了、成员却不再属于它"。
+    final List<_ItemGroupId> unbound = <_ItemGroupId>[];
+    for (final CanvasItem victim in victims) {
+      if (victim is! CanvasGroupItem) continue;
+      for (final CanvasItem member in _items.values) {
+        if (member.groupId != victim.id) continue;
+        unbound.add(_ItemGroupId(member.id, victim.id, null));
+        member.groupId = null;
+      }
+    }
+
     // hit 本身即升序索引，撤销时按升序插回原位。
-    _push(_RemoveItems(hit));
+    _push(_RemoveItems(hit, edges: cutEdges, unboundMembers: unbound));
     revision++;
     // 返回顺序与旧实现一致：按索引升序。
     return removed.reversed.toList(growable: false);
+  }
+
+  /// 新增一条连线（端点用 **id**，见 [CanvasEdge] 的 binding 说明）。
+  void addEdge(CanvasEdge edge) {
+    _edges[edge.id] = edge;
+    _edgeOrder.add(edge.id);
+    _push(_AddEdge(edge.id));
+    revision++;
+  }
+
+  /// 更新一条连线的端点（拖端点把手改接另一张卡片；[next] 的 id 必须与旧的一致）。
+  ///
+  /// `CanvasEdge` 是不可变的 ⇒ 更新 = **替换对象**，撤销时把旧对象换回来即可。
+  /// z 序/序列化位置不变（`_edgeOrder` 只认 id）。
+  void updateEdge(CanvasEdge next) {
+    final CanvasEdge? old = _edges[next.id];
+    if (old == null) return;
+    _edges[next.id] = next;
+    _push(_UpdateEdge(next.id, old, next));
+    revision++;
+  }
+
+  /// 删除连线。返回实际删掉的（按序列化顺序）。
+  List<CanvasEdge> removeEdges(Iterable<CanvasEdge> victims) {
+    final List<_IndexedEdge> hit = <_IndexedEdge>[];
+    for (int i = 0; i < _edgeOrder.length; i++) {
+      final CanvasEdge? edge = _edges[_edgeOrder[i]];
+      if (edge != null && victims.contains(edge)) {
+        hit.add(_IndexedEdge(i, edge.id));
+      }
+    }
+    if (hit.isEmpty) return const <CanvasEdge>[];
+
+    final List<CanvasEdge> removed = <CanvasEdge>[];
+    for (final _IndexedEdge e in hit.reversed) {
+      _edgeOrder.removeAt(e.index);
+      final CanvasEdge? edge = _detachEdge(e.id);
+      if (edge != null) removed.add(edge);
+    }
+    _push(_RemoveEdges(hit));
+    revision++;
+    return removed.reversed.toList(growable: false);
+  }
+
+  /// 与视口相交的连线（**端点已算好**，绘制层不再需要文档）。
+  ///
+  /// 任一端 item 缺失（卡片被删 / 还没载入）⇒ 该边**不返回**：连线依附于两端的
+  /// 卡片，不是独立内容 —— 悬空边画出来只会指向虚无。
+  List<EdgeGeometry> edgesIn(Rect worldViewport) {
+    final List<EdgeGeometry> out = <EdgeGeometry>[];
+    for (final String id in _edgeOrder) {
+      final CanvasEdge? edge = _edges[id];
+      if (edge == null) continue;
+      // 端点按 **blockId** 反查（与存储外键同口径，见 [CanvasEdge.fromId]）。
+      final CanvasItem? from = itemByBlockId(edge.fromId);
+      final CanvasItem? to = itemByBlockId(edge.toId);
+      if (from == null || to == null) continue;
+      final EdgeGeometry? geo = CanvasEdges.geometryOf(edge, from.rect, to.rect);
+      if (geo == null) continue;
+      // 粗筛：两端锚点的包围盒（放宽 64 —— 贝塞尔的控制点会甩到盒外一点）。
+      if (!Rect.fromPoints(geo.from, geo.to).inflate(64).overlaps(worldViewport)) {
+        continue;
+      }
+      out.add(geo);
+    }
+    return out;
+  }
+
+  /// 连线的**命中测试**：[world] 到某条边线的最近距离 ≤ [tolerance]（世界单位）
+  /// ⇒ 返回该边（离得最近的那条）。用于"点连线选中 → 删除"。
+  ///
+  /// 与 [edgesIn] 不同，这里**不做视口裁剪**——用户点连线不该被"视口外就不命中"
+  /// 限制；且命中只在按下时发生，不在每帧，多算几条无妨。
+  CanvasEdge? hitEdgeAt(Offset world, double tolerance) {
+    CanvasEdge? best;
+    double bestDist = tolerance;
+    for (final String id in _edgeOrder) {
+      final CanvasEdge? edge = _edges[id];
+      if (edge == null) continue;
+      // 端点按 blockId 反查（与 [edgesIn] 同口径：连线依附卡片）。
+      final CanvasItem? from = itemByBlockId(edge.fromId);
+      final CanvasItem? to = itemByBlockId(edge.toId);
+      if (from == null || to == null) continue;
+      final EdgeGeometry? geo = CanvasEdges.geometryOf(edge, from.rect, to.rect);
+      if (geo == null) continue;
+      final double d = _distanceToPath(geo.path(), world);
+      if (d <= bestDist) {
+        bestDist = d;
+        best = edge;
+      }
+    }
+    return best;
+  }
+
+  /// 点到一段贝塞尔曲线的最近距离（沿度量采样逐段求最短）。
+  double _distanceToPath(ui.Path path, Offset point) {
+    double min = double.infinity;
+    for (final ui.PathMetric m in path.computeMetrics()) {
+      const int steps = 24;
+      for (int i = 0; i <= steps; i++) {
+        final double t = m.length * i / steps;
+        final ui.Offset p = m.getTangentForOffset(t)!.position;
+        final double d = (p - point).distance;
+        if (d < min) min = d;
+      }
+    }
+    return min;
+  }
+
+  /// 设置一批 item 的**语义色槽位**（一次面板操作 = 一条撤销命令）。
+  ///
+  /// 与 [setItemTransforms] 同口径：调用方**先就地改** item，再把"改动前的值"交
+  /// 进来；命令按 id 寻址。与当前值相同的项被过滤（连点色板不会刷栈）。
+  void setItemColorSlots(List<(CanvasItem, CanvasColorSlot?)> changes) {
+    final List<_ItemColorSlot> entries = <_ItemColorSlot>[
+      for (final (CanvasItem item, CanvasColorSlot? before) in changes)
+        if (item.colorSlot != before)
+          _ItemColorSlot(item.id, before, item.colorSlot),
+    ];
+    if (entries.isEmpty) return;
+    _push(_SetItemColorSlots(entries));
+    revision++;
+  }
+
+  /// 设置一批 item 的**分组归属**（一次分组 / 解散 = 一条撤销命令）。
+  ///
+  /// 与 [setItemColorSlots] 同范式：调用方**先就地改** [CanvasItem.groupId]，
+  /// 再把"改动前的值"交进来；命令按 id 寻址、只存值，因而可撤销可重放。
+  /// 值没真变的项被过滤（重复调用不刷栈）。
+  ///
+  /// ⚠️ [CanvasItem.groupId] 于 2026-09-19 由 `final` 改为可变 —— 此前"把元素加进
+  /// 分组框"在运行时**做不到**，`CanvasGroupItem` 只有存档与测试能造。
+  void setItemGroupIds(List<(CanvasItem, String?)> changes) {
+    final List<_ItemGroupId> entries = <_ItemGroupId>[
+      for (final (CanvasItem item, String? before) in changes)
+        if (item.groupId != before) _ItemGroupId(item.id, before, item.groupId),
+    ];
+    if (entries.isEmpty) return;
+    _push(_SetItemGroupIds(entries));
+    revision++;
   }
 
   /// 拖动/缩放/旋转**结束**后的落账：[changes] 为 (item, 改动前 rect, 改动前
@@ -249,7 +470,52 @@ class CanvasDocument {
     revision++;
   }
 
+  /// 把 [body] 里产生的所有命令**合并成一条**（照 tldraw `editor.run()` 的思路）。
+  ///
+  /// ## 为什么必须有
+  /// 一次 AI 指令往往同时改很多元素（摆几张卡片、连几条线、挪几个位置）。按单条
+  /// 入栈的话，用户要按 N 次 Ctrl+Z 才回到原点 —— 那等于"AI 的改动不可撤销"。
+  ///
+  /// ## 为什么清重做栈与暂存回收都推迟到收尾
+  /// 批中途文档处于**半套**状态（可能"先删卡片、再把别的东西连到它上面"这种中间
+  /// 态）。若沿用单条那套规矩，在批中间就清空重做栈或回收暂存记录，会误伤**同一
+  /// 批里后面还要用**的记录与历史。故两件事都留到组合命令入栈之后，完全复用
+  /// [_push] 的既有语义。
+  ///
+  /// ## 边界
+  /// - **嵌套安全**：内层 [batch] 只是并入外层，不产生第二条命令；
+  /// - **异常安全**：即使 [body] 抛了，已收集的命令**仍然**合成一条入栈 —— 那些
+  ///   改动确实已经生效，必须可撤销，不能留下"改了但撤不了"的状态；
+  /// - 空批不产生命令（撤销栈长度不变）。
+  void batch(void Function() body) {
+    if (_batching != null) {
+      // 已在批里：直接并入当前批，别产生第二条。
+      body();
+      return;
+    }
+    final List<CanvasCommand> collected = <CanvasCommand>[];
+    _batching = collected;
+    try {
+      body();
+    } finally {
+      _batching = null;
+      if (collected.isNotEmpty) {
+        // 只有一条时不必包一层：避免无意义的嵌套命令。
+        _push(
+          collected.length == 1 ? collected.single : _BatchCommands(collected),
+        );
+      }
+    }
+  }
+
   void _push(CanvasCommand command) {
+    // 批处理中：只记账，收尾时合成一条。清重做栈与回收都**推迟**到那时——
+    // 批中途文档处于"半套"状态，提前做会误伤同批后面还要用的记录/历史。
+    final List<CanvasCommand>? batching = _batching;
+    if (batching != null) {
+      batching.add(command);
+      return;
+    }
     if (_redoStack.isNotEmpty) {
       // 新操作作废重做栈（标准语义）——这是命令**唯一**永久离场的时刻，
       // 故回收暂存记录只可能发生在这里。
@@ -281,6 +547,9 @@ class CanvasDocument {
     _detachedItems.removeWhere(
       (String id, CanvasItem value) => !live.contains(id),
     );
+    _detachedEdges.removeWhere(
+      (String id, CanvasEdge value) => !live.contains(id),
+    );
   }
 
   /// 记录移出"在场"（进暂存区，等还原）。返回被移出的原件。
@@ -309,6 +578,18 @@ class CanvasDocument {
     return item;
   }
 
+  CanvasEdge? _detachEdge(String id) {
+    final CanvasEdge? edge = _edges.remove(id);
+    if (edge != null) _detachedEdges[id] = edge;
+    return edge;
+  }
+
+  CanvasEdge? _reattachEdge(String id) {
+    final CanvasEdge? edge = _detachedEdges.remove(id);
+    if (edge != null) _edges[id] = edge;
+    return edge;
+  }
+
   /// 序列化为纯数据（schemaVersion=2：id-keyed map + 显式 z 序）。
   ///
   /// [media] 提供时：图片 `src` 写成**相对引用**，并附一份 `media` **侧表**
@@ -319,13 +600,20 @@ class CanvasDocument {
   /// 不传 [media] 则完全保持旧行为（`src` 写绝对路径、无侧表），既有调用方与
   /// 测试无需改动。
   Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
-    'schemaVersion': 2,
+    'schemaVersion': kCanvasSchemaVersion,
     'strokes': <String, dynamic>{
       for (final String id in _strokeOrder) id: _strokes[id]!.toJson(),
     },
     'items': <String, dynamic>{
       for (final String id in _itemOrder) id: _items[id]!.toJson(media: media),
     },
+    // ⚠️ 连线**为空时故意不写这个键**：旧存档本来就没有它，若总是写空 map，
+    // 第 3 步的深比较会把"原文无 edges / 还原有 edges {}"判成不一致
+    // ⇒ 所有老画布静默回退 JSON（不报错、只是切读永不生效）。
+    if (_edgeOrder.isNotEmpty)
+      'edges': <String, dynamic>{
+        for (final String id in _edgeOrder) id: _edges[id]!.toJson(),
+      },
     'strokeOrder': List<String>.from(_strokeOrder),
     'itemOrder': List<String>.from(_itemOrder),
     if (media != null) 'media': _mediaManifest(media),
@@ -346,58 +634,65 @@ class CanvasDocument {
     return manifest;
   }
 
-  /// 反序列化：兼容 v1（双 List）与 v2（id-keyed map）两种存档格式；
+  /// 反序列化：**先经 [CanvasMigrations] 把任意旧存档升到当前版本**，再按当前
+  /// 版本解析（历史格式的兼容收敛在迁移链里，解析器不再散落 `if`）。
   /// 载入即权威状态，不产生撤销命令。
   ///
   /// [media] 用于把侧表里的**相对引用**换算回运行时绝对路径；旧存档若存的是
   /// 绝对路径，解析器原样通过，因此无需迁移。
+  ///
+  /// 抛 [CanvasSchemaTooNewException]（存档比内核新）——不静默降级解析，否则会
+  /// 丢掉新字段；宿主侧有"载入失败 ⇒ 冻结保存"的兜底，数据不会被覆盖。
   static CanvasDocument fromJson(
     Map<String, dynamic> j, {
     MediaResolver? media,
   }) {
-    final CanvasDocument doc = CanvasDocument();
-    final dynamic strokesRaw = j['strokes'];
-    final dynamic itemsRaw = j['items'];
+    // 迁移到当前版本后，下面只按**当前**格式解析。
+    final Map<String, dynamic> doc = CanvasMigrations.migrate(j);
 
-    if (strokesRaw is List) {
-      // ── v1：双 List 格式，按列表顺序推导 z 序 ──
-      for (final dynamic s in strokesRaw) {
-        final InkStroke st = InkStroke.fromJson(s as Map<String, dynamic>);
-        doc._strokes[st.id] = st;
-        doc._strokeOrder.add(st.id);
-      }
-      for (final dynamic i in (itemsRaw as List)) {
-        final CanvasItem it = CanvasItem.fromJson(
-          i as Map<String, dynamic>,
-          media: media,
-        );
-        doc._items[it.id] = it;
-        doc._itemOrder.add(it.id);
-      }
-    } else {
-      // ── v2：id-keyed map + 显式 z 序 ──
+    final CanvasDocument out = CanvasDocument();
+    final dynamic strokesRaw = doc['strokes'];
+    if (strokesRaw is Map) {
       (strokesRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
-        final InkStroke st = InkStroke.fromJson(v as Map<String, dynamic>);
-        doc._strokes[st.id] = st;
+        if (v is! Map<String, dynamic>) return;
+        final InkStroke st = InkStroke.fromJson(v);
+        out._strokes[st.id] = st;
       });
-      (itemsRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
-        final CanvasItem it = CanvasItem.fromJson(
-          v as Map<String, dynamic>,
-          media: media,
-        );
-        doc._items[it.id] = it;
-      });
-      doc._strokeOrder.addAll(
-        (j['strokeOrder'] as List<dynamic>).cast<String>(),
-      );
-      doc._itemOrder.addAll((j['itemOrder'] as List<dynamic>).cast<String>());
     }
+    final dynamic itemsRaw = doc['items'];
+    if (itemsRaw is Map) {
+      (itemsRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
+        if (v is! Map<String, dynamic>) return;
+        final CanvasItem it = CanvasItem.fromJson(v, media: media);
+        out._items[it.id] = it;
+      });
+    }
+    // z 序：显式数组（迁移已保证存在）。非 String 的脏元素跳过。
+    for (final dynamic id in (doc['strokeOrder'] as List?) ?? const <dynamic>[]) {
+      if (id is String) out._strokeOrder.add(id);
+    }
+    for (final dynamic id in (doc['itemOrder'] as List?) ?? const <dynamic>[]) {
+      if (id is String) out._itemOrder.add(id);
+    }
+
     // ⚠️ 载入即**把 id 发生器推到已有 id 之后**：存档里的 id 来自之前的进程，
     // 而计数器每次启动都从 0 开始 —— 不推进的话，新建元素会拿到与存档重复的
     // id，`addItem` 的覆盖语义会让旧元素凭空消失（2026-09-17 修，见
     // `advanceItemIdSequence` 的说明）。
-    advanceItemIdSequence(doc._items.keys);
-    return doc;
+    // 连线（v9，**可选键**）：缺即空。与 items 不同它没有 z 序数组 —— 连线
+    // 无所谓谁上谁下，只有一条序列化顺序。
+    final dynamic edgesRaw = doc['edges'];
+    if (edgesRaw is Map) {
+      (edgesRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
+        if (v is! Map<String, dynamic>) return;
+        final CanvasEdge edge = CanvasEdge.fromJson(v);
+        out._edges[edge.id] = edge;
+        out._edgeOrder.add(edge.id);
+      });
+    }
+    advanceItemIdSequence(out._items.keys);
+    advanceEdgeIdSequence(out._edges.keys);
+    return out;
   }
 }
 
@@ -421,6 +716,40 @@ abstract class CanvasCommand {
   /// 该命令**可能还原**的记录 id。文档据此回收暂存记录：只要还有命令可能还原
   /// 它，就不能丢（见 `CanvasDocument._gcRetained`）。
   Iterable<String> get retainedIds => const <String>[];
+}
+
+/// 组合命令：把一批命令当**一条**对待（见 [CanvasDocument.batch]）。
+///
+/// [undo] **逆序**、[redo] **顺序**：批内后面那条可能依赖前面那条的结果
+/// （先建卡片、再把连线接上去），只有严格互逆才能回滚干净。
+class _BatchCommands extends CanvasCommand {
+  const _BatchCommands(this.commands);
+
+  /// 按批内**实际执行顺序**。
+  final List<CanvasCommand> commands;
+
+  /// 取**并集**：批里任何一条可能还原的记录都不能被回收。
+  ///
+  /// ⚠️ 少了这条，`_gcRetained` 会把批中途移进暂存区的原件当垃圾丢掉 ——
+  /// 症状是"撤销后元素回不来"（而且只在批里删过东西时才出现）。
+  @override
+  Iterable<String> get retainedIds => <String>[
+    for (final CanvasCommand c in commands) ...c.retainedIds,
+  ];
+
+  @override
+  void undo(CanvasDocument document) {
+    for (final CanvasCommand c in commands.reversed) {
+      c.undo(document);
+    }
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    for (final CanvasCommand c in commands) {
+      c.redo(document);
+    }
+  }
 }
 
 class _AddStroke extends CanvasCommand {
@@ -502,21 +831,46 @@ class _AddItem extends CanvasCommand {
 }
 
 class _RemoveItems extends CanvasCommand {
-  const _RemoveItems(this.entries);
+  const _RemoveItems(
+    this.entries, {
+    this.edges = const <_IndexedEdge>[],
+    this.unboundMembers = const <_ItemGroupId>[],
+  });
 
   /// 按**索引升序**，撤销时依次插回原位（z 序一并还原）。
   final List<_IndexedItem> entries;
 
+  /// 因卡片被删而**连带**删掉的连线（**降序**，撤销时需反转）。
+  ///
+  /// 放在**同一条命令**里是刻意的：用户按一次撤销，卡片和它的连线要一起回来。
+  /// 分成两条命令就得按两次，且中间态是"卡片回来了、连线没了"的怪状态。
+  final List<_IndexedEdge> edges;
+
+  /// 因**分组框被删**而解绑的成员（`old = 原 groupId`、`new = null`）。
+  ///
+  /// 与 [edges] 同一条理由：解绑与删框必须在同一条命令里。此外它还挡住一种更难查
+  /// 的坏状态 —— 成员带着**指向不存在分组**的 `groupId` 活下来（悬空引用）。
+  final List<_ItemGroupId> unboundMembers;
+
   @override
   Iterable<String> get retainedIds => <String>[
     for (final _IndexedItem e in entries) e.id,
+    for (final _IndexedEdge e in edges) e.id,
   ];
 
   @override
   void undo(CanvasDocument document) {
+    for (final _IndexedEdge e in edges.reversed) {
+      if (document._reattachEdge(e.id) == null) continue;
+      document._edgeOrder.insert(e.index, e.id);
+    }
     for (final _IndexedItem e in entries) {
       if (document._reattachItem(e.id) == null) continue;
       document._itemOrder.insert(e.index, e.id);
+    }
+    // 框已经回来了 ⇒ 成员重新绑上（顺序无所谓：改的是同一个实例的字段）。
+    for (final _ItemGroupId e in unboundMembers) {
+      document._items[e.id]?.groupId = e.oldGroupId;
     }
   }
 
@@ -526,11 +880,95 @@ class _RemoveItems extends CanvasCommand {
       document._itemOrder.removeAt(e.index);
       document._detachItem(e.id);
     }
+    for (final _IndexedEdge e in edges) {
+      document._edgeOrder.removeAt(e.index);
+      document._detachEdge(e.id);
+    }
+    for (final _ItemGroupId e in unboundMembers) {
+      document._items[e.id]?.groupId = e.newGroupId;
+    }
   }
 }
 
 class _IndexedItem {
   const _IndexedItem(this.index, this.id);
+
+  final int index;
+  final String id;
+}
+
+class _AddEdge extends CanvasCommand {
+  const _AddEdge(this.id);
+
+  final String id;
+
+  @override
+  Iterable<String> get retainedIds => <String>[id];
+
+  @override
+  void undo(CanvasDocument document) {
+    document._edgeOrder.remove(id);
+    document._detachEdge(id);
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    if (document._reattachEdge(id) == null) return;
+    document._edgeOrder.add(id);
+  }
+}
+
+class _UpdateEdge extends CanvasCommand {
+  const _UpdateEdge(this.id, this.oldEdge, this.newEdge);
+
+  final String id;
+  final CanvasEdge oldEdge;
+  final CanvasEdge newEdge;
+
+  @override
+  Iterable<String> get retainedIds => <String>[id];
+
+  @override
+  void undo(CanvasDocument document) {
+    document._edges[id] = oldEdge;
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    document._edges[id] = newEdge;
+  }
+}
+
+class _RemoveEdges extends CanvasCommand {
+  const _RemoveEdges(this.entries);
+
+  /// 按**索引升序**，撤销时依次插回原位。
+  final List<_IndexedEdge> entries;
+
+  @override
+  Iterable<String> get retainedIds => <String>[
+    for (final _IndexedEdge e in entries) e.id,
+  ];
+
+  @override
+  void undo(CanvasDocument document) {
+    for (final _IndexedEdge e in entries) {
+      if (document._reattachEdge(e.id) == null) continue;
+      document._edgeOrder.insert(e.index, e.id);
+    }
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    for (final _IndexedEdge e in entries.reversed) {
+      document._edgeOrder.removeAt(e.index);
+      document._detachEdge(e.id);
+    }
+  }
+}
+
+class _IndexedEdge {
+  const _IndexedEdge(this.index, this.id);
 
   final int index;
   final String id;
@@ -606,6 +1044,80 @@ class _SetItemStyles extends CanvasCommand {
     for (final _ItemStyle e in entries) {
       final CanvasItem? item = document._items[e.id];
       if (item is ShapeItem) item.applyStyle(e.newStyle);
+    }
+  }
+}
+
+/// 一条 item 的"语义色槽位"改动（[CanvasItem.colorSlot] 可为 null = 跟随主题）。
+class _ItemColorSlot {
+  const _ItemColorSlot(this.id, this.oldSlot, this.newSlot);
+
+  final String id;
+  final CanvasColorSlot? oldSlot;
+  final CanvasColorSlot? newSlot;
+}
+
+/// 一次面板操作 = 一条命令（照 [ _SetItemStyles] 的结构：按 id 寻址、纯值）。
+class _SetItemColorSlots extends CanvasCommand {
+  const _SetItemColorSlots(this.entries);
+
+  final List<_ItemColorSlot> entries;
+
+  @override
+  Iterable<String> get retainedIds => <String>[
+    for (final _ItemColorSlot e in entries) e.id,
+  ];
+
+  @override
+  void undo(CanvasDocument document) {
+    for (final _ItemColorSlot e in entries) {
+      document._items[e.id]?.colorSlot = e.oldSlot;
+    }
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    for (final _ItemColorSlot e in entries) {
+      document._items[e.id]?.colorSlot = e.newSlot;
+    }
+  }
+}
+
+/// 一条 item 的"分组归属"改动（[CanvasItem.groupId] 为 null = 不属于任何组）。
+class _ItemGroupId {
+  const _ItemGroupId(this.id, this.oldGroupId, this.newGroupId);
+
+  final String id;
+  final String? oldGroupId;
+  final String? newGroupId;
+}
+
+/// 一次分组 / 解散 = 一条命令（照 [_SetItemColorSlots] 的结构：按 id 寻址、纯值）。
+///
+/// ⚠️ 删掉的分组框是**另一条**命令（`_RemoveItems`）的事：解散分组 = 清成员归属
+/// ＋ 删框，两者必须在**同一个 batch** 里（见 `CanvasDocument.batch`），否则用户
+/// 会看到"框没了但成员还认为自己在组里"的中间态。
+class _SetItemGroupIds extends CanvasCommand {
+  const _SetItemGroupIds(this.entries);
+
+  final List<_ItemGroupId> entries;
+
+  @override
+  Iterable<String> get retainedIds => <String>[
+    for (final _ItemGroupId e in entries) e.id,
+  ];
+
+  @override
+  void undo(CanvasDocument document) {
+    for (final _ItemGroupId e in entries) {
+      document._items[e.id]?.groupId = e.oldGroupId;
+    }
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    for (final _ItemGroupId e in entries) {
+      document._items[e.id]?.groupId = e.newGroupId;
     }
   }
 }

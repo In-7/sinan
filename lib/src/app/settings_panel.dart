@@ -6,8 +6,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../domain/settings.dart';
+import 'app_info.dart';
 import 'providers.dart';
-import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 
 /// 行高滑杆的上下限与步长（值夹取 / Slider 范围 / 格数三处共用）。
@@ -63,17 +63,23 @@ const double _panelHeight = 560;
 enum _SettingsSection {
   appearance,
   editor,
+  ai,
+  about,
 }
 
 extension _SettingsSectionSpec on _SettingsSection {
   String get label => switch (this) {
     _SettingsSection.appearance => '外观',
     _SettingsSection.editor => '编辑器',
+    _SettingsSection.ai => 'AI',
+    _SettingsSection.about => '关于',
   };
 
   IconData get icon => switch (this) {
     _SettingsSection.appearance => LucideIcons.palette300,
     _SettingsSection.editor => LucideIcons.penLine300,
+    _SettingsSection.ai => LucideIcons.sparkles300,
+    _SettingsSection.about => LucideIcons.info300,
   };
 }
 
@@ -166,7 +172,11 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
             child: FadeTransition(
               opacity: _fade,
               child: ColoredBox(
-                color: Colors.black.withValues(alpha: _scrimAlpha),
+                // 用 M3 的 scrim **色角色**而不是 `Colors.black`：默认值就是黑，
+                // 观感不变，但不再是硬编码色（换主题时 scrim 若被定制会跟着走）。
+                color: Theme.of(
+                  context,
+                ).colorScheme.scrim.withValues(alpha: _scrimAlpha),
               ),
             ),
           ),
@@ -226,11 +236,20 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
     ],
     _SettingsSection.editor => <Widget>[
       const _WidthRow(),
-      const SizedBox(height: Tokens.spaceLg),
       const _FontSizeRow(),
-      const SizedBox(height: Tokens.spaceLg),
       const _LineHeightRow(),
     ],
+    // AI 分区：画布的结构轨要用本地 LLM（Ollama）。默认**关闭**——
+    // 没起服务时露出入口只会让用户点出一个报错，所以让它成为一次显式开启。
+    _SettingsSection.ai => <Widget>[
+      const _AiEnabledRow(),
+      const _AiEndpointRow(),
+      const _AiModelRow(),
+    ],
+    // 「关于」是设置页的固定分区（Win11 / macOS 系统设置都有）：应用信息、
+    // 开源许可、数据目录。除了许可页本身，内容都是几行 `ListTile` ——
+    // M3 没有专门的"关于"组件，官方口径就是 lists。
+    _SettingsSection.about => <Widget>[_AboutSection(onClose: widget.onClose)],
   };
 
   @override
@@ -239,8 +258,21 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
     final TextTheme text = Theme.of(context).textTheme;
 
     return Material(
-      color: AppTheme.windowBackground(scheme.brightness),
-      elevation: 12,
+      // 底色与「关于」对话框**同一档**：M3 的 `surfaceContainerHigh`
+      // —— 官方 `Dialog`/`AlertDialog` 未显式设背景时的默认值（见
+      // `material/dialog.dart`，M3 defaults 里就是它）。
+      //
+      // 为什么必须换掉原来的 [AppTheme.windowBackground]（2026-09-18 用户反馈
+      // "设置页不如关于页好看"）：那是**窗口最底层**的底色（亮 #F3F3F3 /
+      // 暗 #0A0A0A，比纸面还深一档、纯中性无微染），拿它当浮起面板的底 ⇒
+      // 面板看着像"贴在窗口上的一块暗板"，既低于关于页一档，也不像浮层。
+      // 也不用项目的 [AppTheme.floatSurface]：那一档是给**菜单/气泡**的
+      // （比纸面抬一档的纯中性白），而设置面板与对话框同类（模态遮罩上的
+      // 内容面板），走 M3 内容表面档才与关于页同一语言。
+      color: scheme.surfaceContainerHigh,
+      // **刻意不给 elevation**（默认 0，同 `dialogTheme`）：M3 里 elevation 会
+      // 再叠一层 surface tint，把上面这个色又染偏；而且遮罩已经承担了"浮起"
+      // 的读数 —— 关于页正是这样（无阴影、无 tint）。
       borderRadius: BorderRadius.circular(Tokens.radiusLg),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
@@ -300,7 +332,9 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
                       ),
                     ),
                   ),
-                  const VerticalDivider(width: 1),
+                  // 左右之间刻意**不画分隔线**（2026-09-18 用户定）：与「关于」
+                  // 对话框同一口径 —— M3 的 Dialog 靠留白与底色档差分块，不靠勾线；
+                  // 左导航项自带 hover/选中底，已经够分明。
                   // ── 右：分区标题 + 设置行（超高时滚动）──
                   Expanded(
                     child: Scrollbar(
@@ -371,41 +405,47 @@ class _NavTile extends StatelessWidget {
     final TextTheme text = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          onTap: onTap,
-          child:           AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(
-              horizontal: Tokens.spaceMd,
-              vertical: Tokens.spaceSm + 2,
-            ),
-            decoration: BoxDecoration(
-              color: selected ? scheme.secondaryContainer : null,
-              borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  section.icon,
-                  size: Tokens.iconSm,
-                  color: selected
-                      ? scheme.onSecondaryContainer
-                      : scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: Tokens.spaceSm),
-                Text(
-                  section.label,
-                  style: text.bodyMedium?.copyWith(
+      // 选中态**视觉上有、语义上没有**（此前只有 secondaryContainer 底色）：
+      // 读屏用户听不出"我在哪一页"。InkWell 自带 button 语义与键盘焦点，
+      // 这里只补 selected。
+      child: Semantics(
+        selected: selected,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(Tokens.radiusSm),
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Tokens.spaceMd,
+                vertical: Tokens.spaceSm + 2,
+              ),
+              decoration: BoxDecoration(
+                color: selected ? scheme.secondaryContainer : null,
+                borderRadius: BorderRadius.circular(Tokens.radiusSm),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    section.icon,
+                    size: Tokens.iconSm,
                     color: selected
                         ? scheme.onSecondaryContainer
-                        : scheme.onSurface,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        : scheme.onSurfaceVariant,
                   ),
-                ),
-              ],
+                  const SizedBox(width: Tokens.spaceSm),
+                  Text(
+                    section.label,
+                    style: text.bodyMedium?.copyWith(
+                      color: selected
+                          ? scheme.onSecondaryContainer
+                          : scheme.onSurface,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -421,8 +461,11 @@ class _BrightnessRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppSettings settings = ref.watch(settingsProvider);
-    return _SettingRow(
+    return _SettingTile(
       label: '明暗',
+      // M3 Lists 的 `subtitle` 正是放"这项影响什么"的地方 —— 这些理由此前只
+      // 活在代码注释里，用户看不到。
+      description: '只改界面配色（种子色不变），点一下立刻生效。',
       control: SegmentedButton<ThemeBrightnessMode>(
         segments: const <ButtonSegment<ThemeBrightnessMode>>[
           ButtonSegment<ThemeBrightnessMode>(
@@ -451,8 +494,10 @@ class _WidthRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppSettings settings = ref.watch(settingsProvider);
-    return _SettingRow(
+    return _SettingTile(
       label: '正文宽度',
+      description: '三档约 38 / 42 / 55 字每行（中文）。列宽不随窗口变宽 —— '
+          '超过 45 字/行阅读会累，最宽档适合写稿。',
       control: SegmentedButton<EditorWidthMode>(
         segments: const <ButtonSegment<EditorWidthMode>>[
           ButtonSegment<EditorWidthMode>(
@@ -484,31 +529,20 @@ class _FontSizeRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppSettings settings = ref.watch(settingsProvider);
-    final TextTheme text = Theme.of(context).textTheme;
-    return _SettingRow(
+    return _SliderSetting(
       label: '正文字号',
-      control: Row(
-        children: <Widget>[
-          Expanded(
-            child: Slider(
-              value: settings.fontSize.clamp(_minFontSize, _maxFontSize),
-              min: _minFontSize,
-              max: _maxFontSize,
-              divisions: ((_maxFontSize - _minFontSize) / _fontSizeStep).round(),
-              label: _formatFontSize(settings.fontSize),
-              onChanged: (double value) =>
-                  ref.read(settingsProvider.notifier).setFontSize(value),
-            ),
-          ),
-          SizedBox(
-            width: 32,
-            child: Text(
-              _formatFontSize(settings.fontSize),
-              style: text.bodyMedium,
-              textAlign: TextAlign.end,
-            ),
-          ),
-        ],
+      description: '${_minFontSize.round()}–${_maxFontSize.round()} px，整数档。'
+          '行盒按它吸附到整像素 —— 每一档都是锐利的。',
+      valueLabel: _formatFontSize(settings.fontSize),
+      valueWidth: 32,
+      slider: Slider(
+        value: settings.fontSize.clamp(_minFontSize, _maxFontSize),
+        min: _minFontSize,
+        max: _maxFontSize,
+        divisions: ((_maxFontSize - _minFontSize) / _fontSizeStep).round(),
+        label: _formatFontSize(settings.fontSize),
+        onChanged: (double value) =>
+            ref.read(settingsProvider.notifier).setFontSize(value),
       ),
     );
   }
@@ -524,101 +558,393 @@ class _LineHeightRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppSettings settings = ref.watch(settingsProvider);
-    final TextTheme text = Theme.of(context).textTheme;
-    return _SettingRow(
+    return _SliderSetting(
       label: '行高（正文）',
-      control: Row(
-        children: <Widget>[
-          Expanded(
-            child: Slider(
-              // clamp：范围收窄过（下限 1.4→1.5、步长 0.05→0.125），
-              // 存量库里可能存着越界值（如 1.4）——不夹住会让 Slider 断言失败。
-              // 越界或不在网格上的旧值照原样渲染，拖动即吸附到最近的档。
-              value: settings.lineHeight.clamp(_minLineHeight, _maxLineHeight),
-              min: _minLineHeight,
-              max: _maxLineHeight,
-              // 格数由"范围 / 步长"推出（= 8），不再写一遍数字。
-              divisions: ((_maxLineHeight - _minLineHeight) / _lineHeightStep)
-                  .round(),
-              label: _formatLineHeight(settings.lineHeight),
-              onChanged: (double value) =>
-                  ref.read(settingsProvider.notifier).setLineHeight(value),
-            ),
-          ),
-          SizedBox(
-            // 宽到能放下 "2.375"（步长 0.125 后最长的显示值）。
-            width: 48,
-            child: Text(
-              // 与滑块气泡同源格式化，避免两处显示不一致。
-              _formatLineHeight(settings.lineHeight),
-              style: text.bodyMedium,
-            ),
-          ),
-        ],
+      description: '$_minLineHeight–$_maxLineHeight 倍，步长 0.125 —— 每档都落在'
+          '整像素上。标题行高固定 1.4，不跟随这个滑杆。',
+      // 宽到能放下 "2.375"（步长 0.125 后最长的显示值）。
+      valueLabel: _formatLineHeight(settings.lineHeight),
+      valueWidth: 48,
+      slider: Slider(
+        // clamp：范围收窄过（下限 1.4→1.5、步长 0.05→0.125），
+        // 存量库里可能存着越界值（如 1.4）——不夹住会让 Slider 断言失败。
+        // 越界或不在网格上的旧值照原样渲染，拖动即吸附到最近的档。
+        value: settings.lineHeight.clamp(_minLineHeight, _maxLineHeight),
+        min: _minLineHeight,
+        max: _maxLineHeight,
+        // 格数由"范围 / 步长"推出（= 8），不再写一遍数字。
+        divisions: ((_maxLineHeight - _minLineHeight) / _lineHeightStep).round(),
+        label: _formatLineHeight(settings.lineHeight),
+        onChanged: (double value) =>
+            ref.read(settingsProvider.notifier).setLineHeight(value),
       ),
     );
   }
 }
 
-/// 一行设置项：左标签（定宽对齐）+ 右控件。
-class _SettingRow extends StatelessWidget {
-  const _SettingRow({required this.label, required this.control});
+/// 一行设置项：**M3 [ListTile]**（标题 + 说明）右侧挂控件。
+///
+/// 为什么从自制的「88px 定宽标签 + 右控件」换成 `ListTile`：官方设置页的口径
+/// 就是 lists —— `title`/`subtitle` 承载"这项是什么、影响什么"，`trailing` 放
+/// 控件。换成官方组件顺带白拿 hover 高亮、正确的行距节奏、语义合并与键盘焦点
+/// （自制 Row 三者都要自己补）。
+class _SettingTile extends StatelessWidget {
+  const _SettingTile({
+    required this.label,
+    required this.description,
+    required this.control,
+  });
 
   final String label;
+
+  /// 一句话说明（M3 的 `subtitle`）：把"为什么是这个默认值"从代码注释搬到
+  /// 用户眼前。
+  final String description;
+
   final Widget control;
 
   @override
   Widget build(BuildContext context) {
-    final TextTheme text = Theme.of(context).textTheme;
-    return Row(
+    final ThemeData theme = Theme.of(context);
+    return ListTile(
+      // 左对齐到分区标题（ListTile 默认有 16px 内边距，会把整列推歪）。
+      contentPadding: EdgeInsets.zero,
+      title: Text(label, style: theme.textTheme.bodyLarge),
+      subtitle: Text(
+        description,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: control,
+    );
+  }
+}
+
+/// 一行**连续值**设置项：标题/说明在上，滑杆**独占下一行**。
+///
+/// 滑杆不能塞进 `trailing`：那里可用宽度只剩几十像素，根本拖不准。
+/// 官方口径也是这个形态（Android 设置里的"亮度""字体大小"都是上下两行）。
+class _SliderSetting extends StatelessWidget {
+  const _SliderSetting({
+    required this.label,
+    required this.description,
+    required this.valueLabel,
+    required this.valueWidth,
+    required this.slider,
+  });
+
+  final String label;
+  final String description;
+
+  /// 当前值的显示文本（与滑块气泡**同源格式化**，避免两处不一致）。
+  final String valueLabel;
+
+  /// 值显示区宽度（按最长可能值给，免得拖动时数字左右跳）。
+  final double valueWidth;
+
+  final Widget slider;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SizedBox(
-          width: 88,
-          child: Text(
-            label,
-            style: text.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: Tokens.spaceMd),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(label, style: theme.textTheme.bodyLarge),
+                    const SizedBox(height: 2),
+                    Text(
+                      description,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              SizedBox(
+                width: valueWidth,
+                child: Text(
+                  valueLabel,
+                  style: theme.textTheme.bodyMedium,
+                  textAlign: TextAlign.end,
+                ),
+              ),
+            ],
           ),
         ),
-        Expanded(child: control),
+        slider,
       ],
     );
   }
 }
 
-/// 弹出「关于」对话框：应用名 + 一句话简介。
+/// 弹出「关于」：走**框架原生** [showAboutDialog]。
 ///
-/// 用标准 [AlertDialog]（项目已为其配 [AppTheme] 的 dialogTheme），
-/// 走触发处 context 的导航根弹出即可。
-Future<void> showAboutPanel(BuildContext context) {
-  return showDialog<void>(
+/// 比手写 `AlertDialog` 多拿到两件自己做不划算的东西：
+/// - **版本号有位置**（`applicationVersion`）—— 此前那个对话框没有版本；
+/// - **自带「查看许可」入口** → [LicensePage]：它把 `LicenseRegistry` 里全部
+///   依赖的许可收集成可搜索列表（要自己做得遍历整棵依赖树）。
+///
+/// 数据目录、依赖清单的常驻入口在**设置 → 关于**分区（见 [_AboutSection]）。
+///
+/// ⚠️ 返回 `void`（不是 `Future`）：官方 `showAboutDialog` 本身不回报"对话框
+/// 关闭了"，包装成 Future 只会让调用方以为 await 到了关闭 —— 不如如实。
+void showAboutPanel(BuildContext context) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  showAboutDialog(
     context: context,
-    builder: (BuildContext ctx) {
-      final ColorScheme scheme = Theme.of(ctx).colorScheme;
-      return AlertDialog(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(LucideIcons.penLine300, color: scheme.primary),
-            const SizedBox(width: 8),
-            const Text('sinan'),
-          ],
-        ),
-        content: const SizedBox(
-          width: 300,
-          child: Text(
-            '本地优先的流式写作工具：侧栏管理笔记，主区为沉浸式编辑器。'
-            '所有数据存于本机，无云端同步。',
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('关闭'),
-          ),
-        ],
-      );
-    },
+    applicationName: AppInfo.name,
+    applicationVersion: AppInfo.version,
+    applicationIcon: Icon(LucideIcons.penLine300, color: scheme.primary),
+    applicationLegalese: AppInfo.description,
   );
+}
+
+/// 「关于」分区：应用信息 + 开源许可 + 数据目录。
+///
+/// M3 没有专门的"关于"组件 —— 官方口径就是这里的几行 [ListTile]。
+/// 许可页用框架原生的 [LicensePage]。
+class _AboutSection extends ConsumerWidget {
+  const _AboutSection({required this.onClose});
+
+  /// 关掉设置面板的回调（推许可页之前必须先关，理由见 [_openLicenses]）。
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final TextStyle? hint = theme.textTheme.bodySmall?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    // 数据目录由 main 注入（`appDataDirProvider`）；设置面板必在 ProviderScope
+    // 之内（Overlay 挂在导航根上），直接读即可。
+    final String dataDir = ref.read(appDataDirProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(LucideIcons.penLine300, color: scheme.primary),
+          title: const Text('${AppInfo.name} ${AppInfo.version}'),
+          subtitle: Text(AppInfo.tagline, style: hint),
+          isThreeLine: true,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            LucideIcons.scrollText300,
+            color: scheme.onSurfaceVariant,
+          ),
+          title: const Text('开源许可'),
+          subtitle: Text('第三方依赖的许可清单（由框架自动收集）', style: hint),
+          trailing: Icon(
+            LucideIcons.chevronRight300,
+            size: Tokens.iconSm,
+            color: scheme.onSurfaceVariant,
+          ),
+          onTap: () => _openLicenses(context),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            LucideIcons.folderOpen300,
+            color: scheme.onSurfaceVariant,
+          ),
+          title: const Text('数据目录'),
+          // 可选中：路径以 AppData 开头、肉眼抄不下。
+          subtitle: SelectableText(dataDir, style: hint),
+          trailing: IconButton(
+            icon: const Icon(LucideIcons.copy300, size: Tokens.iconSm),
+            tooltip: '复制路径',
+            onPressed: () => _copyDataDir(context, dataDir),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 打开许可页。
+  ///
+  /// ⚠️ **必须先关设置面板再推路由**：设置面板是一个插在 Navigator Overlay
+  /// **顶层**的 `OverlayEntry`，而许可页是**路由** —— 不关的话它会被面板压在
+  /// 下面（现象：点了没反应，其实是被盖住了）。
+  /// 同时要在关闭**之前**取好 `NavigatorState`：`onClose()` 之后本 widget 的
+  /// context 已经失效，那时再 `Navigator.of(context)` 会抛。
+  void _openLicenses(BuildContext context) {
+    final NavigatorState navigator = Navigator.of(context);
+    final Widget page = LicensePage(
+      applicationName: AppInfo.name,
+      applicationVersion: AppInfo.version,
+      applicationIcon: Icon(
+        LucideIcons.penLine300,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+    onClose();
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => page)));
+  }
+
+  static Future<void> _copyDataDir(BuildContext context, String path) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    if (!context.mounted) return;
+    // MaterialApp 在 Navigator **之上**提供了根 ScaffoldMessenger，
+    // 所以从浮层里也能弹 SnackBar。
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('已复制数据目录路径')));
+  }
+}
+
+// ───────────────────────────── AI 分区 ─────────────────────────────
+
+/// 是否露出画布上的一句话 AI 入口。
+class _AiEnabledRow extends ConsumerWidget {
+  const _AiEnabledRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return _SettingTile(
+      label: '启用画布 AI',
+      description: '在画布工具条上露出「AI」按钮：用一句中文指令让模型摆放卡片、'
+          '连线、加形状。需要本机运行 Ollama。',
+      control: Switch(
+        value: settings.aiEnabled,
+        onChanged: (bool value) =>
+            ref.read(settingsProvider.notifier).setAiEnabled(value),
+      ),
+    );
+  }
+}
+
+/// 模型服务地址（Ollama 的根地址）。
+class _AiEndpointRow extends ConsumerWidget {
+  const _AiEndpointRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return _TextSettingRow(
+      label: '服务地址',
+      description: 'Ollama 的**根**地址，不带 /v1 或 /api —— '
+          '结构化输出要用 /api/chat 的 format 参数。',
+      value: settings.aiEndpoint,
+      hint: AppSettings.defaultAiEndpoint,
+      onCommit: (String value) =>
+          ref.read(settingsProvider.notifier).setAiEndpoint(value),
+    );
+  }
+}
+
+/// 模型名（Ollama tag）。
+class _AiModelRow extends ConsumerWidget {
+  const _AiModelRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return _TextSettingRow(
+      label: '模型',
+      description: 'Ollama 里的模型 tag（`ollama list` 可查），如 qwen3.5。'
+          '留空则点 AI 按钮时会提示先来这里填写。',
+      value: settings.aiModel,
+      hint: 'qwen3.5',
+      onCommit: (String value) =>
+          ref.read(settingsProvider.notifier).setAiModel(value),
+    );
+  }
+}
+
+/// 一行**文本输入**设置项：本地维护草稿，**提交时才落盘**。
+///
+/// ## 为什么不是 onChanged 直接写
+/// ① 每敲一个字都会写一次 SQLite，并让 `llmClientProvider`（watch 设置）重建
+/// 客户端；② 端点写一半（`http://local`）就被拿去建客户端。
+/// 提交时机取"回车 / 失焦"两个，与系统设置页一致。
+class _TextSettingRow extends ConsumerStatefulWidget {
+  const _TextSettingRow({
+    required this.label,
+    required this.description,
+    required this.value,
+    required this.hint,
+    required this.onCommit,
+  });
+
+  final String label;
+  final String description;
+  final String value;
+  final String hint;
+  final void Function(String value) onCommit;
+
+  @override
+  ConsumerState<_TextSettingRow> createState() => _TextSettingRowState();
+}
+
+class _TextSettingRowState extends ConsumerState<_TextSettingRow> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.value,
+  );
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+
+  @override
+  void didUpdateWidget(_TextSettingRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 外部值变了（另一处改了设置 / 点了恢复默认）⇒ 同步草稿。
+    // ⚠️ 正在输入时**不**同步：那会把用户打到一半的字覆盖掉。
+    if (!_focus.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus) _commit();
+  }
+
+  void _commit() {
+    final String next = _controller.text.trim();
+    if (next == widget.value) return;
+    widget.onCommit(next);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingTile(
+      label: widget.label,
+      description: widget.description,
+      control: SizedBox(
+        width: 240,
+        child: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => _commit(),
+        ),
+      ),
+    );
+  }
 }

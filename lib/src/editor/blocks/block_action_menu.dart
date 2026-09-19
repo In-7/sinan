@@ -18,10 +18,14 @@ import 'toggle_block_component.dart';
 ///
 /// 所有操作都作用于**整块**：`selection` 由手柄点击时设成块选区（`SelectionType.block`），
 /// 与本函数里的 [node] 指向同一块。
+///
+/// [onReferenceOnCanvas] 是块可迁移 #5「双链多视图」的入口（把这块引用到画布上）：
+/// 它要读 provider、弹选择框，故由调用方（块手柄）提供；为 null 时不出现这一项。
 List<Widget> sinanBlockActionMenuItems({
   required EditorState editorState,
   required Node node,
   required VoidCallback onClose,
+  VoidCallback? onReferenceOnCanvas,
 }) {
   // 手柄点击已把选区切成本块 ⇒ 这里以块的起点为准（不依赖调用顺序）。
   final Selection selection = Selection.collapsed(Position(path: node.path));
@@ -113,5 +117,17 @@ List<Widget> sinanBlockActionMenuItems({
         onClose();
       },
     ),
+    if (onReferenceOnCanvas != null) ...<Widget>[
+      const Divider(height: 1),
+      // 块可迁移 #5「双链多视图」：文档里这块**原地不动**，画布上多一张指向
+      // 同一份内容的卡片（两边编辑同一份真身）。与"搬去画布"是两回事。
+      action(
+        label: '在画布上引用这张卡片',
+        onPressed: () {
+          onClose();
+          onReferenceOnCanvas();
+        },
+      ),
+    ],
   ];
 }

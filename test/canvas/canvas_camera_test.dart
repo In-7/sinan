@@ -28,9 +28,30 @@ void main() {
   });
 
   test('zoomAt：缩放被钳在 min/max 之间', () {
-    final CanvasCamera camera = CanvasCamera(minScale: 0.5, maxScale: 4);
+    // maxScale 用默认值（= 天花板 4，见下一条用例），只显式给 minScale。
+    final CanvasCamera camera = CanvasCamera(minScale: 0.5);
     camera.zoomAt(Offset.zero, 0.01);
     expect(camera.scale, 0.5);
+    camera.zoomAt(Offset.zero, 1000);
+    expect(camera.scale, 4);
+  });
+
+  test('默认缩放上限是 400%（2026-09-18 由 3200% 下调）', () {
+    final CanvasCamera camera = CanvasCamera();
+    expect(camera.maxScale, CanvasCamera.maxScaleCeiling);
+    expect(camera.maxScale, 4);
+    camera.zoomAt(Offset.zero, 1000);
+    expect(camera.scale, 4, reason: '放大 1000 倍应被钳到 4（400%）');
+  });
+
+  test('旧存档的 maxScale: 32 会被钳到天花板（否则改默认值对老画布无效）', () {
+    final CanvasCamera camera = CanvasCamera.fromJson(<String, dynamic>{
+      'scale': 1.0,
+      'translation': <double>[0, 0],
+      'minScale': 0.05,
+      'maxScale': 32.0,
+    });
+    expect(camera.maxScale, CanvasCamera.maxScaleCeiling);
     camera.zoomAt(Offset.zero, 1000);
     expect(camera.scale, 4);
   });

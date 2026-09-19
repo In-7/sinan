@@ -67,6 +67,8 @@ void main() {
   test('写字期间网格层**不**重绘（重层隔离，每帧上千个圆不能白画）', () {
     final CanvasController controller = CanvasController();
     controller.setViewport(const Size(800, 600));
+    // 2026-09-18：默认工具改为"选择" ⇒ 笔迹相关用例须显式进入画笔工具。
+    controller.setTool(CanvasTool.pen);
     GridPainter grid() => GridPainter(
           camera: controller.camera,
           color: const Color(0xFF000000),
@@ -135,6 +137,9 @@ void main() {
   test('湿墨生长（就地加点）：InkPainter 判定需要重绘', () {
     final CanvasController controller = CanvasController();
     controller.setViewport(const Size(800, 600));
+    // 2026-09-18：默认工具改为"选择" ⇒ 笔迹相关用例须显式进入画笔工具
+    //（否则 down 走"框选"分支，根本不会产生 activeStroke）。
+    controller.setTool(CanvasTool.pen);
     controller.onPointerDown(
       const PointerDownEvent(
         pointer: 1,

@@ -39,6 +39,11 @@ class Tokens {
   static const double iconSm = 18;
   static const double iconMd = 20;
 
+  // 画布工具条按钮（Material IconButton 的热区）：32×32 正方、18px 图标
+  // （[iconSm]）四周各余 7px。此前裸用 M3 默认（40×40 布局 + 48 padded 热区），
+  // 按钮顶出工具条卡片边缘（2026-09-19 用户实测反馈）。与标题栏按钮同档 32。
+  static const double toolbarButtonSize = 32;
+
   // 字号
   static const double fontSizeSm = 12;
   static const double fontSizeMd = 14;

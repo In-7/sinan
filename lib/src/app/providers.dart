@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ai/llm_client.dart';
 import '../canvas/kernel/canvas_ai_cache.dart';
 import '../canvas/kernel/canvas_media.dart';
 import '../data/canvas_media_refs.dart';
@@ -59,6 +60,24 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   void setLineHeight(double height) =>
       update(state.copyWith(lineHeight: height));
+
+  // ── AI（画布结构轨的推理后端）──
+  //
+  // 端点/模型**只在提交时**写（文本框回车或失焦），不是每敲一个字写一次：
+  // `llmClientProvider` watch 着设置，逐字写会连带重建 LLM 客户端。
+
+  void setAiEnabled(bool value) => update(state.copyWith(aiEnabled: value));
+
+  /// 空串回落默认地址（清空输入框不该留下一个打不通的空端点）。
+  void setAiEndpoint(String value) => update(
+    state.copyWith(
+      aiEndpoint: value.trim().isEmpty
+          ? AppSettings.defaultAiEndpoint
+          : value.trim(),
+    ),
+  );
+
+  void setAiModel(String value) => update(state.copyWith(aiModel: value.trim()));
 
   /// 恢复默认（面板底部的"重置"）。
   void reset() => update(const AppSettings());
@@ -223,3 +242,20 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     state = AsyncData(_store.allNotes());
   }
 }
+
+/// LLM 通道（画布结构轨的推理后端）。
+///
+/// ## 为什么 watch 设置
+/// 端点 / 模型都来自设置 ⇒ 用户改完立刻换**新**客户端，不会拿旧模型名继续打请求。
+///
+/// ## 为什么没配模型时不在这里抛
+/// provider 被整棵树 watch，构造期抛异常会连带炸掉画布页面。未配置是个**可预期的
+/// 使用状态**（AI 入口默认关闭），所以把它留给 `LlmClient.complete` 在调用时给出
+/// 可操作的报错（"去设置里填模型名"）。
+final llmClientProvider = Provider<LlmClient>((Ref ref) {
+  final AppSettings settings = ref.watch(settingsProvider);
+  return OllamaLlmClient(
+    endpoint: settings.aiEndpoint,
+    model: settings.aiModel,
+  );
+});

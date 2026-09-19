@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -9,10 +10,15 @@ import 'package:flutter/widgets.dart';
 import 'canvas_ai.dart';
 import 'canvas_camera.dart';
 import 'canvas_document.dart';
+import 'canvas_edge.dart';
 import 'canvas_item.dart';
 import 'canvas_media.dart';
+import 'canvas_palette.dart';
 import 'canvas_raster.dart';
 import 'ink_stroke.dart';
+
+/// 工具状态机：每种工具的「按下」行为抽成独立处理器（见 `canvas_tool_handler.dart`）。
+part 'canvas_tool_handler.dart';
 
 /// 变换手势类型：四角缩放 / 旋转。
 enum _GripKind { corner, rotate }
@@ -55,6 +61,12 @@ enum CanvasTool {
   /// 于是拖出来的是框选，矩形工具像假的"。只提供"插入一个矩形"不算一个**工具**：
   /// 用户要的是"用当前笔刷画个框"。
   shape,
+
+  /// 连线（v9）：选工具后从一个**卡片**拖到另一个**卡片**，松手即建一条
+  /// [CanvasEdge]（端点存 blockId，binding）。点已有连线则选中它（再 Delete 删除）。
+  /// 只连卡片——连线端点存 blockId，与 `canvas_edges.from_id` 外键同口径；
+  /// 形状/图片没有 blockId，连了也画不出来（见 `CanvasEdge.fromId`）。
+  connect,
 }
 
 /// 画布控制器：相机 + 文档 + 工具状态 + **输入流水线**。
@@ -84,7 +96,9 @@ class CanvasController extends ChangeNotifier {
 
   // ───────────────────────── 工具与笔刷状态 ─────────────────────────
 
-  CanvasTool tool = CanvasTool.pen;
+  /// 默认"选择"：2026-09-18 砍掉笔迹入口后，默认**不再是画笔**——否则一进画布
+  /// 左键拖拽就是在画画（用户看不到任何笔迹工具，却画出了线）。
+  CanvasTool tool = CanvasTool.select;
 
   /// 笔宽（世界单位）。
   double penWidth = 4;
@@ -134,8 +148,33 @@ class CanvasController extends ChangeNotifier {
   List<CanvasItem> get selectedItems =>
       List<CanvasItem>.unmodifiable(_selectedItems);
 
-  /// 是否有任何选区（页面据此显示删除按钮）。
-  bool get hasSelection => _selection.isNotEmpty || _selectedItems.isNotEmpty;
+  /// 是否有任何选区（页面据此显示删除按钮）。连线选中（[selectedEdge]）也算。
+  bool get hasSelection =>
+      _selection.isNotEmpty || _selectedItems.isNotEmpty || _selectedEdge != null;
+
+  /// 当前唯一选中的**卡片**（块可迁移 #5 用：把这张卡片发回它的文档）。
+  /// 不是恰好一张卡片选中、或选中的不是卡片则返回 null。
+  CardItem? get selectedCard {
+    if (_selectedItems.length != 1) return null;
+    final CanvasItem item = _selectedItems.single;
+    return item is CardItem ? item : null;
+  }
+
+  /// 把选中的卡片**从画布移除**（内存），并返回它的 `blockId`（供上层把块迁回文档）。
+  ///
+  /// 只做内存侧：卡片摘除 + 选区清空 + 通知。块内容"搬去文档"的持久化由上层
+  /// （持有 [NoteStore] 的宿主）用 `blockId` 调 [NoteStore.moveBlockToDocument] 完成——
+  /// 控制器刻意不碰数据库（见 `CanvasController` 类注释的 DB 隔离）。
+  /// 没有选中卡片则返回 null、不动任何状态。
+  String? detachSelectedCard() {
+    final CardItem? card = selectedCard;
+    if (card == null) return null;
+    document.removeItems(<CanvasItem>[card]);
+    _selectedItems.clear();
+    _selection.clear();
+    notifyListeners();
+    return card.blockId;
+  }
 
   /// 当前选区的世界包围盒（进行中的框选 + 已选中的 item / 笔迹），无选区返回 null。
   /// UI 的"生成"按钮据此定位并判断是否有有效选区。
@@ -158,6 +197,133 @@ class CanvasController extends ChangeNotifier {
   /// 橡皮光标位置（世界坐标），仅橡皮工具下维护。
   Offset? _eraserAt;
   Offset? get eraserAt => _eraserAt;
+
+  // ───────────────────────── 连线（交互中 + 选中） ─────────────────────────
+
+  /// 连线工具下，拖动起点卡片（[onPointerUp] 命中另一张卡片才落账）。
+  CanvasItem? _pendingFrom;
+
+  /// 连线预览的当前光标世界坐标（随 pointer move 更新）。
+  Offset? _pendingCursor;
+
+  /// 当前选中的连线（点已有连线选中；Delete 删除）。
+  CanvasEdge? _selectedEdge;
+
+  /// 选中的连线（世界几何，供浮层高亮）。
+  CanvasEdge? get selectedEdge => _selectedEdge;
+
+  /// 预览连线（世界几何）：从起点卡片朝向光标的端口 → 光标点。
+  /// 仅在连线工具拖动中非空。
+  EdgeGeometry? get pendingEdgeGeometry {
+    final CanvasItem? from = _pendingFrom;
+    final Offset? cursor = _pendingCursor;
+    if (from == null || cursor == null) return null;
+    // 起点端口由**按下位置**决定（缺口1）；缺省才回落到"朝向光标"。
+    final CanvasSide side = _pendingFromSide ?? _sideTowards(from.rect, cursor);
+    return EdgeGeometry(
+      from: CanvasEdges.anchorOf(from.rect, side),
+      to: cursor,
+      fromSide: side,
+    );
+  }
+
+  /// 选中连线的世界几何（供浮层高亮）。
+  EdgeGeometry? get selectedEdgeGeometry {
+    final CanvasEdge? e = _selectedEdge;
+    if (e == null) return null;
+    final CanvasItem? from = document.itemByBlockId(e.fromId);
+    final CanvasItem? to = document.itemByBlockId(e.toId);
+    if (from == null || to == null) return null;
+    return CanvasEdges.geometryOf(e, from.rect, to.rect);
+  }
+
+  /// 连线命中容差（**屏幕像素**，使用时换算成世界单位）。
+  static const double _edgeHitTolerance = 6;
+
+  /// 矩形哪条边最朝向 [point]（连线起点端口的选择）。
+  static CanvasSide _sideTowards(Rect rect, Offset point) {
+    final double dx = point.dx - rect.center.dx;
+    final double dy = point.dy - rect.center.dy;
+    if (dx.abs() >= dy.abs()) {
+      return dx >= 0 ? CanvasSide.right : CanvasSide.left;
+    }
+    return dy >= 0 ? CanvasSide.bottom : CanvasSide.top;
+  }
+
+  /// 端口对边（端点拖改的预览用：活动端沿用固定端口的**反向**）。
+  static CanvasSide _opposite(CanvasSide s) => switch (s) {
+    CanvasSide.top => CanvasSide.bottom,
+    CanvasSide.bottom => CanvasSide.top,
+    CanvasSide.left => CanvasSide.right,
+    CanvasSide.right => CanvasSide.left,
+  };
+
+  /// 端口"边缘带"宽度（**屏幕像素**）：按下/松开落在距某条边这么近的位置，
+  /// 就**手动指定**那条边；落在卡片中部则返回 null（交给自动选端口）。
+  static const double _portZoneTolerance = 28;
+
+  /// [point] 落在 [rect] 边缘带内 ⇒ 返回那条边；落在中部/外部 ⇒ null（自动）。
+  CanvasSide? _portAt(Rect rect, Offset point) {
+    final double zone = _edgeZoneOf(rect);
+    final double dLeft = point.dx - rect.left;
+    final double dRight = rect.right - point.dx;
+    final double dTop = point.dy - rect.top;
+    final double dBottom = rect.bottom - point.dy;
+    final double d = math.min(math.min(dLeft, dRight), math.min(dTop, dBottom));
+    if (d < 0 || d > zone) return null;
+    if (d == dLeft) return CanvasSide.left;
+    if (d == dRight) return CanvasSide.right;
+    if (d == dTop) return CanvasSide.top;
+    return CanvasSide.bottom;
+  }
+
+  /// 边缘带宽度（世界单位）：随缩放保持屏幕观感一致，并封顶到卡片短边的 1/3，
+  /// 免得小卡片上四条带叠在一起、方向失去意义。
+  double _edgeZoneOf(Rect rect) {
+    final double zone = camera.toWorld(_portZoneTolerance);
+    final double cap = rect.shortestSide / 3;
+    return zone < cap ? zone : cap;
+  }
+
+  /// 连线工具下，起点卡片上**按下位置**决定的起始端口（"从哪条边拉出"，缺口1）。
+  CanvasSide? _pendingFromSide;
+
+  /// 端点拖改（缺口4）：正在拖的连线、拖的是哪一端、当前光标世界坐标。
+  CanvasEdge? _edgeGripEdge;
+  bool _edgeGripIsFrom = false;
+  Offset? _edgeGripCursor;
+
+  /// 端点把手命中容差（**屏幕像素**）。
+  static const double _edgeGripTolerance = 9;
+
+  /// 端点拖改预览（世界几何，虚线）：固定另一端，活动端跟光标。
+  /// 非拖动中返回 null。
+  EdgeGeometry? get edgeGripPreview {
+    final CanvasEdge? edge = _edgeGripEdge;
+    final Offset? cursor = _edgeGripCursor;
+    if (edge == null || cursor == null) return null;
+    final CanvasItem? from = document.itemByBlockId(edge.fromId);
+    final CanvasItem? to = document.itemByBlockId(edge.toId);
+    if (from == null || to == null) return null;
+    final (CanvasSide, CanvasSide) auto =
+        CanvasEdges.autoSides(from.rect, to.rect);
+    if (_edgeGripIsFrom) {
+      final CanvasSide ts = edge.toSide ?? auto.$2;
+      return EdgeGeometry(
+        from: cursor,
+        to: CanvasEdges.anchorOf(to.rect, ts),
+        fromSide: _opposite(ts),
+        toSide: ts,
+      );
+    }
+    final CanvasSide fs = edge.fromSide ?? auto.$1;
+    return EdgeGeometry(
+      from: CanvasEdges.anchorOf(from.rect, fs),
+      to: cursor,
+      fromSide: fs,
+      toSide: _opposite(fs),
+    );
+  }
 
   int? _activePointer;
   int? _panPointer;
@@ -250,6 +416,12 @@ class CanvasController extends ChangeNotifier {
     _eraserAt = null;
     _selection.clear();
     _selectedItems.clear();
+    _selectedEdge = null;
+    _pendingFrom = null;
+    _pendingCursor = null;
+    _pendingFromSide = null;
+    _edgeGripEdge = null;
+    _edgeGripCursor = null;
     notifyListeners();
   }
 
@@ -297,18 +469,36 @@ class CanvasController extends ChangeNotifier {
   void undo() {
     document.undo();
     refreshStaleness();
+    _pruneEdgeSelection();
     notifyListeners();
   }
 
   void redo() {
     document.redo();
     refreshStaleness();
+    _pruneEdgeSelection();
     notifyListeners();
+  }
+
+  /// 选中的连线若已不在文档（撤销/重做把它删了）⇒ 清掉——否则浮层会画出
+  /// 一条**幽灵高亮**（普通连线已没了，高亮还在），且删除按钮会误显示。
+  void _pruneEdgeSelection() {
+    final CanvasEdge? e = _selectedEdge;
+    if (e == null) return;
+    if (!document.edges.any((CanvasEdge other) => other.id == e.id)) {
+      _selectedEdge = null;
+    }
   }
 
   /// 缩放（[focal] 缺省取视口中心）。
   void zoomBy(double factor, {Offset? focal}) {
     camera.zoomAt(focal ?? _viewport.center(Offset.zero), factor);
+    notifyListeners();
+  }
+
+  /// 重置缩放为 **100%**（视口中心不动）。工具栏的倍数徽标点一下就回到这里。
+  void resetZoom() {
+    camera.setScaleAt(_viewport.center(Offset.zero), 1.0);
     notifyListeners();
   }
 
@@ -353,11 +543,74 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 给选中的 item 设置**语义色槽位**（一次操作 = 一条撤销命令）。
+  ///
+  /// 只有卡片与思维导图支持槽位（覆盖了基类的读写口）；选中的形状/图片会被基类的
+  /// 空 setter 忽略，不影响它们自己的颜色面板。`null` = 回到"跟随主题"。
+  void setSelectedColorSlot(CanvasColorSlot? slot) {
+    if (_selectedItems.isEmpty) return;
+    final List<(CanvasItem, CanvasColorSlot?)> changes =
+        <(CanvasItem, CanvasColorSlot?)>[];
+    for (final CanvasItem item in _selectedItems) {
+      final CanvasColorSlot? before = item.colorSlot;
+      if (before == slot) continue;
+      item.colorSlot = slot;
+      changes.add((item, before));
+    }
+    if (changes.isEmpty) return;
+    document.setItemColorSlots(changes);
+    notifyListeners();
+  }
+
+  /// 改选中连线的**起点**形状（一次操作 = 一条撤销命令）。
+  ///
+  /// 没选中连线时静默忽略；形状没变也不记命令（避免 Ctrl+Z 刷满）。
+  void setSelectedEdgeStartShape(EdgeEndpointShape shape) {
+    final CanvasEdge? old = _selectedEdge;
+    if (old == null || old.startShape == shape) return;
+    final CanvasEdge next = CanvasEdge(
+      id: old.id,
+      fromId: old.fromId,
+      toId: old.toId,
+      fromSide: old.fromSide,
+      toSide: old.toSide,
+      startShape: shape,
+      endShape: old.endShape,
+      props: old.props,
+    );
+    document.updateEdge(next);
+    _selectedEdge = next;
+    notifyListeners();
+  }
+
+  /// 改选中连线的**终点**形状（一次操作 = 一条撤销命令）。
+  void setSelectedEdgeEndShape(EdgeEndpointShape shape) {
+    final CanvasEdge? old = _selectedEdge;
+    if (old == null || old.endShape == shape) return;
+    final CanvasEdge next = CanvasEdge(
+      id: old.id,
+      fromId: old.fromId,
+      toId: old.toId,
+      fromSide: old.fromSide,
+      toSide: old.toSide,
+      startShape: old.startShape,
+      endShape: shape,
+      props: old.props,
+    );
+    document.updateEdge(next);
+    _selectedEdge = next;
+    notifyListeners();
+  }
+
   /// 删除当前选中（笔迹 + item，框选 → Delete）。
   void deleteSelection() {
     if (!hasSelection) return;
     if (_selection.isNotEmpty) document.removeStrokes(_selection);
     if (_selectedItems.isNotEmpty) document.removeItems(_selectedItems);
+    if (_selectedEdge != null) {
+      document.removeEdges(<CanvasEdge>[_selectedEdge!]);
+      _selectedEdge = null;
+    }
     _selection.clear();
     _selectedItems.clear();
     // 删掉的可能是别人的输入 ⇒ 重算过期状态。
@@ -372,6 +625,7 @@ class CanvasController extends ChangeNotifier {
     _selectedItems
       ..clear()
       ..addAll(items);
+    _selectedEdge = null;
     notifyListeners();
   }
 
@@ -379,6 +633,7 @@ class CanvasController extends ChangeNotifier {
     if (!hasSelection) return;
     _selection.clear();
     _selectedItems.clear();
+    _selectedEdge = null;
     notifyListeners();
   }
 
@@ -387,6 +642,7 @@ class CanvasController extends ChangeNotifier {
     _selectedItems
       ..clear()
       ..addAll(items);
+    _selectedEdge = null;
     notifyListeners();
   }
 
@@ -538,60 +794,9 @@ class CanvasController extends ChangeNotifier {
     final Offset world = camera.screenToWorld(event.localPosition);
     _activePointer = event.pointer;
 
-    // 形状工具：按下即开始定尺寸。不碰命中/选区——"拖出来变成框选"正是要修的问题。
-    if (tool == CanvasTool.shape) {
-      _shapeStartWorld = world;
-      _shapeStartScreen = event.localPosition;
-      _shapeDraft = Rect.fromPoints(world, world);
-      notifyListeners();
-      return;
-    }
-
-    // 笔的橡皮端（inverted stylus）无条件当橡皮，与当前工具无关
-    // —— 这是手写设备的通用约定。
-    if (event.kind == PointerDeviceKind.invertedStylus ||
-        tool == CanvasTool.eraser) {
-      _erasing = true;
-      _eraserAt = world;
-      document.eraseAt(world, eraserRadius);
-    } else if (tool == CanvasTool.select) {
-      // 优先级：缩放/旋转手柄 > item 命中 > 框选。
-      // （手柄是屏幕尺寸常量，命中要在屏幕坐标做；item 命中容差换算成
-      // 世界单位，保证任何缩放级别下"好点"的程度一致。）
-      final grip = _gripAtScreen(event.localPosition);
-      if (grip != null) {
-        _beginGrip(grip, world);
-      } else {
-        final CanvasItem? item = document.hitItemAt(
-          world,
-          camera.toWorld(_itemHitTolerance),
-        );
-        if (item != null) {
-          // 已在多选集合内 ⇒ 保持选区整体拖动；否则单选该 item。
-          if (!_selectedItems.contains(item)) {
-            _selectedItems
-              ..clear()
-              ..add(item);
-          }
-          // 起点（多选一起动）。
-          _moveStartWorld = world;
-          _moveStartRects = <CanvasItem, Rect>{
-            for (final CanvasItem it in _selectedItems) it: it.rect,
-          };
-        } else {
-          _selectedItems.clear();
-          _marqueeStart = world;
-          _marquee = Rect.fromPoints(world, world);
-          _selection.clear();
-        }
-      }
-    } else {
-      _activeStroke = InkStroke(
-        color: penColor,
-        baseWidth: penWidth,
-        simulatePressure: !_hasRealPressure(event),
-      )..add(InkPoint(world, _pressureOf(event)));
-    }
+    // 工具状态机：把「按下」交给当前工具的处理器（见 `canvas_tool_handler.dart`）。
+    // 平移已在上面 return，不会到这里；move/up/cancel 仍是共享的手势瞬态判断。
+    CanvasToolHandlers.of(tool).onPointerDown(this, event, world);
     notifyListeners();
   }
 
@@ -609,6 +814,20 @@ class CanvasController extends ChangeNotifier {
     // 形状工具：拖拽更新预览框（视图据此画出"正在画的那个框"）。
     if (_shapeStartWorld != null) {
       _shapeDraft = Rect.fromPoints(_shapeStartWorld!, world);
+      notifyListeners();
+      return;
+    }
+
+    // 连线拖动中：只更新预览光标（起点卡片已固定）。
+    if (_pendingFrom != null) {
+      _pendingCursor = world;
+      notifyListeners();
+      return;
+    }
+
+    // 端点拖改中（缺口4）：只更新活动端光标。
+    if (_edgeGripEdge != null) {
+      _edgeGripCursor = world;
       notifyListeners();
       return;
     }
@@ -654,10 +873,23 @@ class CanvasController extends ChangeNotifier {
       return;
     }
     if (event.pointer != _activePointer) return;
+    final Offset world = camera.screenToWorld(event.localPosition);
 
     // 形状工具：抬手时落账（拖出来的框，或"点一下"的默认大小）。
     if (_shapeStartWorld != null) {
       _commitShape(event);
+      return;
+    }
+
+    // 连线拖动结束：命中另一张卡片才落账，否则取消。
+    if (_pendingFrom != null) {
+      _commitConnect(world);
+      return;
+    }
+
+    // 端点拖改结束（缺口4）：落在卡片上就换端点，否则取消（保持原样）。
+    if (_edgeGripEdge != null) {
+      _commitEdgeGrip(world);
       return;
     }
 
@@ -696,6 +928,11 @@ class CanvasController extends ChangeNotifier {
     _erasing = false;
     _marqueeStart = null;
     _marquee = null;
+    _pendingFrom = null;
+    _pendingCursor = null;
+    _pendingFromSide = null;
+    _edgeGripEdge = null;
+    _edgeGripCursor = null;
     // 一次手势结束、变更全部落账后才重算过期状态（拖动中不做，省掉每帧遍历）。
     refreshStaleness();
     notifyListeners();
@@ -710,6 +947,12 @@ class CanvasController extends ChangeNotifier {
       _marquee = null;
       _cancelShapeDraft();
       _activePointer = null;
+      // 连线/端点拖改：丢弃进行中的预览与拖改（不改文档）。
+      _pendingFrom = null;
+      _pendingCursor = null;
+      _pendingFromSide = null;
+      _edgeGripEdge = null;
+      _edgeGripCursor = null;
       // item 拖拽/缩放/旋转：就地改过的 rect/angle 弹回起点快照。
       final Map<CanvasItem, Rect>? startRects = _moveStartRects;
       if (startRects != null) {
@@ -750,6 +993,128 @@ class CanvasController extends ChangeNotifier {
     _shapeStartWorld = null;
     _shapeStartScreen = null;
     _shapeDraft = null;
+  }
+
+  /// 连线按下：点中已有连线 ⇒ 选中；否则从卡片起拉（只接受卡片，端点要 blockId）。
+  void _beginConnect(Offset world) {
+    // 0) 已选中连线时，先看是否抓住了它的端点把手（缺口4：拖端点改接）。
+    final CanvasEdge? selected = _selectedEdge;
+    if (selected != null) {
+      final EdgeGeometry? geo = selectedEdgeGeometry;
+      if (geo != null) {
+        final double tol = camera.toWorld(_edgeGripTolerance);
+        if ((world - geo.from).distance <= tol) {
+          _startEdgeGrip(selected, true, world);
+          return;
+        }
+        if ((world - geo.to).distance <= tol) {
+          _startEdgeGrip(selected, false, world);
+          return;
+        }
+      }
+    }
+    // 1) 点中已有连线 ⇒ 选中它。
+    final CanvasEdge? hit = document.hitEdgeAt(
+      world,
+      camera.toWorld(_edgeHitTolerance),
+    );
+    if (hit != null) {
+      _selectedEdge = hit;
+      _selectedItems.clear();
+      _selection.clear();
+      return;
+    }
+    // 2) 从卡片起拉：起点端口由**按下位置**决定（缺口1，"从哪边拉出"）。
+    final CanvasItem? item = document.hitItemAt(
+      world,
+      camera.toWorld(_itemHitTolerance),
+    );
+    if (item is CardItem) {
+      _pendingFrom = item;
+      _pendingFromSide = _portAt(item.rect, world);
+      _pendingCursor = world;
+      _selectedEdge = null;
+      _selectedItems.clear();
+      _selection.clear();
+    } else {
+      // 点空白/非卡片：清掉连线选区（不开始拉）。
+      _selectedEdge = null;
+      _selectedItems.clear();
+      _selection.clear();
+    }
+  }
+
+  /// 进入端点拖改：记下连线与活动端。
+  void _startEdgeGrip(CanvasEdge edge, bool isFrom, Offset world) {
+    _edgeGripEdge = edge;
+    _edgeGripIsFrom = isFrom;
+    _edgeGripCursor = world;
+    _selectedEdge = edge;
+  }
+
+  /// 端点拖改落账：活动端落在卡片上就换端点，否则取消（保持原样）。
+  void _commitEdgeGrip(Offset world) {
+    final CanvasEdge? edge = _edgeGripEdge;
+    final bool isFrom = _edgeGripIsFrom;
+    _edgeGripEdge = null;
+    _edgeGripCursor = null;
+    if (edge == null) return;
+
+    final CanvasItem? target = document.hitItemAt(
+      world,
+      camera.toWorld(_itemHitTolerance),
+    );
+    if (target is! CardItem) return; // 没落在卡片上：取消
+    final CanvasSide? side = _portAt(target.rect, world);
+    final String newFromId = isFrom ? target.blockId : edge.fromId;
+    final String newToId = isFrom ? edge.toId : target.blockId;
+    if (newFromId == newToId) return; // 不许自连
+    // 换端点后若与既有边完全同向 ⇒ 放弃（与起拉去重同口径）。
+    final bool dup = document.edges.any(
+      (CanvasEdge e) =>
+          e.id != edge.id && e.fromId == newFromId && e.toId == newToId,
+    );
+    if (dup) return;
+
+    final CanvasEdge next = CanvasEdge(
+      id: edge.id,
+      fromId: newFromId,
+      toId: newToId,
+      fromSide: isFrom ? side : edge.fromSide,
+      toSide: isFrom ? edge.toSide : side,
+      props: edge.props,
+    );
+    document.updateEdge(next);
+    _selectedEdge = next;
+  }
+
+  /// 连线松手：命中另一张卡片才建边，否则取消（不残留半截）。
+  void _commitConnect(Offset world) {
+    final CanvasItem? from = _pendingFrom;
+    final CanvasItem? to = document.hitItemAt(
+      world,
+      camera.toWorld(_itemHitTolerance),
+    );
+    _pendingFrom = null;
+    _pendingCursor = null;
+    if (from is CardItem && to is CardItem && to != from) {
+      // 同向重复不重复建：端点/几何完全重合的两条边在屏幕上分不出来，
+      // 删除也只能删中其中一条（"看不见的重复"比"少一条"更糟）。
+      final bool exists = document.edges.any(
+        (CanvasEdge e) => e.fromId == from.blockId && e.toId == to.blockId,
+      );
+      if (!exists) {
+        // 两端端口都由**操作位置**决定（缺口1：从哪边拉出、连到哪边）。
+        document.addEdge(
+          CanvasEdge(
+            fromId: from.blockId,
+            toId: to.blockId,
+            fromSide: _pendingFromSide,
+            toSide: _portAt(to.rect, world),
+          ),
+        );
+      }
+    }
   }
 
   /// 结束一次形状拖拽并落账：够大就按拖出来的框，几乎没动就落一个默认大小。
@@ -1026,6 +1391,54 @@ class CanvasController extends ChangeNotifier {
   /// —— [notifyListeners] 本身为 protected，不能在视图里直接调用。
   void requestRepaint() => notifyListeners();
 
+  // ─────────────────── LOD：缩放期间冻结判据 ───────────────────
+
+  /// item 数**达到**它才启用"缩放期间冻结 LOD 判据"。
+  ///
+  /// 与 tldraw 的 `debouncedZoomThreshold`（同为 500）取同一个量级：少量 item 时
+  /// 冻结只会让 LOD 显得迟钝（明明能立刻变清晰，却非等停稳），大文档才值得——
+  /// 见 [lodScale] 里那两笔代价。
+  static const int lodFreezeThreshold = 500;
+
+  /// 停稳判定：相机缩放最后一次变化后等待这么久，才把 LOD 判据切到新缩放。
+  static const Duration lodSettleDelay = Duration(milliseconds: 180);
+
+  double? _lodScale;
+  Timer? _lodSettleTimer;
+
+  /// LOD 判据用的**稳定缩放**（与 tldraw `getEfficientZoomLevel` 同思路）。
+  ///
+  /// 与 `camera.scale` 的差别只在**缩放进行中**：相机的缩放逐帧都变，若 LOD
+  /// 直接跟它走，手势中途要付两笔代价——① 沿途的 item 在"色块 ⇄ 全保真"之间
+  /// 反复翻转（画面闪变）；② 每个跨过阈值的图片 item 会**立刻**触发
+  /// `onImageMissing` ⇒ 手势正忙时批量读盘 + 解码几十张原图。
+  /// 冻结到停稳再跳一次，两笔都省，且 LOD 只"弹"一次而不是一路闪。
+  ///
+  /// 未同步过（首帧 / 刚载入存档）⇒ 直接跟随相机，不做冻结：那时并没有手势
+  /// 在进行，冻结只会让首帧用错判据。
+  double get lodScale => _lodScale ?? camera.scale;
+
+  /// 相机缩放变化后同步 LOD 判据。由 [notifyListeners] 统一驱动，于是**所有**
+  /// 改相机缩放的路径都覆盖到，无需在 4 个缩放入口各写一遍。
+  void _syncLodScale() {
+    final double scale = camera.scale;
+    if (_lodScale == null || document.itemCount < lodFreezeThreshold) {
+      _lodScale = scale;
+      _lodSettleTimer?.cancel();
+      _lodSettleTimer = null;
+      return;
+    }
+    if (_lodScale == scale) return; // 已稳定，无未决事项
+    _lodSettleTimer?.cancel();
+    _lodSettleTimer = Timer(lodSettleDelay, () {
+      _lodSettleTimer = null;
+      if (_lodScale == camera.scale) return;
+      _lodScale = camera.scale;
+      // 停稳后必须再通知一次：视图要按新判据重绘（这一帧才从色块变清晰）。
+      notifyListeners();
+    });
+  }
+
   int _repaintStamp = 0;
 
   /// 视觉状态版本号：**每次通知（"画面该更新了"）都 +1**，供 painter 在
@@ -1044,12 +1457,20 @@ class CanvasController extends ChangeNotifier {
 
   @override
   void notifyListeners() {
+    // LOD 判据在这里统一同步：**所有**改相机缩放的路径都以 notifyListeners
+    // 收尾（zoomBy / resetZoom / fitToContent / 滚轮缩放），挂这里就不用在每个
+    // 入口各写一遍，将来新增缩放入口也不会漏。
+    _syncLodScale();
     _repaintStamp++;
     super.notifyListeners();
   }
 
   @override
   void dispose() {
+    // 未决的 LOD 停稳定时器必须取消：它稍后会在**已 dispose** 的 notifier 上
+    // 再通知一次（debug 下直接抛）。
+    _lodSettleTimer?.cancel();
+    _lodSettleTimer = null;
     _selection.clear();
     // 图片 item 持有的 ui.Image 是引擎侧资源，必须显式释放。
     for (final CanvasItem item in document.items) {

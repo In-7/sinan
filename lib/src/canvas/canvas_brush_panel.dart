@@ -7,23 +7,8 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'canvas_panel_widgets.dart';
 import 'kernel/canvas_controller.dart';
+import 'kernel/canvas_palette.dart';
 import 'kernel/ink_stroke.dart';
-
-/// 画布调色板：**亮/暗底都够对比**的中高饱和色（Excalidraw 口径）。
-///
-/// 首项是 [kThemeInk]——**哨兵 = 跟随主题**，保证"默认就是能看见的颜色"：用户
-/// 不必知道暗色档具体是多少，选它就永远可见（这正是暗色画布那次修复的入口）。
-const List<Color> canvasPalette = <Color>[
-  kThemeInk, // 跟随主题（亮：近黑 / 暗：浅灰）
-  Color(0xFFE5484D), // 红
-  Color(0xFFF76B15), // 橙
-  Color(0xFFFFC53D), // 黄
-  Color(0xFF30A46C), // 绿
-  Color(0xFF00A2C7), // 青
-  Color(0xFF3E63DD), // 蓝
-  Color(0xFF8E4EC6), // 紫
-  Color(0xFFE93D82), // 粉
-];
 
 /// [canvasPalette] 的显示项：哨兵换成**当前主题墨色**。
 ///
@@ -58,7 +43,12 @@ class CanvasBrushButton extends StatelessWidget {
             (BuildContext context, VoidCallback toggle, bool isOpen) =>
                 IconButton(
                   tooltip: '笔刷：颜色 / 粗细 / 橡皮',
-                  isSelected: isOpen,
+                  // 浮层打开或画笔 / 橡皮工具生效期间都保持"选中"：否则用户
+                  // 看不出当前笔迹粗细 / 橡皮大小改的是哪个工具的参数
+                  //（同 [CanvasInsertButton] 对形状工具的处理）。
+                  isSelected: isOpen ||
+                      controller.tool == CanvasTool.pen ||
+                      controller.tool == CanvasTool.eraser,
                   onPressed: toggle,
                   icon: CanvasInkDotIcon(
                     icon: LucideIcons.brush300,

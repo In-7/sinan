@@ -1,7 +1,13 @@
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 import 'package:uuid/uuid.dart';
 
+import '../domain/backlink.dart';
+import '../domain/block_hit.dart';
+import '../domain/embed_line.dart';
 import '../domain/note.dart';
+import 'block_props.dart';
 import 'block_store.dart';
 import 'canvas_store.dart';
 import 'fingerprint.dart';
@@ -144,10 +150,13 @@ class NoteStore {
   /// 列表快照不背正文（见 [allNotes]）。不存在时返回 null。
   ///
   /// ## 迁移第 5 步：**切读（带降落伞）**
-  /// 正文**优先从 `blocks` 还原**，但只有在**校验通过**时才采用；否则
+  /// 正文**优先从投影表还原**，但只有在**校验通过**时才采用；否则
   /// 静默回退到旧的 `notes.content`。这样任何还原偏差都不会让用户看到
   /// 内容丢失——最坏情况是"还没切过去"，而不是"切坏了"。
-  /// 等 v8 删掉旧列时，这个回退才一并移除。
+  /// 等 v10 删掉旧列时，这个回退才一并移除。
+  ///
+  /// 两条投影**各自带格式门闩**（块树只认 v2、画布只认 `{camera, document}`）
+  /// ⇒ 可以无脑都试：对任何一篇笔记，另一条必然返回 null，不会互相抢。
   Note? noteById(String id) {
     final ResultSet rs = db.select(
       'SELECT * FROM notes WHERE id = ?',
@@ -157,7 +166,8 @@ class NoteStore {
 
     final Row row = rs.first;
     final String legacy = row['content'] as String? ?? '';
-    final String? rebuilt = _blocks.readVerifiedDocument(id, legacy);
+    final String? rebuilt = _blocks.readVerifiedDocument(id, legacy) ??
+        _canvas.readVerifiedCanvas(id, legacy);
     return _noteFrom(row, content: rebuilt ?? legacy);
   }
 
@@ -206,6 +216,491 @@ class NoteStore {
   ///
   /// 返回本次处理的篇数。
   int backfillBlocks({int limit = 50}) => _blocks.backfill(limit: limit);
+
+  // ───────────────────── 块可迁移（#5，2026-09-18） ─────────────────────
+  //
+  // 文档块 ↔ 画布卡片是**同一份内容**（`blocks` 里的一行）：卡片用 `blockId` 指向它。
+  // 于是"搬动"只是改这块的**归属**——在文档块树里、还是在画布上——块内容永不动。
+  // 难点在 [BlockStore.replaceNoteBlocks] 的删除集：它把"不在块树里"的块当孤儿删。
+  // 为此该删除集已破例**保留被画布卡片引用的块**（见 `BlockStore._canvasReferencedBlockIds`），
+  // 于是"搬去画布"后那块不会被文档保存误删。
+
+  /// 一块当前归属的笔记（从 `blocks.note_id` 反查）。不存在的块返回 null。
+  String? blockNoteId(String blockId) {
+    final ResultSet rs = db.select(
+      'SELECT note_id FROM blocks WHERE id = ?',
+      <Object?>[blockId],
+    );
+    return rs.isEmpty ? null : rs.first['note_id'] as String?;
+  }
+
+  /// 把一块**搬回文档块树**（画布 → 文档）。块内容一直都在，只是不在树里时被画布托管；
+  /// 这里把它加回文档块树根部。已在一棵树里则幂等返回 false。
+  ///
+  /// ⚠️ 调用方负责把块从画布卡片摘掉（或保留卡片也行——同一块可同时在两边）。
+  bool moveBlockToDocument(String blockId) {
+    final String? noteId = blockNoteId(blockId);
+    if (noteId == null) return false;
+    final Map<String, Object?>? node = _blockNode(blockId);
+    if (node == null) return false;
+    final String? content = _rawContent(noteId);
+    if (content == null) return false;
+    final Map<String, Object?> doc =
+        jsonDecode(content) as Map<String, Object?>;
+    final List<Object?> children =
+        (doc['document']! as Map<String, Object?>)['children']! as List<Object?>;
+    if (_findNode(children, blockId) != null) return false;
+    children.add(node);
+    _persistContentSync(noteId, jsonEncode(doc));
+    return true;
+  }
+
+  /// 把一块**从文档块树摘掉**（文档 → 画布）。块内容留在 `blocks`，由画布卡片托管。
+  ///
+  /// ⚠️ 调用前必须先建好引用该 `blockId` 的画布卡片，否则 [BlockStore] 的删除集
+  /// 会把这块当成孤儿删掉（破例只保留**已建卡片**引用的块）。
+  bool moveBlockToCanvas(String blockId) {
+    final String? noteId = blockNoteId(blockId);
+    if (noteId == null) return false;
+    final String? content = _rawContent(noteId);
+    if (content == null) return false;
+    final Map<String, Object?> doc =
+        jsonDecode(content) as Map<String, Object?>;
+    final List<Object?> children =
+        (doc['document']! as Map<String, Object?>)['children']! as List<Object?>;
+    if (_removeNode(children, blockId)) {
+      _persistContentSync(noteId, jsonEncode(doc));
+      return true;
+    }
+    return false;
+  }
+
+  // ── 「双链多视图」：把文档里的块**引用**到画布上（#5 反向）───────────────
+  //
+  // 与上面两个 `move*` 的分水岭：`move*` 改的是块的**归属**（块同一时刻只在一边）；
+  // 这里**不动归属** —— 块留在文档块树里，画布上只是多一张指向**同一份内容**的
+  // 卡片。于是两边都能编辑同一份真身，也没有"块到底在哪边"的心智负担。
+  //
+  // 卡片文本的读写落在两处：画布 JSON 里的 `text` 只是**快照**，真身在 `blocks`。
+  // 所以①打开画布前先 [syncCanvasCardTexts] 刷新快照（文档侧的改动能看见）；
+  // ②画布保存时由 `CanvasStore._replaceCardBlocks` 把 `text` 写回那个块。
+
+  /// 块的文本（`blocks.props_json` 的 `text`）。块不存在返回 null。
+  String? blockText(String blockId) {
+    final ResultSet rs = db.select(
+      'SELECT props_json FROM blocks WHERE id = ?',
+      <Object?>[blockId],
+    );
+    if (rs.isEmpty) return null;
+    return textOfProps(rs.first['props_json'] as String?);
+  }
+
+  /// 把画布 JSON 里卡片的 `text` 刷新成 `blocks` 里的最新值（**打开画布前**调）。
+  ///
+  /// 卡片文本的真身在 `blocks`，画布 JSON 只是保存时的快照；文档侧改了被引用的
+  /// 块之后快照就旧了。这里按 `blockId` 逐个取回，有变化才落盘。返回是否改了。
+  bool syncCanvasCardTexts(String canvasNoteId) {
+    final Map<String, Object?>? doc = _canvasDoc(canvasNoteId);
+    if (doc == null) return false;
+    final Map<String, Object?>? document = _canvasDocument(doc);
+    if (document == null) return false;
+    final Map<String, Object?>? items = _canvasItems(document);
+    if (items == null) return false;
+
+    bool changed = false;
+    for (final Object? v in items.values) {
+      if (v is! Map) continue;
+      final Map<String, Object?> card = v.cast<String, Object?>();
+      if (card['type'] != 'card') continue;
+      final Object? blockId = card['blockId'];
+      if (blockId is! String) continue;
+      final String? text = blockText(blockId);
+      if (text == null || text == card['text']) continue;
+      card['text'] = text;
+      changed = true;
+    }
+    if (changed) _persistContentSync(canvasNoteId, jsonEncode(doc));
+    return changed;
+  }
+
+  /// 在 [canvasNoteId] 这张画布上**引用** [blockId] 这块（#5 反向）。
+  ///
+  /// [rect] 是卡片的初始矩形（`[l, t, r, b]`，世界坐标）；不传则自动排布到
+  /// 现有元素**下方**，免得盖住已有内容。
+  ///
+  /// 同一张画布里已经有指向这块的卡片时幂等返回 false（不重复加）。
+  bool referenceBlockOnCanvas(
+    String blockId,
+    String canvasNoteId, {
+    List<double>? rect,
+  }) {
+    // 真身必须在：否则画布上会多一张指向空气的卡片。
+    final String? text = blockText(blockId);
+    if (text == null) return false;
+
+    final Map<String, Object?>? doc = _canvasDoc(canvasNoteId);
+    if (doc == null) return false;
+    final Map<String, Object?>? document = _canvasDocument(doc);
+    if (document == null) return false;
+    final Map<String, Object?>? items = _canvasItems(document);
+    if (items == null) return false;
+
+    for (final Object? v in items.values) {
+      if (v is! Map) continue;
+      final Map<String, Object?> card = v.cast<String, Object?>();
+      if (card['type'] == 'card' && card['blockId'] == blockId) return false;
+    }
+
+    final String id = _nextCanvasItemId(items.keys);
+    items[id] = <String, Object?>{
+      'type': 'card',
+      'id': id,
+      'blockId': blockId,
+      'text': text,
+      'angle': 0,
+      'rect': rect ?? _freeCardRect(items),
+      'meta': <String, Object?>{},
+    };
+    final Object? rawOrder = document['itemOrder'];
+    final List<Object?> order =
+        rawOrder is List ? rawOrder.toList() : <Object?>[];
+    order.add(id);
+    document['itemOrder'] = order;
+
+    // 同步落盘 + 双写投影（`_canvas.replaceCanvasRows` 会把这行写进
+    // `canvas_items`；卡的 `block_id` 指向已存在的块，外键成立）。
+    _persistContentSync(canvasNoteId, jsonEncode(doc));
+    return true;
+  }
+
+  // ── 全库块搜索：「引用块」选择器的数据来源 ────────────────────────────
+  //
+  // 引用块走**一级扁平搜索**（Roam / Logseq 的路子），而不是"先选笔记、再选块"。
+  // 两级导航是**文件优先**模型（Notion / Obsidian）的产物——块住在文件里，所以
+  // 得先定位文件。sinan 的块是全库扁平的，一次查询就能搜到，不该让用户先回答
+  // "它在哪篇笔记里"。
+
+  /// 按文本搜块；[query] 为空时返回最近修改的一批。
+  ///
+  /// 空查询也返回结果是有意的：打开选择器就该看到东西，而不是一片空白等着打字
+  /// （Roam 的 `((` 就是这个手感）。
+  List<BlockHit> searchBlocks(String query, {int limit = 50}) {
+    final String q = query.trim();
+    final StringBuffer sql = StringBuffer(
+      'SELECT b.id AS block_id, b.type AS block_type, b.props_json AS props_json, '
+      'n.id AS note_id, n.title AS note_title, n.kind AS note_kind '
+      'FROM blocks b JOIN notes n ON n.id = b.note_id '
+      'WHERE n.deleted_at IS NULL '
+      // 没有文本的块（分隔线 / 图片 / 引用块本身）不占名额——引用它们没有意义。
+      "AND COALESCE(json_extract(b.props_json, '$_textPath'), '') <> ''",
+    );
+    final List<Object?> args = <Object?>[];
+    if (q.isNotEmpty) {
+      sql.write(" AND json_extract(b.props_json, '$_textPath') LIKE ?");
+      args.add('%$q%');
+    }
+    sql.write(' ORDER BY b.updated_at DESC LIMIT ?');
+    args.add(limit);
+
+    return <BlockHit>[
+      for (final Row r in db.select(sql.toString(), args))
+        BlockHit(
+          blockId: r['block_id'] as String,
+          text: textOfProps(r['props_json'] as String?),
+          blockType: r['block_type'] as String,
+          noteId: r['note_id'] as String,
+          noteTitle: r['note_title'] as String,
+          noteKind: NoteKind.fromName(r['note_kind'] as String),
+        ),
+    ];
+  }
+
+  // ── 反链：谁引用了我 ────────────────────────────────────────────────
+  //
+  // 引用边只有两类，且都指向**块**（见 `domain/backlink.dart`）：
+  // ① 文档里的 `ref` 块（`props_json.ref_type/ref_id`）；
+  // ② 画布上的卡片（`canvas_items.block_id`）。
+  // 于是"谁引用了这篇笔记" = 「ref 块指向本笔记」∪「ref 块指向本笔记的块」
+  //   ∪「画布卡片指向本笔记的块」—— 两条 SQL 就够，不需要链接表。
+
+  /// `ref` 块在 `blocks.type` 里的值（与编辑器的 `RefBlockKeys.type` 对齐）。
+  ///
+  /// 数据层不 import 编辑器层（那边依赖 material），故在此复刻一份 ——
+  /// 与 `CanvasStore._cardType` 同一个做法。
+  static const String _refType = 'ref';
+
+  /// `props_json` 里文本的路径。
+  ///
+  /// ⚠️ 用常量插值、而不是把 `$.text` 直接写进 SQL 字符串：Dart 把 `$` 当作
+  /// 插值开头，后面不是标识符时**编译报错**（"Expected an identifier"）。
+  static const String _textPath = r'$.text';
+
+  /// `ref_type` 的两个取值（与 `RefBlockKeys.refNote / refBlock` 对齐）。
+  static const String _refTargetNote = 'note';
+  static const String _refTargetBlock = 'block';
+
+  /// 谁引用了 [noteId]（或它的块），按来源笔记的最近修改倒序。
+  ///
+  /// **自引用照常列出**（本笔记里的 ref 块指向自己）：它是一条真实存在的边，
+  /// 悄悄过滤掉反而让人以为"没引用"。
+  List<Backlink> backlinks(String noteId) {
+    final ResultSet docRefs = db.select(
+      'SELECT b.note_id AS source_note, n.kind AS source_kind, '
+      '       n.title AS source_title, b.id AS via_block, '
+      // 上下文：`ref` 块**自身没有文本**，故取它前面最近一个有文本的块。
+      '       (SELECT p.props_json FROM blocks p '
+      '        WHERE p.note_id = b.note_id AND p.ord < b.ord '
+      "        AND COALESCE(json_extract(p.props_json, '$_textPath'), '') <> '' "
+      '        ORDER BY p.ord DESC LIMIT 1) AS ctx '
+      'FROM blocks b JOIN notes n ON n.id = b.note_id '
+      'WHERE b.type = ? AND ('
+      '  (json_extract(b.props_json, ?) = ? AND json_extract(b.props_json, ?) = ?) '
+      '  OR (json_extract(b.props_json, ?) = ? AND json_extract(b.props_json, ?) IN '
+      '      (SELECT id FROM blocks WHERE note_id = ?))'
+      ') '
+      'ORDER BY n.revised_at DESC',
+      <Object?>[
+        _refType,
+        r'$.ref_type', _refTargetNote, r'$.ref_id', noteId,
+        r'$.ref_type', _refTargetBlock, r'$.ref_id', noteId,
+      ],
+    );
+    final ResultSet cards = db.select(
+      'SELECT i.note_id AS source_note, n.kind AS source_kind, '
+      '       n.title AS source_title, i.block_id AS via_block, '
+      // 上下文：卡片的真身就是被引用那块 ⇒ 直接取它的文本。
+      '       bt.props_json AS ctx '
+      'FROM canvas_items i JOIN notes n ON n.id = i.note_id '
+      '     JOIN blocks bt ON bt.id = i.block_id '
+      'WHERE i.kind = ? AND i.block_id IN '
+      '      (SELECT id FROM blocks WHERE note_id = ?) '
+      'ORDER BY n.revised_at DESC',
+      <Object?>['card', noteId],
+    );
+
+    final Set<String> seen = <String>{};
+    final List<Backlink> out = <Backlink>[];
+    void add(Row r, {required bool canvasCard}) {
+      final String source = r['source_note'] as String;
+      final String via = r['via_block'] as String;
+      // 同一处引用只列一次（同笔记 + 同承载块 + 同来源类型）。
+      if (!seen.add('$source|$via|$canvasCard')) return;
+      out.add(
+        Backlink(
+          sourceNoteId: source,
+          sourceTitle: r['source_title'] as String,
+          sourceKind: NoteKind.fromName(r['source_kind'] as String),
+          viaBlockId: via,
+          viaCanvasCard: canvasCard,
+          context: _contextOf(r['ctx'] as String?),
+        ),
+      );
+    }
+
+    for (final Row r in docRefs) {
+      add(r, canvasCard: false);
+    }
+    for (final Row r in cards) {
+      add(r, canvasCard: true);
+    }
+    return out;
+  }
+
+  /// 反链的上下文：取文本并**截短**（它只用来"一眼判断要不要点进去"，
+  /// 换行与超长都会把面板撑坏）。
+  static String _contextOf(String? propsJson) {
+    final String text = textOfProps(propsJson).replaceAll('\n', ' ').trim();
+    const int max = 80;
+    return text.length <= max ? text : '${text.substring(0, max)}…';
+  }
+
+  // ── 嵌入预览：把引用目标的内容取出来（只读） ──────────────────────────
+
+  /// 嵌入块要显示的内容（[refType] = 'note' 取整篇的顶层块，'block' 取那一块）。
+  ///
+  /// ## 为什么只返回"有文本的块"
+  /// 嵌入是**只读摘要**，且这条过滤顺带让递归不可能发生：`ref` 块自己没有文本
+  /// ⇒ "A 嵌 B、B 又嵌 A" 不会无限展开。
+  ///
+  /// [limit] 只在 `refType='note'` 时生效（整篇可能很长，不能全展开）。
+  List<EmbedLine> embedPreview(
+    String refType,
+    String refId, {
+    int limit = 30,
+  }) {
+    final ResultSet rs = refType == _refTargetBlock
+        ? db.select(
+            "SELECT type, props_json FROM blocks WHERE id = ? "
+            "AND COALESCE(json_extract(props_json, '$_textPath'), '') <> ''",
+            <Object?>[refId],
+          )
+        : db.select(
+            "SELECT type, props_json FROM blocks WHERE note_id = ? "
+            "AND COALESCE(json_extract(props_json, '$_textPath'), '') <> '' "
+            'ORDER BY ord LIMIT ?',
+            <Object?>[refId, limit],
+          );
+    return <EmbedLine>[
+      for (final Row r in rs)
+        _embedLineOf(r['type'] as String, r['props_json'] as String),
+    ];
+  }
+
+  static EmbedLine _embedLineOf(String type, String propsJson) {
+    bool? checked;
+    try {
+      final Object? decoded = jsonDecode(propsJson);
+      if (decoded is Map && decoded['checked'] is bool) {
+        checked = decoded['checked'] as bool;
+      }
+    } on FormatException {
+      // 脏 props：就当没有勾选态，文本照样显示。
+    }
+    return EmbedLine(
+      text: textOfProps(propsJson),
+      blockType: type,
+      checked: checked,
+    );
+  }
+
+  /// 读画布正文并解析成可变 Map（不是画布笔记 / 脏数据 → null）。
+  Map<String, Object?>? _canvasDoc(String canvasNoteId) {
+    final ResultSet rs = db.select(
+      'SELECT content FROM notes WHERE id = ? AND kind = ?',
+      <Object?>[canvasNoteId, NoteKind.canvas.name],
+    );
+    if (rs.isEmpty) return null;
+    return _parseJsonObject(rs.first['content'] as String?);
+  }
+
+  /// 画布正文的 `document` 子树（可变视图；写它即写回 [doc]）。
+  static Map<String, Object?>? _canvasDocument(Map<String, Object?> doc) {
+    final Object? document = doc['document'];
+    if (document is! Map) return null;
+    return document.cast<String, Object?>();
+  }
+
+  /// `document.items`（item id → item JSON 的可变视图）。
+  static Map<String, Object?>? _canvasItems(Map<String, Object?> document) {
+    final Object? items = document['items'];
+    if (items is! Map) return null;
+    return items.cast<String, Object?>();
+  }
+
+  /// 下一个画布元素 id。**沿用内核的 `item-<自增>` 形态**——内核载入时会用
+  /// `advanceItemIdSequence` 把分配器推到已有 id 之后，两边因此不会撞号；
+  /// 换个更可读的形态反而会让内核的推进逻辑看不见它（于是新建元素覆盖旧元素）。
+  static String _nextCanvasItemId(Iterable<String> existingIds) {
+    int max = -1;
+    for (final String id in existingIds) {
+      if (!id.startsWith('item-')) continue;
+      final int? n = int.tryParse(id.substring(5));
+      if (n != null && n > max) max = n;
+    }
+    return 'item-${max + 1}';
+  }
+
+  /// 自动排布：落在所有元素**下方**（最底边 + 24）。卡片尺寸按画布常用档位给。
+  static List<double> _freeCardRect(Map<String, Object?> items) {
+    const double w = 240;
+    const double h = 120;
+    double bottom = 0;
+    for (final Object? v in items.values) {
+      if (v is! Map) continue;
+      final Object? r = v['rect'];
+      if (r is List && r.length == 4 && r[3] is num) {
+        final double b = (r[3] as num).toDouble();
+        if (b > bottom) bottom = b;
+      }
+    }
+    return <double>[0, bottom + 24, w, bottom + 24 + h];
+  }
+
+  /// 解析一个 JSON 对象；空串 / 数组 / 脏数据 → null。
+  static Map<String, Object?>? _parseJsonObject(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return decoded.cast<String, Object?>();
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 照 `v2` 块树节点格式，从 `blocks` 取一块拼成待插入节点（含 children 空列表）。
+  Map<String, Object?>? _blockNode(String blockId) {
+    final ResultSet rs = db.select(
+      'SELECT type, props_json FROM blocks WHERE id = ?',
+      <Object?>[blockId],
+    );
+    if (rs.isEmpty) return null;
+    final Object? props = _decodeProps(rs.first['props_json'] as String?);
+    return <String, Object?>{
+      'id': blockId,
+      'type': rs.first['type'] as String,
+      'data': props ?? const <String, Object?>{},
+      'children': <Object?>[],
+    };
+  }
+
+  String? _rawContent(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT content FROM notes WHERE id = ?',
+      <Object?>[noteId],
+    );
+    return rs.isEmpty ? null : rs.first['content'] as String?;
+  }
+
+  /// 同步落盘正文 + 双写投影（与 [updateContent] 等价，但同步、不给 plain_text 重算）。
+  ///
+  /// 块迁移是底层操作，plain_text 仅供列表预览，下一次编辑会自动刷新，这里不纠结。
+  void _persistContentSync(String noteId, String content) {
+    final String hash = contentFingerprint(content);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    db.execute(
+      'UPDATE notes SET content = ?, content_hash = ?, revised_at = ? WHERE id = ?',
+      <Object?>[content, hash, now, noteId],
+    );
+    _blocks.replaceNoteBlocks(noteId, content);
+    _canvas.replaceCanvasRows(noteId, content); // 非画布笔记 ⇒ 返回 0，无害
+  }
+
+  static Map<String, Object?>? _findNode(List<Object?> nodes, String id) {
+    for (final Object? n in nodes) {
+      final Map<String, Object?> node = n! as Map<String, Object?>;
+      if (node['id'] == id) return node;
+      final Object? kids = node['children'];
+      if (kids is List<Object?>) {
+        final Map<String, Object?>? hit = _findNode(kids, id);
+        if (hit != null) return hit;
+      }
+    }
+    return null;
+  }
+
+  /// 从树里摘掉 id 节点（递归）。返回是否真的摘掉了。
+  static bool _removeNode(List<Object?> nodes, String id) {
+    for (int i = 0; i < nodes.length; i++) {
+      final Map<String, Object?> node = nodes[i]! as Map<String, Object?>;
+      if (node['id'] == id) {
+        nodes.removeAt(i);
+        return true;
+      }
+      final Object? kids = node['children'];
+      if (kids is List<Object?> && _removeNode(kids, id)) return true;
+    }
+    return false;
+  }
+
+  static Object? _decodeProps(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return jsonDecode(raw);
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// **回填**（画布侧第 2 步）：把「正文已是画布 JSON 但还没有画布行」的存量画布补进
   /// `canvas_items` / `canvas_meta` / `ink_shards`。

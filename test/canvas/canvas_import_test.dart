@@ -13,6 +13,7 @@ import 'package:sinan/src/canvas/kernel/canvas_view.dart';
 import 'package:sinan/src/canvas/kernel/ink_stroke.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
+import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -45,6 +46,10 @@ class _RecordingNotes extends NotesNotifier {
 void main() {
   late Database db;
   late NoteStore store;
+
+  /// 画布视图会读设置（AI 入口的开关）⇒ ProviderScope 必须注入它，
+  /// 否则 `settingsStoreProvider` 那个"在 main 中 override"的守卫会直接抛。
+  late SettingsStore settings;
   late Directory tempDir;
 
   setUp(() {
@@ -52,6 +57,7 @@ void main() {
     AppDatabase.migrateForTesting(db);
     db.execute('PRAGMA foreign_keys = ON;');
     store = NoteStore(db);
+    settings = SettingsStore(db);
     tempDir = Directory.systemTemp.createTempSync('sinan_canvas_import');
   });
 
@@ -89,6 +95,7 @@ void main() {
       ProviderScope(
         overrides: [
           noteStoreProvider.overrideWithValue(store),
+          settingsStoreProvider.overrideWithValue(settings),
           appDataDirProvider.overrideWithValue(tempDir.path),
           notesProvider.overrideWith(_RecordingNotes.new),
           pendingSavesProvider.overrideWithValue(saves),

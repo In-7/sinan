@@ -375,7 +375,8 @@ class EditorTypography {
   ///
   /// [text] = 正文（及标题、列表、引用、代码块、公式）的**前景色**——编辑器不
   /// 继承 Ambient 样式，**必须显式给**，否则亮色下正文是白字（见 [body]）。
-  /// [link] = 链接色（固定标准蓝，不随主题种子色）；[codeBackground] = 行内代码
+  /// [link] = 链接色（[AppTheme.editorLink]：直接吃主题 primary 原色，与引用块
+  /// 竖条同族，明暗切换跟随、不写死）；[codeBackground] = 行内代码
   /// 的灰底（标杆编辑器观感，中性）；[muted] = 自动补全提示色
   /// （收 `Color` 而非 `ColorScheme`：material_ui 与官方 flutter/material
   /// 的 ColorScheme 是两个类型，只有 `Color` 两侧通用）。

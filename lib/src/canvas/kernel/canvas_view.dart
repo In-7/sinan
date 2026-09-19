@@ -21,6 +21,20 @@ import 'canvas_painters.dart';
 /// 三层拆开是为了**重绘隔离**：平移/缩放时三层的 `shouldRepaint` 都只比相机，
 /// 而写字时只有笔迹层与浮层重绘。项目渲染规范要求的高频局部刷新即此。
 ///
+/// ## 2026-09-19 核实：这套隔离已经是**到位**的，不要再往上加东西
+/// 逐层 `shouldRepaint` 收窄（网格只认相机快照、item 与笔迹各按 `repaintStamp`）
+/// ＋ 视口裁剪（只画 `visibleWorld` 内的）＋ 笔迹烤成 `Picture`，已经把每帧重绘
+/// 压到"只画变了的那一层、只画视口内的那部分"。通用的"增量重绘 / 脏区收窄"
+/// 类建议在这里属于**已实现**状态。
+///
+/// 补丁（2026-09-19）：item 层加了 **LOD 代理渲染**（`ItemPainter(lod: true)`）。
+/// 这条**不是**上面那套的重复，而是它的缺口——视口裁剪只在 item 落在视口**外**
+/// 时有用；缩小时 `visibleWorld` 会包住整张画布 ⇒ 裁剪失效、变成全量全保真绘制。
+/// LOD 承接的正是这个裁剪救不了的场景。
+///
+/// ⚠️ 真要改这里，先确认不会让某层开始**跟着高频事件**（写字、拖 item）一起
+/// 重绘——尤其别给网格层接 `repaintStamp`（它是唯一"每帧上千个圆"的重层）。
+///
 /// 颜色由调用方给（不在这里读 Theme）：本文件刻意不依赖 Material，
 /// 保证内核在两套主题（material_ui / 官方 material）下都能用。
 class CanvasView extends StatefulWidget {
@@ -125,7 +139,29 @@ class _CanvasViewState extends State<CanvasView> {
                                 camera: controller.camera,
                                 // 形状的哨兵色按主题墨色画（与笔迹同一口径）。
                                 inkColor: widget.inkColor,
+                                // LOD 代理渲染（见 `ItemPainter` 类文档）：缩小时视口
+                                // 会包住整张画布 ⇒ 裁剪失效，此时小到看不清的 item
+                                // 只画身份色块并跳过图片解码。**只有实时视图开**，
+                                // 导出 / AI 栅格化保持默认全保真。
+                                lod: true,
+                                // 判据用控制器的**稳定缩放**（不是 `camera.scale`）：
+                                // 缩放中冻结、停稳才跳一次 ⇒ 不闪变、也不会在
+                                // 手势正忙时批量解码图片（见 `lodScale` 的文档）。
+                                lodScale: controller.lodScale,
+                                // 选中 / 编辑中的 item 保持全保真——照 tldraw
+                                // 「正在操作的东西必须看得见」，选中的卡片不该
+                                // 突然变成一个色块。
+                                pinnedIds: <String>{
+                                  for (final CanvasItem selected
+                                      in controller.selectedItems)
+                                    selected.id,
+                                },
                                 items: controller.document.itemsIn(
+                                  controller.camera.visibleWorld(size),
+                                ),
+                                // 连线：端点在绘制时由两端卡片**现算**（binding），
+                                // 所以拖动卡片时它会自己跟随，无需任何同步代码。
+                                edges: controller.document.edgesIn(
                                   controller.camera.visibleWorld(size),
                                 ),
                                 stamp: controller.repaintStamp,
@@ -167,6 +203,10 @@ class _CanvasViewState extends State<CanvasView> {
                                     : null,
                                 eraserRadius: controller.eraserRadius,
                                 selectedItems: controller.selectedItems,
+                                // 端点拖改（缺口4）的预览走同一条虚线通道。
+                                pendingEdge: controller.pendingEdgeGeometry ??
+                                    controller.edgeGripPreview,
+                                selectedEdge: controller.selectedEdgeGeometry,
                                 stamp: controller.repaintStamp,
                               ),
                             ),
@@ -176,50 +216,15 @@ class _CanvasViewState extends State<CanvasView> {
                     ),
                   ),
                 ),
-                // AI 生成入口：有选区时浮在选区右上角。与画布 Listener **平级**，
-                // 自身命中拦截点击，不会误触发画布框选。
-                if (controller.selectionBounds != null)
-                  _aiGenerateButton(controller, size),
+                // ⚠️ "AI 生成"浮层入口已于 2026-09-18 **移除**（体验修复）：
+                // 它挂在"有选区"上 ⇒ 插入/选中任何东西都会在右上角冒出来，而生成
+                // 出来的图片又不可编辑，干扰主流程。内核能力（`generateFromSelection`
+                // / `AiImageItem` / `generator`）**保留**，将来再挂回 UI。
               ],
             );
           },
         );
       },
-    );
-  }
-
-  /// 选区右上角的"AI 生成"浮层按钮（仅用 widgets/painting，不引入 Material，
-  /// 保持内核两套主题通用）。点击调用 [CanvasController.generateFromSelection]。
-  Widget _aiGenerateButton(CanvasController controller, Size size) {
-    final Rect world = controller.selectionBounds!;
-    final Offset topLeft = controller.camera.worldToScreen(world.topLeft);
-    final Offset bottomRight = controller.camera.worldToScreen(
-      world.bottomRight,
-    );
-    final double left = (bottomRight.dx + 8).clamp(8.0, size.width - 110.0);
-    final double top = (topLeft.dy - 36).clamp(8.0, size.height - 36.0);
-    return Positioned(
-      left: left,
-      top: top,
-      child: GestureDetector(
-        onTap: () => controller.generateFromSelection(
-          prompt: controller.aiPrompt.isEmpty ? null : controller.aiPrompt,
-        ),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: const Color(0xDD000000),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(color: Color(0x40000000), blurRadius: 6),
-            ],
-          ),
-          child: const Text(
-            '✨ AI 生成',
-            style: TextStyle(color: Color(0xFFFFFFFF), fontSize: 13),
-          ),
-        ),
-      ),
     );
   }
 
@@ -231,5 +236,7 @@ class _CanvasViewState extends State<CanvasView> {
         CanvasTool.pan => SystemMouseCursors.grab,
         // 十字光标：形状工具是"落点定框"的绘制行为（同笔），不是选择行为。
         CanvasTool.shape => SystemMouseCursors.precise,
+        // 连线工具：精确十字光标，提示"从一个卡片拖到另一个"。
+        CanvasTool.connect => SystemMouseCursors.precise,
       };
 }

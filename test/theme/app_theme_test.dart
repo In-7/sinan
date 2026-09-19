@@ -143,7 +143,27 @@ void main() {
       );
       final Brightness brightness = theme.brightness;
       expect(surface.color, AppTheme.floatSurface(brightness));
-      expect(surface.elevation, AppTheme.menuElevation, reason: '$brightness：缺投影');
+      // ⚠️ 投影**不由 Material 的 elevation 承担**（改为双层软阴影后）：
+      // elevation 只有单层固定投影，出不来"贴地影 + 环境影"的质感，且与外面那层
+      // 叠加会发脏 ⇒ 它保持 0，投影移到外层 DecoratedBox（下面那条断言）。
+      expect(
+        surface.elevation,
+        0,
+        reason: '$brightness：投影不该由 Material 承担（会与外层影子叠脏）',
+      );
+      final DecoratedBox backdrop = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(AppFloatSurface),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      expect(
+        (backdrop.decoration as BoxDecoration).boxShadow,
+        AppTheme.floatShadows(brightness),
+        reason: '$brightness：缺双层软阴影——三件套少一件就不像浮层',
+      );
       expect(
         (surface.shape! as RoundedRectangleBorder).side,
         AppTheme.menuBorder(theme.colorScheme),

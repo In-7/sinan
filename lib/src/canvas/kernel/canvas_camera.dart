@@ -22,16 +22,24 @@ class CanvasCamera {
     double? scale,
     Offset? translation,
     this.minScale = 0.05,
-    this.maxScale = 32,
+    this.maxScale = maxScaleCeiling,
   }) {
     if (scale != null) _scale = scale;
     if (translation != null) _translation = translation;
   }
 
+  /// 缩放上限的**天花板**（应用级常量）= 4 ⇒ 最多放大 **400%**。
+  ///
+  /// 2026-09-18 由 32（3200%）下调：笔记场景用不到几十倍，无边记的缩放范围也是
+  /// 这个量级。⚠️ 它是**天花板**而不只是默认值——老存档里写着 `maxScale: 32`，
+  /// [CanvasCamera.fromJson] 会把它钳到这里；只改默认值的话，**已存在的画布
+  /// 一步都不会变**。
+  static const double maxScaleCeiling = 4;
+
   /// 缩放下限（0.05 = 缩到 5%，足够"看全貌"）。
   final double minScale;
 
-  /// 缩放上限（32 = 放大 32 倍，笔迹细节/小字够用）。
+  /// 缩放上限（见 [maxScaleCeiling]，最多 400%）。
   final double maxScale;
 
   // 默认值写在声明处（构造器体只在传了值时覆盖），这样既没有
@@ -126,7 +134,11 @@ class CanvasCamera {
       ((j['translation'] as List)[0] as num).toDouble(),
       ((j['translation'] as List)[1] as num).toDouble(),
     ),
-    minScale: (j['minScale'] as num).toDouble(),
-    maxScale: (j['maxScale'] as num).toDouble(),
+    minScale: (j['minScale'] as num?)?.toDouble() ?? 0.05,
+    // ⚠️ 钳到天花板：旧存档写的是 32，不钳的话"上限 400%"对它们无效。
+    maxScale: math.min(
+      (j['maxScale'] as num?)?.toDouble() ?? maxScaleCeiling,
+      maxScaleCeiling,
+    ),
   );
 }

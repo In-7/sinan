@@ -8,6 +8,8 @@ import 'package:flutter/widgets.dart';
 
 import 'canvas_ai.dart';
 import 'canvas_media.dart';
+import 'canvas_mindmap.dart';
+import 'canvas_palette.dart';
 import 'ink_stroke.dart';
 
 /// item 的 id 前缀（存档里 id 的形态：`item-<递增序号>`）。
@@ -72,12 +74,35 @@ abstract class CanvasItem {
     required this.rect,
     this.angle = 0,
     this.meta = const <String, dynamic>{},
+    this.groupId,
   }) : id = id ?? '$_itemIdPrefix${_nextItemId++}';
 
   final String id;
 
   /// 自由字段：AI 参数 / 业务标签挂这里，渲染逻辑不感知（schema v2 的 meta）。
   final Map<String, dynamic> meta;
+
+  /// 所属分组框的 id（[CanvasGroupItem.id]）；`null` = 不属于任何组。
+  ///
+  /// 这是"整组拖动 / 删除解绑"的关联键：成员 item 用它找到自己的容器框，
+  /// 文档层无需维护额外层级树（见 `canvas_document.dart`）。落在存储层走
+  /// `canvas_items.props_json`（扩展位），不单独占列。
+  ///
+  /// **可变**（2026-09-19 起）：与 [rect] / [colorSlot] 同性质 —— 由面板或 AI
+  /// **就地**改，改动前后的值交给撤销命令持有（见
+  /// `CanvasDocument.setItemGroupIds`）。
+  ///
+  /// ⚠️ 此前是 `final`，"把元素加进分组框"在**运行时**就做不到（只有构造器与
+  /// `fromJson` 能写它）—— 分组框于是只有存档与测试能造，AI/UI 都碰不了。
+  /// 改可变之后 `CanvasGroupItem` 才真正可用。
+  ///
+  /// ⚠️ 各子类 `toJson` 里写它用 **null-aware element**（`'groupId': ?groupId`）：
+  /// 为 null 时**整条省略**——老存档里没有这个键，无条件写会让"行 ⇄ 原文"的
+  /// 深比较失配（于是所有老画布静默回退 JSON）。同 `colorSlot` / `edges`。
+  String? groupId;
+
+  /// 从 JSON 读 `groupId`（各子类 [fromJson] 共用，避免每个分支重复这段代码）。
+  static String? groupIdOf(Map<String, dynamic> j) => j['groupId'] as String?;
 
   /// 世界坐标包围盒（轴对齐）。拖动/缩放就地更新。
   Rect rect;
@@ -96,7 +121,7 @@ abstract class CanvasItem {
     return Offset(c.dx + dx * cos - dy * sin, c.dy + dx * sin + dy * cos);
   }
 
-  /// 世界轴对齐包围盒：有旋转时返回旋转后的 AABB（供框选/导出/对齐）。
+  /// 世界轴对齐包围盒：有旋转时返回旋转后的 AABB（供框选 / 导出 / 对齐）。
   Rect get bounds {
     if (angle == 0) return rect;
     final Offset c = rect.center;
@@ -126,7 +151,19 @@ abstract class CanvasItem {
   ///
   /// [ink] 是当前**主题墨色**：颜色等于哨兵 [kThemeInk] 的 item 按它绘制
   /// （见 [resolveInk]）。导出/AI 路径不传 ⇒ 走"白纸黑墨"的口径。
-  void paint(ui.Canvas canvas, {Color? ink});
+  ///
+  /// [slotColor] 是该 item **语义色槽位**（[colorSlot]）已解析出的实色；`null` =
+  /// 没有槽位 / 跟随主题。目前只有卡片与思维导图拿它做底色，其余子类忽略它——
+  /// 保留这个参数是为了让绘制层能**统一**传参（子类签名必须与基类兼容）。
+  void paint(ui.Canvas canvas, {Color? ink, Color? slotColor});
+
+  /// 语义色槽位（见 [CanvasColorSlot]）；`null` = 跟随主题墨色。
+  ///
+  /// 只有卡片与思维导图**支持**它——那两个子类用可变字段覆写这两个成员；
+  /// 其余子类恒为 null、赋值是空操作。这样"选择面板 / 撤销命令 / 绘制层"都能用
+  /// **统一**的方式读写，不必到处都是 `is CardItem || is MindMapItem`。
+  CanvasColorSlot? get colorSlot => null;
+  set colorSlot(CanvasColorSlot? value) {}
 
   /// 序列化为纯数据（不含 `ui.Image` 等运行时资源）。
   ///
@@ -146,6 +183,12 @@ abstract class CanvasItem {
         return ImageItem.fromJson(j, media: media);
       case 'aiImage':
         return AiImageItem.fromJson(j, media: media);
+      case 'card':
+        return CardItem.fromJson(j, media: media);
+      case 'mindmap':
+        return MindMapItem.fromJson(j, media: media);
+      case 'group':
+        return CanvasGroupItem.fromJson(j, media: media);
       default:
         throw ArgumentError('unknown canvas item type: ${j['type']}');
     }
@@ -185,6 +228,7 @@ class ShapeItem extends CanvasItem {
     this.strokeWidth = 2,
     this.filled = false,
     super.meta,
+    super.groupId,
   });
 
   final CanvasShapeKind kind;
@@ -251,7 +295,7 @@ class ShapeItem extends CanvasItem {
   }
 
   @override
-  void paint(ui.Canvas canvas, {Color? ink}) {
+  void paint(ui.Canvas canvas, {Color? ink, Color? slotColor}) {
     // 哨兵色（[kThemeInk]，插入形状的默认色）⇒ 按当前主题墨色画：否则暗色画布上
     // 插入的矩形是近黑描边，又一个"黑墨画黑纸"。
     final ui.Paint paint = ui.Paint()..color = resolveInk(color, ink ?? color);
@@ -278,6 +322,7 @@ class ShapeItem extends CanvasItem {
     'filled': filled,
     'angle': angle,
     'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    'groupId': ?groupId,
     'meta': meta,
   };
 
@@ -291,6 +336,7 @@ class ShapeItem extends CanvasItem {
         strokeWidth: (j['strokeWidth'] as num).toDouble(),
         filled: j['filled'] as bool? ?? false,
         meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+        groupId: CanvasItem.groupIdOf(j),
       );
 }
 
@@ -312,6 +358,7 @@ class ImageItem extends CanvasItem implements ImageSink {
     super.angle,
     this.src = '',
     super.meta,
+    super.groupId,
   });
 
   /// 图片的**运行时绝对路径**；落盘时由 `toJson` 换算成相对引用（见类文档）。
@@ -396,7 +443,7 @@ class ImageItem extends CanvasItem implements ImageSink {
       rect.inflate(radius).contains(toLocal(world));
 
   @override
-  void paint(ui.Canvas canvas, {Color? ink}) {
+  void paint(ui.Canvas canvas, {Color? ink, Color? slotColor}) {
     final ui.Image? img = _image;
     if (img == null) {
       // 占位：加载前也能看到框、能命中、能落账。颜色取**低透明度的主题墨色**
@@ -429,6 +476,7 @@ class ImageItem extends CanvasItem implements ImageSink {
     'angle': angle,
     'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
     'src': _refOf(src, media),
+    'groupId': ?groupId,
     'meta': meta,
   };
 
@@ -439,6 +487,7 @@ class ImageItem extends CanvasItem implements ImageSink {
         angle: (j['angle'] as num?)?.toDouble() ?? 0,
         src: _pathOf(j['src'], media),
         meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+        groupId: CanvasItem.groupIdOf(j),
       );
 }
 
@@ -454,6 +503,7 @@ class AiImageItem extends ImageItem {
     super.src,
     required this.gen,
     super.meta,
+    super.groupId,
   });
 
   /// 生成配方（model / prompt / seed / inputs 等）。
@@ -467,6 +517,7 @@ class AiImageItem extends ImageItem {
     'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
     'src': _refOf(src, media),
     'gen': gen.toJson(),
+    'groupId': ?groupId,
     'meta': meta,
   };
 
@@ -479,6 +530,305 @@ class AiImageItem extends ImageItem {
     angle: (j['angle'] as num?)?.toDouble() ?? 0,
     src: _pathOf(j['src'], media),
     gen: GenRecipe.fromJson(j['gen'] as Map<String, dynamic>),
+    meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+    groupId: CanvasItem.groupIdOf(j),
+  );
+}
+
+/// 卡片的绘制常量（**世界单位**，与相机无关）。
+abstract final class CardMetrics {
+  /// 圆角（与 `Tokens.radiusSm` 同值；内核不依赖 theme 层，故在此复刻）。
+  static const double radius = 6;
+
+  /// 文本与卡片边缘的间距。
+  static const double padding = 8;
+
+  static const double fontSize = 14;
+  static const double lineHeight = 1.4;
+
+  /// [CanvasItem.paint] 没给 ink 时的兜底（导出 / AI 路径 ⇒ "白纸黑墨"口径）。
+  static const ui.Color fallbackInk = ui.Color(0xFF1F1F1F);
+}
+
+/// 卡片（v9）：画布上的**可编辑文本块**——"帮人思考"画布的主角。
+///
+/// ## 与形状 / 图片的根本差别：它有**内容**
+/// 文本的真身落在 `blocks`（[blockId] 指向那一行），本对象只持有**几何 + 引用**
+/// ⇒ 画布上的想法能被搜索、引用、AI 索引到（这三件事都必须走 `blocks`）。
+/// [text] 是**运行时副本**：绘制与序列化用它；改文本时由宿主层同步写 `blocks`
+/// （存储侧的拆分见 `data/canvas_store.dart`）。
+///
+/// ## 为什么画在 CustomPaint 里而不是挂 widget
+/// 命中与绘制都从 [rect] 推导，与笔迹共用同一套**视口裁剪 + 相机变换**。挂 widget
+/// 会破坏架构第二章的"重绘隔离"（平移 / 缩放时只有背景层必重绘）。
+/// 真正的输入框只在**编辑时**由宿主层挂载，且严格"一次只挂一个"。
+class CardItem extends CanvasItem {
+  CardItem({
+    super.id,
+    required super.rect,
+    super.angle,
+    required this.blockId,
+    this.text = '',
+    this.colorSlot,
+    super.meta,
+    super.groupId,
+  });
+
+  /// 卡片内容所在的 `blocks.id`（内容的真身在那一行，见类文档）。
+  final String blockId;
+
+  /// 卡片文本（运行时副本）。**可变**：编辑时就地改。
+  String text;
+
+  /// 语义色槽位（覆盖基类的统一读写口）；`null` = 跟随主题墨色。
+  @override
+  CanvasColorSlot? colorSlot;
+
+  /// 排版缓存。平移 / 缩放**不会**让它失效——排版是在**世界坐标**下做的，
+  /// 与相机无关；这正是敢缓存的原因（否则每帧几十张卡片都要重排一次）。
+  ui.Paragraph? _paragraph;
+  String? _paragraphText;
+  double _paragraphWidth = -1;
+
+  /// 文本区（[rect] 去掉内边距）。
+  Rect get _textRect => rect.deflate(CardMetrics.padding);
+
+  @override
+  bool hitTest(Offset world, double radius) {
+    // 卡片是**实心**的（有底色），盒内即命中 —— 与填充形状同理。
+    return rect.inflate(radius).contains(toLocal(world));
+  }
+
+  @override
+  void paint(ui.Canvas canvas, {ui.Color? ink, ui.Color? slotColor}) {
+    // 语义槽位优先：它表达的是**语义**（"这是需要留意的红"），不跟墨色走。
+    // 槽位激活时底色/描边加深一档——否则"淡染 6%"根本看不出标了颜色。
+    final bool marked = slotColor != null;
+    final ui.Color base = slotColor ?? ink ?? CardMetrics.fallbackInk;
+    final RRect box = RRect.fromRectAndRadius(
+      rect,
+      const Radius.circular(CardMetrics.radius),
+    );
+
+    if (angle != 0) {
+      canvas.save();
+      canvas.translate(rect.center.dx, rect.center.dy);
+      canvas.rotate(angle);
+      canvas.translate(-rect.center.dx, -rect.center.dy);
+    }
+
+    // 无槽位时底与描边都用**墨色的淡染**：`paint` 只给了 ink 这一个颜色，这样
+    // 卡片在亮 / 暗两套主题下都成立。
+    canvas.drawRRect(
+      box,
+      ui.Paint()..color = base.withValues(alpha: marked ? 0.16 : 0.06),
+    );
+    canvas.drawRRect(
+      box,
+      ui.Paint()
+        ..color = base.withValues(alpha: marked ? 0.55 : 0.35)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    if (text.isNotEmpty) {
+      final Rect area = _textRect;
+      // 裁到文本区：文字超出卡片高度时不该画到卡片外面去。
+      canvas.save();
+      canvas.clipRect(area);
+      canvas.drawParagraph(_layout(area.width, base), area.topLeft);
+      canvas.restore();
+    }
+
+    if (angle != 0) canvas.restore();
+  }
+
+  ui.Paragraph _layout(double width, ui.Color color) {
+    if (_paragraph != null &&
+        _paragraphText == text &&
+        _paragraphWidth == width) {
+      return _paragraph!;
+    }
+    final ui.Paragraph paragraph = (ui.ParagraphBuilder(
+      ui.ParagraphStyle(
+        fontSize: CardMetrics.fontSize,
+        height: CardMetrics.lineHeight,
+        textAlign: ui.TextAlign.left,
+      ),
+    )
+          ..pushStyle(
+            ui.TextStyle(color: color, fontSize: CardMetrics.fontSize),
+          )
+          ..addText(text))
+        .build();
+    paragraph.layout(ui.ParagraphConstraints(width: width));
+    _paragraph?.dispose();
+    _paragraph = paragraph;
+    _paragraphText = text;
+    _paragraphWidth = width;
+    return paragraph;
+  }
+
+  @override
+  void dispose() {
+    _paragraph?.dispose();
+    _paragraph = null;
+    _paragraphText = null;
+    _paragraphWidth = -1;
+    super.dispose();
+  }
+
+  /// ⚠️ 字段与**存储契约**逐项对齐（`data/canvas_store.dart` 的「卡片 JSON 契约」）：
+  /// 存档里 `text` 是可见的（自包含、可读、可导出），落库时才被拆走。
+  @override
+  Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
+    'type': 'card',
+    'id': id,
+    'blockId': blockId,
+    'text': text,
+    'angle': angle,
+    'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    // ⚠️ 空槽位**不写**这个键：老存档里没有它，无条件写会让"行 ⇄ 原文"的深比较
+    // 失配 ⇒ 所有老画布静默回退 JSON（同 `edges` 键的处理）。
+    if (colorSlot != null) 'colorSlot': colorSlot!.name,
+    'groupId': ?groupId,
+    'meta': meta,
+  };
+
+  factory CardItem.fromJson(Map<String, dynamic> j, {MediaResolver? media}) =>
+      CardItem(
+        id: j['id'] as String?,
+        rect: _rectFromJson(j['rect'] as List),
+        angle: (j['angle'] as num?)?.toDouble() ?? 0,
+        // 缺 blockId 的旧存档兜底成 item id：内容因此仍能落 blocks
+        // （为空会被存储层跳过 ⇒ 卡片变成没有内容的空框）。
+        blockId: (j['blockId'] as String?) ?? (j['id'] as String? ?? ''),
+        text: j['text'] as String? ?? '',
+        colorSlot: canvasColorSlotOf(j['colorSlot']),
+        meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+        groupId: CanvasItem.groupIdOf(j),
+      );
+}
+
+/// 分组框（2026-09-18）：画布上的**容器型 item**，对标 JSON Canvas 的 `group`、
+/// tldraw 的 `parentId`、AFFiNE 的 frame——三家标杆**都有**这个节点，属刚需。
+///
+/// ## 与成员的关系：成员持有 [groupId]
+/// 本对象是"框 + 标题"，是一个**普通 [CanvasItem]**（自动获得增删、撤销、
+/// 序列化、落库）。被它框住的成员 item 用基类 [CanvasItem.groupId] 指向本框的
+/// [CanvasItem.id]——于是"整组拖动 / 删除解绑"只需按 [groupId] 聚拢，文档层
+/// 无需维护额外的层级树（见 `canvas_document.dart`）。
+///
+/// ## 为什么是"一等结构"而不是 meta 字段
+/// 分组是**结构性关系**（一组元素的整体），不是"附加属性"。塞进 `meta` 将来必然
+/// 要挖出来提为字段，届时仍是一次结构迁移——既然标杆三证刚需，现在就立为一等结构，
+/// 免得将来返工。
+class CanvasGroupItem extends CanvasItem {
+  CanvasGroupItem({
+    super.id,
+    required super.rect,
+    super.angle,
+    this.label = '',
+    this.colorSlot,
+    super.meta,
+    super.groupId,
+  });
+
+  /// 标题（顶部标签条）。空 = 不画标签。
+  String label;
+
+  /// 语义色槽位（覆盖基类统一读写口）；`null` = 跟随主题墨色。
+  @override
+  CanvasColorSlot? colorSlot;
+
+  @override
+  bool hitTest(Offset world, double radius) =>
+      rect.inflate(radius).contains(toLocal(world));
+
+  @override
+  void paint(ui.Canvas canvas, {ui.Color? ink, ui.Color? slotColor}) {
+    final bool marked = slotColor != null;
+    final ui.Color base = slotColor ?? ink ?? const ui.Color(0xFF1F1F1F);
+    final RRect box = RRect.fromRectAndRadius(
+      rect,
+      const Radius.circular(8),
+    );
+    // 容器底色极淡（框是背景，不抢内容），标色时稍加深。
+    canvas.drawRRect(
+      box,
+      ui.Paint()..color = base.withValues(alpha: marked ? 0.14 : 0.04),
+    );
+    canvas.drawRRect(
+      box,
+      ui.Paint()
+        ..color = base.withValues(alpha: marked ? 0.5 : 0.3)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    if (label.isNotEmpty) _paintLabel(canvas, base);
+  }
+
+  void _paintLabel(ui.Canvas canvas, ui.Color base) {
+    final ui.Paragraph p = _labelParagraph(base);
+    // 标签贴在框内左上角（与卡片文本同口径：世界坐标下排版，不随缩放重排）。
+    canvas.drawParagraph(p, Offset(rect.left + 8, rect.top + 6));
+  }
+
+  ui.Paragraph? _labelParagraphCache;
+  String? _labelCacheText;
+  ui.Color? _labelCacheInk;
+
+  /// 标签段落缓存：文本/墨色未变就复用，且**固定最大宽度**（世界单位）而非框宽，
+  /// 免去每次拖动框时重建段落（group 框一般够大，超长省略）。
+  ui.Paragraph _labelParagraph(ui.Color color) {
+    if (_labelParagraphCache != null &&
+        _labelCacheText == label &&
+        _labelCacheInk == color) {
+      return _labelParagraphCache!;
+    }
+    final ui.ParagraphBuilder builder = ui.ParagraphBuilder(
+      ui.ParagraphStyle(textAlign: ui.TextAlign.left, fontSize: 12),
+    );
+    builder.pushStyle(ui.TextStyle(color: color, fontSize: 12));
+    builder.addText(label);
+    final ui.Paragraph p = builder.build();
+    p.layout(const ui.ParagraphConstraints(width: 240));
+    _labelParagraphCache?.dispose();
+    _labelParagraphCache = p;
+    _labelCacheText = label;
+    _labelCacheInk = color;
+    return p;
+  }
+
+  @override
+  void dispose() {
+    _labelParagraphCache?.dispose();
+    _labelParagraphCache = null;
+    super.dispose();
+  }
+
+  @override
+  Map<String, dynamic> toJson({MediaResolver? media}) => <String, dynamic>{
+    'type': 'group',
+    'id': id,
+    'angle': angle,
+    'rect': <double>[rect.left, rect.top, rect.right, rect.bottom],
+    if (label.isNotEmpty) 'label': label,
+    if (colorSlot != null) 'colorSlot': colorSlot!.name,
+    'groupId': ?groupId,
+    'meta': meta,
+  };
+
+  factory CanvasGroupItem.fromJson(
+    Map<String, dynamic> j, {
+    MediaResolver? media,
+  }) => CanvasGroupItem(
+    id: j['id'] as String?,
+    rect: _rectFromJson(j['rect'] as List),
+    angle: (j['angle'] as num?)?.toDouble() ?? 0,
+    label: j['label'] as String? ?? '',
+    colorSlot: canvasColorSlotOf(j['colorSlot']),
+    groupId: CanvasItem.groupIdOf(j),
     meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
   );
 }
@@ -505,6 +855,27 @@ abstract final class CanvasHandles {
     rect.bottomLeft,
     rect.bottomRight,
   ];
+
+  /// 把 [corners] 排成**外框绕序**（相邻两点共享一条边）。
+  ///
+  /// ⚠️ [corners] 的顺序是**手柄枚举序** `[左上, 右上, 左下, 右下]`，**不是**绕序；
+  /// 直接按序连线会画成"上边 + 两条对角线 + 下边"的**蝴蝶结**（2026-09-18 用户
+  /// 实测："那两条烦人的青色对角线"）。按**绕质心的极角**排序即得正确绕序
+  /// （对凸四边形成立）。
+  static List<Offset> orderForOutline(List<Offset> corners) {
+    if (corners.length < 3) return corners;
+    Offset center = Offset.zero;
+    for (final Offset c in corners) {
+      center += c;
+    }
+    center /= corners.length.toDouble();
+    return List<Offset>.of(corners)
+      ..sort(
+        (Offset a, Offset b) => math
+            .atan2(a.dy - center.dy, a.dx - center.dx)
+            .compareTo(math.atan2(b.dy - center.dy, b.dx - center.dx)),
+      );
+  }
 
   /// 屏幕坐标下的手柄命中；[cornersScreen] 即 [corners] 经相机变换后的四角。
   static CanvasHandle? hitTest(List<Offset> cornersScreen, Offset point) {

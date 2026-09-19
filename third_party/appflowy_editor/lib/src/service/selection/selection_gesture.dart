@@ -49,6 +49,14 @@ class SelectionGestureDetectorState extends State<SelectionGestureDetector> {
   Widget build(BuildContext context) {
     return RawGestureDetector(
       behavior: HitTestBehavior.translucent,
+      // [sinan] 补丁 17：不要把"整块编辑器可点"暴露给无障碍树。
+      // 这一层给**整个编辑器**挂 onTapDown（落光标用），但它是一片无名区域：
+      // 语义树上会多出一个没有 label 的可点节点——2026-09-17 `test/a11y/` 实测，
+      // 滚动视口与文档容器两个节点因此被 `labeledTapTargetGuideline` 判红。
+      // `excludeFromSemantics: true` 只让**本层**不贡献语义（连 _GestureSemantics
+      // 都不挂），子节点（各块、文本域）自己的语义不受影响——这正是"只删掉那个
+      // 多余动作"的精确手段，外层包 Semantics 做不到（只能加、不能减）。
+      excludeFromSemantics: true,
       gestures: {
         if (widget.enablePanImmediate)
           ImmediateMultiDragGestureRecognizer:

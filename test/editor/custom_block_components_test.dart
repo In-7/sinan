@@ -9,6 +9,7 @@ import 'package:sinan/src/editor/blocks/attachment_block_component.dart';
 import 'package:sinan/src/editor/blocks/callout_block_component.dart';
 import 'package:sinan/src/editor/blocks/code_block_component.dart';
 import 'package:sinan/src/editor/blocks/formula_block_component.dart';
+import 'package:sinan/src/editor/blocks/ref_block_component.dart';
 import 'package:sinan/src/editor/blocks/toggle_block_component.dart';
 import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
@@ -43,6 +44,7 @@ void main() {
           AttachmentBlockKeys.type,
           CalloutBlockKeys.type,
           ToggleListBlockKeys.type,
+          RefBlockKeys.type,
         ]),
       );
       // 官方标准件仍在（我们是"展开标准表再增量"，不是替换）

@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import 'canvas_camera.dart';
 import 'canvas_document.dart';
+import 'canvas_edge.dart';
 import 'canvas_item.dart';
 import 'canvas_painters.dart';
 import 'ink_stroke.dart';
@@ -21,7 +22,7 @@ import 'ink_stroke.dart';
 /// 相机把**世界坐标**映射到**像素画布**；[CanvasCamera.translation] 是屏幕像素。
 /// 本模块内所有相机都是**直接构造**（写死 scale/translation），**不要**走
 /// [CanvasCamera.fit] —— `fit` 会把 scale 钳进 `[minScale, maxScale]`（默认
-/// 0.05~32），而小选区（几个世界单位）需要数十倍放大，被钳后内容只占画布
+/// 0.05~4），而小选区（几个世界单位）需要数十倍放大，被钳后内容只占画布
 /// 一角、四周全是背景。
 
 /// 预加载与 [world] 相交的图片 item，避免渲染时画出占位灰框。
@@ -51,6 +52,7 @@ Future<Uint8List> rasterizeWithCamera(
   CanvasCamera camera,
   Size pixelSize, {
   required List<CanvasItem> items,
+  List<EdgeGeometry> edges = const <EdgeGeometry>[],
   required ui.Picture inkPicture,
   Color background = const Color(0xFFFFFFFF),
   Color? gridColor,
@@ -67,7 +69,7 @@ Future<Uint8List> rasterizeWithCamera(
   if (includeGrid && gridColor != null) {
     GridPainter(camera: camera, color: gridColor).paint(canvas, pixelSize);
   }
-  ItemPainter(camera: camera, items: items).paint(canvas, pixelSize);
+  ItemPainter(camera: camera, items: items, edges: edges).paint(canvas, pixelSize);
   InkPainter(camera: camera, picture: inkPicture).paint(canvas, pixelSize);
 
   final ui.Image image = await recorder.endRecording().toImage(pxW, pxH);
@@ -128,6 +130,8 @@ Future<Uint8List> rasterizeRegion(
       camera,
       pixelSize,
       items: document.itemsIn(world),
+      // 连线与 item 同口径裁剪（端点按 world 现算）。
+      edges: document.edgesIn(world),
       inkPicture: inkPicture,
       background: background,
       gridColor: gridColor,

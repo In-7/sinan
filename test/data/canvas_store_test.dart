@@ -2,20 +2,24 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sinan/src/canvas/kernel/canvas_controller.dart';
 import 'package:sinan/src/data/canvas_store.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 画布落点**第 1 步（双写）**的回归（2026-09-17，见 `docs/canvas_architecture.md` 第七章）。
+/// 画布落点的回归（2026-09-17，见 `docs/canvas_architecture.md` 第七章）。
 ///
-/// 双写阶段最该钉的不是"写进去了"，而是三件会悄悄坏掉的事：
+/// **第 1 步（双写）**最该钉的不是"写进去了"，而是三件会悄悄坏掉的事：
 /// 1. **格式门闩**：文档笔记的块树 / Delta / 空串都不能在画布表里留行
 ///    （留了就等于给两类笔记互相污染）；
 /// 2. **判变**：同样的内容重复保存必须**一行都不写**，改一个 item 只重写那一行
 ///    （`created_at` 纹丝不动）——否则自动保存每次防抖都在写全表；
 /// 3. **几何精度**：rect 存四条边，往返不能有浮点误差（第 3 步的深比较依赖它）。
+///
+/// **第 3 步（校验）**见文末 `group`：它最危险的不是"报错"，而是**静默失效**
+/// ——该拦住的不一致没拦住，于是第 4 步切读会把坏数据当成真相读出来。
 void main() {
   late Database db;
   late NoteStore store;
@@ -61,23 +65,55 @@ void main() {
     ],
   };
 
+  /// 一张**卡片**（字段与存储契约逐项对齐，见 `CanvasStore` 的「卡片 JSON 契约」）。
+  ///
+  /// `text` 在存档 JSON 里是可见的（自包含、可读、可导出），落库时被拆到 `blocks`。
+  Map<String, Object?> card(
+    String id,
+    String blockId,
+    String text, {
+    List<double>? rect,
+  }) => <String, Object?>{
+    'type': 'card',
+    'id': id,
+    'blockId': blockId,
+    'text': text,
+    'angle': 0.0,
+    'rect': rect ?? <double>[0.0, 0.0, 120.0, 60.0],
+    'meta': <String, Object?>{},
+  };
+
   String canvasJson({
     Map<String, Map<String, Object?>> items = const {},
     List<String> itemOrder = const <String>[],
     Map<String, Map<String, Object?>> strokes = const {},
     List<String> strokeOrder = const <String>[],
+    Map<String, Map<String, Object?>>? edges,
     double scale = 1.0,
     int schemaVersion = 2,
-  }) => jsonEncode(<String, Object?>{
-    'camera': <String, Object?>{'scale': scale, 'translation': <double>[0.0, 0.0]},
-    'document': <String, Object?>{
+  }) {
+    final Map<String, Object?> document = <String, Object?>{
       'schemaVersion': schemaVersion,
       'strokes': strokes,
       'items': items,
       'strokeOrder': strokeOrder,
       'itemOrder': itemOrder,
-    },
-  });
+    };
+    // 连线是**可选键**：与内核 toJson 同口径（为空则不写），
+    // 传 null 即模拟"没有连线 / 旧存档"的形态。
+    if (edges != null) document['edges'] = edges;
+    return jsonEncode(<String, Object?>{
+      'camera': <String, Object?>{
+        'scale': scale,
+        'translation': <double>[0.0, 0.0],
+        // ⚠️ 与 `CanvasCamera.toJson` **逐项对齐**：真实存档总有这四个键。
+        // 夹具少写这两个键 ⇒ 测不出"切读结果能否被内核吃下"。
+        'minScale': 0.05,
+        'maxScale': 4.0,
+      },
+      'document': document,
+    });
+  }
 
   /// 文档笔记的 v2 块树（带格式标记，与 `NoteDocumentAdapter` 一致）。
   String blocksJson() => jsonEncode(<String, Object?>{
@@ -328,5 +364,674 @@ void main() {
     final Note note = store.create(content: blocksJson());
     expect(canvas.hasRows(note.id), isFalse);
     expect(db.select('SELECT COUNT(*) AS c FROM canvas_items').single['c'], 0);
+  });
+
+  group('第 3 步：校验（行 → JSON 深比较）', () {
+    test('往返：相机 / schema 版本 / z 序 / 笔迹顺序全部还原', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          's1': shape('s1', rect: <double>[1.5, 2.5, 11.5, 22.5]),
+          's2': shape('s2'),
+        },
+        itemOrder: <String>['s2', 's1'], // z 序：s2 在下
+        strokes: <String, Map<String, Object?>>{'k1': stroke('k1', points: 3)},
+        strokeOrder: <String>['k1'],
+        scale: 2.0,
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+
+      final String? rebuilt = canvas.readVerifiedCanvas('n1', json);
+      expect(rebuilt, isNotNull);
+      final Map<String, dynamic> got =
+          (jsonDecode(rebuilt!) as Map).cast<String, dynamic>();
+      final Map<String, dynamic> want =
+          (jsonDecode(json) as Map).cast<String, dynamic>();
+      expect(got['camera'], equals(want['camera']));
+      final Map<String, dynamic> doc =
+          (got['document'] as Map).cast<String, dynamic>();
+      expect(doc['schemaVersion'], 2);
+      // 顺序是有语义的（不是"集合相等"就行）。
+      expect(doc['itemOrder'], equals(<String>['s2', 's1']));
+      expect(doc['strokeOrder'], equals(<String>['k1']));
+      expect((doc['items'] as Map)['s1'], isNotNull);
+    });
+
+    test('笔迹浮点精度：非精确坐标也能通过（blob 是 Float32，必须量化后比较）', () {
+      // 1.1 / 2.3 在 Float32 里**无法精确表示**：存进 blob 再读回是
+      // 1.100000023841858… 不量化的话，任何带笔迹的画布都会校验失败
+      // ——而失败的表现是"永远回退 JSON"，切读永远不生效（静默）。
+      final Map<String, Object?> wobbly = <String, Object?>{
+        'id': 'k1',
+        'version': 1,
+        'color': 0xFF000000,
+        'baseWidth': 4.0,
+        'simulatePressure': true,
+        'points': <List<double>>[
+          <double>[1.1, 2.3, 0.7],
+          <double>[1234.5678, -0.0001, 0.9999999],
+        ],
+      };
+      final String json = canvasJson(
+        strokes: <String, Map<String, Object?>>{'k1': wobbly},
+        strokeOrder: <String>['k1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isTrue,
+        reason: 'Float32 往返误差让校验失效了：所有带笔迹的画布都会静默回退',
+      );
+    });
+
+    test('media 侧表（派生、不落库）不参与比较', () {
+      // 真实存档走 `toJson(media: _media)` ⇒ document 里带 media 清单；
+      // 而它刻意不落库（真源是各 item 的 src），还原侧必然没有 ⇒ 必须剔除。
+      final Map<String, Object?> doc =
+          (jsonDecode(canvasJson(
+                items: <String, Map<String, Object?>>{'s1': shape('s1')},
+                itemOrder: <String>['s1'],
+              )) as Map)
+              .cast<String, Object?>();
+      (doc['document'] as Map)['media'] = <String, Object?>{
+        'media/a.png': <String, Object?>{'mime': 'image/png'},
+      };
+      final String json = jsonEncode(doc);
+      canvas.replaceCanvasRows('n1', json);
+
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isTrue,
+        reason: '派生侧表不该让校验失效',
+      );
+      // 还原结果里也不必带它（切读时按需重建）。
+      final String rebuilt = canvas.readVerifiedCanvas('n1', json)!;
+      expect((jsonDecode(rebuilt) as Map)['document'], isNot(contains('media')));
+    });
+
+    test('未落表（还没回填）→ false', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'s1': shape('s1')},
+        itemOrder: <String>['s1'],
+      );
+      // 刻意不调 replaceCanvasRows。
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isFalse,
+        reason: '没落表不该算通过 —— 否则切读会拿到空画布覆盖原文',
+      );
+    });
+
+    test('非画布内容 → false（与格式门闩同口径）', () {
+      for (final String notCanvas in <String>[blocksJson(), '', '  ']) {
+        expect(canvas.verifyCanvasRows('n1', notCanvas), isFalse);
+      }
+    });
+
+    test('篡改几何 → 校验失败（第 4 步切读靠这条拦住坏数据）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'s1': shape('s1')},
+        itemOrder: <String>['s1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+
+      db.execute("UPDATE canvas_items SET x1 = 999.0 WHERE id = 's1'");
+      expect(canvas.verifyCanvasRows('n1', json), isFalse);
+      expect(canvas.readVerifiedCanvas('n1', json), isNull);
+    });
+
+    test('丢了一个 item 行 → 校验失败（集合与顺序都变）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          's1': shape('s1'),
+          's2': shape('s2'),
+        },
+        itemOrder: <String>['s1', 's2'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+
+      db.execute("DELETE FROM canvas_items WHERE id = 's2'");
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isFalse,
+        reason: '少一行都该被拦住 —— 否则切读会静默丢掉用户的形状',
+      );
+    });
+
+    test('z 序被改（两个 item 互换）→ 校验失败（顺序有语义）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          's1': shape('s1'),
+          's2': shape('s2'),
+        },
+        itemOrder: <String>['s1', 's2'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      // 只互换 z，不动任何几何：内容集合完全相同，只有顺序不同。
+      db.execute("UPDATE canvas_items SET z = 1 WHERE id = 's1'");
+      db.execute("UPDATE canvas_items SET z = 0 WHERE id = 's2'");
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isFalse,
+        reason: 'itemOrder 是数组，顺序有语义 —— 颠倒 z 序必须被拦住',
+      );
+    });
+
+    test('切读（第 4 步）：noteById 返回从表还原的画布；校验不过则降落伞回退', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'s1': shape('s1')},
+        itemOrder: <String>['s1'],
+        strokes: <String, Map<String, Object?>>{'k1': stroke('k1')},
+        strokeOrder: <String>['k1'],
+      );
+      db.execute("UPDATE notes SET content = ? WHERE id = 'n1'", <Object?>[json]);
+      canvas.replaceCanvasRows('n1', json);
+
+      // ① 校验通过 ⇒ 走表。还原结果与原文**结构等价**（夹具不带 media）。
+      final String? rebuilt = store.noteById('n1')?.content;
+      expect(rebuilt, isNotNull);
+      expect(jsonDecode(rebuilt!), equals(jsonDecode(json)));
+
+      // ② 降落伞：把表改坏 ⇒ 静默回退 `notes.content`，绝不把坏数据交给 UI。
+      db.execute("UPDATE canvas_items SET x1 = 999.0 WHERE id = 's1'");
+      expect(
+        store.noteById('n1')?.content,
+        json,
+        reason: '校验不过必须回退原文 —— 否则用户会看到画布被打回',
+      );
+    });
+
+    test('切读互不干扰：文档笔记不会被画布投影抢走', () {
+      db.execute("UPDATE notes SET kind = 'note', content = ? WHERE id = 'n1'",
+          <Object?>[blocksJson()]);
+      // 块树投影能还原 ⇒ 走 blocks；画布投影的格式门闩挡住 ⇒ 返回 null。
+      expect(store.noteById('n1')?.content, isNotNull);
+      expect(jsonDecode(store.noteById('n1')!.content), equals(jsonDecode(blocksJson())));
+    });
+
+    test('切读结果能被内核接受（真实存档带 media 侧表也照常反序列化）', () {
+      // 真实存档走 `toJson(media: _media)` ⇒ 原文带 `media`；还原结果**没有**它
+      // （派生、不落库）。内核必须能照常吃下这份"少了 media"的文档，
+      // 否则切读等于把坏数据直接交给 UI。
+      final Map<String, Object?> doc = (jsonDecode(canvasJson(
+            items: <String, Map<String, Object?>>{'s1': shape('s1')},
+            itemOrder: <String>['s1'],
+            strokes: <String, Map<String, Object?>>{'k1': stroke('k1')},
+            strokeOrder: <String>['k1'],
+          )) as Map)
+          .cast<String, Object?>();
+      (doc['document'] as Map)['media'] = <String, Object?>{
+        'media/a.png': <String, Object?>{'mime': 'image/png'},
+      };
+      final String json = jsonEncode(doc);
+      db.execute("UPDATE notes SET content = ? WHERE id = 'n1'", <Object?>[json]);
+      canvas.replaceCanvasRows('n1', json);
+
+      final String rebuilt = store.noteById('n1')!.content;
+      expect(rebuilt, isNot(contains('media')));
+      expect(
+        () => CanvasController.fromJson(
+          (jsonDecode(rebuilt) as Map).cast<String, dynamic>(),
+        ),
+        returnsNormally,
+        reason: '切读还原出的文档内核无法解析 —— 那等于把坏数据交给 UI',
+      );
+    });
+  });
+
+  group('卡片（v9）：内容进 blocks、几何进 canvas_items', () {
+    test('投影：两半各就各位，block_id 把几何指向内容', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '一个想法'),
+        },
+        itemOrder: <String>['card-1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      // 几何半边。
+      final Row item = db
+          .select(
+            "SELECT kind, x2, y2, block_id FROM canvas_items WHERE id='card-1'",
+          )
+          .single;
+      expect(item['kind'], 'card');
+      expect(item['block_id'], 'b1');
+
+      // 内容半边 —— 这才是"能被搜索 / 引用 / AI 索引"的关键
+      // （`chunks_fts` 与 `index_state` 都建在 blocks 上）。
+      final Row block =
+          db.select("SELECT type, props_json FROM blocks WHERE id='b1'").single;
+      expect(block['type'], 'card');
+      expect(
+        jsonDecode(block['props_json'] as String),
+        <String, Object?>{'text': '一个想法'},
+      );
+    });
+
+    test('校验往返：卡片文本原样还原（不是空字符串）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '一个想法'),
+        },
+        itemOrder: <String>['card-1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+
+      final String rebuilt = canvas.readVerifiedCanvas('n1', json)!;
+      final Map<String, dynamic> items =
+          (((jsonDecode(rebuilt) as Map)['document'] as Map)['items'] as Map)
+              .cast<String, dynamic>();
+      expect(
+        (items['card-1'] as Map)['text'],
+        '一个想法',
+        reason: '内容半边没被拼回来：还原出的卡片是空的',
+      );
+    });
+
+    test('内容丢了必须校验失败（分裂存储最危险的失败是静默丢内容）', () {
+      // 危险在于"两边都看起来正常"：几何行还在、结构也对得上，只是文本没了。
+      // 若校验放过它，切读会静默返回一框空白卡片 —— 用户以为想法还在。
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '一个想法'),
+        },
+        itemOrder: <String>['card-1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+
+      db.execute("DELETE FROM blocks WHERE id='b1'");
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isFalse,
+        reason: '内容半边丢了却校验通过 ⇒ 切读会静默返回空卡片',
+      );
+    });
+
+    test('判变：改几何不重写内容；改文本才重写内容', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法'),
+        },
+        itemOrder: <String>['card-1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+      // ① 幂等。
+      expect(canvas.replaceCanvasRows('n1', json), 0);
+
+      // ② 只挪位置 ⇒ **只写几何那一行**，blocks 纹丝不动
+      //    （否则拖一下卡片就会让 AI 索引以为内容变了）。
+      expect(
+        canvas.replaceCanvasRows(
+          'n1',
+          canvasJson(
+            items: <String, Map<String, Object?>>{
+              'card-1': card(
+                'card-1',
+                'b1',
+                '想法',
+                rect: <double>[50.0, 0.0, 170.0, 60.0],
+              ),
+            },
+            itemOrder: <String>['card-1'],
+          ),
+        ),
+        1,
+        reason: '只改几何却重写了 blocks',
+      );
+
+      // ③ 改文本 ⇒ 内容行必写（几何行也因 fingerprint 覆盖整个 item 而重写）。
+      expect(
+        canvas.replaceCanvasRows(
+          'n1',
+          canvasJson(
+            items: <String, Map<String, Object?>>{
+              'card-1': card('card-1', 'b1', '新想法'),
+            },
+            itemOrder: <String>['card-1'],
+          ),
+        ),
+        2,
+      );
+      expect(
+        jsonDecode(
+          db
+              .select("SELECT props_json FROM blocks WHERE id='b1'")
+              .single['props_json'] as String,
+        ),
+        <String, Object?>{'text': '新想法'},
+      );
+    });
+
+    test('删卡片：几何与内容两半一起消失（不留孤儿）', () {
+      canvas.replaceCanvasRows(
+        'n1',
+        canvasJson(
+          items: <String, Map<String, Object?>>{
+            'card-1': card('card-1', 'b1', '想法一'),
+            'card-2': card('card-2', 'b2', '想法二'),
+          },
+          itemOrder: <String>['card-1', 'card-2'],
+        ),
+      );
+      expect(db.select('SELECT COUNT(*) AS c FROM blocks').single['c'], 2);
+
+      canvas.replaceCanvasRows(
+        'n1',
+        canvasJson(
+          items: <String, Map<String, Object?>>{
+            'card-1': card('card-1', 'b1', '想法一'),
+          },
+          itemOrder: <String>['card-1'],
+        ),
+      );
+
+      expect(
+        db.select('SELECT id FROM blocks').map((Row r) => r['id']).toSet(),
+        <String>{'b1'},
+        reason: '删掉的卡片在 blocks 里留了孤儿：搜得到却看不见',
+      );
+      expect(db.select('SELECT COUNT(*) AS c FROM canvas_items').single['c'], 1);
+    });
+  });
+
+  group('连线（v9）：自由连线落 canvas_edges', () {
+    test('落库 + 校验往返（端点存 id，不是坐标）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法一'),
+          'card-2': card('card-2', 'b2', '想法二'),
+        },
+        itemOrder: <String>['card-1', 'card-2'],
+        edges: <String, Map<String, Object?>>{
+          'e1': <String, Object?>{
+            'id': 'e1',
+            'fromId': 'b1',
+            'toId': 'b2',
+            'fromSide': 'right',
+            'toSide': 'left',
+          },
+        },
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      final Row edge = db
+          .select(
+            'SELECT from_id, to_id, from_side, to_side FROM canvas_edges '
+            "WHERE id='e1'",
+          )
+          .single;
+      expect(edge['from_id'], 'b1');
+      expect(edge['to_id'], 'b2');
+      expect(edge['from_side'], 'right');
+      expect(edge['to_side'], 'left');
+
+      expect(
+        canvas.verifyCanvasRows('n1', json),
+        isTrue,
+        reason: '连线没被还原 ⇒ 切读会静默丢掉连线',
+      );
+    });
+
+    test('删掉卡片 ⇒ 连线随外键级联消失（binding 的数据库侧保证）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法一'),
+          'card-2': card('card-2', 'b2', '想法二'),
+        },
+        itemOrder: <String>['card-1', 'card-2'],
+        edges: <String, Map<String, Object?>>{
+          'e1': <String, Object?>{'id': 'e1', 'fromId': 'b1', 'toId': 'b2'},
+        },
+      );
+      canvas.replaceCanvasRows('n1', json);
+      expect(db.select('SELECT COUNT(*) AS c FROM canvas_edges').single['c'], 1);
+
+      db.execute("DELETE FROM blocks WHERE id='b2'");
+      expect(
+        db.select('SELECT COUNT(*) AS c FROM canvas_edges').single['c'],
+        0,
+        reason: '卡片没了却留下指向它的连线（悬空边）',
+      );
+    });
+
+    test('端点形状（2026-09-18）存 props 扩展位、往返深比较通过', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法一'),
+          'card-2': card('card-2', 'b2', '想法二'),
+        },
+        itemOrder: <String>['card-1', 'card-2'],
+        edges: <String, Map<String, Object?>>{
+          'e1': <String, Object?>{
+            'id': 'e1',
+            'fromId': 'b1',
+            'toId': 'b2',
+            'startShape': 'dot',
+            'endShape': 'diamond',
+          },
+        },
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      // 形状走 props_json，必须深比较通过，否则切读静默丢连线。
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+      // 还原出的连线确实带着两端形状。
+      final Map<String, Object?> edges =
+          (jsonDecode(canvas.readVerifiedCanvas('n1', json)!)
+                  as Map<String, Object?>)['document']
+              as Map<String, Object?>;
+      final Map<String, Object?> e =
+          (edges['edges']! as Map<String, Object?>)
+              .cast<String, Object?>()['e1']! as Map<String, Object?>;
+      expect(e['startShape'], 'dot');
+      expect(e['endShape'], 'diamond');
+    });
+
+    test('老画布（无端点形状键）照常校验通过', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法一'),
+          'card-2': card('card-2', 'b2', '想法二'),
+        },
+        itemOrder: <String>['card-1', 'card-2'],
+        edges: <String, Map<String, Object?>>{
+          'e1': <String, Object?>{'id': 'e1', 'fromId': 'b1', 'toId': 'b2'},
+        },
+      );
+      canvas.replaceCanvasRows('n1', json);
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+    });
+
+    test('没有连线 ⇒ 两边都不含 edges 键，老画布照样校验通过', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'card-1': card('card-1', 'b1', '想法'),
+        },
+        itemOrder: <String>['card-1'],
+      );
+      canvas.replaceCanvasRows('n1', json);
+
+      expect(
+        (jsonDecode(json) as Map)['document'],
+        isNot(contains('edges')),
+      );
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+      // 还原结果也不该凭空多出这个键 —— 否则**所有**老画布都会静默回退 JSON
+      // （原文无 edges、还原有 edges {} ⇒ 深比较判为不一致）。
+      final Map<String, dynamic> rebuiltDoc =
+          (jsonDecode(canvas.readVerifiedCanvas('n1', json)!) as Map)['document']
+              as Map<String, dynamic>;
+      expect(rebuiltDoc, isNot(contains('edges')));
+    });
+  });
+
+  group('思维导图（MindMapItem）', () {
+    /// 一条 mindmap item（字段与 `MindMapItem.toJson` 逐项对齐）。
+    Map<String, Object?> mindmap(String id, {List<double>? rect}) => <String, Object?>{
+      'type': 'mindmap',
+      'id': id,
+      'angle': 0.0,
+      'rect': rect ?? <double>[0.0, 0.0, 300.0, 200.0],
+      'nodes': <String, Object?>{
+        'id': 'mn-root',
+        'text': '中心主题',
+        'children': <Object?>[
+          <String, Object?>{'id': 'mn-a', 'text': '分支一'},
+          <String, Object?>{'id': 'mn-b', 'text': '分支二'},
+        ],
+      },
+      'meta': <String, Object?>{},
+    };
+
+    test('投影 + 校验通过（节点树走 props 扩展位）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'m1': mindmap('m1')},
+        itemOrder: <String>['m1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      // 关键：深比较必须通过 —— 不通过会**静默回退 JSON**（不报错、切读永不生效）。
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+    });
+
+    test('判变：重复保存同一张思维导图不再写行', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'m1': mindmap('m1')},
+        itemOrder: <String>['m1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      expect(canvas.replaceCanvasRows('n1', json), 0);
+    });
+
+    test('改一个节点文本 ⇒ 重写该 item 行、created_at 不动、校验仍通过', () {
+      final String json1 = canvasJson(
+        items: <String, Map<String, Object?>>{'m1': mindmap('m1')},
+        itemOrder: <String>['m1'],
+      );
+      canvas.replaceCanvasRows('n1', json1);
+      final int createdBefore =
+          db
+                  .select(
+                    'SELECT created_at FROM canvas_items WHERE note_id = ? AND id = ?',
+                    <Object?>['n1', 'm1'],
+                  )
+                  .single['created_at']
+              as int;
+
+      final Map<String, Object?> changed = mindmap('m1');
+      (((changed['nodes']! as Map<String, Object?>)['children']!)
+              as List<Object?>)[0] =
+          <String, Object?>{'id': 'mn-a', 'text': '改过的分支'};
+      final String json2 = canvasJson(
+        items: <String, Map<String, Object?>>{'m1': changed},
+        itemOrder: <String>['m1'],
+      );
+
+      expect(canvas.replaceCanvasRows('n1', json2), greaterThan(0));
+      expect(canvas.verifyCanvasRows('n1', json2), isTrue);
+      // created_at 只在**首次**落行时写（与 blocks 侧判变口径一致）。
+      expect(
+        db
+            .select(
+              'SELECT created_at FROM canvas_items WHERE note_id = ? AND id = ?',
+              <Object?>['n1', 'm1'],
+            )
+            .single['created_at'],
+        createdBefore,
+      );
+    });
+
+    test('语义色槽位（colorSlot）：写入扩展位、还原、深比较通过', () {
+      final Map<String, Object?> marked = mindmap('m1');
+      marked['colorSlot'] = 'green';
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{'m1': marked},
+        itemOrder: <String>['m1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      // 关键：不通过会**静默回退 JSON**（不报错、切读永不生效）。
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+    });
+  });
+
+  group('分组框（CanvasGroupItem，2026-09-18）', () {
+    /// 一条分组框（字段与 `CanvasGroupItem.toJson` 逐项对齐：空 label / 空 slot /
+    /// 空 groupId 都不写键，否则深比较会差键 ⇒ 静默回退 JSON）。
+    Map<String, Object?> group(
+      String id, {
+      String? label,
+      String? colorSlot,
+      String? groupId,
+      List<double>? rect,
+    }) =>
+        <String, Object?>{
+          'type': 'group',
+          'id': id,
+          'angle': 0.0,
+          'rect': rect ?? <double>[0.0, 0.0, 400.0, 300.0],
+          'label': ?label,
+          'colorSlot': ?colorSlot,
+          'groupId': ?groupId,
+          'meta': <String, Object?>{},
+        };
+
+    test('投影 + 校验通过（label / colorSlot / groupId 走 props 扩展位）', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'g1': group('g1', label: '需求', colorSlot: 'blue'),
+        },
+        itemOrder: <String>['g1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+    });
+
+    test('空 label ⇒ 不写 label 键，深处仍一致', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'g1': group('g1'), // 无 label / colorSlot / groupId
+        },
+        itemOrder: <String>['g1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+    });
+
+    test('成员 item 的 groupId 透传：还原后指向分组框、深处一致', () {
+      final String json = canvasJson(
+        items: <String, Map<String, Object?>>{
+          'g1': group('g1', label: '分组'),
+          'c1': <String, Object?>{
+            'type': 'card',
+            'id': 'c1',
+            'blockId': 'b-c1',
+            'text': '框里的卡片',
+            'angle': 0.0,
+            'rect': <double>[10.0, 10.0, 110.0, 50.0],
+            'groupId': 'g1', // 成员指向分组框
+            'meta': <String, Object?>{},
+          },
+        },
+        itemOrder: <String>['g1', 'c1'],
+      );
+      expect(canvas.replaceCanvasRows('n1', json), greaterThan(0));
+      expect(canvas.verifyCanvasRows('n1', json), isTrue);
+      // 还原出的 card 必须带着 groupId（否则分组关系在表侧丢失）。
+      final Map<String, Object?> rebuilt =
+          (jsonDecode(canvas.readVerifiedCanvas('n1', json)!)
+                  as Map)['document']
+              as Map<String, Object?>;
+      final Map<String, Object?> items =
+          (rebuilt['items']! as Map).cast<String, Object?>();
+      expect((items['c1']! as Map)['groupId'], 'g1');
+      expect((items['g1']! as Map)['type'], 'group');
+    });
   });
 }

@@ -636,12 +636,20 @@ class _SelectionMenuWidgetState extends State<SelectionMenuWidget> {
     }
 
     widget.onSelectionUpdate();
+    // [sinan] 补丁 18：越界防护。keyword 已空、光标又在块首时，`offset - length`
+    // 会算成 **-1**，喂给 `Transaction.deleteText` 直接触发断言，并**打断整条键盘
+    // 分发**（2026-09-17 用户实机退格崩溃，栈即本行）。
+    // 语义上"块首没有前一个字符可删"，早退就是正确行为；keyword 非空时照旧删掉刚
+    // 输入的搜索字符。
+    // ⚠️ 本文件里 `SelectionMenuItem._deleteSlash`（条目 handler 那条路径）此前已有
+    // 同类防护（见 `test/editor/slash_menu_delete_guard_test.dart`）——**这是同源的
+    // 第二处**，只漏在键盘这条路上。两处一起看，别再补第三处。
+    final int index = selection.start.offset - length;
+    if (index < 0 || index + length > delta.length) {
+      return;
+    }
     final transaction = widget.editorState.transaction
-      ..deleteText(
-        node,
-        selection.start.offset - length,
-        length,
-      );
+      ..deleteText(node, index, length);
     widget.editorState.apply(transaction);
   }
 

@@ -34,6 +34,16 @@ allowed-tools: Read,Write,Bash
 | `lib/src/window/**`、`lib/main.dart` | 窗口、材质、退出 | 见 §3 |
 | `tools/backup.ps1` | 离线备份（bundle 全量历史 + 工作区镜像 + vendored 历史） | 必须保持**纯 ASCII**：PS 5.1 读无 BOM 的 UTF-8 会按 GBK 解码，中文会让脚本解析失败（实测踩过）。`-Target` 应指向**第二块物理盘**——git 防不了盘坏 |
 
+### 2.1 层与边界（总纲 `docs/architecture.md`，边界由 `test/architecture/` 锁住）
+
+三条硬边界（越界即红，跑 `flutter test test/architecture/` 就能查）：
+
+1. **`lib/src/canvas/kernel/**` 不依赖任何外层**——只许可 `dart:*`、`package:flutter/{widgets,gestures,services}`、`package:perfect_freehand`、以及**同目录**文件（内核是纯模型与算法，所以可单测、可复用）；
+2. **只有 `lib/src/data/` 能 import `package:sqlite3`**；
+3. **引用 `data/` 只许 `lib/main.dart` 与 `lib/src/app/providers.dart`**（装配根 + 唯一 DI 点）。另有 **2 处在账上的债**（`canvas_note_view.dart`、`domain/settings.dart`）——清完必须**同步删掉测试里的 `_debt` 白名单**，否则红。
+
+**三条刻意豁免，别"纠正"**：① 画布模型可变（命令持快照；改不可变会每帧造对象、更慢）② 不用 `go_router`（桌面单窗口自绘导航）③ 不引 `freezed`（构建时间）。理由见文档 §4。
+
 ## 3. 窗口与材质：三个已验证事实
 
 - **退出**：用官方的**可取消退出请求**（`WidgetsBindingObserver.didRequestAppExit` → `pending_saves.dart` 的 `flushThenExit`）。**不要**用 `window_manager.setPreventClose()`——它会先吞掉 `WM_CLOSE`，引擎的官方流程收不到。
@@ -61,6 +71,6 @@ allowed-tools: Read,Write,Bash
 ## 6. 注释与文档风格
 
 - 注释写**为什么**、**原来的错法**、**证据**（带日期，如 `2026-09-17 实测`）；不写"做了什么"的流水账。
-- 长期设计结论进 `docs/`（如 `docs/data_layer.md` 的 §7.1 落盘时机、`docs/canvas_architecture.md`），代码里只留指针与理由。
+- 长期设计结论进 `docs/`（层与边界看 `docs/architecture.md`；落盘时机看 `docs/data_layer.md` §7.1；画布看 `docs/canvas_architecture.md`），代码里只留指针与理由。
 
 已有坑的完整案例（症状 / 根因 / 正解 / 证据位置）见 [references/pitfalls.md](references/pitfalls.md)。

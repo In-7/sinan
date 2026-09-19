@@ -45,7 +45,7 @@ void main() {
 
   test('小选区不被相机 scale 钳制：内容铺满画布（回归 fit() clamp 坑）', () async {
     // 4×4 世界单位的小选区，在 1024 像素下需要 256 倍放大——远超
-    // CanvasCamera 默认 maxScale(32)。若误用 `fit()` 会被钳到 32，
+    // CanvasCamera 默认 maxScale(4)。若误用 `fit()` 会被钳到 4，
     // 内容缩成画布中央一小块、四周全是背景。
     final CanvasDocument doc = CanvasDocument();
     const Rect world = Rect.fromLTWH(0, 0, 4, 4);

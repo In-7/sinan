@@ -134,16 +134,14 @@ class HomeScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              // 左右分区界线：独立 1px 列，从窗口顶贯通到窗口底。
-              // ⚠️ 不用右栏 DecoratedBox 的 border——border 画在子层之下，
-              // 编辑器工具栏/正文铺的不透明画布色会把它盖出断口（旧
-              // _ContentPanel 踩过同一个坑）。独立盒子谁也盖不住。
-              // 无 child 的 Container 会撑满交叉轴（Row 给的是松约束，
-              // SizedBox(width: 1) 不带高度的话高度是 0，线直接消失）。
-              Container(
-                width: 1,
-                color: AppTheme.divider(Theme.of(context).colorScheme),
-              ),
+              // 左右之间**不画线**（2026-09-18 用户定）：分界改由底色档差表达
+              // ——左栏是系统 Mica（透出窗口底），右栏是铺满的纸面色，两者本就
+              // 不同档。
+              //
+              // 这里原是**一条独立 1px 竖线**。若将来要加回来，注意不能用
+              // "右栏 DecoratedBox 的 border"：border 画在子层之下，编辑器工具栏
+              // /正文铺的不透明画布色会把它盖出断口（旧 `_ContentPanel` 踩过），
+              // 当年的独立盒子正是为了谁也盖不住。
               // 右栏：整列铺编辑器画布底，与左栏 Mica 形成硬分区。
               // 顶条与内容面板都透出这层底色。
               Expanded(
@@ -381,7 +379,7 @@ class HomeScreen extends ConsumerWidget {
             case _AppMenuItem.settings:
               unawaited(showSettingsPanel(context));
             case _AppMenuItem.about:
-              unawaited(showAboutPanel(context));
+              showAboutPanel(context);
             case _AppMenuItem.toggleBrightness:
               final ThemeBrightnessMode cur =
                   ref.read(settingsProvider).brightnessMode;

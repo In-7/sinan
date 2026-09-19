@@ -39,7 +39,16 @@ class AppSettings {
     this.widthMode = EditorWidthMode.standard,
     this.fontSize = defaultFontSize,
     this.lineHeight = defaultLineHeight,
+    this.aiEnabled = false,
+    this.aiEndpoint = defaultAiEndpoint,
+    this.aiModel = '',
   });
+
+  /// 本地 LLM 的默认基址（Ollama 的约定端口）。
+  ///
+  /// ⚠️ 这是**根地址**，不带 `/v1` 也不带 `/api`：客户端要打的是
+  /// `/api/chat`（只有它支持 `format` 传 JSON Schema，见 `src/ai/llm_client.dart`）。
+  static const String defaultAiEndpoint = 'http://localhost:11434';
 
   /// 默认正文字号（2026-09-11 由 16 调到 **17**）。
   ///
@@ -75,6 +84,18 @@ class AppSettings {
   /// 正文行高倍数。
   final double lineHeight;
 
+  /// 是否在画布工具条上露出 AI 入口。
+  ///
+  /// 默认 **false**：这个功能要求本机跑着 Ollama，没起服务时露出按钮只会让用户
+  /// 点出一个报错。让它成为一次**显式开启**（开关就在下面几行旁边）。
+  final bool aiEnabled;
+
+  /// LLM 服务基址（见 [defaultAiEndpoint]）。
+  final String aiEndpoint;
+
+  /// 模型名（Ollama tag）。空 = 未配置 ⇒ 调用时给"去设置里填"的明确报错。
+  final String aiModel;
+
   /// 正文列宽（固定像素，不随窗口放大而变）。
   double get contentWidth => switch (widthMode) {
     // 三档都含块手柄的 48px（见 [EditorWidthMode] 的说明）。
@@ -91,11 +112,17 @@ class AppSettings {
     EditorWidthMode? widthMode,
     double? fontSize,
     double? lineHeight,
+    bool? aiEnabled,
+    String? aiEndpoint,
+    String? aiModel,
   }) => AppSettings(
     brightnessMode: brightnessMode ?? this.brightnessMode,
     widthMode: widthMode ?? this.widthMode,
     fontSize: fontSize ?? this.fontSize,
     lineHeight: lineHeight ?? this.lineHeight,
+    aiEnabled: aiEnabled ?? this.aiEnabled,
+    aiEndpoint: aiEndpoint ?? this.aiEndpoint,
+    aiModel: aiModel ?? this.aiModel,
   );
 
   // ── 持久化：key-value 与 store 的边界 ────────────────────
@@ -105,6 +132,9 @@ class AppSettings {
   static const String _kWidth = 'editor.width';
   static const String _kFontSize = 'editor.fontSize';
   static const String _kLineHeight = 'editor.lineHeight';
+  static const String _kAiEnabled = 'ai.enabled';
+  static const String _kAiEndpoint = 'ai.endpoint';
+  static const String _kAiModel = 'ai.model';
 
   /// 从 store 还原；任何键缺失或解析失败都回落到默认值
   /// （升级/降级/手工改库都不会崩）。
@@ -122,6 +152,11 @@ class AppSettings {
       ),
       fontSize: fontSize ?? defaultFontSize,
       lineHeight: lineHeight ?? defaultLineHeight,
+      // 布尔键缺省 = false：不写 `?? false` 也能落到构造器的默认值，
+      // `== 'true'` 让"手工改库成 '1'/'yes'"这种脏值也安全退化。
+      aiEnabled: store.get(_kAiEnabled) == 'true',
+      aiEndpoint: store.get(_kAiEndpoint) ?? defaultAiEndpoint,
+      aiModel: store.get(_kAiModel) ?? '',
     );
   }
 
@@ -131,6 +166,9 @@ class AppSettings {
       ..set(_kBrightness, brightnessMode.name)
       ..set(_kWidth, widthMode.name)
       ..set(_kFontSize, fontSize.toString())
-      ..set(_kLineHeight, lineHeight.toString());
+      ..set(_kLineHeight, lineHeight.toString())
+      ..set(_kAiEnabled, aiEnabled.toString())
+      ..set(_kAiEndpoint, aiEndpoint)
+      ..set(_kAiModel, aiModel);
   }
 }

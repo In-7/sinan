@@ -10,11 +10,13 @@ import 'block_markers.dart';
 import 'callout_block_component.dart';
 import 'code_block_component.dart';
 import 'formula_block_component.dart';
+import 'ref_block_component.dart';
 import 'toggle_block_component.dart';
 import '../../theme/app_theme.dart';
 import '../core/editor_typography.dart';
 import '../toolbar/slash_menu_items.dart';
 import 'block_action_menu.dart';
+import 'reference_to_canvas.dart';
 import '../widgets/float_menu_style.dart';
 import '../widgets/hover_state_layer.dart';
 
@@ -54,6 +56,7 @@ import '../widgets/hover_state_layer.dart';
 Map<String, BlockComponentBuilder> sinanBlockComponentBuilders({
   required EditorTypography typography,
   required Color markerColor,
+  RefBlockBridge? refBridge,
 }) {
   final builders = <String, BlockComponentBuilder>{
   ...standardBlockComponentBuilderMap,
@@ -109,6 +112,9 @@ Map<String, BlockComponentBuilder> sinanBlockComponentBuilders({
   // 分流，官方口径）。需要 typography：折叠标题的字号取自与正文标题同一份
   // 档位表——预算器也用同一份，否则预测会偏。
   ToggleListBlockKeys.type: ToggleBlockComponentBuilder(typography: typography),
+  // 引用块（2026-09-18，双链）：指向另一篇笔记 / 另一个块。目标标题与跳转由宿主
+  // 注入（[refBridge]），块本身不碰 provider —— 见 `ref_block_component.dart`。
+  RefBlockKeys.type: RefBlockComponentBuilder(bridge: refBridge),
 };
 
   // 给**所有非页面块**加上左侧手柄（+ / 拖拽）。
@@ -568,6 +574,15 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
                 editorState: editorState,
                 node: node,
                 onClose: _actionsMenu.close,
+                // 块可迁移 #5「双链多视图」：把这块引用到画布上（文档里原地不动）。
+                // 延到下一帧再弹：菜单浮层正在收起，同帧开对话框会打架。
+                onReferenceOnCanvas: () => WidgetsBinding.instance
+                    .addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  unawaited(
+                    referenceBlockToCanvas(context: context, blockId: node.id),
+                  );
+                }),
               ),
               builder: (
                 BuildContext context,

@@ -8,6 +8,7 @@ import '../theme/app_popover.dart';
 import '../theme/tokens.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_item.dart';
+import 'kernel/canvas_mindmap.dart';
 
 /// 工具条上的「插入」按钮：形状（矩形 / 椭圆）+ 图片。
 ///
@@ -78,6 +79,14 @@ class CanvasInsertButton extends StatelessWidget {
                   // 拾取是异步的：先收起浮层（否则文件对话框会压在浮层上）；
                   // 有意不 await——这里只是发起，结果由宿主自己提示。
                   unawaited(onInsertImage());
+                },
+              ),
+              _MenuItem(
+                icon: LucideIcons.gitBranch300,
+                label: '思维导图',
+                onTap: () {
+                  insertMindMap(controller);
+                  close();
                 },
               ),
             ],
@@ -154,6 +163,21 @@ Future<ImageItem> insertImageFromPath(
     );
   }
 
+  controller.document.addItem(item);
+  controller.setTool(CanvasTool.select);
+  controller.selectItems(<CanvasItem>[item]);
+  return item;
+}
+
+/// 在视口中心插入一张默认思维导图（"中心主题"+ 两个分支），落地即选中。
+///
+/// 尺寸按**屏幕**给（约 420×260 屏幕像素）⇒ 任何缩放级别下插进来都"看起来一样大"；
+/// 之后用户拖角点缩放它即可——绘制按 rect **等比映射**，节点不会变形。
+MindMapItem insertMindMap(CanvasController controller) {
+  final Size box = _screenToWorld(controller, const Size(420, 260));
+  final MindMapItem item = newMindMapItem(
+    rect: _centeredRectOf(controller, box),
+  );
   controller.document.addItem(item);
   controller.setTool(CanvasTool.select);
   controller.selectItems(<CanvasItem>[item]);

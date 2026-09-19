@@ -5,17 +5,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../ai/llm_client.dart';
 import '../app/providers.dart';
 import '../app/save_debounce.dart';
 import '../data/note_store.dart';
+import '../domain/block_hit.dart';
 import '../theme/tokens.dart';
+import 'ai/ai_prompt.dart';
+import 'ai/ai_run.dart';
 import 'canvas_import.dart';
 import 'canvas_surface.dart';
+import 'card_text_sync.dart';
 import 'kernel/canvas_ai.dart';
 import 'kernel/canvas_ai_cache.dart';
 import 'kernel/canvas_bundle.dart';
 import 'kernel/canvas_controller.dart';
+import 'kernel/canvas_item.dart';
 import 'kernel/canvas_media.dart';
+
+/// 一次 AI 指令喂给模型的候选块上限。
+///
+/// 12 是个经验值：再多会挤占上下文（本地小模型对长上下文明显变笨），
+/// 再少则在"帮我找相关的块"这类指令上召回不足。
+const int _aiCandidateLimit = 12;
 
 /// 画布**笔记**视图：按 [noteId] 装配一个 [CanvasController]，负责
 /// **载入 + 防抖自动保存**，再交给 [CanvasSurface] 显示。
@@ -49,7 +61,8 @@ class CanvasNoteView extends ConsumerStatefulWidget {
   ConsumerState<CanvasNoteView> createState() => _CanvasNoteViewState();
 }
 
-class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
+class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
+    with WidgetsBindingObserver {
   /// 只用于**读**（`_loadContent` 取正文：列表快照不含 content 大字段，
   /// 见 [NoteStore.allNotes]）。**写一律走 [_notes]**，见 [dispose]。
   late final NoteStore _store;
@@ -76,6 +89,16 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
 
   /// 自上次落盘以来是否有改动（避免无改动也写一遍）。
   bool _dirty = false;
+
+  /// 引用卡片「已与库同步」的文本基线（`blockId` → 文本）。
+  ///
+  /// 双链多视图（#5）用：卡片文本的真身在 `blocks`，画布内存里那份只是**快照**。
+  /// 基线让"内存与库不一致"这件事可分两种：
+  /// - `text == 基线` ⇒ 是**别人改的**（文档侧编辑、另一个视图）⇒ 该拉新；
+  /// - `text != 基线` ⇒ 是**用户在这张画布上改了、还没落盘** ⇒ 该保留。
+  ///
+  /// 少了它只能二选一：要么回写旧值吃掉文档侧的修改，要么拉新时抹掉用户刚敲的字。
+  final Map<String, String> _syncedCardTexts = <String, String>{};
 
   /// 退出前落盘的注销句柄（见 [PendingSaves]）：[dispose] 里必须注销，否则这张
   /// 已经销毁的画布仍会在关窗口时被落盘——那时控制器已经不在了。
@@ -109,9 +132,12 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _store = ref.read(noteStoreProvider);
     _notes = ref.read(notesProvider.notifier);
     _controller = _createController();
+    // 载入时的文本就是"与库一致"的基线（见 [_syncedCardTexts]）。
+    _rememberSyncedCardTexts();
     _controller.addListener(_onChanged);
     // 登记"关窗口时把防抖里还没写下去的画布写完"（见 [PendingSaves]）。
     _exitFlush = ref.read(pendingSavesProvider).register(_flushForExit);
@@ -119,6 +145,10 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
 
   /// 从 `notes.content` 还原控制器；内容为空（新画布）/ 解析失败时给一张空画布。
   CanvasController _createController() {
+    // 双链多视图（#5）：卡片文本的真身在 `blocks`，画布 JSON 里的 `text` 只是
+    // **上次保存的快照**。文档侧改了被引用的块之后，这里先把快照刷新回来 ——
+    // 否则打开画布看到的还是旧文本（有变化才落盘，见 [NoteStore.syncCanvasCardTexts]）。
+    _store.syncCanvasCardTexts(widget.noteId);
     final String raw = _loadContent();
     // 空内容 = 新画布：照常允许后续保存。
     if (raw.trim().isEmpty) return CanvasController(generator: _generator);
@@ -180,11 +210,60 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
       return;
     }
     _dirty = false;
-    await _notes.saveContent(
-      widget.noteId,
-      jsonEncode(_controller.toJson(media: _media)),
-      plainText: '',
-    );
+    // 双链多视图（#5）：**落笔之前**先把没被本地编辑过的引用卡片拉到 `blocks`
+    // 的最新值。少了这一步，并看文档 + 画布时这里会把旧快照写回去，把文档侧的
+    // 修改吃掉（见 [_pullCardTextsFromStore]）。
+    _pullCardTextsFromStore();
+    final String content = jsonEncode(_controller.toJson(media: _media));
+    // 这份 content 就是即将落盘的内容（含本地刚改的那些）⇒ 记成新基线。
+    _rememberSyncedCardTexts();
+    await _notes.saveContent(widget.noteId, content, plainText: '');
+  }
+
+  /// 把**引用卡片**的文本拉到 `blocks` 的最新值（双链多视图 #5）。
+  ///
+  /// 只动"本地没改过"的卡片（`text == 基线`）：与库不一致说明是**别人改的**
+  /// （文档侧编辑，或另一个视图），该拉新；本地改过、还没落盘的卡片一律跳过
+  /// —— 那是用户的输入，不能被库里的旧值盖掉，落盘时由 `_replaceCardBlocks`
+  /// 写回真身。
+  ///
+  /// 返回是否有卡片被更新（调用方据此重绘 / 安排落盘）。
+  bool _pullCardTextsFromStore() {
+    bool changed = false;
+    for (final CanvasItem item in _controller.document.items) {
+      if (item is! CardItem) continue;
+      final String? next = pullCardText(
+        current: item.text,
+        baseline: _syncedCardTexts[item.blockId],
+        latest: _store.blockText(item.blockId),
+      );
+      if (next == null) continue;
+      item.text = next;
+      changed = true;
+    }
+    if (changed && mounted) setState(() {});
+    return changed;
+  }
+
+  /// 把当前卡片文本记成"已与库同步"的基线（载入后 / 落盘后调）。
+  void _rememberSyncedCardTexts() {
+    for (final CanvasItem item in _controller.document.items) {
+      if (item is CardItem) _syncedCardTexts[item.blockId] = item.text;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从别的窗口 / 应用切回来：引用卡片可能已被文档侧改过，拉一次最新的。
+    //
+    // ⚠️ 这管的是**应用之间**的切换；应用内切标签页收不到这个信号 —— 标签页
+    // 系统在激活画布那一页时调同一条路径即可（【落盘前拉新】那道闸是两种情形
+    // 共用的兜底，所以即使这里漏了也不会写坏数据，只是"要等一次保存才刷新"）。
+    if (state != AppLifecycleState.resumed) return;
+    if (_pullCardTextsFromStore()) {
+      _dirty = true;
+      _save.bump();
+    }
   }
 
   /// 退出前落盘：**等到写完**再让窗口关（`_flush` 本身幂等——`_dirty` 保证没改动
@@ -222,14 +301,23 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
         _notes.saveContent(widget.noteId, content, plainText: '').catchError((
           Object _,
         ) {
+          // 兜底链的**链尾**：到这里再失败就只剩放弃（进程正在退出 / 库已关），
+          // 但**不能让异常漏出去** —— `unawaited` 不等于吞掉异常，它会冒成
+          // "unhandled exception"，在测试里还会算到**相邻用例**头上
+          // （2026-09-18 实测：画布用例漏出的这条把后面的块编辑器用例判红了）。
+          //
+          // ⚠️ `updateContent` 返回 `Future<bool>` ⇒ `catchError` 的回调必须回 bool。
           unawaited(
-            _store.updateContent(widget.noteId, content, plainText: ''),
+            _store
+                .updateContent(widget.noteId, content, plainText: '')
+                .catchError((Object _) => false),
           );
         }),
       );
     }
     _controller.removeListener(_onChanged);
     _controller.dispose();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -277,6 +365,8 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
     _controller.addListener(_onChanged);
     // 新文档是**解析成功**的：载入失败的冻结闸必须解开，否则退出前落盘会被跳过。
     _loadFailed = false;
+    // 导入进来的文本即新基线（见 [_syncedCardTexts]）。
+    _rememberSyncedCardTexts();
     _onChanged();
     setState(() {});
   }
@@ -300,12 +390,116 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView> {
     ),
   );
 
+  /// 跑一次 AI 指令（画布结构轨）。
+  ///
+  /// 宿主在这里做三件**内核不该知道**的事（内核既拿不到块库，也不该碰 UI）：
+  /// ① 用指令去**全库搜块** —— 搜索结果就是模型可引用的**白名单**；
+  /// ② 提供块文本（`reference_block` 造卡片要全文，不是截断过的标签）；
+  /// ③ 把结果说给用户听：改了几处、忽略了什么、以及**一次撤销**。
+  Future<void> _runAi(String instruction) async {
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+    if (ref.read(settingsProvider).aiModel.trim().isEmpty) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('还没配置模型：到「设置 → AI」填写模型名')),
+      );
+      return;
+    }
+
+    // 候选块用**指令本身**搜（Roam 式一级扁平搜索）：用户说"番茄"，最相关的块
+    // 自己浮上来，不需要他先去挑。搜不到也不阻止运行（可能是纯画布操作）。
+    final List<BlockHit> hits = _store.searchBlocks(
+      instruction,
+      limit: _aiCandidateLimit,
+    );
+    final Map<String, String> candidates = <String, String>{
+      for (final BlockHit hit in hits)
+        hit.blockId: '「${hit.noteTitle}」${oneLine(hit.text)}',
+    };
+
+    final Rect viewportWorld = _controller.camera.visibleWorld(
+      _controller.viewport,
+    );
+    try {
+      final AiRunOutcome outcome = await runCanvasAi(
+        llm: ref.read(llmClientProvider),
+        document: _controller.document,
+        viewportWorld: viewportWorld,
+        instruction: instruction,
+        candidateBlocks: candidates,
+        blockTextOf: _store.blockText,
+      );
+      if (!mounted) return;
+      if (outcome.created.isNotEmpty) {
+        // 落地即选中：用户一眼看到"AI 动了哪些东西"（顺带把它们钉成全保真，
+        // 见 `ItemPainter.pinnedIds`）。
+        _controller.selectItems(outcome.created);
+      }
+      _controller.requestRepaint();
+      _reportAi(messenger, outcome);
+    } on LlmUnavailableException catch (e) {
+      if (mounted) messenger?.showSnackBar(SnackBar(content: Text(e.message)));
+    } on LlmResponseException catch (e) {
+      if (mounted) {
+        messenger?.showSnackBar(SnackBar(content: Text('模型返回异常：${e.message}')));
+      }
+    }
+  }
+
+  /// 把一轮结果说给用户听（成功 / 空结果两种口径）。
+  ///
+  /// ⚠️ 成功时**必须**带「撤销」按钮：AI 的改动是一整批，用户可能只想回退这一步
+  /// （撤销栈里也只有这一条，见 `CanvasDocument.batch`）。
+  void _reportAi(ScaffoldMessengerState? messenger, AiRunOutcome outcome) {
+    if (outcome.applied == 0) {
+      final String why = outcome.warnings.isEmpty
+          ? '这句话没有产生任何改动'
+          : '没有产生改动：${outcome.warnings.first}';
+      messenger?.showSnackBar(SnackBar(content: Text(why)));
+      return;
+    }
+    final String ignored = outcome.warnings.isEmpty
+        ? ''
+        : '（忽略了 ${outcome.warnings.length} 条，见日志）';
+    for (final String w in outcome.warnings) {
+      debugPrint('[canvas-ai] $w');
+    }
+    messenger?.showSnackBar(
+      SnackBar(
+        content: Text('已应用 ${outcome.applied} 处改动$ignored'),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () {
+            _controller.document.undo();
+            _controller.requestRepaint();
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Widget surface = CanvasSurface(
       controller: _controller,
       media: _media,
       onImport: () => _import(context),
+      // 默认关闭（见 `AppSettings.aiEnabled`）：要用户去设置里显式开启，
+      // 因为没起 Ollama 时露出入口只会让他点出一个报错。
+      // watch 设置 ⇒ 在设置面板里一开，工具条上立刻出现。
+      onAiRun: ref.watch(settingsProvider).aiEnabled ? _runAi : null,
+      // 块可迁移（#5）：把画布卡片发回它所属的文档。卡片的内存摘除在控制器里完成
+      // （detachSelectedCard），这里只负责把块真正落进文档块树（同步写库）。
+      onSendCardToDocument: (String blockId) {
+        // 双链多视图的**引用卡片**（块本来就在文档树里）⇒ `moveBlockToDocument`
+        // 幂等返回 false。那种情况下这一步的真实语义就是"从画布移除引用"，
+        // 得说清楚，否则用户会以为"发回"失败了。
+        final bool moved = _store.moveBlockToDocument(blockId);
+        if (!moved && mounted) {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+            const SnackBar(content: Text('这张卡片的内容本来就在文档里，已从画布移除')),
+          );
+        }
+      },
     );
     // 载入失败必须**看得见**：自动保存已被冻结（见 [_loadFailed]），当前这张空白
     // 画布上的任何编辑都不会落库——不提示的话用户会以为一切正常，画完才发现白画。

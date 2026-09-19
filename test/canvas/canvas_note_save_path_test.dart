@@ -9,6 +9,7 @@ import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/canvas/canvas_note_view.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
+import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -56,6 +57,10 @@ class _RecordingNotes extends NotesNotifier {
 void main() {
   late Database db;
   late NoteStore store;
+
+  /// 画布视图会读设置（AI 入口的开关）⇒ 每个 ProviderScope 都必须注入它，
+  /// 否则 `settingsStoreProvider` 那个"在 main 中 override"的守卫会直接抛。
+  late SettingsStore settings;
   late Directory tempDir;
 
   setUp(() {
@@ -63,6 +68,7 @@ void main() {
     AppDatabase.migrateForTesting(db);
     db.execute('PRAGMA foreign_keys = ON;');
     store = NoteStore(db);
+    settings = SettingsStore(db);
     tempDir = Directory.systemTemp.createTempSync('sinan_canvas_save_path');
   });
 
@@ -70,6 +76,16 @@ void main() {
     db.close();
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
+
+  /// 直接读 `notes.content` **列**（绕过切读）。
+  ///
+  /// ⚠️ 本文件的用例钉的是「**写入路径唯一**」——谁把内容写进了库。而
+  /// `noteById` 走的是第 4 步**切读**（读路径）：它返回从三张表还原的结果，
+  /// 与原字符串**结构等价但不必逐字节相同**（派生的 `media` 侧表刻意不落库）。
+  /// 断言落在列上才是在测写入，而不是在测还原。
+  String contentColumn(String id) => db
+      .select('SELECT content FROM notes WHERE id = ?', <Object?>[id])
+      .single['content'] as String;
 
   testWidgets('卸载兜底落盘必须走 NotesNotifier，不能绕过它直写 store', (
     WidgetTester tester,
@@ -82,6 +98,7 @@ void main() {
         overrides: [
           // 真库（内存）：让"唯一写入者仍写库"这件事可被验证。
           noteStoreProvider.overrideWithValue(store),
+          settingsStoreProvider.overrideWithValue(settings),
           appDataDirProvider.overrideWithValue(tempDir.path),
           // 替身接管 notesProvider：它的调用记录就是"走了哪条路径"的证据。
           notesProvider.overrideWith(() => recorder),
@@ -118,7 +135,7 @@ void main() {
         saved['document'] as Map<String, dynamic>;
     expect(doc['schemaVersion'], 2);
     expect(doc['strokes'], isA<Map<String, dynamic>>()); // id → 笔迹
-    expect(store.noteById(note.id)!.content, recorder.savedContents.single);
+    expect(contentColumn(note.id), recorder.savedContents.single);
   });
 
   testWidgets('退出前落盘：防抖窗口内关窗口，最后那张画布也要写下去', (
@@ -131,6 +148,7 @@ void main() {
       ProviderScope(
         overrides: [
           noteStoreProvider.overrideWithValue(store),
+          settingsStoreProvider.overrideWithValue(settings),
           appDataDirProvider.overrideWithValue(tempDir.path),
           notesProvider.overrideWith(() => recorder),
           pendingSavesProvider.overrideWithValue(saves),
@@ -167,8 +185,8 @@ void main() {
       hasLength(1),
       reason: '关窗口时最后一次画布改动没写下去（这条路径此前完全没有）',
     );
-    // 真的进了库：重开后读回来的就是这一份。
-    expect(store.noteById(note.id)!.content, recorder.savedContents.single);
+    // 真的进了库：重开后读回来的就是这一份（查列，不走切读，见 [contentColumn]）。
+    expect(contentColumn(note.id), recorder.savedContents.single);
     expect(
       jsonDecode(recorder.savedContents.single),
       isA<Map<String, dynamic>>(),
@@ -184,6 +202,7 @@ void main() {
       ProviderScope(
         overrides: [
           noteStoreProvider.overrideWithValue(store),
+          settingsStoreProvider.overrideWithValue(settings),
           appDataDirProvider.overrideWithValue(tempDir.path),
           notesProvider.overrideWith(() => recorder),
         ],
@@ -226,6 +245,7 @@ void main() {
       ProviderScope(
         overrides: [
           noteStoreProvider.overrideWithValue(store),
+          settingsStoreProvider.overrideWithValue(settings),
           appDataDirProvider.overrideWithValue(tempDir.path),
           notesProvider.overrideWith(() => recorder),
         ],

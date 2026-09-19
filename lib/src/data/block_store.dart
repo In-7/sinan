@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'fingerprint.dart';
+import 'json_deep_eq.dart';
 
 /// 块级写入：`notes.content`（v2 块树 JSON）→ `blocks` 行。
 ///
@@ -49,9 +50,14 @@ class BlockStore {
     final Set<String> keep = <String>{
       for (final _FlatBlock b in flat) b.id,
     };
+    // 块可迁移（#5）的**安全前提**：被画布卡片引用的块（canvas_items.block_id）
+    // 即便不在文档块树里，也**不许删**。否则"把块搬到画布"后，下一次文档保存
+    // 的 replaceNoteBlocks 会把这块连同卡片一起删掉。所以删除集要排除这些块——
+    // 它们由画布侧的生命周期托管，不归文档块树管。
+    final Set<String> canvasReferenced = _canvasReferencedBlockIds();
     final List<String> removed = <String>[
       for (final MapEntry<String, _Existing> e in existing.entries)
-        if (!keep.contains(e.key)) e.key,
+        if (!keep.contains(e.key) && !canvasReferenced.contains(e.key)) e.key,
     ];
     final List<_FlatBlock> changed = <_FlatBlock>[
       for (final _FlatBlock b in flat)
@@ -263,29 +269,10 @@ class BlockStore {
   }
 
   /// 结构深比较：Map 按键比（顺序无关），List **按顺序**比。
-  static bool _deepEq(Object? a, Object? b) => _deepEqRaw(_normalize(a), _normalize(b));
-
-  /// ⚠️ 递归必须走自己（Raw）：它接收的是**已归一化**的对象，
-  /// 再调 [_deepEq] 会重复归一化 ⇒ 无限递归。
-  static bool _deepEqRaw(Object? a, Object? b) {
-    if (identical(a, b)) return true;
-    if (a is List && b is List) {
-      if (a.length != b.length) return false;
-      for (int i = 0; i < a.length; i++) {
-        if (!_deepEqRaw(a[i], b[i])) return false;
-      }
-      return true;
-    }
-    if (a is Map && b is Map) {
-      if (a.length != b.length) return false;
-      for (final Object? key in a.keys) {
-        if (!b.containsKey(key)) return false;
-        if (!_deepEqRaw(a[key], b[key])) return false;
-      }
-      return true;
-    }
-    return a == b;
-  }
+  /// 归一化后交给**共用**的深比较（与 `CanvasStore` 同一份规则，见
+  /// `json_deep_eq.dart`）。这里只保留块树特有的归一化（补 `data`、递归 `children`）。
+  static bool _deepEq(Object? a, Object? b) =>
+      jsonDeepEquals(_normalize(a), _normalize(b));
 
   /// 解析出 v2 块树的 document 节点；不是这个格式返回 null。
   static Map<String, Object?>? _parseBlocksDocument(String content) {
@@ -350,6 +337,15 @@ class BlockStore {
             r['parent_id'] as String?,
           ),
       };
+
+  /// 当前被画布卡片引用的全部 `block_id`（块可迁移 #5 用：这些块由画布托管，
+  /// 即使不在任何文档块树里也不许在块投影里被删）。
+  Set<String> _canvasReferencedBlockIds() {
+    final ResultSet rs = db.select(
+      'SELECT DISTINCT block_id FROM canvas_items WHERE block_id IS NOT NULL',
+    );
+    return <String>{for (final Row r in rs) r['block_id'] as String};
+  }
 
   /// 指纹变了、或位置/父节点变了，才需要写。
   static bool _needsWrite(_FlatBlock b, _Existing? old) {

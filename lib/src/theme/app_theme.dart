@@ -153,6 +153,45 @@ class AppTheme {
   static BorderSide menuBorder(ColorScheme scheme) =>
       BorderSide(color: scheme.outlineVariant);
 
+  /// 浮层投影——**双层软阴影**（2026-09-19 起 Apple 菜单口径，替换单层
+  /// Material 投影）：
+  ///
+  /// - **贴地影**：小 offset + 小 blur——把浮层"锚"在纸面上方一点点，没有它
+  ///   大 blur 的影子会显得物体飘在半空没有接地感；
+  /// - **环境影**：大 offset + 大 blur + 低不透明度——表达"悬浮高度"。
+  ///
+  /// 单层 Material 投影（原 [menuElevation]）只有一档硬度，观感偏"安卓"；
+  /// 双层是 macOS / iOS 浮层菜单的共同做法。**只有 [AppFloatSurface] 消费**：
+  /// 官方 Material 菜单的自定义阴影列表塞不进 `PopupMenuThemeData`，仍走
+  /// [menuElevation] 单层（深色下 MATERIAL 单层阴影本来就偏弱，由
+  /// [menuBorder] 描边与底色差补足层次）。
+  static List<BoxShadow> floatShadows(Brightness brightness) =>
+      brightness == Brightness.light
+          ? const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x14000000),
+                offset: Offset(0, 1),
+                blurRadius: 2,
+              ),
+              BoxShadow(
+                color: Color(0x1F000000),
+                offset: Offset(0, 8),
+                blurRadius: 24,
+              ),
+            ]
+          : const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x59000000),
+                offset: Offset(0, 1),
+                blurRadius: 2,
+              ),
+              BoxShadow(
+                color: Color(0x8C000000),
+                offset: Offset(0, 10),
+                blurRadius: 28,
+              ),
+            ];
+
   /// **发丝描边**：`outlineVariant` 打四折——[neuFloatBar] 的边界补丁。
   ///
   /// 比 [menuBorder] 淡得多是刻意的：它**不承担**"浮层三件套"那种边界职责，
@@ -268,9 +307,10 @@ class AppTheme {
           : const Color(0xFF0A0A0A);
 
   /// 编辑器中性色板：对标 Notion / Obsidian / Typora 文档风（GitHub-Flavored
-  /// Markdown 观感），**不随 M3 种子色变化** —— 换主题 = 编辑页配色恒定。
-  /// 链接用固定标准蓝（标杆编辑器的常态，只是固定色而非种子色）；行内代码 /
-  /// 代码块用中性灰底；光标 / 选区 / 标记 / 激活态全部走 onSurface 中性系。
+  /// Markdown 观感），正文 / 代码 / 光标 / 选区 / 标记走中性系、不随种子色；
+  /// 唯独 [editorLink] 吃 [ColorScheme.primary]（与引用块竖条同族，让链接即
+  /// 品牌色，2026-09-17 由写死青色改为跟随主题）。
+  /// 行内代码 / 代码块用中性灰底；光标 / 选区 / 标记 / 激活态全部走 onSurface 中性系。
   /// **编辑器正文色**（正文 / 标题 / 列表 / 引用 / 代码块里的一切内容文字）。
   ///
   /// - **亮色**：直接取 `scheme.onSurface`（M3 中性深灰，与界面文字同源，不动）；
@@ -634,7 +674,8 @@ class AppTheme {
       // 是带色相的 surfaceContainer + elevation 3），故逐个显式补齐。
       popupMenuTheme: PopupMenuThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
+          // 圆角与 AppFloatSurface 默认档一致（radiusLg，2026-09-19 起统一）。
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
           side: menuBorder(scheme),
         ),
         elevation: menuElevation,
@@ -647,7 +688,7 @@ class AppTheme {
           ),
           shape: WidgetStatePropertyAll<OutlinedBorder>(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(Tokens.radiusSm),
+              borderRadius: BorderRadius.circular(Tokens.radiusLg),
               side: menuBorder(scheme),
             ),
           ),

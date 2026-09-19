@@ -7,7 +7,8 @@ import 'tokens.dart';
 ///
 /// ## 三件套（缺一件就不像浮层）
 /// 底色 [AppTheme.floatSurface]（与纸面**只差一档明度**）
-/// + 描边 [AppTheme.menuBorder] + 投影 [AppTheme.menuElevation]。
+/// + 描边 [AppTheme.menuBorder] + 投影 [AppTheme.floatShadows]
+/// （双层软阴影：贴地影 + 环境影，Apple 菜单口径）。
 ///
 /// ## 底色是"抬一档的中性色"：不是画布色，也不染种子色
 /// - **不再用**编辑页那张"纸"的 [AppTheme.contentCanvas]：它与纸面逐像素同色，
@@ -43,19 +44,30 @@ class AppFloatSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // 默认圆角 radiusLg（2026-09-19 起，Apple 菜单口径的柔和感）；
+    // 工具条胶囊等刻意指定自己曲率的仍从 [borderRadius] 传入。
     final BorderRadius radius =
-        borderRadius ?? BorderRadius.circular(Tokens.radiusMd);
-    return Material(
-      color: AppTheme.floatSurface(theme.brightness),
-      elevation: AppTheme.menuElevation,
-      shape: RoundedRectangleBorder(
+        borderRadius ?? BorderRadius.circular(Tokens.radiusLg);
+    // 投影走**双层软阴影**（[AppTheme.floatShadows]：贴地影 + 环境影，Apple
+    // 菜单口径），由外层 [DecoratedBox] 承担——Material 的 elevation 只有
+    // 单层固定投影，出不来这个质感。Material 本体只负责底色 + 描边 + 裁剪
+    // （elevation 归零，避免两层影子叠加发脏）。
+    return DecoratedBox(
+      decoration: BoxDecoration(
         borderRadius: radius,
-        side: AppTheme.menuBorder(theme.colorScheme),
+        boxShadow: AppTheme.floatShadows(theme.brightness),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: padding ?? EdgeInsets.zero,
-        child: width == null ? child : SizedBox(width: width, child: child),
+      child: Material(
+        color: AppTheme.floatSurface(theme.brightness),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: AppTheme.menuBorder(theme.colorScheme),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: padding ?? EdgeInsets.zero,
+          child: width == null ? child : SizedBox(width: width, child: child),
+        ),
       ),
     );
   }

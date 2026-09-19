@@ -112,8 +112,9 @@ class AppDatabase {
     // 约束**，`ALTER TABLE ADD COLUMN` 也加不出新的 CHECK。要动约束就只能重建整表。
     //
     // ⚠️ `notes.content` / `content_hash` / `plain_text` **原样保留**：
-    // 读路径还在用它们，删列留到 **v9**（原计划的"v8 清理"因画布落点表占了 v8 而顺延，
-    // 且必须先满足画布五步走完这个前置条件，见 `docs/data_layer.md` 八.6）。
+    // 读路径还在用它们，删列留到 **v10**（原计划的"v8 清理"因画布落点表占了 v8 而
+    // 顺延为 v9，v9 又被块结构画布的扩表占用，故再顺延为 v10；且必须先满足画布
+    // 五步走完这个前置条件，见 `docs/data_layer.md` 八.6）。
     if (db.userVersion < 6) {
       _rebuildNotesForV6(db);
       db.userVersion = 6;
@@ -187,7 +188,7 @@ class AppDatabase {
     }
 
     // v8：画布落点表（`docs/canvas_architecture.md` 第七章）。这是 `docs/data_layer.md`
-    // 八.6 那个**硬前置条件**的第一步——v9 想删 `notes.content`，画布必须先有落点。
+    // 八.6 那个**硬前置条件**的第一步——v10 想删 `notes.content`，画布必须先有落点。
     //
     // 为什么画布**不进 `blocks`**：两者唯一共享的不变量只有归属（note_id），而
     // `blocks.ord` 是**阅读顺序**、画布要的是 **z 序**；硬塞一张表会让 `ord` 一列两义，
@@ -214,10 +215,44 @@ class AppDatabase {
       db.userVersion = 8;
     }
 
+    // v9：块结构画布的地基 —— **卡片落点 + 自由连线**（2026-09-18 用户拍板）。
+    //
+    // 背景：画布的定位从"画画"转为"帮人思考" ⇒ 画布上要有**卡片**（可编辑文本块）。
+    // 卡片与形状/图片的根本差别是**它有可索引文本**，所以它**不适用**第七章
+    // "画布不进 blocks"的结论——那四条理由针对的是形状/图片（没有可索引文本）：
+    // - 内容必须进 `blocks`：否则搜不到、引不到、AI 索引不到（`chunks_fts` 与
+    //   `index_state` 都建在 blocks 上）。对"帮人思考"的应用，画布沦为信息孤岛是致命的；
+    // - 几何与 z 序仍属画布：视口裁剪每帧要用，必须是**真列**（塞进 props_json 就没法查了）。
+    // ⇒ 卡片**分裂存储**：内容在 blocks、几何在本表，靠 block_id 关联。这正是
+    //   "共享不变量画边界"——内容共享 blocks 的文本/树/AI 语义，几何共享画布的空间语义。
+    //
+    // ⚠️ `canvas_edges` **只做自由连线**：思维导图是树，用 `blocks.parent_id` 表达
+    //   即可（布局跑在 blocks 树上）。两者各自用最合适的连线方案，不混在一张表里。
+    // ⚠️ 边存的是 **id 而不是坐标**（tldraw 的 binding）：拖走卡片连线自动跟随、
+    //   删卡片时连线随外键级联消失。这是"块结构画布"与"画画画布"的分水岭。
+    if (db.userVersion < 9) {
+      // 已升到 v8 的**存量库**：表是旧 DDL 建的、缺 block_id ⇒ 补列。
+      // （新库经 `_canvasItemsDdl` 建表**已经带**这一列，故必须先判存在——
+      //  重复 ADD COLUMN 会抛 "duplicate column name"。）
+      if (!_hasColumn(db, 'canvas_items', 'block_id')) {
+        db.execute(
+          'ALTER TABLE canvas_items ADD COLUMN block_id TEXT '
+          'REFERENCES blocks(id) ON DELETE CASCADE;',
+        );
+      }
+      // DDL 抽成常量：列自愈（[_repairCanvasEdgesTable]）要重建同一张表。
+      db.execute(_canvasEdgesDdl);
+      db.userVersion = 9;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
     _repairCanvasItemsPrimaryKey(db);
+    // 同类修复：存量库的 `userVersion` 已是 8/9 ⇒ 迁移门闩不再触发，早期 DDL
+    // 缺的列要在这里补（否则首次保存就抛 "no such column"，见用户 2026-09-18 报错）。
+    _repairCanvasEdgesTable(db);
+    _repairCanvasItemsBlockId(db);
   }
 
   /// `canvas_items` 的建表 DDL（**v8 建表与主键自愈共用**，避免两处漂移）。
@@ -244,12 +279,32 @@ class AppDatabase {
       src          TEXT,                      -- 图片：相对引用（media/xxx.png）
       props_json   TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(props_json)),
                                               -- {meta?, gen?}：扩展位，缺省不写
+      block_id     TEXT REFERENCES blocks(id) ON DELETE CASCADE,
+                                              -- v9：仅 kind='card'。卡片的**内容**
+                                              -- 在 blocks（要能被 AI 索引与引用），
+                                              -- 这里只存几何，靠 block_id 关联
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL,
       fingerprint  TEXT NOT NULL,             -- 与 blocks 同口径（fp1）
       PRIMARY KEY (note_id, id)
     );
     CREATE INDEX idx_canvas_items_note ON canvas_items (note_id, z);
+  ''';
+
+  /// `canvas_edges` 的建表 DDL（**v9 建表与列自愈共用**，避免两处漂移）。
+  static const String _canvasEdgesDdl = '''
+    CREATE TABLE IF NOT EXISTS canvas_edges (
+      id          TEXT NOT NULL,
+      note_id     TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      from_id     TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+      to_id       TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+      from_side   TEXT,                  -- 端口吸附：top/right/bottom/left（null = 自动）
+      to_side     TEXT,
+      props_json  TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(props_json)),
+      fingerprint TEXT NOT NULL,         -- 与 canvas_items 同口径：判变只写变动的行
+      PRIMARY KEY (note_id, id)          -- 与 canvas_items 同口径：带归属
+    );
+    CREATE INDEX IF NOT EXISTS idx_canvas_edges_note ON canvas_edges (note_id);
   ''';
 
   /// 主键自愈（见 [_canvasItemsDdl] 的主键说明）。
@@ -267,6 +322,47 @@ class AppDatabase {
     if (ddl.contains('primary key (note_id, id)')) return;
     db.execute('DROP TABLE canvas_items;');
     db.execute(_canvasItemsDdl);
+  }
+
+  /// 列自愈：早期 v9 的 `canvas_edges` DDL **没有 `fingerprint` 列**，而
+  /// `userVersion` 已经被写成 9 ⇒ v9 迁移门闩不再触发，于是
+  /// `SELECT id, fingerprint FROM canvas_edges` 直接抛 "no such column"。
+  ///
+  /// 与 [_repairCanvasItemsPrimaryKey] 同一思路：表是**影子副本**（只写不读，
+  /// 画布从 `notes.content` 读）⇒ 重建不丢用户数据，下次保存会重新写满。
+  static void _repairCanvasEdgesTable(Database db) {
+    final ResultSet rs = db.select(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'canvas_edges'",
+    );
+    if (rs.isEmpty) return; // 全新库：交给 v9 迁移建表
+    if (_hasColumn(db, 'canvas_edges', 'fingerprint')) return;
+    db.execute('DROP TABLE canvas_edges;');
+    db.execute(_canvasEdgesDdl);
+  }
+
+  /// 补 `canvas_items.block_id`（早期 v8 DDL 没有它、而 userVersion 已是 9 时，
+  /// v9 迁移同样不会跑）。判据与 [_repairCanvasEdgesTable] 一致。
+  static void _repairCanvasItemsBlockId(Database db) {
+    final ResultSet rs = db.select(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'canvas_items'",
+    );
+    if (rs.isEmpty) return;
+    if (_hasColumn(db, 'canvas_items', 'block_id')) return;
+    db.execute(
+      'ALTER TABLE canvas_items ADD COLUMN block_id TEXT '
+      'REFERENCES blocks(id) ON DELETE CASCADE;',
+    );
+  }
+
+  /// 表有没有这一列（存量库**补列**的幂等判据）。
+  ///
+  /// 迁移要同时服务两类库：**新库**走建表 DDL（已经带这一列），**存量库**是旧
+  /// DDL 建的（缺这一列）⇒ 补列前必须判存在，否则抛 "duplicate column name"。
+  static bool _hasColumn(Database db, String table, String column) {
+    for (final Row r in db.select('PRAGMA table_info($table)')) {
+      if (r['name'] == column) return true;
+    }
+    return false;
   }
 
   /// v6 的 `notes` 表重建（详见调用处的说明）。

@@ -384,6 +384,126 @@ extraInfo: { selectionExtraInfoDisableToolbar: true }
 **何时可撤销**: 上游把"链接点击"也纳入 `selectionExtraInfoDisableToolbar`
 口径（或干脆不再借"设选区"来弹链接菜单）后，还原这一处即可。
 
+### [2026-09-16] 补丁 16 — 右键菜单体感修复（非文本块 / 空白 / 无选区都能弹，且不挪动视图）
+
+**文件**：
+- `lib/src/editor_state.dart`（+1 行：`SelectionUpdateReason` 枚举加 `contextMenu` 值，带 `[sinan]` 注释）
+- `lib/src/editor/editor_component/service/selection/desktop_selection_service.dart`
+  （`_onSecondaryTapDown` / `_showContextMenu` / `_clearContextMenu` 三处改动）
+
+**问题**（用户现象：**右键点在非文本块（图片 / 分割线 / 代码 / 嵌入）、文档末尾空白区、
+或当前无选区时毫无反应**；且**右键后视图跳到光标处**、点外部关闭菜单又跳回去）：
+
+官方 `_onSecondaryTapDown` 的逻辑分两段出问题：
+1. 点到的节点 `selectable == null`（非文本块 / 末尾空白）时，原逻辑 `clearSelection()`
+   后直接 `return` ⇒ 右键彻底没反应；
+2. 即使有选区，原逻辑会用**默认 `uiEvent` 原因**更新选区（把光标移到点击点）。而 `uiEvent`
+   会触发 `_selectionType = inline`（`editor_state.dart:333`），这条正是"选区变化→滚到光标"
+   的开关 ⇒ 右键一下视图跳到中间；关闭菜单时 `_clearContextMenu` 同样用 `uiEvent` 刷选区
+   ⇒ 已滚开的视图又被拉回光标处（"滚开后点外部关闭会跳回去"）。
+
+另有 `_showContextMenu` 里 `if (selectionRects.isEmpty) return;`：点末尾空白 / 非文本块时
+选区矩形为空 ⇒ 菜单根本不弹（须先左键落光标，违背右键直觉）。
+
+**改动**（三处，互相配合，都走新增的 `contextMenu` 原因）：
+1. **[16]** `_onSecondaryTapDown`：`selectable == null` 时**不再 `clearSelection()`+return**，
+   改为保留当前选区、直接 `_showContextMenu(details)`（菜单按点击点定位，剪切/复制按可用性
+   置灰）。有选区时改用 `SelectionUpdateReason.contextMenu`（据此豁免"选区变化→滚到光标"，
+   见下），并带 `selectionExtraInfoDisableToolbar` 不让浮条冒出。
+2. **[16b]** `_showContextMenu`：删掉 `if (selectionRects.isEmpty) return;`。菜单本就按
+   `details.localPosition` 定位、不依赖选区矩形，只要 builder 在就弹（剪切/复制按可用性
+   置灰）——非文本块 / 末尾空白 / 无选区都能弹。
+3. **[16c]** `_clearContextMenu`：关闭菜单时的两次 `updateSelectionWithReason` 从 `uiEvent`
+   改为 `contextMenu` 原因，只刷新选区渲染、不触发"选区变化→滚到光标"。
+
+> **`contextMenu` 原因的豁免机制**：`editor_state.dart:333` 只在 `reason == uiEvent` 时把
+> `_selectionType` 设成 `inline`（驱动滚动的开关）。`contextMenu` 不是 `uiEvent` ⇒
+> `_selectionType` 保持原值、不进滚动分支。所以新增枚举值本身 + 改用它，就达成了"右键
+> 锚定菜单、不挪动视图"——即"scroll 服务已豁免该原因"的含义。
+
+**应用侧配套**（不在本目录）：`note_editor_view_appflowy.dart` 据此**移除**了视图层另挂的
+一份 OverlayEntry 右键菜单（与官方路径叠加会成"页面底部两个菜单"），统一走官方链路。
+
+**验证**：`test/notes/note_editor_view_appflowy_test.dart` 两条——
+- `正文右键：出菜单（此前 contextMenuBuilder 没接 ⇒ 毫无反应）`：右键正文断言"剪切/粘贴/
+  全选"都在、且面板走浮层令牌 `AppFloatSurface`；再点"全选"验证选区覆盖整段文字；
+- `页面留白右键：同一个菜单（官方链路不管这片空白）`：右键末尾留白热区断言"粘贴/全选"都在；
+  点别处被遮罩关掉；二次右键再卸载，断言 `takeException() == null`（overlay 条目被干净
+  撤掉、不挂在下一屏）。
+
+**何时可撤销**：上游让右键对非文本块 / 空白 / 无选区都能弹、且右键不触发"选区变化→滚到
+光标"后，把本目录三处改动还原、并删掉 `editor_state.dart` 的 `contextMenu` 枚举值即可
+（应用侧移除自建菜单的那部分也一并还原）。
+
+### [2026-09-17] 补丁 17 — "整个编辑器可点"不再暴露给无障碍树（a11y）
+
+**文件**：
+- `lib/src/service/selection/selection_gesture.dart`（`RawGestureDetector` +1 行：
+  `excludeFromSemantics: true`）
+
+**问题**（`test/a11y/` 的 `labeledTapTargetGuideline` 报出）：桌面端把**整个编辑器**包在
+`SelectionGestureDetector`（落光标用，见 `desktop_selection_service.dart:124`）里，这一层
+因此给语义树留下一个**没有名字的可点节点**。判据是 `flutter_test` 的
+`accessibility.dart:264`——`label` 与 `tooltip` 都为空即判违规（**`tooltip` 也算合格标签**）。
+读屏（NVDA）会念出一个无名按钮。
+
+**改动**：`RawGestureDetector` 加 `excludeFromSemantics: true`——只让**本层**不贡献语义
+（`_GestureSemantics` 完全不挂），子节点（各块、文本域）自己的语义不受影响。这正是"只删掉
+那个多余动作"的精确手段；**在外层包 `Semantics` 做不到**：只能加不能减，`container: true`
+还会把子树语义压成一层（读屏丢掉逐块导航），`ExcludeSemantics` 则是整棵子树全丢。
+
+**验证**：`test/a11y/accessibility_test.dart`——首次盘点时编辑器报 3 个无标签可点节点；
+修 `_HistoryButton`/`_EarButton` 的 tooltip 归属（应用侧，不是本补丁）后 3→2；**本补丁后 2→1**。
+最后的 1 条（滚动视口 `tags: [RenderViewport.twoPane]`）经查明**与本补丁无关、也与本目录无关**：
+它是应用侧 `footer`（"点文档末尾空白继续输入"那块**无文字**的可点区）的 `tap` 语义**向上合并**
+到视口节点造成的，已由应用侧 `GestureDetector(excludeFromSemantics: true)` 修掉。
+三段贡献可分离：**3→2** 是应用侧 tooltip 归属修复，**2→1** 是本补丁，**1→0** 是应用侧 footer。
+详见 `docs/a11y.md` §4。
+
+**何时可撤销**: 上游给这一层加 `excludeFromSemantics` 槽位（或不再用无名手势层承载"落光标"）
+后，还原这一行即可。
+
+### [2026-09-17] 补丁 18 — 斜杠菜单里按退格越界断言（键盘路径）
+
+**文件**：
+- `lib/src/editor/selection_menu/selection_menu_widget.dart`（`_deleteLastCharacters` +8 行：越界防护）
+
+**问题**（用户实机粘贴的崩栈，Windows）：
+
+```
+'package:appflowy_editor/src/core/transform/transaction.dart':
+Failed assertion: line 279 pos 7: 'index + length <= delta.length && index >= 0 && length >= 0'
+#2  TextTransaction.deleteText
+#3  _SelectionMenuWidgetState._deleteLastCharacters (selection_menu_widget.dart:640:9)
+#4  _SelectionMenuWidgetState._onKeyEvent              (selection_menu_widget.dart:562:7)
+KeyMessage: KeyMessage([KeyDownEvent ... debugName: "Backspace" ...])
+```
+
+斜杠菜单开着、光标又落在**块首**（offset 0）时按退格：`_onKeyEvent` 的退格分支先
+`keyword.isEmpty → onExit()`，然后**无条件**调 `_deleteLastCharacters()`，那里算出的
+`offset - 1 = -1` 被直接喂给 `deleteText` ⇒ 断言，并**打断整条键盘分发**（不是普通的
+渲染报错，是输入整条链路卡住）。
+
+复现路径：输入 `/` 打开菜单 → 退格删掉 `/`（菜单 `onExit` 了，但这一帧 widget 仍挂着）
+→ 再按一次退格。
+
+⚠️ 这与 `SelectionMenuItem._deleteSlash` 那条是**同源问题的第二处**（那条此前已有防护，
+见 `test/editor/slash_menu_delete_guard_test.dart`）——**键盘这条漏了**。两处一起看，别再补第三处。
+
+**改动**：算出 `index` 后先做边界检查，越界即早退。"块首没有前一个字符可删"就是正确语义；
+keyword 非空时照旧删掉刚输入的搜索字符。
+
+**验证**：`test/editor/slash_menu_delete_guard_test.dart` 新增两条——
+
+1. **前置事实**：`deleteText(node, -1, 1)` 确实 `throwsAssertionError`（证明断言真实存在，
+   否则下面的 widget 用例可能是空转）；
+2. **键盘路径**：挂 `SelectionMenuWidget` + 光标在块首 + `sendKeyEvent(backspace)` ⇒
+   断言 `takeException() == null`、文本不变。⚠️ 该用例**同时断言 `onExit` 被调用过**——
+   这个回调只可能由退格分支触发，于是"按键确实到了 handler"是被证明的，排除空转。
+
+**何时可撤销**: 上游在 `_deleteLastCharacters` 里自加边界检查（或让 `_onKeyEvent` 在
+`keyword.isEmpty` 时不再调它）后，还原这一处即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

@@ -7,6 +7,7 @@ import '../blocks/attachment_block_component.dart';
 import '../blocks/callout_block_component.dart';
 import '../blocks/code_block_component.dart';
 import '../blocks/formula_block_component.dart';
+import '../blocks/ref_block_component.dart';
 import '../blocks/toggle_block_component.dart';
 import 'editor_typography.dart';
 
@@ -169,6 +170,8 @@ class BlockHeightPredictor {
         return _formulaHeightOf(node);
       case AttachmentBlockKeys.type:
         return _attachmentHeightOf();
+      case RefBlockKeys.type:
+        return _refHeightOf();
       // 引用（embed）走官方标准块；结构不定，给保守估值，实测补回。
       case 'embed':
         return _embedHeightOf();
@@ -453,6 +456,13 @@ class BlockHeightPredictor {
   double _attachmentHeightOf() => _attachmentHeight;
   double _embedHeightOf() => _embedHeight;
 
+  /// 引用块估算高度（px）：固定几何 —— 外层块内边距 8 + 一行卡片
+  /// （图标/文字行盒 ~20 + 上下内边距 8 + 边框 2）。
+  /// 低估由 `BlockHeightProbe` 实测精确补回。
+  static const double _refHeight = 40;
+
+  double _refHeightOf() => _refHeight;
+
   /// 容器块的子节点缩进（官方 `BlockComponentConfiguration.indentPadding`
   /// 的默认口径）——**只在水平方向**扣掉，用来估子块的折行宽度。
   double indentWidthOf(Node node) =>
@@ -477,6 +487,21 @@ class BlockHeightPredictor {
   }
 
   /// 布局一个 span，返回高度（px）。
+  ///
+  /// ## 2026-09-19 实测：这里的成本**压不下来**，别往"少分配"使劲
+  /// - **复用 `TextPainter` 实例**（而不是每块 new + dispose）：**1.00×，零收益**。
+  ///   实测每块新建 0.0641 ms / 复用 0.0642 ms —— 钱全花在真正的段落排版上，
+  ///   不花在对象分配上。
+  /// - `TextPainter.computeDryLayout()`：**不存在**（那是 `RenderParagraph` 的
+  ///   方法，编译期就报错）。网上"用它预布局能省 60%"的说法不成立。
+  ///
+  /// ⇒ 想让块高预算更快，**只有一条路：少算几块**（按需 / 分帧 / 只算视口附近）。
+  /// 所有"让单次更快"的微优化在这里都已被证伪。
+  ///
+  /// ⚠️ **测这个极易踩的坑**：复用实例时若传**同一个 `TextSpan` 对象**，
+  /// `TextPainter` 会认为内容没变而跳过 layout ⇒ 量出来的是"读缓存"，
+  /// 假象能到 **30×**。验证办法：交替给 2 行 / 6 行的文本，并断言高度确实
+  /// 跟着变——不变就说明测量不成立。
   double _heightOfSpan(TextSpan span, double maxWidth) {
     final TextPainter painter = TextPainter(
       text: span,

@@ -56,6 +56,8 @@ Future<File> exportCanvasToPng(
       camera,
       size,
       items: controller.document.items,
+      // 连线：按导出范围取，端点仍现算（导出图因此与界面一致）。
+      edges: controller.document.edgesIn(bounds),
       inkPicture: ink,
       background: background,
     );

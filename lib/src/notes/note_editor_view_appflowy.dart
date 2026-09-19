@@ -37,10 +37,12 @@ import '../editor/core/note_save.dart';
 import '../editor/core/word_count.dart';
 import '../editor/core/note_title_field.dart';
 import '../editor/blocks/custom_block_components.dart';
+import '../editor/blocks/ref_block_component.dart';
 import '../editor/blocks/toggle_block_component.dart';
 import '../editor/toolbar/fixed_toolbar.dart';
 import '../editor/toolbar/link_toolbar_item.dart';
 import '../editor/toolbar/slash_menu_items.dart';
+import '../editor/panels/backlink_panel.dart';
 import '../editor/panels/toc_panel.dart';
 import '../editor/widgets/editor_context_menu.dart';
 import '../editor/widgets/link_hover_tooltip.dart';
@@ -190,6 +192,35 @@ class _NoteEditorViewAppFlowyState
   /// （从按钮移到气泡途中不闪退）。
   Timer? _tocShowTimer;
   Timer? _tocHideTimer;
+
+  /// 反链面板开关（**第三个耳**）。
+  ///
+  /// 与目录气泡不同，它是**点击才开、没有悬停临时显示**：反链是"专门去查"的
+  /// 信息，不是扫读时的伴随物，为它再养一套悬停防抖（三个计时器 + 全局指针
+  /// 路由）不划算。
+  bool _backlinkVisible = false;
+
+  /// 反链气泡的显示控制器（`OverlayPortal`），理由同 [_tocController]。
+  final OverlayPortalController _backlinkController = OverlayPortalController();
+
+  /// 反链按钮的 key：气泡用它取屏幕坐标来定位。
+  final GlobalKey _backlinkButtonKey = GlobalKey();
+
+  /// 「按钮 + 气泡」共用的 TapRegion 组（理由同 [_tocTapGroupId]）。
+  final Object _backlinkTapGroupId = Object();
+
+  /// 引用块标题的刷新信号：笔记列表一变就 +1（改名 / 删除 / 新建都算）。
+  ///
+  /// 引用块里存的是 **id**，标题是**查出来的** —— 别处改了名，块里那份就得跟着
+  /// 变。用 `ref.listen` 而非 `watch` 去驱动：整页重建只为几个引用块不值得
+  /// （同下方标题同步那条注释）。
+  final ValueNotifier<int> _refsRevision = ValueNotifier<int>(0);
+
+  /// 引用块与宿主之间的接缝（解析目标标题 / 跳转），在 [initState] 装配。
+  ///
+  /// 块组件不碰 provider：解析与导航都由这一层注入 —— 与 `MediaResolver` /
+  /// `EditorTypography` 同一条路子（见 `ref_block_component.dart`）。
+  late final RefBlockBridge _refBridge;
 
   /// 标题行的定位锚点：查找面板要贴在它下方（见 [_showFind]）。
   final GlobalKey _titleRowKey = GlobalKey();
@@ -389,6 +420,16 @@ class _NoteEditorViewAppFlowyState
     );
     // 登记"关窗口时把防抖里还没写下去的编辑写完"（见 [PendingSaves]）。
     _exitFlush = ref.read(pendingSavesProvider).register(_flushForExit);
+
+    // 双链：引用块的目标标题 / 跳转由宿主注入（块本身不碰 provider）。
+    _refBridge = RefBlockBridge(
+      resolve: _resolveRefTarget,
+      open: _openRefTarget,
+      // 嵌入（`ref_view='embed'`）的内容同样是宿主取：块组件不碰 provider。
+      preview: (String refType, String refId) =>
+          ref.read(noteStoreProvider).embedPreview(refType, refId),
+      revision: _refsRevision,
+    );
   }
 
   /// 打开笔记即落光标（Word/Notion 同款）。
@@ -515,6 +556,7 @@ class _NoteEditorViewAppFlowyState
     _canRedo.dispose();
     _flashTimer?.cancel();
     _flashedNodeId.dispose();
+    _refsRevision.dispose();
     _blockHeights.dispose();
     super.dispose();
   }
@@ -678,6 +720,99 @@ class _NoteEditorViewAppFlowyState
                 titleListenable: _titleController,
                 onJumpedToNode: _flashNode,
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // == 反链气泡 ==============================================================
+  // 第三个耳：**点击开关**（不做悬停临时显示，理由见 [_backlinkVisible]）。
+  // 面板本体是 `BacklinkPanel`（自己 watch 列表、自己查库），这里只管浮层的
+  // 定位 / 开关 / 点外部收起 —— 与目录气泡同一套浮层三件套。
+
+  void _toggleBacklink() {
+    final bool next = !_backlinkVisible;
+    setState(() => _backlinkVisible = next);
+    if (next) {
+      _refsRevision.value++; // 打开即重算一次（可能刚从别处引用过来）
+      if (!_backlinkController.isShowing) _backlinkController.show();
+    } else {
+      _closeBacklink();
+    }
+  }
+
+  void _closeBacklink() {
+    if (_backlinkVisible) setState(() => _backlinkVisible = false);
+    if (_backlinkController.isShowing) _backlinkController.hide();
+  }
+
+  /// 点反链条目 → 打开来源笔记。
+  ///
+  /// 顺手关掉面板是刻意的：跳走之后它悬在原处没有意义（下次打开会重算）。
+  void _openBacklink(String noteId) {
+    _closeBacklink();
+    ref.read(selectedNoteIdProvider.notifier).select(noteId);
+  }
+
+  /// 解析引用块的目标（标题 + 形态）；目标不存在返回 null ⇒ 块显示"引用已失效"。
+  RefTarget? _resolveRefTarget(String refType, String refId) {
+    final store = ref.read(noteStoreProvider);
+    if (refType == RefBlockKeys.refBlock) {
+      // 块引用：显示它**所属笔记**的标题（块级定位留待后续）。
+      final String? owner = store.blockNoteId(refId);
+      if (owner == null) return null;
+      final Note? n = store.noteById(owner);
+      return n == null ? null : RefTarget(title: _displayTitle(n), kind: n.kind);
+    }
+    final Note? n = store.noteById(refId);
+    return n == null ? null : RefTarget(title: _displayTitle(n), kind: n.kind);
+  }
+
+  /// 引用块跳转：块引用跳到它所属的那篇笔记。
+  void _openRefTarget(String refType, String refId) {
+    final store = ref.read(noteStoreProvider);
+    final String? noteId = refType == RefBlockKeys.refBlock
+        ? store.blockNoteId(refId)
+        : refId;
+    if (noteId == null) return;
+    ref.read(selectedNoteIdProvider.notifier).select(noteId);
+  }
+
+  static String _displayTitle(Note n) =>
+      n.title.trim().isEmpty ? '未命名笔记' : n.title;
+
+  /// 反链气泡：与目录气泡同一套定位（右对齐、与按钮底边无缝相接）。
+  Widget _backlinkPopover(BuildContext context, OverlayChildLayoutInfo info) {
+    final Size screen = info.overlaySize;
+    final RenderBox? box =
+        _backlinkButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final Offset origin =
+        box == null ? const Offset(0, 48) : box.localToGlobal(Offset.zero);
+    final double top = box == null ? 56 : origin.dy + box.size.height;
+    final double right = box == null
+        ? 16
+        : screen.width - (origin.dx + box.size.width);
+    final double available = screen.height - top - 16;
+    return Positioned(
+      top: top,
+      right: right,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: available.clamp(160, double.infinity),
+          maxWidth: BacklinkPanel.width,
+        ),
+        child: TapRegion(
+          // 点气泡外（含正文）= 关闭；按钮与气泡同组，互相不算"外"。
+          groupId: _backlinkTapGroupId,
+          onTapOutside: (_) => _closeBacklink(),
+          child: AppFloatSurface(
+            width: BacklinkPanel.width,
+            padding: EdgeInsets.zero,
+            child: BacklinkPanel(
+              noteId: widget.noteId,
+              onOpenNote: _openBacklink,
             ),
           ),
         ),
@@ -883,6 +1018,9 @@ class _NoteEditorViewAppFlowyState
     }
 
     // 取值口子（幂等：方法读字段，换掉 [_itemExtents] 也照样看得到）。
+    //
+    // 始终把逐块精确高度喂给滚动器（补丁 10）：总高从第一帧起精确，滚动中
+    // 不再因外推被修正 ⇒ 页面 / 滚动条都不跳。这是现在唯一保留的路径。
     _scroll.itemExtentOf = _itemExtentAt;
   }
 
@@ -1037,6 +1175,12 @@ class _NoteEditorViewAppFlowyState
       }
     });
 
+    // 引用块的标题是**查出来的**（块里只存 id）：别处改名 / 删除后，块里那份要
+    // 跟着变。列表快照一变就 +1，让引用块自己重建（listen 而非 watch，理由同上）。
+    ref.listen(notesProvider, (AsyncValue<List<Note>>? _, AsyncValue<List<Note>> _) {
+      _refsRevision.value++;
+    });
+
     // 目录列显隐：窗口 < 1100 放不下「列表 300 + 正文 + 目录 208」三栏，
     // 开关自动失效（状态保留，拉宽后恢复显示）——与 quill 版同规则。
     // 阈值随侧栏 320→300 同步下调 20。
@@ -1118,7 +1262,9 @@ class _NoteEditorViewAppFlowyState
                       ),
                       // 中间留给标题（标题自己居中，这里只是把两端分开）。
                       const Spacer(),
-                      // 顺序：搜索在左、目录在右（参考图"面板开关放最右"的惯例）。
+                      // 顺序：搜索在左，**目录最右**（面板开关靠边的惯例），
+                      // 反链夹在两者之间。2026-09-18 由"搜索·目录·反链"改为
+                      // "搜索·反链·目录"——目录是最常用的那个，靠边更好按。
                       _EarButton(
                         itemKey: 'editor.ear.find',
                         icon: LucideIcons.search300,
@@ -1126,7 +1272,24 @@ class _NoteEditorViewAppFlowyState
                         onPressed: _showFind,
                       ),
                       const SizedBox(width: Tokens.spaceXs),
+                      // 反链（双链读侧）。**不受 wideEnough 限制**：目录耳那道
+                      // 门槛是历史遗留的"推挤式右栏"约束，反链是纯浮层、不占布局。
+                      OverlayPortal.overlayChildLayoutBuilder(
+                        controller: _backlinkController,
+                        overlayChildBuilder: _backlinkPopover,
+                        child: TapRegion(
+                          groupId: _backlinkTapGroupId,
+                          child: _EarButton(
+                            itemKey: 'editor.ear.backlink',
+                            icon: LucideIcons.link300,
+                            tooltip: '反链（谁引用了我）',
+                            active: _backlinkVisible,
+                            onPressed: _toggleBacklink,
+                          ),
+                        ),
+                      ),
                       if (wideEnough) ...<Widget>[
+                        const SizedBox(width: Tokens.spaceXs),
                         // 官方 3.47 推荐写法：OverlayPortal 直接在按钮处挂浮层，
                         // 由 [_tocPopover] 按 layoutInfo 定位（不再需要 LayerLink）。
                         OverlayPortal.overlayChildLayoutBuilder(
@@ -1157,7 +1320,6 @@ class _NoteEditorViewAppFlowyState
                             ),
                           ),
                         ),
-                        const SizedBox(width: Tokens.spaceXs),
                       ],
                     ],
                   ),
@@ -1247,6 +1409,13 @@ class _NoteEditorViewAppFlowyState
               // 穿透给滚动器；footer 外层已被官方包了
               // `IgnoreEditorSelectionGesture`，不会和编辑器选字打架。
               behavior: HitTestBehavior.translucent,
+              // ⚠️ [a11y] 不要把这块"点空白把光标放到末尾"的**鼠标便利区**暴露给
+              // 语义树。它没有任何文字，语义会**向上合并进滚动视口节点**（视口是最近的
+              // 一层语义边界），于是视口变成一个"没有名字的可点目标"——2026-09-17
+              // `test/a11y/` 的 `labeledTapTargetGuideline` 报的正是这条。
+              // 将来若要让读屏用户也有"跳到末尾"，正确做法是在工具栏加一个**有名字的
+              // 按钮**，而不是让一片无名区域可点。
+              excludeFromSemantics: true,
               onTap: _focusEndOfDocument,
               // 空白区右键：不再自建菜单，走官方链路（见官方
               // `_onSecondaryTapDown` 的 sinan 补丁 16——非文本块 / 空白 /
@@ -1261,6 +1430,8 @@ class _NoteEditorViewAppFlowyState
             blockComponentBuilders: sinanBlockComponentBuilders(
               typography: typography,
               markerColor: scheme.onSurfaceVariant,
+              // 引用块的目标标题 / 跳转（双链）——块本身不碰 provider。
+              refBridge: _refBridge,
             ),
             characterShortcutEvents: sinanCharacterShortcutEvents(
               // 斜杠菜单配色：官方默认是硬编码浅色盘（白底 + 青蓝强调色，
@@ -1464,28 +1635,30 @@ class _HistoryButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return withKeepEditorFocus(
-      Tooltip(
-        message: tooltip,
-        child: IconButton(
-          key: ValueKey<String>(itemKey),
-          onPressed: enabled ? onPressed : null,
-          style: IconButton.styleFrom(
-            minimumSize: const Size.square(Tokens.headerActionSize),
-            maximumSize: const Size.square(Tokens.headerActionSize),
-            padding: EdgeInsets.zero,
-            iconSize: Tokens.iconSm,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            ),
-            // 与双耳同色（不抢戏）；不可用再降一档，"现在按不了"一眼可见。
-            foregroundColor: scheme.onSurfaceVariant,
-            disabledForegroundColor: scheme.onSurfaceVariant.withValues(
-              alpha: 0.38,
-            ),
+      IconButton(
+        key: ValueKey<String>(itemKey),
+        // ⚠️ tooltip 必须交给 [IconButton] 自己，**不要**在外面包一层 [Tooltip]：
+        // 外层 Tooltip 把提示挂在**父语义节点**上，按钮自己那个节点仍然没有名字
+        // ——读屏（NVDA）念出来只是个"按钮"。2026-09-17 由 a11y 盘点实测
+        // （`labeledTapTargetGuideline`，见 `test/a11y/accessibility_test.dart`）。
+        tooltip: tooltip,
+        onPressed: enabled ? onPressed : null,
+        style: IconButton.styleFrom(
+          minimumSize: const Size.square(Tokens.headerActionSize),
+          maximumSize: const Size.square(Tokens.headerActionSize),
+          padding: EdgeInsets.zero,
+          iconSize: Tokens.iconSm,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Tokens.radiusSm),
           ),
-          icon: Icon(icon, size: Tokens.iconSm),
+          // 与双耳同色（不抢戏）；不可用再降一档，"现在按不了"一眼可见。
+          foregroundColor: scheme.onSurfaceVariant,
+          disabledForegroundColor: scheme.onSurfaceVariant.withValues(
+            alpha: 0.38,
+          ),
         ),
+        icon: Icon(icon, size: Tokens.iconSm),
       ),
     );
   }
@@ -1520,26 +1693,26 @@ class _EarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        key: ValueKey<String>(itemKey),
-        onPressed: onPressed,
-        style: IconButton.styleFrom(
-          minimumSize: const Size.square(Tokens.headerActionSize),
-          maximumSize: const Size.square(Tokens.headerActionSize),
-          padding: EdgeInsets.zero,
-          iconSize: Tokens.iconSm,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          ),
+    return IconButton(
+      key: ValueKey<String>(itemKey),
+      // 见 [_HistoryButton]：tooltip 交给按钮自己，别在外面包 Tooltip
+      // （外层的提示会挂在父语义节点上，按钮节点仍然无标签）。
+      tooltip: tooltip,
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(Tokens.headerActionSize),
+        maximumSize: const Size.square(Tokens.headerActionSize),
+        padding: EdgeInsets.zero,
+        iconSize: Tokens.iconSm,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tokens.radiusSm),
         ),
-        icon: Icon(
-          icon,
-          size: Tokens.iconSm,
-          color: active ? scheme.onSurface : scheme.onSurfaceVariant,
-        ),
+      ),
+      icon: Icon(
+        icon,
+        size: Tokens.iconSm,
+        color: active ? scheme.onSurface : scheme.onSurfaceVariant,
       ),
     );
   }

@@ -5,7 +5,9 @@ import 'package:flutter/widgets.dart';
 
 import 'canvas_ai.dart';
 import 'canvas_camera.dart';
+import 'canvas_edge.dart';
 import 'canvas_item.dart';
+import 'canvas_palette.dart';
 import 'ink_stroke.dart';
 
 /// 背景点阵网格：**屏幕坐标**下按相机绘制，间距随缩放自适应。
@@ -73,15 +75,48 @@ class GridPainter extends CustomPainter {
 ///
 /// 与笔迹层分开的仍是**重绘隔离**：item 的增删拖拽只重绘本层，
 /// 几千条笔迹那层不动（反之亦然）。
+///
+/// ## 2026-09-19 核实：`paint()` 里直接 `ui.Paint()` 是**已知且刻意不改**的
+/// 通用建议是"别在 `paint()` 里创建 `Paint`"。这里没照做：真实画布规模
+/// （实测 ≤ 31 个 item）下每帧几十个短命对象，对 Dart 分代 GC 无感；而改成
+/// 复用实例要动几十处，且漏重置 `filterQuality` / `blendMode` 一类字段就会
+/// 画错——收益趋零、风险实在。
+///
+/// 画布真正的量级风险是**笔迹条数**（几千条），不是 item 数；那条已由
+/// 视口裁剪（只画 `visibleWorld` 内的）+ 笔迹烤成 `Picture` 兜住。
+/// 若真遇到拖动掉帧，先去量笔迹层，不要从这里下手。
+///
+/// ## 2026-09-19 新增：LOD（细节分级）代理渲染
+/// 视口裁剪只在"item 落在视口**外**"时有用；一旦**缩小**，`visibleWorld` 会
+/// 包住整张画布 ⇒ 裁剪失效，每帧变成"全保真地画全部 item"（卡片建段落、图片
+/// 采样、思维导图逐节点排字），块一多就掉帧。**这正是裁剪救不了的场景**。
+///
+/// 解法是对**小到看不清**的 item 改用代理绘制（[lodProxyScreenSize]）：只画
+/// 一个身份色圆角块，跳过文本排版与图片采样，并**不触发** [onImageMissing]
+/// （否则缩小时满屏图片会一起去解码整张原图）。放大回来自动恢复全保真。
+///
+/// ⚠️ [lod] **默认 false（全保真）**，只有实时视图传 true。导出 / AI 栅格化
+/// （`canvas_raster.dart` 复用本 painter）必须以默认值调用——否则缩小的全图
+/// 导出会输出一堆色块。这与 [staleColor] "只有界面传、导出不传"是同一约定。
 class ItemPainter extends CustomPainter {
   const ItemPainter({
     required this.camera,
     this.inkColor = kThemeInk,
     this.items = const <CanvasItem>[],
+    this.edges = const <EdgeGeometry>[],
     this.onImageMissing,
     this.staleColor,
+    this.lod = false,
+    this.lodScale,
+    this.pinnedIds = const <String>{},
     this.stamp = 0,
   });
+
+  /// LOD 阈值：item 的**屏幕短边**（世界短边 × 缩放）小于它就改用代理绘制。
+  ///
+  /// 取 20 逻辑像素：此时卡片内的 14pt 文本在任何常见卡片尺寸下都已 < 5px、
+  /// 完全不可读，图片细节同样看不见 ⇒ 全保真绘制只剩成本没有信息。
+  static const double lodProxyScreenSize = 20;
 
   final CanvasCamera camera;
 
@@ -92,6 +127,11 @@ class ItemPainter extends CustomPainter {
   /// 待绘制的 item（应已按视口裁剪，见 `CanvasDocument.itemsIn`）。
   final List<CanvasItem> items;
 
+  /// 待绘制的连线（端点**已算好**，见 `CanvasDocument.edgesIn`）。
+  ///
+  /// 放在 item 之前画 ⇒ 连线被卡片盖住端点，观感是"从卡片边缘长出来"。
+  final List<EdgeGeometry> edges;
+
   /// 遇到未加载的图片 item 时回调（视图层据此触发懒加载）。
   final void Function(ImageItem)? onImageMissing;
 
@@ -100,30 +140,90 @@ class ItemPainter extends CustomPainter {
   /// 导出与栅格化都不传 ⇒ 标记**不会**进导出图、也不会进模型输入图。
   final Color? staleColor;
 
+  /// 是否启用 **LOD 代理渲染**（见类文档）：小到看不清的 item 只画身份色块。
+  ///
+  /// 实时视图传 true；导出 / AI 栅格化**必须**保持默认 false——它们要的是
+  /// 全保真像素，退化不得。
+  final bool lod;
+
+  /// LOD 判据用的**缩放**。`null` ⇒ 直接用 `camera.scale`。
+  ///
+  /// 实时视图传 `CanvasController.lodScale`（**稳定缩放**）：缩放进行中保持不变、
+  /// 停稳后才跳一次。若直接跟 `camera.scale`，手势中途要付两笔代价——① item 沿途
+  /// 在"色块 ⇄ 全保真"之间反复翻转（画面闪变）；② 每个跨过阈值的图片 item 会
+  /// **立刻**触发 [onImageMissing] ⇒ 手势正忙时批量读盘 + 解码几十张原图。
+  /// 导出 / 测试不传即可（一次性静态渲染，没有"手势进行中"这回事）。
+  final double? lodScale;
+
+  /// **必须保持全保真**的 item id（选中 / 编辑中的那些）。
+  ///
+  /// 照 tldraw 的硬规则「正在操作的东西必须可见」（它的 `getCulledShapes` 会把
+  /// 选中 / 编辑中的形状从剔除集合里减掉）：否则一选中某张小卡片，它反而变成
+  /// 一个色块，比不选中还难辨认。
+  final Set<String> pinnedIds;
+
   /// 视觉状态版本号（见 `CanvasController.repaintStamp`）。拖拽/缩放/过期状态
   /// 都是**就地**改的，只有它能判定"这一帧与上一帧不同"。
   final int stamp;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (items.isEmpty) return;
+    if (items.isEmpty && edges.isEmpty) return;
     canvas.save();
     canvas.translate(camera.translation.dx, camera.translation.dy);
     canvas.scale(camera.scale);
-    for (final CanvasItem item in items) {
+    // 连线**先画**：它连的两端是卡片，端点被卡片盖住才自然（也避免线压在字上）。
+    if (edges.isNotEmpty) {
+      final Paint edgePaint = Paint()
+        ..color = inkColor.withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      // 箭头同色填充（缺口2：让"从哪连到哪"可见）。落在端口外侧，不被卡片盖住。
+      final Paint arrowPaint = Paint()
+        ..color = inkColor.withValues(alpha: 0.55)
+        ..style = PaintingStyle.fill;
+      for (final EdgeGeometry edge in edges) {
+        canvas.drawPath(edge.path(), edgePaint);
+        // 起点 / 终点各自按形状画标记（箭头/圆点/菱形/无）。`none` 返回空路径，
+        // drawPath 是 no-op，无副作用。默认"起点无、终点箭头"与旧观感一致。
+        if (edge.startShape != EdgeEndpointShape.none) {
+          canvas.drawPath(edge.startMarkerPath(), arrowPaint);
+        }
+        if (edge.endShape != EdgeEndpointShape.none) {
+          canvas.drawPath(edge.endMarkerPath(), arrowPaint);
+        }
+      }
+    }
+    // 分组框是**容器**，必须画在成员**下方**：先画 group 类型、再画其余，
+    // 两组各自仍保持原 z 序（itemOrder 已保证内部顺序）。否则框会被自己的
+    // 成员盖住、看不出"框住了一组"。
+    final List<CanvasItem> ordered = <CanvasItem>[
+      for (final CanvasItem item in items) if (item is CanvasGroupItem) item,
+      for (final CanvasItem item in items) if (item is! CanvasGroupItem) item,
+    ];
+    for (final CanvasItem item in ordered) {
+      // LOD：小到看不清的 item 只画身份色块，**先于** onImageMissing 返回 ⇒
+      // 缩小时不会为满屏图片触发整图解码（放大回来自动恢复，见类文档）。
+      if (_isProxy(item)) {
+        _paintProxy(canvas, item, _slotColorOf(item));
+        continue;
+      }
       if (item is ImageItem && !item.loaded) {
         onImageMissing?.call(item);
       }
       // 逐 item 绕自身中心旋转绘制（rect 保持轴对齐本地坐标，旋转只在此处）。
+      // 语义色槽位在这里**统一解析**（卡片/思维导图会用它，其余子类忽略）。
+      final Color? slot = _slotColorOf(item);
       if (item.angle == 0) {
-        item.paint(canvas, ink: inkColor);
+        item.paint(canvas, ink: inkColor, slotColor: slot);
       } else {
         canvas.save();
         final Offset center = item.rect.center;
         canvas.translate(center.dx, center.dy);
         canvas.rotate(item.angle);
         canvas.translate(-center.dx, -center.dy);
-        item.paint(canvas, ink: inkColor);
+        item.paint(canvas, ink: inkColor, slotColor: slot);
         canvas.restore();
       }
     }
@@ -135,12 +235,73 @@ class ItemPainter extends CustomPainter {
     if (stale == null) return;
     for (final CanvasItem item in items) {
       if (item is! AiImageItem || item.gen.status != GenStatus.stale) continue;
+      // 同一个 LOD 判据：小到看不见时，虚线框也只是噪声（还要几十条 drawLine）。
+      if (_isProxy(item)) continue;
       final Rect box = Rect.fromPoints(
         camera.worldToScreen(item.bounds.topLeft),
         camera.worldToScreen(item.bounds.bottomRight),
       );
       _drawStaleMarker(canvas, box, stale);
     }
+  }
+
+  /// 该 item 这一帧是否走 **LOD 代理**（见类文档）。
+  ///
+  /// 两个"恒不代理"的例外：
+  /// - [lod] 关（导出 / AI）⇒ 恒 false，全保真；
+  /// - [pinnedIds] 里的（选中 / 编辑中）⇒ 恒 false，见该字段的文档。
+  bool _isProxy(CanvasItem item) =>
+      lod &&
+      !pinnedIds.contains(item.id) &&
+      isTooSmallForDetail(item, lodScale ?? camera.scale);
+
+  /// 纯判据（与开关、钉住集合无关，故可单测）：item 在 [scale] 下是否**小到看不清**。
+  ///
+  /// - 形状排除在外：它本来就是单次 `drawRect` / `drawOval`，代理不掉成本，
+  ///   而且空心形状画成实心色块会**改变语义**（看起来像填充了）。
+  static bool isTooSmallForDetail(CanvasItem item, double scale) =>
+      item is! ShapeItem &&
+      item.rect.shortestSide * scale < lodProxyScreenSize;
+
+  /// 代理绘制：一个身份色圆角块，跳过文本排版 / 图片采样 / 旋转。
+  ///
+  /// 颜色口径与真实 item 一致（语义槽位优先，否则主题墨色），只是把淡染略微
+  /// 加深——在这个尺度下太淡就整个消失了，而"能一眼看出这里有个块"才是 LOD
+  /// 唯一要保留的信息。
+  void _paintProxy(ui.Canvas canvas, CanvasItem item, Color? slotColor) {
+    final bool marked = slotColor != null;
+    final Color base = slotColor ?? inkColor;
+    final RRect box = RRect.fromRectAndRadius(
+      item.rect,
+      const Radius.circular(CardMetrics.radius),
+    );
+    canvas.drawRRect(
+      box,
+      ui.Paint()..color = base.withValues(alpha: marked ? 0.18 : 0.08),
+    );
+    canvas.drawRRect(
+      box,
+      ui.Paint()
+        ..color = base.withValues(alpha: marked ? 0.5 : 0.28)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  /// 两个 id 集合是否**同内容**（[pinnedIds] 每次构建都是新 Set，比身份恒不等）。
+  ///
+  /// 不用 `setEquals`：本文件刻意只依赖 `package:flutter/widgets.dart`（内核要能
+  /// 在 material_ui / 官方 material 两套主题下复用），不为一个三行比较加 import。
+  static bool _sameIds(Set<String> a, Set<String> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  /// item 的**语义色槽位 → 实色**（无槽位 = null ⇒ 子类回落到主题墨色）。
+  ///
+  /// 只有卡片与思维导图支持槽位，但基类给了统一的 [CanvasItem.colorSlot] 读写口，
+  /// 所以这里不必 `is` 判断；"槽位 → 颜色"的映射也只有一处（[canvasSlotColor]）。
+  static Color? _slotColorOf(CanvasItem item) {
+    final CanvasColorSlot? slot = item.colorSlot;
+    return slot == null ? null : canvasSlotColor(slot);
   }
 
   /// 虚线描边：一眼看出"这层该重算了"，又不遮挡内容（不铺半透明底色）。
@@ -174,6 +335,9 @@ class ItemPainter extends CustomPainter {
   bool shouldRepaint(ItemPainter oldDelegate) {
     if (oldDelegate.stamp != stamp ||
         oldDelegate.inkColor != inkColor ||
+        oldDelegate.lod != lod ||
+        oldDelegate.lodScale != lodScale ||
+        !_sameIds(oldDelegate.pinnedIds, pinnedIds) ||
         oldDelegate.camera.scale != camera.scale ||
         oldDelegate.camera.translation != camera.translation ||
         oldDelegate.staleColor != staleColor) {
@@ -183,6 +347,7 @@ class ItemPainter extends CustomPainter {
     // 两个 painter 的是同一批 item 对象，比身份/几何等于和自己比 ⇒ 恒等。
     // 真正兜住就地修改（拖拽、stale 状态翻转）的是上面的 [stamp]。
     if (oldDelegate.items.length != items.length) return true;
+    if (oldDelegate.edges.length != edges.length) return true;
     for (int i = 0; i < items.length; i++) {
       final CanvasItem before = oldDelegate.items[i];
       final CanvasItem after = items[i];
@@ -287,6 +452,8 @@ class OverlayPainter extends CustomPainter {
     this.eraserCenter,
     this.eraserRadius,
     this.selectedItems = const <CanvasItem>[],
+    this.pendingEdge,
+    this.selectedEdge,
     this.stamp = 0,
   });
 
@@ -314,6 +481,12 @@ class OverlayPainter extends CustomPainter {
   /// 选中的 item（世界坐标）。单选画旋转后的描边 + 四角/旋转手柄；
   /// 多选画并集包围盒 + 四角/旋转手柄（整体缩放/旋转）。
   final List<CanvasItem> selectedItems;
+
+  /// 连线预览（世界几何）：连线工具拖动中，从起点卡片到光标的虚线。
+  final EdgeGeometry? pendingEdge;
+
+  /// 选中的连线（世界几何）：高亮重画一遍，提示"这条线被选中、可删除"。
+  final EdgeGeometry? selectedEdge;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -413,13 +586,62 @@ class OverlayPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
     }
+
+    // 选中连线：在世界变换下重画一遍、加粗高亮（与正式连线同一路径，视觉连续）。
+    final EdgeGeometry? sel = selectedEdge;
+    if (sel != null) {
+      _drawWorldPath(
+        canvas,
+        sel,
+        ui.Paint()
+          ..color = color
+          ..style = ui.PaintingStyle.stroke
+          ..strokeWidth = 3,
+      );
+      _drawWorldArrow(
+        canvas,
+        sel,
+        ui.Paint()
+          ..color = color
+          ..style = ui.PaintingStyle.fill,
+      );
+      // 两端端点把手（缺口4）：拖它可改接到另一张卡片。屏幕坐标画，大小恒定。
+      _drawHandle(canvas, camera.worldToScreen(sel.from), color);
+      _drawHandle(canvas, camera.worldToScreen(sel.to), color);
+    }
+    // 预览连线：从起点卡片到光标的虚线（世界变换下画，随缩放一致）。
+    final EdgeGeometry? pend = pendingEdge;
+    if (pend != null) {
+      _drawDashedWorldPath(
+        canvas,
+        pend,
+        ui.Paint()
+          ..color = color
+          ..style = ui.PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+      // 预览也画箭头，指出"会连到哪里"。
+      _drawWorldArrow(
+        canvas,
+        pend,
+        ui.Paint()
+          ..color = color
+          ..style = ui.PaintingStyle.fill,
+      );
+    }
   }
 
+  /// 画闭合多边形（选中框）。
+  ///
+  /// 角点进来是**手柄枚举序**（`[左上, 右上, 左下, 右下]`），**不是绕序** ⇒
+  /// 必须重排，否则画成"上边 + 两条对角线 + 下边"的蝴蝶结。见
+  /// [CanvasHandles.orderForOutline]。
   void _drawPolygon(Canvas canvas, List<Offset> corners, ui.Paint paint) {
-    if (corners.isEmpty) return;
-    final ui.Path path = ui.Path()..moveTo(corners[0].dx, corners[0].dy);
-    for (int i = 1; i < corners.length; i++) {
-      path.lineTo(corners[i].dx, corners[i].dy);
+    if (corners.length < 3) return;
+    final List<Offset> ordered = CanvasHandles.orderForOutline(corners);
+    final ui.Path path = ui.Path()..moveTo(ordered[0].dx, ordered[0].dy);
+    for (int i = 1; i < ordered.length; i++) {
+      path.lineTo(ordered[i].dx, ordered[i].dy);
     }
     path.close();
     canvas.drawPath(path, paint);
@@ -460,6 +682,52 @@ class OverlayPainter extends CustomPainter {
     canvas.drawCircle(rot, 5, border);
   }
 
+  /// 在世界变换下画一条连线几何（随相机缩放/平移，与正式连线视觉一致）。
+  void _drawWorldPath(Canvas canvas, EdgeGeometry geo, ui.Paint paint) {
+    canvas.save();
+    canvas.translate(camera.translation.dx, camera.translation.dy);
+    canvas.scale(camera.scale);
+    canvas.drawPath(geo.path(), paint);
+    canvas.restore();
+  }
+
+  /// 在世界变换下画连线两端标记（按各自形状，见 [EdgeEndpointShape]）。
+  ///
+  /// 选中高亮 / 预览连线都用它，于是高亮跟正式连线视觉一致（包括圆点 / 菱形）。
+  void _drawWorldArrow(Canvas canvas, EdgeGeometry geo, ui.Paint paint) {
+    canvas.save();
+    canvas.translate(camera.translation.dx, camera.translation.dy);
+    canvas.scale(camera.scale);
+    if (geo.startShape != EdgeEndpointShape.none) {
+      canvas.drawPath(geo.startMarkerPath(), paint);
+    }
+    if (geo.endShape != EdgeEndpointShape.none) {
+      canvas.drawPath(geo.endMarkerPath(), paint);
+    }
+    canvas.restore();
+  }
+
+  /// 在世界变换下画**虚线**连线（预览）。
+  void _drawDashedWorldPath(Canvas canvas, EdgeGeometry geo, ui.Paint paint) {
+    final ui.Path path = geo.path();
+    canvas.save();
+    canvas.translate(camera.translation.dx, camera.translation.dy);
+    canvas.scale(camera.scale);
+    const double dash = 8;
+    const double gap = 6;
+    for (final ui.PathMetric m in path.computeMetrics()) {
+      double d = 0;
+      while (d < m.length) {
+        final double next = (d + dash).clamp(0, m.length);
+        final ui.Offset a = m.getTangentForOffset(d)!.position;
+        final ui.Offset b = m.getTangentForOffset(next)!.position;
+        canvas.drawLine(a, b, paint);
+        d = next + gap;
+      }
+    }
+    canvas.restore();
+  }
+
   @override
   bool shouldRepaint(OverlayPainter oldDelegate) {
     if (oldDelegate.stamp != stamp ||
@@ -469,7 +737,9 @@ class OverlayPainter extends CustomPainter {
         oldDelegate.eraserCenter != eraserCenter ||
         oldDelegate.eraserRadius != eraserRadius ||
         oldDelegate.camera.translation != camera.translation ||
-        oldDelegate.camera.scale != camera.scale) {
+        oldDelegate.camera.scale != camera.scale ||
+        oldDelegate.pendingEdge != pendingEdge ||
+        oldDelegate.selectedEdge != selectedEdge) {
       return true;
     }
     // 选中集合每帧都是新实例；比长度 + 每个 item 的“身份 + 几何 + 旋转”，

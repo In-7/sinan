@@ -13,7 +13,10 @@ import '../../notes/services/note_media_service.dart';
 import '../blocks/attachment_block_component.dart';
 import '../blocks/callout_block_component.dart';
 import '../blocks/code_block_component.dart';
+import '../blocks/block_picker.dart';
 import '../blocks/formula_block_component.dart';
+import '../blocks/note_picker.dart';
+import '../blocks/ref_block_component.dart';
 import '../blocks/toggle_block_component.dart';
 
 /// 斜杠菜单的配色——**从应用主题色构造**，不能省。
@@ -84,6 +87,10 @@ List<SelectionMenuItem> sinanSelectionMenuItems() {
     ...toggleSlashMenuItems,
     formulaSlashMenuItem,
     attachmentSlashMenuItem,
+    refSlashMenuItem,
+    refBlockSlashMenuItem,
+    embedNoteSlashMenuItem,
+    embedBlockSlashMenuItem,
   ]);
 }
 
@@ -363,6 +370,161 @@ final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
       editorState,
       point,
       node: attachmentBlockNode(metaJson: jsonEncode(meta.toJson())),
+      canHoldCursor: false,
+    );
+  },
+);
+
+/// 引用笔记（块类型 `ref`，属性 `ref_type='note'` / `ref_id`）。
+///
+/// 双链在文档侧的**创建入口**：引用存 id 而不是标题，于是"谁引用了我"（反链）
+/// 只是一条 SQL，改名也不会断链（见 `RefBlockKeys` 与 `NoteStore.backlinks`）。
+final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
+  getName: () => '引用笔记',
+  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
+    icon: LucideIcons.link300,
+    isSelected: isSelected,
+    style: style,
+  ),
+  keywords: const <String>[
+    'ref',
+    'reference',
+    'link',
+    'backlink',
+    '引用',
+    '引用笔记',
+    '双链',
+    '反链',
+    '链接',
+  ],
+  handler: (editorState, _, BuildContext context) async {
+    // 落点必须在弹对话框**之前**取好（见 _InsertionPoint 的说明）。
+    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
+    if (point == null) return;
+    final String? noteId = await pickNoteToReference(context);
+    if (noteId == null) return;
+    await _insertBlockAt(
+      editorState,
+      point,
+      node: refBlockNode(
+        refType: RefBlockKeys.refNote,
+        refId: noteId,
+      ),
+      canHoldCursor: false,
+    );
+  },
+);
+
+/// 引用块（块类型 `ref`，属性 `ref_type='block'` / `ref_id` = 目标块 id）。
+///
+/// 与上面的「引用笔记」同源（都是 `ref` 块），只差 `ref_type`：
+/// - `ref_type='note'` ⇒ 指向整篇笔记；
+/// - `ref_type='block'` ⇒ 指向**某一块**（块级双链）。
+///
+/// 反链查询、渲染、跳转三处**早已支持** `ref_type='block'`（见
+/// `NoteStore.backlinks` / `ref_block_component.dart` 的 `_labelOf` /
+/// `note_editor_view` 的 bridge），本项补的只是**创建入口**——此前
+/// `refBlockNode` 只在引用笔记处被调用，块级引用因此"数据层全有、用户摸不到"。
+final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
+  getName: () => '引用块',
+  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
+    // 与「引用笔记」的 link 图标区分：这里强调的是"引用一段正文"。
+    icon: LucideIcons.fileText300,
+    isSelected: isSelected,
+    style: style,
+  ),
+  keywords: const <String>[
+    'block',
+    'blockref',
+    '引用块',
+    '块引用',
+    '块',
+    '段落',
+  ],
+  handler: (editorState, _, BuildContext context) async {
+    // 落点必须在弹对话框**之前**取好（见 _InsertionPoint 的说明）。
+    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
+    if (point == null) return;
+    final String? blockId = await pickBlockToReference(context);
+    if (blockId == null) return;
+    await _insertBlockAt(
+      editorState,
+      point,
+      node: refBlockNode(
+        refType: RefBlockKeys.refBlock,
+        refId: blockId,
+      ),
+      canHoldCursor: false,
+    );
+  },
+);
+
+/// 嵌入块：`ref` 块 + `ref_view='embed'` ⇒ **就地展开**那一块的内容。
+///
+/// 与「引用块」只差 `ref_view`：引用是一行卡片（显示标题），嵌入是把内容摊开
+/// 在这里（Obsidian 的 `![[…]]` / Notion 的"显示为 embed"）。两者共用同一块
+/// 类型 ⇒ 反链、渲染、跳转一条链都不用改。
+final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
+  getName: () => '嵌入块',
+  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
+    icon: LucideIcons.quote300,
+    isSelected: isSelected,
+    style: style,
+  ),
+  keywords: const <String>[
+    'embed',
+    '嵌入块',
+    '块嵌入',
+    '展开块',
+  ],
+  handler: (editorState, _, BuildContext context) async {
+    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
+    if (point == null) return;
+    final String? blockId = await pickBlockToReference(context);
+    if (blockId == null) return;
+    await _insertBlockAt(
+      editorState,
+      point,
+      node: refBlockNode(
+        refType: RefBlockKeys.refBlock,
+        refId: blockId,
+        refView: RefBlockKeys.viewEmbed,
+      ),
+      canHoldCursor: false,
+    );
+  },
+);
+
+/// 嵌入笔记：就地展开那篇笔记的**开头一段**（只读，限 30 块）。
+///
+/// 整篇嵌入不做递归展开：预览只取有文本的块，而 `ref` 块没有文本 ⇒ 即便
+/// "A 嵌 B、B 又嵌 A" 也不会无限展开（见 `NoteStore.embedPreview`）。
+final SelectionMenuItem embedNoteSlashMenuItem = SelectionMenuItem(
+  getName: () => '嵌入笔记',
+  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
+    icon: LucideIcons.quote300,
+    isSelected: isSelected,
+    style: style,
+  ),
+  keywords: const <String>[
+    'embed',
+    '嵌入笔记',
+    '笔记嵌入',
+    '展开笔记',
+  ],
+  handler: (editorState, _, BuildContext context) async {
+    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
+    if (point == null) return;
+    final String? noteId = await pickNoteToReference(context);
+    if (noteId == null) return;
+    await _insertBlockAt(
+      editorState,
+      point,
+      node: refBlockNode(
+        refType: RefBlockKeys.refNote,
+        refId: noteId,
+        refView: RefBlockKeys.viewEmbed,
+      ),
       canHoldCursor: false,
     );
   },

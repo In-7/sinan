@@ -1,5 +1,5 @@
 name: sinan
-description: "A new Flutter project."
+description: "本地优先的流式写作工具：侧栏管理笔记，主区为沉浸式编辑器。数据全部存于本机，无云端同步。"
 publish_to: 'none'
 version: 0.1.0+1
 
