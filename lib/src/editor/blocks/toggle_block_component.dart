@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -90,7 +91,12 @@ const String toggleAddContentText = '点击添加内容';
 /// `BlockHeightPredictor._toggleHeightOf`）。
 const EdgeInsets togglePlaceholderPadding = EdgeInsets.only(top: Tokens.spaceXs);
 
-/// 箭头图标直径（[Tokens.iconMd]，与工具栏/双耳同档）。
+/// 箭头图标直径：走"容器声明"档 [Tokens.iconMd]（20）。
+///
+/// ⚠️ 它**不是** [Tokens.iconSm]（18，编辑器官方容器那档）—— 这条注释原写"与工具栏/双耳同档"，
+/// 但取值一直是 20（2026-09-23 全项目图标尺寸盘点时才发现注释与实现不符）。
+/// 本值被块高预算器消费（见 `BlockHeightPredictor._toggleHeightOf`），
+/// 要动它得连着预测器一起验。
 const double toggleArrowIconSize = Tokens.iconMd;
 
 /// 折叠块的**回车**：与官方 `main` 的 `insertChildNodeInsideToggleList`

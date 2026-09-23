@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/settings.dart';
 import '../theme/app_popover.dart';
@@ -30,11 +31,15 @@ import 'settings_panel.dart';
 class AppMenuButton extends ConsumerWidget {
   const AppMenuButton({
     super.key,
-    this.iconSize = 24,
+    this.iconSize = Tokens.iconMd,
     this.captionStyle = false,
   });
 
-  /// 标题栏里与窗控图标对齐时传 20；移动端 AppBar 走默认 24。
+  /// 默认 [Tokens.iconMd]（20）—— 与窗控图标同档，桌面标题栏直接用它。
+  ///
+  /// 默认值原为 24（Tabler 画板尺寸的照抄），2026-09-23 全项目图标尺寸盘点时
+  /// 收编到档位。桌面调用点原先显式传 `20`，与收编后的默认值相同 ⇒ 那两处实参
+  /// 已删（留着会触发 `avoid_redundant_argument_values`）。
   final double iconSize;
 
   /// true = 复刻窗控按钮外观（点击区/悬停同窗控）；移动端 false。
@@ -90,12 +95,12 @@ class AppMenuButton extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             _MenuRow(
-              icon: tabler.Settings(height: 24, width: 24, strokeWidth: 1.5),
+              icon: const tabler.Settings(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
               label: '设置',
               onTap: () => pick(_AppMenuItem.settings),
             ),
             _MenuRow(
-              icon: tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
+              icon: const tabler.InfoCircle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
               label: '关于',
               onTap: () => pick(_AppMenuItem.about),
             ),
@@ -103,14 +108,14 @@ class AppMenuButton extends ConsumerWidget {
               // 图标表示「点此切换到的目标态」：浅色时点下去进深色 → 月亮；
               // 深色时 → 太阳。右侧文字仍是当前态提示，二者互补更直觉。
               icon: mode == ThemeBrightnessMode.light
-                  ? tabler.Moon(height: 24, width: 24, strokeWidth: 1.5)
-                  : tabler.Sun(height: 24, width: 24, strokeWidth: 1.5),
+                  ? const tabler.Moon(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5)
+                  : const tabler.Sun(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
               label: '明暗切换',
               trailing: _brightnessLabel(mode),
               onTap: () => pick(_AppMenuItem.toggleBrightness),
             ),
             _MenuRow(
-              icon: tabler.Logout(height: 24, width: 24, strokeWidth: 1.5),
+              icon: const tabler.Logout(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
               label: '退出',
               onTap: () => pick(_AppMenuItem.exit),
             ),

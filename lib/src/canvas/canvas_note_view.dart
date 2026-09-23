@@ -535,7 +535,7 @@ class _LoadFailedNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          tabler.AlertTriangle(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onErrorContainer, ui.BlendMode.srcIn)),
+          tabler.AlertTriangle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onErrorContainer, ui.BlendMode.srcIn)),
           const SizedBox(width: Tokens.spaceSm),
           Expanded(
             child: Text(

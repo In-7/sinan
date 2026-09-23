@@ -111,9 +111,9 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
   @override
   Widget build(BuildContext context) {
     final Widget icon = switch (widget.align) {
-      'center' => tabler.AlignCenter(height: 24, width: 24, strokeWidth: 1.5),
-      'right' => tabler.AlignRight(height: 24, width: 24, strokeWidth: 1.5),
-      _ => tabler.AlignLeft(height: 24, width: 24, strokeWidth: 1.5),
+      'center' => const tabler.AlignCenter(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+      'right' => const tabler.AlignRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+      _ => const tabler.AlignLeft(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     };
     final Color color =
         widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
@@ -123,7 +123,7 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           icon,
-          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withOpacity(0.7), ui.BlendMode.srcIn)),
+          tabler.ChevronDown(height: Tokens.iconXxs, width: Tokens.iconXxs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7), ui.BlendMode.srcIn)),
         ],
       ),
       isHighlight: false,
@@ -168,9 +168,9 @@ class _AlignOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     const List<_AlignOption> options = <_AlignOption>[
-      _AlignOption('left', '左对齐', tabler.AlignLeft(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+L'),
-      _AlignOption('center', '居中', tabler.AlignCenter(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+E'),
-      _AlignOption('right', '右对齐', tabler.AlignRight(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+R'),
+      _AlignOption('left', '左对齐', tabler.AlignLeft(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+L'),
+      _AlignOption('center', '居中', tabler.AlignCenter(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+E'),
+      _AlignOption('right', '右对齐', tabler.AlignRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+R'),
     ];
 
     return Stack(
@@ -222,7 +222,7 @@ class _AlignOverlay extends StatelessWidget {
                           ),
                         ),
                         if (active) ...<Widget>[
-                          tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
+                          tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
                           const SizedBox(width: Tokens.spaceXs),
                         ],
                         // 快捷键右对齐标注（与块样式菜单同一惯例）。

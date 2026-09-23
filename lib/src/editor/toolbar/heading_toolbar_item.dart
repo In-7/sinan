@@ -101,10 +101,10 @@ class _BlockStyle {
 }
 
 const List<_BlockStyle> _styles = <_BlockStyle>[
-  _BlockStyle(null, '正文', tabler.Typography(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+B'),
-  _BlockStyle(1, '标题 1', tabler.H1(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+T'),
-  _BlockStyle(2, '标题 2', tabler.H2(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+G'),
-  _BlockStyle(3, '标题 3', tabler.H3(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+J'),
+  _BlockStyle(null, '正文', tabler.Typography(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+B'),
+  _BlockStyle(1, '标题 1', tabler.H1(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+T'),
+  _BlockStyle(2, '标题 2', tabler.H2(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+G'),
+  _BlockStyle(3, '标题 3', tabler.H3(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+J'),
 ];
 
 class _SinanHeadingButton extends StatefulWidget {
@@ -178,7 +178,7 @@ class _SinanHeadingButtonState extends State<_SinanHeadingButton> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           current.icon,
-          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withOpacity(0.7), ui.BlendMode.srcIn)),
+          tabler.ChevronDown(height: Tokens.iconXxs, width: Tokens.iconXxs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7), ui.BlendMode.srcIn)),
         ],
       ),
       // 光标落在标题里时点亮（"你在某级标题上"），与旧的四按钮行为等价。
@@ -286,7 +286,7 @@ class _HeadingOverlay extends StatelessWidget {
             ),
             // 当前项打勾；快捷键**右对齐**标注（桌面软件菜单惯例）。
             if (active) ...<Widget>[
-              tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
+              tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
               const SizedBox(width: Tokens.spaceXs),
             ],
             Text(

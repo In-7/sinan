@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../canvas/canvas_switch.dart';
 import 'app_menu.dart';
@@ -68,7 +69,7 @@ class HomeScreen extends ConsumerWidget {
                 children: <Widget>[
                   const WindowStrip(
                     trailing: <Widget>[
-                      AppMenuButton(iconSize: 20, captionStyle: true),
+                      AppMenuButton(captionStyle: true),
                     ],
                   ),
                   // 内容区**不铺任何层**（与导航一致：直接坐窗口底）。0 号分区是
@@ -150,7 +151,7 @@ class HomeScreen extends ConsumerWidget {
     if (WindowService.isSupported) {
       final List<Widget> sidebarActions = _sidebarActions(context, ref);
       // 标题栏里的菜单图标尺寸对齐窗控，且点击区/悬停与窗控完全一致。
-      const Widget menu = AppMenuButton(iconSize: 20, captionStyle: true);
+      const Widget menu = AppMenuButton(captionStyle: true);
 
       if (isWide) {
         return Scaffold(
@@ -199,7 +200,7 @@ class HomeScreen extends ConsumerWidget {
                             // 回主页：走 `locateProvider.goHome()`（写选中态的唯一通道）。
                             leading: <Widget>[
                               IconButton(
-                                icon: tabler.TextDirectionLtr(height: 24, width: 24, strokeWidth: 1.5),
+                                icon: const tabler.TextDirectionLtr(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                                 tooltip: '主页',
                                 onPressed: () =>
                                     ref.read(locateProvider.notifier).goHome(),
@@ -248,7 +249,7 @@ class HomeScreen extends ConsumerWidget {
             WindowStrip(
               leading: <Widget>[
                 IconButton(
-                  icon: tabler.TextDirectionLtr(height: 24, width: 24, strokeWidth: 1.5),
+                  icon: const tabler.TextDirectionLtr(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '主页',
                   onPressed: () => ref.read(locateProvider.notifier).goHome(),
                 ),
@@ -304,12 +305,12 @@ class HomeScreen extends ConsumerWidget {
     // 走命令层而不是就地调 notifier：按钮与 `Ctrl+N` 必须是**同一条路**
     // （§3.2 命令是权威面）——各留一份实现迟早漂移成"按钮能建、快捷键不能"。
     IconButton(
-      icon: tabler.Plus(height: 24, width: 24, strokeWidth: 1.5),
+      icon: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
       tooltip: '新建笔记',
       onPressed: () => unawaited(runCommandById(ref, 'note.new')),
     ),
     IconButton(
-      icon: tabler.Search(height: 24, width: 24, strokeWidth: 1.5),
+      icon: const tabler.Search(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
       tooltip: '搜索（开发中）',
       onPressed: () {},
     ),
@@ -317,14 +318,14 @@ class HomeScreen extends ConsumerWidget {
     // 与「设置 → AI」默认关闭是同一口径（见 AppSettings.aiEnabled 的说明）。
     if (_aiReady(ref))
       const IconButton(
-        icon: tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
+        icon: tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
         tooltip: '问笔记',
         onPressed: showAskPanel,
       ),
     // 新建画布笔记（[NoteKind.canvas]）：建好即选中，右栏直接出画布。
     // 不再是"全屏路由的实验页"——画布已与块编辑器同页共存。
     IconButton(
-      icon: tabler.Crop(height: 24, width: 24, strokeWidth: 1.5),
+      icon: const tabler.Crop(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
       tooltip: '新建画布',
       onPressed: () => unawaited(runCommandById(ref, 'canvas.new')),
     ),

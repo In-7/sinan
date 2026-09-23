@@ -20,6 +20,7 @@ import 'block_action_menu.dart';
 import 'reference_to_canvas.dart';
 import '../widgets/float_menu_style.dart';
 import '../widgets/hover_state_layer.dart';
+import '../../theme/tokens.dart';
 
 // sinan 的块组件/快捷键注册表：**官方标准件 + 我们的增量**。
 //
@@ -155,11 +156,8 @@ class _SinanBlockHandle extends StatefulWidget {
     required this.builder,
   });
 
-  static const double _iconSize = 20;
-
   /// 点击热区边长（[_HandleButton] 的正方形盒子）。图标在盒内居中，
-  /// 所以**图标实际中心 = 盒顶 + [_buttonSize] / 2**——对齐计算必须用它，
-  /// 用 [_iconSize] / 2 会差 (20-20)/2 = 0px（图标现已充满按钮，两者等价）。
+  /// 所以**图标实际中心 = 盒顶 + [_buttonSize] / 2**——对齐计算必须用它。
   static const double _buttonSize = 20;
 
   /// 两个按钮之间的间距。
@@ -557,7 +555,7 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _HandleButton(
-            icon: tabler.Plus(height: 16, width: 16, strokeWidth: 1.5),
+            icon: const tabler.Plus(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
             color: color,
             tooltip: _addButtonTooltip,
             onTap: () => _addBlock(editorState, node, context),
@@ -591,7 +589,7 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
                 Widget? child,
               ) =>
                   _HandleButton(
-                icon: tabler.GripVertical(height: 16, width: 16, strokeWidth: 1.5),
+                icon: const tabler.GripVertical(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                 color: color,
                 tooltip: _dragButtonTooltip,
                 cursor: SystemMouseCursors.grab,

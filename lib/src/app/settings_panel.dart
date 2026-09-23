@@ -80,10 +80,10 @@ extension _SettingsSectionSpec on _SettingsSection {
   };
 
   Widget get icon => switch (this) {
-    _SettingsSection.appearance => tabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
-    _SettingsSection.editor => tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5),
-    _SettingsSection.ai => tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
-    _SettingsSection.about => tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
+    _SettingsSection.appearance => const tabler.Palette(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+    _SettingsSection.editor => const tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+    _SettingsSection.ai => const tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+    _SettingsSection.about => const tabler.InfoCircle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
   };
 }
 
@@ -374,7 +374,7 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: tabler.X(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                    icon: const tabler.X(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                     tooltip: '关闭（Esc）',
                     onPressed: widget.onClose,
                   ),
@@ -872,7 +872,7 @@ class _AboutPanel extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+              tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
               const SizedBox(width: Tokens.spaceMd),
               Expanded(
                 child: Text(
@@ -927,7 +927,7 @@ class _AboutPanel extends StatelessWidget {
           builder: (BuildContext _) => LicensePage(
             applicationName: AppInfo.name,
             applicationVersion: AppInfo.version,
-            applicationIcon: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(primary, ui.BlendMode.srcIn)),
+            applicationIcon: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(primary, ui.BlendMode.srcIn)),
           ),
         ),
       ),
@@ -961,27 +961,27 @@ class _AboutSection extends ConsumerWidget {
       children: <Widget>[
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+          leading: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
           title: const Text('${AppInfo.name} ${AppInfo.version}'),
           subtitle: Text(AppInfo.tagline, style: hint),
           isThreeLine: true,
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.Article(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          leading: tabler.Article(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           title: const Text('开源许可'),
           subtitle: Text('第三方依赖的许可清单（由框架自动收集）', style: hint),
-          trailing: tabler.ChevronRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          trailing: tabler.ChevronRight(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           onTap: () => _openLicenses(context),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.FolderOpen(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          leading: tabler.FolderOpen(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           title: const Text('数据目录'),
           // 可选中：路径以 AppData 开头、肉眼抄不下。
           subtitle: SelectableText(dataDir, style: hint),
           trailing: IconButton(
-            icon: tabler.Copy(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+            icon: const tabler.Copy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
             tooltip: '复制路径',
             onPressed: () => _copyDataDir(context, dataDir),
           ),
@@ -1002,7 +1002,7 @@ class _AboutSection extends ConsumerWidget {
     final Widget page = LicensePage(
       applicationName: AppInfo.name,
       applicationVersion: AppInfo.version,
-      applicationIcon: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(Theme.of(context).colorScheme.primary, ui.BlendMode.srcIn)),
+      applicationIcon: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(Theme.of(context).colorScheme.primary, ui.BlendMode.srcIn)),
     );
     onClose();
     unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => page)));

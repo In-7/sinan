@@ -37,7 +37,7 @@ class CanvasEdgeShapeButton extends StatelessWidget {
                     tooltip: '端点形状：连线两端标记（箭头 / 圆点 / 菱形）',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: tabler.Shape(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                    icon: const tabler.Shape(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   ),
           builder: (BuildContext context, VoidCallback _) =>
               CanvasEdgeShapePanel(controller: controller),

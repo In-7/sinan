@@ -366,13 +366,13 @@ class _LinkHoverPanel extends StatelessWidget {
           Row(
             children: <Widget>[
               _PanelAction(
-                icon: tabler.ExternalLink(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.ExternalLink(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '打开',
                 onPressed: onOpen,
               ),
               const SizedBox(width: Tokens.spaceXs),
               _PanelAction(
-                icon: tabler.Copy(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.Copy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '复制',
                 onPressed: onCopy,
               ),

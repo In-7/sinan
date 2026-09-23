@@ -138,10 +138,10 @@ class HomeHub extends ConsumerWidget {
                           span: 1,
                           child: _HubCard(
                             size: _CardSize.small,
-                            icon: tabler.FileText(height: 24, width: 24, strokeWidth: 1.5),
+                            icon: const tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                             title: '笔记',
                             subtitle: '块编辑器，支持 Markdown 输入',
-                            trailing: tabler.Plus(height: 18, width: 18, strokeWidth: 1.5),
+                            trailing: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                             onTap: () =>
                                 unawaited(runCommandById(ref, 'note.new')),
                           ),
@@ -150,10 +150,10 @@ class HomeHub extends ConsumerWidget {
                           span: 1,
                           child: _HubCard(
                             size: _CardSize.small,
-                            icon: tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5),
+                            icon: const tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                             title: '画布',
                             subtitle: '手写笔迹、卡片与连线',
-                            trailing: tabler.Plus(height: 18, width: 18, strokeWidth: 1.5),
+                            trailing: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                             onTap: () =>
                                 unawaited(runCommandById(ref, 'canvas.new')),
                           ),
@@ -172,8 +172,8 @@ class HomeHub extends ConsumerWidget {
 }
 
 Widget _iconOf(Note note) => note.kind == NoteKind.canvas
-    ? tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5)
-    : tabler.FileText(height: 24, width: 24, strokeWidth: 1.5);
+    ? const tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5)
+    : const tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5);
 
 String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
 

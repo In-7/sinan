@@ -438,12 +438,12 @@ String _groupLabel(CommandGroup group) => switch (group) {
 /// 分组图标（复用仓库里已有的 Lucide 字形；`app` 用 info 是因为
 /// `lucide_icons_flutter` 的这套 300 档里没有齿轮，等换图标族时一起处理）。
 Widget _groupIcon(CommandGroup group) => switch (group) {
-  CommandGroup.file => tabler.FileText(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.edit => tabler.Edit(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.navigate => tabler.List(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.view => tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.insert => tabler.Plus(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.canvas => tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.ai => tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
-  CommandGroup.app => tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
+  CommandGroup.file => const tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.edit => const tabler.Edit(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.navigate => const tabler.List(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.view => const tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.insert => const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.canvas => const tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.ai => const tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+  CommandGroup.app => const tabler.InfoCircle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
 };

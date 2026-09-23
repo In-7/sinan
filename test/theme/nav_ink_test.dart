@@ -15,7 +15,7 @@ import 'package:sinan/src/theme/nav_ink.dart';
 /// ⇒ 闸门能钉的：
 /// 1. **shader 保持极小且 SkSL 兼容**（不许把数学搬回 GLSL / 不许用 uint）；
 /// 2. **同 pass 抖动还在**（删了就出色带，本仓实测独立噪点层治不了）；
-/// 3. **墨是无彩色的**（带彩 = 重新撞文字对比度闸门）；
+/// 3. **釉是低彩度的自然色**（彩度一高就撞文字对比度闸门；上限 12%，实测判）；
 /// 4. **灰阶底上的文字对比度**（沿整列密采样取最差点）；
 /// 5. **"主白 / 主黑"**（水墨的前提是留白为主，别让墨铺满）。
 void main() {
@@ -35,7 +35,11 @@ void main() {
     expect(NavInk.dither, closeTo(1 / 255, 1e-9));
   });
 
-  test('墨是无彩色的（R≈G≈B 暖灰）—— 带彩就会重新撞文字对比度闸门', () {
+  test('釉是低彩度的自然色（RGB 极差 ≤ 12%）', () {
+    // 2026-09-23：从"无彩暖灰（≤5%）"放宽到"苔石 / 青瓷（≤12%）"——用户要自然
+    // 材质触感。放宽的**许可范围**就是这 12%：再高就撞上下面那两条 APCA 闸门
+    // （历史教训：彩色 mesh 方案死在紫斑的 2.7:1）。所以彩度这条**不能删**，
+    // 只能调档，而且调完必须看下面 print 出来的 Lc 是否还过。
     for (final Color c in <Color>[
       NavInk.inkLight,
       NavInk.inkDeepLight,
@@ -46,8 +50,8 @@ void main() {
           math.max(math.max(c.r, c.g), c.b) - math.min(math.min(c.r, c.g), c.b);
       expect(
         spread,
-        lessThanOrEqualTo(0.05),
-        reason: '${c.toARGB32()} 带了彩度 ⇒ 灰阶底变成彩底，文字对比度要重新过闸',
+        lessThanOrEqualTo(0.12),
+        reason: '${c.toARGB32()} 彩度过高 ⇒ 底变彩底，文字对比度要重新过闸',
       );
     }
   });

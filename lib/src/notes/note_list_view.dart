@@ -235,18 +235,18 @@ class _NoteTileState extends State<_NoteTile> {
       ),
       items: <PopupMenuEntry<void>>[
         _menuItem(
-          icon: tabler.Edit(height: 24, width: 24, strokeWidth: 1.5),
+          icon: const tabler.Edit(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
           label: '重命名',
           onTap: _startRename,
         ),
         _menuItem(
-          icon: promoted ? tabler.Star(height: 24, width: 24, strokeWidth: 1.5) : tabler.StarFilled(height: 24, width: 24, strokeWidth: 1.5),
+          icon: promoted ? const tabler.Star(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5) : const tabler.StarFilled(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
           label: promoted ? '取消收藏' : '收藏',
           onTap: widget.onTogglePromoted,
         ),
         const PopupMenuDivider(),
         _menuItem(
-          icon: tabler.Trash(height: 24, width: 24, strokeWidth: 1.5),
+          icon: const tabler.Trash(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
           label: '删除笔记',
           // 危险动作：图标与文字都用 error 色（M3 的 destructive 口径）。
           danger: true,
@@ -338,7 +338,7 @@ class _NoteTileState extends State<_NoteTile> {
                       const SizedBox(width: Tokens.spaceMd),
                       // 收藏标记：星标紧贴标题（不占额外宽度，无收藏时不显示）。
                       if (widget.note.promotedAt != null) ...<Widget>[
-                        tabler.StarFilled(height: Tokens.iconSm - 4, width: Tokens.iconSm - 4, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                        tabler.StarFilled(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                         const SizedBox(width: Tokens.spaceXs),
                       ],
                       Expanded(
@@ -392,8 +392,8 @@ class _NoteTileState extends State<_NoteTile> {
                             key: _moreKey,
                             tooltip: '更多',
                             padding: EdgeInsets.zero,
-                            iconSize: Tokens.iconSm,
-                            icon: tabler.DotsVertical(height: 24, width: 24, strokeWidth: 1.5),
+                            iconSize: Tokens.iconMd,
+                            icon: const tabler.DotsVertical(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                             onPressed: _openMenu,
                           ),
                         ),

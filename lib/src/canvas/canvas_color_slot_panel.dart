@@ -47,7 +47,7 @@ class CanvasColorSlotButton extends StatelessWidget {
                     tooltip: '语义色：给卡片 / 思维导图标一个"含义色"',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: tabler.Palette(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                    icon: const tabler.Palette(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   ),
           // 连着试色不需要"选完即关"（同笔刷 / 形状面板）。
           builder: (BuildContext context, VoidCallback _) =>

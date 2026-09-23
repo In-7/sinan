@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:sinan/src/editor/toolbar/slash_menu_items.dart';
 import 'package:sinan/src/theme/app_theme.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 /// 斜杠菜单的中文化，分两层：
 /// - **条目名**：官方条目取 `AppFlowyEditorL10n.current.*`（中文表见
@@ -130,7 +130,7 @@ void main() {
       expect(first.first.keywords.where(_containsCjk).length, before);
     });
 
-    test('表格 / 分隔线用自家条目（图标 Lucide），官方那两条不再出现', () {
+    test('表格 / 分隔线用自家条目（图标 Tabler），官方那两条不再出现', () {
       final List<SelectionMenuItem> items = sinanSelectionMenuItems();
 
       expect(items, contains(tableSlashMenuItem));
@@ -148,15 +148,16 @@ void main() {
         reason: '官方 dividerMenuItem 还在（图标是 Material）',
       );
 
-      // 图标换成了 Lucide（读 `SelectionMenuIconWidget.icon`，不依赖渲染）。
-      IconData? iconOf(SelectionMenuItem item) {
+      // 图标换成了 Tabler 控件（读 `SelectionMenuIconWidget.icon`，不依赖渲染）。
+      // Widget 没有值相等语义，故比 `runtimeType` 而非实例。
+      Type? iconOf(SelectionMenuItem item) {
         final Widget widget =
             item.icon(_state(), false, SelectionMenuStyle.light);
-        return (widget as SelectionMenuIconWidget).icon;
+        return (widget as SelectionMenuIconWidget).icon?.runtimeType;
       }
 
-      expect(iconOf(tableSlashMenuItem), Symbols.table);
-      expect(iconOf(dividerSlashMenuItem), Symbols.horizontal_rule);
+      expect(iconOf(tableSlashMenuItem), tabler.Table);
+      expect(iconOf(dividerSlashMenuItem), tabler.Minus);
     });
   });
 }

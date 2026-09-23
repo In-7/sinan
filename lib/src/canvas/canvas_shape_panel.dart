@@ -3,13 +3,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
 import '../theme/app_popover.dart';
-import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'canvas_brush_panel.dart' show canvasPaletteOptions;
 import 'canvas_panel_widgets.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_item.dart';
-import 'kernel/ink_stroke.dart';
 
 /// 工具条上的「图形属性」按钮：**只在选中形状时出现**，弹出 [CanvasShapePanel]。
 ///
@@ -35,7 +33,7 @@ class CanvasShapeButton extends StatelessWidget {
                     tooltip: '图形属性：颜色 / 填充 / 描边',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: tabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
+                    icon: const tabler.Palette(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   ),
           // 滑杆/色板要连着调，不需要"选完即关"（同笔刷面板）。
           builder: (BuildContext context, VoidCallback _) =>
@@ -49,10 +47,6 @@ class CanvasShapeButton extends StatelessWidget {
 /// 当前选中的形状（属性面板的作用对象）。
 List<ShapeItem> selectedShapes(CanvasController controller) =>
     controller.selectedItems.whereType<ShapeItem>().toList(growable: false);
-
-/// 形状颜色的显示色：哨兵按当前主题墨色显示（理由同 [CanvasInkDotIcon]）。
-Color _displayInk(BuildContext context, Color color) =>
-    resolveInk(color, AppTheme.canvasInk(Theme.of(context).brightness));
 
 /// 图形属性面板：颜色 / 填充 / 描边粗细。
 ///

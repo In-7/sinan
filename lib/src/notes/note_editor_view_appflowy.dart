@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter/gestures.dart';
-
 import 'dart:math' as math;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -20,7 +18,8 @@ import 'package:appflowy_editor/src/editor/find_replace_menu/find_replace_widget
 // `Material` 祖先，material_ui 的同名类不算数，见 [_buildFindMenu]。
 // ignore: implementation_imports
 import 'package:flutter/material.dart' as official;
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../domain/note.dart';
 import '../domain/settings.dart';
@@ -162,15 +161,16 @@ class _NoteEditorViewAppFlowyState
   /// 装载完成前**绝不保存**（否则空文档会盖掉真实内容）。
   bool _loaded = false;
 
-  /// 目录面板开关（工具栏按钮切换；窗口放不下三栏时仅隐藏、不重置）。
+  /// 目录面板开关（**按钮点击 / 快捷键 Ctrl+Shift+O** 切换；窗口放不下三栏时
+  /// 仅隐藏、不重置）。
   ///
-  /// 现在是**悬浮气泡**语义：它代表"钉住常开"（无鼠标悬停时也显示，给触屏
-  /// /键盘快捷键用）；鼠标划过目录按钮会**临时**弹出气泡（见 [_tocHovering]），
-  /// 二者任一为真即视为打开。
+  /// 它是**悬浮气泡**语义：打开即常显（不随鼠标移开收起），点气泡外或再点按钮收起。
+  ///
+  /// ⚠️ 2026-09-23 用户定案：**取消"鼠标划过临时弹出"**，只留点击。理由：悬停弹层
+  /// 会让人"没打算开也被弹一脸"，而目录是要细看的内容（不是扫读时的伴随物）。
+  /// 顺带把一整套悬停防抖（两个计时器）+ 全局指针兜底路由都删了，交互与反链按钮
+  /// 就此统一（那个一直是纯点击）。
   bool _tocVisible = false;
-
-  /// 鼠标是否正悬停在目录按钮（或气泡上）：按住"临时显示"的开关。
-  bool _tocHovering = false;
 
   /// 悬浮目录气泡的显示控制器（`OverlayPortal`）。
   ///
@@ -180,24 +180,13 @@ class _NoteEditorViewAppFlowyState
   /// 且隐藏时它的 RenderObject 会移出树、不参与 layout/paint。
   final OverlayPortalController _tocController = OverlayPortalController();
 
-  /// 目录按钮的 key：气泡用它取屏幕坐标来定位。
+  /// 目录按钮的 key（挂在 `_EarButton` 上）：气泡用它取屏幕坐标来定位。
   final GlobalKey _tocButtonKey = GlobalKey();
 
-  /// 气泡本体的 key：全局指针兜底监听用它判断鼠标是否还在气泡内。
-  final GlobalKey _tocPanelKey = GlobalKey();
-
-  /// 「按钮 + 气泡」共用的 TapRegion 组：点击组外任意处 = 取消钉住并收起
+  /// 「按钮 + 气泡」共用的 TapRegion 组：点击组外任意处 = 收起
   /// （浮层惯例"点外部即关"）。同组是为了**排除按钮自己**——否则点按钮关闭时，
-  /// down 先触发组外回调收起、up 的 onPressed 又把它钉回去，永远关不掉。
+  /// down 先触发组外回调收起、up 的 onPressed 又把它打开，永远关不掉。
   final Object _tocTapGroupId = Object();
-
-  /// 气泡显示期间的全局指针路由（兜底收起用），收起时移除。
-  PointerRoute? _tocPointerRoute;
-
-  /// 悬停进入/离开的防抖计时器：进入有短延时（划过不误开），离开有宽限
-  /// （从按钮移到气泡途中不闪退）。
-  Timer? _tocShowTimer;
-  Timer? _tocHideTimer;
 
   /// 反链面板开关（**第三个耳**）。
   ///
@@ -560,9 +549,6 @@ class _NoteEditorViewAppFlowyState
       }
     }
     unawaited(_changesSub?.cancel());
-    _tocShowTimer?.cancel();
-    _tocHideTimer?.cancel();
-    _tocRemovePointerRoute();
     _scroll.dispose();
     _editor.dispose();
     _titleController.dispose();
@@ -704,99 +690,37 @@ class _NoteEditorViewAppFlowyState
   }
 
   // == 悬浮目录气泡 ==========================================================
-  // 取代原左侧推挤式目录面板：鼠标划过标题行的目录按钮即弹出（见标题行的
-  // `OverlayPortal`），点击按钮 / Ctrl+Shift+O 则是「钉住常开」。
+  // 取代原左侧推挤式目录面板：**点**标题行的目录按钮（或 Ctrl+Shift+O）弹出，
+  // 再点按钮 / 快捷键 / 气泡外收起（不做悬停触发，理由见 [_tocVisible]）。
   // 气泡走 [AppFloatSurface]（浮层三件套），内容直接复用 [AppFlowyTocPanel]；
   // 面板高度完全跟随目录内容自适应（无内部滚动），这里只用 ConstrainedBox
   // 限制不超过屏幕剩余高度。
 
-  /// 钉住常开切换（按钮点击 / 键盘 Ctrl+Shift+O）。与悬停临时显示
-  /// （[_tocHovering]）互相独立——钉住后即便鼠标移开也不收起。
-  void _toggleTocPin() {
+  /// 开合切换（按钮点击 / 键盘 Ctrl+Shift+O）。
+  void _toggleToc() {
     setState(() => _tocVisible = !_tocVisible);
     if (_tocVisible) {
-      _tocCancelHide();
       _tocShowNow();
     } else {
       _tocHideNow();
     }
   }
 
-  /// 鼠标进入目录按钮：留 120ms 短延时再弹（划过不误开）。
-  void _tocScheduleShow() {
-    _tocHideTimer?.cancel();
-    _tocShowTimer?.cancel();
-    _tocShowTimer = Timer(const Duration(milliseconds: 120), () {
-      if (_tocHovering && mounted) _tocShowNow();
-    });
-  }
-
-  /// 鼠标离开（按钮或气泡）：留 200ms 宽限，移到对方不闪退。
-  void _tocScheduleHide() {
-    _tocShowTimer?.cancel();
-    _tocHideTimer?.cancel();
-    _tocHideTimer = Timer(const Duration(milliseconds: 200), _tocHideNow);
-  }
-
-  void _tocCancelHide() {
-    _tocShowTimer?.cancel();
-    _tocHideTimer?.cancel();
-  }
-
-  /// 立即弹出气泡（`OverlayPortal` 已挂好，这里只切显示态 + 挂兜底路由）。
+  /// 立即弹出气泡（`OverlayPortal` 已挂好，这里只切显示态）。
   void _tocShowNow() {
     if (!_tocController.isShowing) _tocController.show();
-    if (_tocPointerRoute != null) return; // 已挂过，别重复注册
-    // 全局指针兜底：flutter 偶发漏投 onExit（快速移出 / 跨空隙 / 移出窗口边缘），
-    // 这里直接判断鼠标是否还落在「按钮 + 气泡」范围内，不在就安排收起，避免卡死。
-    _tocPointerRoute = (PointerEvent event) {
-      if (_tocVisible) return; // 钉住常开：不随鼠标收起
-      if (event is PointerHoverEvent ||
-          event is PointerMoveEvent ||
-          event is PointerDownEvent) {
-        _tocCheckPointerOutside(event.position);
-      }
-    };
-    WidgetsBinding.instance.pointerRouter.addGlobalRoute(_tocPointerRoute!);
   }
 
-  /// 立即收起气泡（钉住状态除外：按钮 / 快捷键要它常开）。
+  /// 立即收起气泡。
   void _tocHideNow() {
-    if (_tocVisible) return;
-    _tocRemovePointerRoute();
     if (_tocController.isShowing) _tocController.hide();
   }
 
-  /// 点击「按钮 + 气泡」之外任意处：取消钉住并立即收起（浮层惯例"点外部即关"）。
+  /// 点击「按钮 + 气泡」之外任意处：收起（浮层惯例"点外部即关"）。
   void _tocUnpinAndHide() {
     if (_tocVisible) setState(() => _tocVisible = false);
-    _tocCancelHide();
     _tocHideNow();
   }
-
-  void _tocRemovePointerRoute() {
-    if (_tocPointerRoute != null) {
-      WidgetsBinding.instance.pointerRouter.removeGlobalRoute(
-        _tocPointerRoute!,
-      );
-      _tocPointerRoute = null;
-    }
-  }
-
-  /// 鼠标是否真正离开了「按钮 + 气泡」两者：是才安排收起。
-  void _tocCheckPointerOutside(Offset pos) {
-    final RenderBox? btn =
-        _tocButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final RenderBox? pnl =
-        _tocPanelKey.currentContext?.findRenderObject() as RenderBox?;
-    if (btn != null && _hit(btn, pos)) return;
-    if (pnl != null && _hit(pnl, pos)) return;
-    // 已在倒计时就不重排，避免鼠标在外部移动时反复重置、永远关不掉。
-    if (_tocHideTimer == null) _tocScheduleHide();
-  }
-
-  bool _hit(RenderBox box, Offset pos) =>
-      (box.localToGlobal(Offset.zero) & box.size).contains(pos);
 
   /// 悬浮目录气泡：跟随目录按钮**右对齐**落下（Notion 同款）。高度完全跟随
   /// 目录内容自适应（面板已去掉内部滚动）。
@@ -832,21 +756,15 @@ class _NoteEditorViewAppFlowyState
           // 点气泡外（含正文）= 关闭；按钮与气泡同组，互相不算"外"。
           groupId: _tocTapGroupId,
           onTapOutside: (_) => _tocUnpinAndHide(),
-          child: MouseRegion(
-            key: _tocPanelKey,
-            // 移入气泡：取消任何待收起，保持打开。
-            onEnter: (_) => _tocCancelHide(),
-            onExit: (_) => _tocScheduleHide(),
-            child: AppFloatSurface(
-              width: AppFlowyTocPanel.width,
-              padding: EdgeInsets.zero,
-              // visible: true —— 气泡挂载期间必可见，无需冻结优化（卸载即不重建）。
-              child: AppFlowyTocPanel(
-                editorState: _editor,
-                scrollController: _scroll,
-                titleListenable: _titleController,
-                onJumpedToNode: _flashNode,
-              ),
+          child: AppFloatSurface(
+            width: AppFlowyTocPanel.width,
+            padding: EdgeInsets.zero,
+            // visible: true —— 气泡挂载期间必可见，无需冻结优化（卸载即不重建）。
+            child: AppFlowyTocPanel(
+              editorState: _editor,
+              scrollController: _scroll,
+              titleListenable: _titleController,
+              onJumpedToNode: _flashNode,
             ),
           ),
         ),
@@ -1354,13 +1272,17 @@ class _NoteEditorViewAppFlowyState
             // 它们是**文档级、无选区也要能用**的操作，故常驻（Word / VS Code 同款），
             // 并与右端双耳左右对称。
             //
-            // ## 校准（当前 **4**：图标略高于标题首行）
+            // ## 校准（图标字形顶落在 **10**：略高于标题首行）
             //   图标字形顶 = 上内边距 +（热区 − 图标）/ 2
             //   标题字形顶 ≈ 行盒顶 12 + 行盒余量 ~1.5 ≈ 13.5
-            //   4 +（30 − 18）/ 2 = **10** ⇒ 比标题首行高约 3.5px
-            //   （取 8 得 14，那档是"与标题字形顶齐平"；用户实机比过后取 4）。
-            // ⚠️ 改热区/图标尺寸要连这个上内边距一起重算——两端共用
-            //   [Tokens.headerActionSize]，一端改了两端一起偏。
+            //   现取「[_kHeaderActionTopPadding] +（30 − 24）/ 2 = **10**」
+            //   ⇒ 比标题首行高约 3.5px。
+            //   图标档位几经调整（2026-09-23 一天内走了 24 → 18 → 20 → 24），
+            //   上内边距每次都跟着反算（4 → 5 → 7）—— 落点始终钉在 **10**，
+            //   所以这几次调档位**没有**让图标与标题错位。
+            //   （更早还取过 8 得 14，那档是"与标题字形顶齐平"；用户实机比过后取 4。）
+            // ⚠️ 改热区 / 图标尺寸要连 [_kHeaderActionTopPadding] 一起重算——两端
+            //   共用 [Tokens.headerActionSize]，一端改了两端一起偏。
             //
             // ## 两条硬约束（别换成别的写法）
             // - **Stack 定位 ⇒ 不占布局流**：标题的居中轴完全不受两端按钮影响
@@ -1373,7 +1295,7 @@ class _NoteEditorViewAppFlowyState
                 listenable: _historyAvailability,
                 builder: (BuildContext context, Widget? _) => Padding(
                   padding: const EdgeInsets.only(
-                    top: Tokens.spaceXs,
+                    top: _kHeaderActionTopPadding,
                     left: Tokens.spaceMd,
                     right: Tokens.spaceMd,
                   ),
@@ -1383,7 +1305,7 @@ class _NoteEditorViewAppFlowyState
                       // 左：常驻撤销 / 重做（灰显表达"现在按不了"）。
                       _HistoryButton(
                         itemKey: 'editor.undo',
-                        icon: tabler.ArrowBackUp(height: 24, width: 24, strokeWidth: 1.5),
+                        icon: const tabler.ArrowBackUp(strokeWidth: 1.5),
                         tooltip: kEditorTooltips['sinan.undo']!,
                         enabled: _canUndo.value,
                         onPressed: _editor.undoManager.undo,
@@ -1391,7 +1313,7 @@ class _NoteEditorViewAppFlowyState
                       const SizedBox(width: Tokens.spaceXs),
                       _HistoryButton(
                         itemKey: 'editor.redo',
-                        icon: tabler.ArrowForwardUp(height: 24, width: 24, strokeWidth: 1.5),
+                        icon: const tabler.ArrowForwardUp(strokeWidth: 1.5),
                         tooltip: kEditorTooltips['sinan.redo']!,
                         enabled: _canRedo.value,
                         onPressed: _editor.undoManager.redo,
@@ -1403,7 +1325,10 @@ class _NoteEditorViewAppFlowyState
                       // "搜索·反链·目录"——目录是最常用的那个，靠边更好按。
                       _EarButton(
                         itemKey: 'editor.ear.find',
-                        icon: tabler.Search(height: 24, width: 24, strokeWidth: 1.5),
+                        // 「列表 + 放大镜」= 在本篇里找。刻意与顶栏那个**全局**搜索
+                        // （`home_screen` 的 `tabler.Search`，纯放大镜）用不同图标，
+                        // 免得两处搜索在视觉上混成一个（2026-09-23 用户挑的）。
+                        icon: const tabler.ListSearch(strokeWidth: 1.5),
                         tooltip: '搜索（Ctrl+F）',
                         onPressed: _showFind,
                       ),
@@ -1416,8 +1341,16 @@ class _NoteEditorViewAppFlowyState
                         child: TapRegion(
                           groupId: _backlinkTapGroupId,
                           child: _EarButton(
+                            // ⚠️ 这个 key 是**定位的命根子**：`_backlinkPopover` 靠它取
+                            // 按钮的屏幕坐标，漏挂 ⇒ `box == null` ⇒ 走兜底坐标
+                            // （top 56 / right 16），面板会飞到左上角而不是按钮下边。
+                            // 2026-09-23 实测踩到（目录那边挂了、反链这边漏了）。
+                            key: _backlinkButtonKey,
                             itemKey: 'editor.ear.backlink',
-                            icon: tabler.Link(height: 24, width: 24, strokeWidth: 1.5),
+                            // 两条**上下平行**的双向箭头 = "双向"（反链本就成对：我 ↔ 你）。
+                            // 刻意不用 `tabler.Link`（链条）——那是链接弹窗 / 链接块 /
+                            // 斜杠菜单"链接"条目的图标，同屏撞语义（2026-09-23 用户挑的）。
+                            icon: const tabler.ArrowsSort(strokeWidth: 1.5),
                             tooltip: '反链（谁引用了我）',
                             active: _backlinkVisible,
                             onPressed: _toggleBacklink,
@@ -1433,26 +1366,21 @@ class _NoteEditorViewAppFlowyState
                           overlayChildBuilder: _tocPopover,
                           child: TapRegion(
                             // 与气泡同组：点按钮自己不算"点外部"，否则 down 先
-                            // 收起、up 的 onPressed 又钉回去，按钮就关不掉气泡。
+                            // 收起、up 的 onPressed 又打开，按钮就关不掉气泡。
                             groupId: _tocTapGroupId,
-                            child: MouseRegion(
+                            // ⚠️ 不做悬停触发（2026-09-23 用户定案，见 [_tocVisible]）：
+                            // 只有点击开合。`_tocButtonKey` 直接挂在按钮上（原先挂在
+                            // 那层 MouseRegion 上），气泡定位照旧。
+                            child: _EarButton(
                               key: _tocButtonKey,
-                              // 悬停即弹气泡（临时显示）；离开有宽限，移入气泡不闪退。
-                              onEnter: (_) {
-                                setState(() => _tocHovering = true);
-                                _tocScheduleShow();
-                              },
-                              onExit: (_) {
-                                setState(() => _tocHovering = false);
-                                _tocScheduleHide();
-                              },
-                              child: _EarButton(
-                                itemKey: 'editor.ear.toc',
-                                icon: tabler.List(height: 24, width: 24, strokeWidth: 1.5),
-                                tooltip: '目录（Ctrl+Shift+O）',
-                                active: _tocVisible || _tocHovering,
-                                onPressed: _toggleTocPin,
-                              ),
+                              itemKey: 'editor.ear.toc',
+                              // 三条**递增缩进**的横线 = 层级目录（官方 tags：
+                              // sublevels / structure / drilldown）。比原来的
+                              // `tabler.List` 多表达了"层级"（2026-09-23 用户挑的）。
+                              icon: const tabler.MenuDeep(strokeWidth: 1.5),
+                              tooltip: '目录（Ctrl+Shift+O）',
+                              active: _tocVisible,
+                              onPressed: _toggleToc,
                             ),
                           ),
                         ),
@@ -1608,7 +1536,7 @@ class _NoteEditorViewAppFlowyState
                   sinanNumberedListCommand,
                   sinanQuoteCommand,
                   ...sinanAlignCommands,
-                  sinanTocCommand(onToggle: _toggleTocPin),
+                  sinanTocCommand(onToggle: _toggleToc),
                   // 折叠块 Ctrl/Cmd+Enter 切换展开/折叠（官方同款 toggleToggleListCommand）。
                   toggleToggleListCommand,
                 ],
@@ -1742,6 +1670,48 @@ String _formatRevised(DateTime t) {
       : '${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} $hhmm';
 }
 
+/// 标题行小按钮（撤销/重做 + 三个"耳"）的**图标色规格**。
+///
+/// 编辑页走**极简留白**（2026-09-23 用户定案）：常驻态只是"这里有入口"的
+/// 暗示，压到很低对比；**鼠标悬停 / 键盘聚焦**才明确起来。
+///
+/// ⚠️ 只能经 `IconButton.foregroundColor` 下发：tabler 图标不直接读 Material 的
+/// `IconTheme`（见 `AppIconTheme` 的说明），这份 style 就是图标唯一的色源。
+WidgetStateProperty<Color?> _headerActionColor(
+  ColorScheme scheme, {
+  bool active = false,
+}) {
+  return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+    // "开着"（目录 / 反链面板展开）用强调色，与面板建立视觉关联。
+    if (active) {
+      return scheme.primary;
+    }
+    if (states.contains(WidgetState.hovered) ||
+        states.contains(WidgetState.focused)) {
+      return scheme.onSurface;
+    }
+    return scheme.onSurfaceVariant.withValues(alpha: _kHeaderActionIdleAlpha);
+  });
+}
+
+/// 常驻态的不透明度。
+///
+/// `onSurfaceVariant` 直接铺在暗色底上偏亮（实测 `#C2C2C2`，"极简留白"要的不是
+/// 这个存在感）；压到 0.5 才是"隐约可见、不抢戏"。禁用态再降一档。
+const double _kHeaderActionIdleAlpha = 0.5;
+const double _kHeaderActionDisabledAlpha = 0.28;
+
+/// 标题行两端按钮（撤销/重做 + 三个耳）的**上内边距**。
+///
+/// 它不是"随手一个间距"，而是从目标位置反推出来的：
+///
+///   图标字形顶 = 本值 +（[Tokens.headerActionSize] − [Tokens.iconMd]）/ 2 = **10**
+///
+/// 10 是用户实机比过、让图标略高于标题首行（约 3.5px）的落点。
+/// 图标 18 → 20 → 24 时本值 4 → 5 → 7，每次都是为了把这个落点**钉住**
+/// （见标题行的校准注释）。
+const double _kHeaderActionTopPadding = 7;
+
 /// 标题行**左侧**的常驻历史按钮（撤销 / 重做）。
 ///
 /// ## 为什么从悬浮栏搬出来（2026-09-14 用户定案）
@@ -1749,8 +1719,8 @@ String _formatRevised(DateTime t) {
 /// 那儿"——那时根本没有悬浮栏，按钮够不着。撤销 / 重做是**文档级、无选区也要
 /// 能用**的操作，该常驻（Word / VS Code / Notion 同款），且与右端双耳左右对称。
 ///
-/// 规格与 [_EarButton] 完全一致（同一热区 `headerActionSize` / 同一图标 `iconSm`
-/// / 同一上内边距），差别只有两点：
+/// 规格与 [_EarButton] 完全一致（同一热区 [Tokens.headerActionSize] / 同一图标档
+/// [Tokens.iconMd] / 同一上内边距 [_kHeaderActionTopPadding]），差别只有两点：
 /// 1. **灰显**表达可用性（历史栈空 ⇒ `onPressed: null` ⇒ M3 禁用态配色）；
 /// 2. 包了 [withKeepEditorFocus]：点完按钮焦点回到正文，紧接着按 Ctrl+Z 仍然
 ///    生效（与悬浮栏条目走同一条保焦通路）。
@@ -1788,17 +1758,20 @@ class _HistoryButton extends StatelessWidget {
           minimumSize: const Size.square(Tokens.headerActionSize),
           maximumSize: const Size.square(Tokens.headerActionSize),
           padding: EdgeInsets.zero,
-          iconSize: Tokens.iconSm,
+          iconSize: Tokens.iconMd,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
           ),
-          // 与双耳同色（不抢戏）；不可用再降一档，"现在按不了"一眼可见。
-          foregroundColor: scheme.onSurfaceVariant,
+          // 与三个耳同一套色（见 [_headerActionColor]）；不可用再降一档，
+          // "现在按不了"一眼可见。
           disabledForegroundColor: scheme.onSurfaceVariant.withValues(
-            alpha: 0.38,
+            alpha: _kHeaderActionDisabledAlpha,
           ),
-        ),
+        )
+        // ⚠️ `styleFrom` 的 `foregroundColor` 只收 `Color?`；要按状态解析只能走
+        // `ButtonStyle.copyWith`（它收 `WidgetStateProperty`）。
+        .copyWith(foregroundColor: _headerActionColor(scheme)),
         icon: icon,
       ),
     );
@@ -1807,14 +1780,16 @@ class _HistoryButton extends StatelessWidget {
 
 /// 标题行**右侧**的「文档工具耳」：搜索 / 目录这类**文档级**操作的小入口。
 ///
-/// 设计要点（位置 2026-09-14 由左上角移到右侧；规格同日放大到 18 / 30）：
-/// - 常驻但不抢戏：图标 18px（[Tokens.iconSm]，与工具栏同档）+ 热区
-///   [Tokens.headerActionSize]（30，够到最小可点目标）；默认
-///   onSurfaceVariant，激活态（目录展开）转 onSurface 提示"开着"；
+/// 设计要点（位置 2026-09-14 由左上角移到右侧；规格同日定为 18 / 30，
+/// 2026-09-23 图标改为**应用侧主力档** [Tokens.iconMd]）：
+/// - 常驻但不抢戏：图标 24px + 热区 [Tokens.headerActionSize]（30，够到最小可点目标）；
+/// - 配色走 [_headerActionColor]（2026-09-23 用户定案）：编辑页**极简留白**
+///   —— 常驻淡、鼠标悬停/键盘聚焦才明确、"开着"（目录展开）转 primary；
 /// - 挂在 Stack 的**右上**（`Positioned.fill` + `Align.topRight`），
 ///   不占布局流，与标题居中互不干扰。
 class _EarButton extends StatelessWidget {
   const _EarButton({
+    super.key,
     required this.itemKey,
     required this.icon,
     required this.tooltip,
@@ -1844,12 +1819,19 @@ class _EarButton extends StatelessWidget {
         minimumSize: const Size.square(Tokens.headerActionSize),
         maximumSize: const Size.square(Tokens.headerActionSize),
         padding: EdgeInsets.zero,
-        iconSize: Tokens.iconSm,
+        // ⚠️ 图标尺寸**只有这一条路**：`icon` 里刻意不写 height/width，
+        // 由 `AppIconTheme` 把这个 `iconSize` 转发给 tabler（写死 24 会顶掉它，
+        // 那正是 2026-09-23 这三个耳"偏大偏亮"的一半原因）。
+        iconSize: Tokens.iconMd,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
         ),
-      ),
+      )
+      // 极简留白：常驻淡、悬停/聚焦明确、"开着"用强调色。
+      // ⚠️ `styleFrom` 的 `foregroundColor` 只收 `Color?`；按状态解析只能走
+      // `ButtonStyle.copyWith`（它收 `WidgetStateProperty`）。
+      .copyWith(foregroundColor: _headerActionColor(scheme, active: active)),
       icon: icon,
     );
   }

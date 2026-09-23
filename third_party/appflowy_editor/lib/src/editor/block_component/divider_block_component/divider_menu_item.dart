@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 SelectionMenuItem dividerMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.divider,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: Icons.horizontal_rule,
+    icon: const Icon(Icons.horizontal_rule),
     isSelected: isSelected,
     style: style,
   ),

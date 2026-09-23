@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
-import 'package:flutter_riverpod/flutter_riverpod.dart';import '../../app/providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../app/providers.dart';
 import '../../domain/block_hit.dart';
-import '../../domain/note.dart';
 import '../../theme/tokens.dart';
 
 /// 弹「选一个块」对话框，返回所选块 id（取消 → null）。
@@ -114,7 +114,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
                           // 来源笔记 = 全库结果里唯一的定位线索。
                           subtitle: Row(
                             children: <Widget>[
-                              tabler.LayoutDashboard(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                              tabler.LayoutDashboard(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(

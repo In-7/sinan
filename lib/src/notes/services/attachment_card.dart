@@ -60,7 +60,7 @@ class AttachmentCard extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                tabler.FileText(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                 const SizedBox(width: Tokens.spaceMd),
                 Expanded(
                   child: Column(
@@ -86,7 +86,7 @@ class AttachmentCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                tabler.ExternalLink(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                tabler.ExternalLink(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
               ],
             ),
           ),

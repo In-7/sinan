@@ -986,9 +986,18 @@ class AppTheme {
       scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.standard,
 
-      // 全局图标字重 300（Material Symbols Light）：字重走 IconTheme 的 `weight`
-      // 轴，所有 Symbols 图标默认细描边；强调态在具体调用处临时抬到 400/500。
-      iconTheme: const IconThemeData(weight: 300),
+      // 全应用图标的**默认色源 = `onSurfaceVariant`**（就是上面 scheme 里那条
+      // "图标/次级色不随种子染色"）：识别性优先，未激活的图标是**浅**的次级色，
+      // 强调态由具体调用处/组件（`IconButton` 等会自己 merge）抬色。
+      //
+      // ⚠️ 这里必须**显式给 color**：`IconThemeData` 的默认 color 是 null，图标会
+      // 落到 `DefaultTextStyle`（`WidgetsApp` 那个恒定黑 87%）——**明暗主题下取到
+      // 同一个色**，正是 2026-09-23 用户实报的"不随明暗变色、没有未激活浅色"。
+      // 非 Material 组件内的 tabler 图标另经 `AppIconTheme` 桥接（见该文件）。
+      //
+      // `weight` 是 Material Symbols 时代的遗留（tabler 是 SVG、粗细走
+      // `strokeWidth`，由 `Tokens.iconStroke` 管），留着无害——只是不再有人读它。
+      iconTheme: IconThemeData(color: scheme.onSurfaceVariant, weight: 300),
       primaryIconTheme: const IconThemeData(weight: 300),
 
       // ── 结构 ───────────────────────────────────────────────

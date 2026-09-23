@@ -6,7 +6,6 @@ import 'package:flutter/material.dart' as official;
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, LogicalKeyboardKey, PhysicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/blocks/code_block_component.dart';
 import 'package:sinan/src/editor/core/editor_icons.dart';
@@ -14,6 +13,7 @@ import 'package:sinan/src/editor/toolbar/fixed_toolbar.dart';
 import 'package:sinan/src/editor/toolbar/link_toolbar_item.dart';
 import 'package:sinan/src/editor/widgets/hover_state_layer.dart';
 import 'package:sinan/src/theme/app_theme.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 // FloatingToolbar 未在包 barrel 导出，深路径引入（与视图同一前提：vendored
 // path 依赖，上游改路径会立刻编译报错）。
 // ignore: implementation_imports
@@ -235,7 +235,7 @@ void main() {
     // `test/note_editor_view_appflowy_test.dart` 的
     // 「撤销/重做常驻标题行：没有选区也能用，且随历史栈灰显」。
 
-    _desktopTestWidgets('图标已统一为 Lucide（官方条目的换皮钩子接线成功）', (
+    _desktopTestWidgets('图标已统一为 Tabler（官方条目的换皮钩子接线成功）', (
       WidgetTester tester,
     ) async {
       // main() 里的那一步（测试不跑 main，必须显式安装）。
@@ -245,24 +245,18 @@ void main() {
       state.selection = _selection(0, 2);
       await tester.pumpAndSettle();
 
-      final Set<IconData> rendered = tester
-          .widgetList<Icon>(find.byType(Icon))
-          .map((Icon icon) => icon.icon)
-          .whereType<IconData>()
-          .toSet();
-
-      // 官方条目（加粗 / 标题 1 / 左对齐）渲染的是映射表里的 Material Symbols 字形
-      // （字重 300 由主题 iconTheme 统一控制，不再有 Lucide 那种"字体族档位"之分）。
+      // 官方条目（加粗 / 标题 1 / 左对齐）渲染的是映射表给出的 **tabler 控件**
+      // （SVG 线稿，描边 1.5 由 `editor_icons.dart` 统一注入）。
       expect(
-        rendered,
-        contains(Symbols.format_bold),
+        find.byType(tabler.Bold),
+        findsOneWidget,
         reason: '官方"加粗"仍是包内 SVG（钩子没接上）',
       );
       // 块样式按钮显示**当前样式**（此处光标在段落里 ⇒ 正文图标 T）。
-      expect(rendered, contains(Symbols.text_fields));
-      expect(rendered, contains(Symbols.format_align_left));
+      expect(find.byType(tabler.Typography), findsWidgets);
+      expect(find.byType(tabler.AlignLeft), findsWidgets);
       // 自研条目（撤销/重做已搬去标题行，这里改用待办条目当代表）。
-      expect(rendered, contains(Symbols.checklist));
+      expect(find.byType(tabler.ListCheck), findsWidgets);
     });
 
     test('tooltip 承诺的快捷键 = 真实绑定（"按了没反应"就出在这里）', () {

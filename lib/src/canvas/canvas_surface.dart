@@ -320,7 +320,7 @@ class _CanvasToolbar extends StatelessWidget {
         return IconButtonTheme(
           data: IconButtonThemeData(
             style: IconButton.styleFrom(
-              iconSize: Tokens.iconSm,
+              iconSize: Tokens.iconMd,
               // 正方热区 + shrinkWrap：布局尺寸=热区尺寸（48 的 padded 目标
               // 会把布局也撑到 48，"看不见的底"顶出卡片）。
               fixedSize: const Size(
@@ -367,15 +367,15 @@ class _CanvasToolbar extends StatelessWidget {
                 // 功能对齐 tldraw"重新挂回。
                 toolButton(
                   CanvasTool.select,
-                  tabler.Mouse(height: 24, width: 24, strokeWidth: 1.5),
+                  const tabler.Mouse(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   '选择 / 框选',
                 ),
-                toolButton(CanvasTool.pan, tabler.HandStop(height: 24, width: 24, strokeWidth: 1.5), '抓手（空格）'),
-                toolButton(CanvasTool.pen, tabler.Edit(height: 24, width: 24, strokeWidth: 1.5), '画笔'),
-                toolButton(CanvasTool.eraser, tabler.Eraser(height: 24, width: 24, strokeWidth: 1.5), '橡皮'),
+                toolButton(CanvasTool.pan, const tabler.HandStop(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '抓手（空格）'),
+                toolButton(CanvasTool.pen, const tabler.Edit(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '画笔'),
+                toolButton(CanvasTool.eraser, const tabler.Eraser(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '橡皮'),
                 toolButton(
                   CanvasTool.connect,
-                  tabler.Hierarchy(height: 24, width: 24, strokeWidth: 1.5),
+                  const tabler.Hierarchy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   '连线（从一个卡片拖到另一个）',
                 ),
                 // 笔刷设置（颜色 / 笔迹粗细 / 橡皮大小）：画笔 / 橡皮工具
@@ -399,7 +399,7 @@ class _CanvasToolbar extends StatelessWidget {
                 // 在不定高的 Wrap 里会直接报无限高度。
                 const SizedBox(height: 24, child: VerticalDivider(width: 24)),
                 FocusRingIconButton(
-                  icon: tabler.ZoomOut(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.ZoomOut(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '缩小',
                   onPressed: () => controller.zoomBy(1 / 1.25),
                 ),
@@ -414,27 +414,27 @@ class _CanvasToolbar extends StatelessWidget {
                   textStyle: Theme.of(context).textTheme.labelMedium,
                 ),
                 FocusRingIconButton(
-                  icon: tabler.ZoomIn(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.ZoomIn(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '放大',
                   onPressed: () => controller.zoomBy(1.25),
                 ),
                 FocusRingIconButton(
-                  icon: tabler.ArrowsMaximize(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.ArrowsMaximize(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '适应内容',
                   onPressed: controller.fitToContent,
                 ),
                 FocusRingIconButton(
-                  icon: tabler.Photo(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.Photo(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '导出 PNG',
                   onPressed: onExport,
                 ),
                 FocusRingIconButton(
-                  icon: tabler.Package(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.Package(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '导出画布文件（.canvas.json，含图片）',
                   onPressed: onExportBundle,
                 ),
                 FocusRingIconButton(
-                  icon: tabler.Download(height: 18, width: 18, strokeWidth: 1.5),
+                  icon: const tabler.Download(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   tooltip: '导入画布文件（.canvas.json，替换当前画布）',
                   onPressed: onImport,
                 ),
@@ -583,7 +583,7 @@ class _CanvasContextBar extends StatelessWidget {
           child: IconButtonTheme(
             data: IconButtonThemeData(
               style: IconButton.styleFrom(
-                iconSize: Tokens.iconSm,
+                iconSize: Tokens.iconMd,
                 fixedSize: const Size(
                   Tokens.toolbarButtonSize,
                   Tokens.toolbarButtonSize,
@@ -618,7 +618,7 @@ class _CanvasContextBar extends StatelessWidget {
                   // 分隔线（显式高度，理由同 [_CanvasToolbar]）。
                   const SizedBox(height: 24, child: VerticalDivider(width: 24)),
                   IconButton(
-                    icon: tabler.Trash(height: 18, width: 18, strokeWidth: 1.5),
+                    icon: const tabler.Trash(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                     tooltip: '删除所选（Delete）',
                     onPressed: controller.deleteSelection,
                   ),
@@ -681,7 +681,7 @@ class _CanvasHistoryBar extends StatelessWidget {
         // 与底部工具条同档热区（见 [_CanvasToolbar] 的 [IconButtonTheme] 说明）。
         data: IconButtonThemeData(
           style: IconButton.styleFrom(
-            iconSize: Tokens.iconSm,
+            iconSize: Tokens.iconMd,
             fixedSize: const Size(
               Tokens.toolbarButtonSize,
               Tokens.toolbarButtonSize,
@@ -704,12 +704,12 @@ class _CanvasHistoryBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               IconButton(
-                icon: tabler.ArrowBackUp(height: 18, width: 18, strokeWidth: 1.5),
+                icon: const tabler.ArrowBackUp(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 tooltip: '撤销（Ctrl+Z）',
                 onPressed: controller.document.canUndo ? controller.undo : null,
               ),
               IconButton(
-                icon: tabler.ArrowForwardUp(height: 18, width: 18, strokeWidth: 1.5),
+                icon: const tabler.ArrowForwardUp(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 tooltip: '重做（Ctrl+Shift+Z）',
                 onPressed: controller.document.canRedo ? controller.redo : null,
               ),

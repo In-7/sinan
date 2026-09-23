@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -6,8 +5,9 @@ import 'package:flutter/widgets.dart';
 
 import 'app_theme.dart';
 
-/// 导航列的**水墨底**（2026-09-23 用户定）：
-/// 亮色 = 主白纸 + 淡墨晕染；暗色 = 主黑纸 + 亮墨晕染（同一套数学，只换墨色）。
+/// 导航列的**青瓷釉底**（2026-09-23 用户定）：
+/// 亮色 = 主白纸 + 淡青瓷釉；暗色 = 主黑纸 + 亮青瓷釉（同一套数学，只换釉色）。
+/// 形态 = **纵向平滑渐变 + 极淡颗粒**（见 [fieldAt]），不再是墨洇的块面。
 ///
 /// ## 架构：数学在 Dart，渲染走 LUT
 /// 形状数学（fBm 分形噪声 + 域扭曲 + 阈值晕染）**全部在本文件**，`preload()` 时按
@@ -23,25 +23,28 @@ import 'app_theme.dart';
 /// **uint32 回绕的整数 hash**，Dart 侧每步 `& 0xFFFFFFFF` ⇒ 与 GLSL 逐位一致
 /// （虽然现在数学只在 Dart，闸门仍钉着这条，防止未来有人把它挪回 GLSL）。
 ///
-/// ## ⚠️ 墨是**无彩色**的（R≈G≈B 暖灰）
-/// 灰阶底上明暗两种文字都好过档（彩色 mesh 方案就死在紫斑的 2.7:1 上）。
-/// **别把墨色调成带彩色的**——闸门里有一条专门拦这个。
+/// ## ⚠️ 釉是**低彩度**的（自然材质色，不是鲜艳色）
+/// 2026-09-23 由无彩暖灰改为**苔石 / 青瓷**：用户要"自然材质触感"，但彩度必须
+/// **压住**——导航列上要放主 / 次两级文字，彩底一浓就掉对比度（彩色 mesh 方案
+/// 当年就死在紫斑的 2.7:1 上）。现行口径：RGB 分量极差 ≤ 12%，由闸门
+/// `nav_ink_test.dart` 钉着。**改色后必须跑那两条 APCA 闸门**（主 Lc≥65 / 次 Lc≥60）——
+/// 色值能不能用是**实测**判的，不是看色号能断的。
 abstract final class NavInk {
   static const String assetKey = 'assets/shaders/nav_ink.frag';
 
   // ── 形状常数（LUT 由它们烘焙；闸门断言行为，不比对 .frag 文本） ──────────────
-  static const double scale = 2.4; // 噪声缩放：越小墨块越大越醒目（2026-09-23 加浓）
-  static const double warp = 2.2; // 域扭曲强度（略增，墨洇勾连更明显）
-  static const double offsetX = 11.3; // 种子偏移（想换花样就改这两个 + 重跑闸门）
+  // 形态（2026-09-23 由"fBm 墨洇"改为"纵向渐变 + 极淡颗粒"）：
+  static const double gradTop = 0.30; // 渐变起点（v 小于它 = 纯纸色 ⇒ 顶部留白）
+  static const double gradBottom = 1.0; // 渐变终点（1.0 ⇒ 满釉只出现在底边）
+  static const double grainScale = 3.2; // 颗粒噪声缩放（越大颗粒越细密）
+  static const double grain = 0.10; // 颗粒幅度（**极淡**：只做材质触感，不成墨块）
+  static const double offsetX = 11.3; // 噪声种子偏移（想换颗粒花样就改这两个）
   static const double offsetY = 7.7;
-  static const double flowX = 0.5; // 墨势中心（uv）
-  static const double flowY = 0.72;
-  static const double flowRadius = 0.92;
-  static const double wash0 = 0.28; // 晕染下阈（低于它 = 纸；下调 ⇒ 墨铺得更开）
-  static const double wash1 = 0.66; // 晕染上阈（高于它 = 全染）
-  static const double deep0 = 0.48; // 浓墨下阈（收窄覆盖，给暗色次文字留余量）
-  static const double deep1 = 0.82; // 浓墨上阈
-  static const double deepStrength = 0.90;
+  static const double wash0 = 0.30; // 上釉下阈（低于它 = 纸；上调 ⇒ 留白更多）
+  static const double wash1 = 1.0; // 上釉上阈（高于它 = 满釉）
+  static const double deep0 = 0.72; // 积釉下阈（收窄覆盖：只压底部，给文字留余量）
+  static const double deep1 = 1.0; // 积釉上阈
+  static const double deepStrength = 0.45; // 积釉最深也只到浓釉的 45%
   static const double dither = 1 / 255; // 抖动幅度（±0.5 级）
 
   /// 设计基准纵横比（列宽 / 列高 ≈ 220/800）。
@@ -52,14 +55,19 @@ abstract final class NavInk {
   static const int lutWidth = 128;
   static const int lutHeight = 512;
 
-  // ── 墨色（**无彩色暖灰**，明暗两套）────────────────────────────────────────
-  // 亮色：纸 = 窗口底 #F8F8F6；墨比纸深 ⇒ "白纸淡墨"。
-  // 暗色：纸 = #171715；墨比纸浅 ⇒ "黑纸亮墨"（用户口径的"白色墨染"是亮灰，不是纯白
-  // ——纯白上浅色文字过不了闸门，实测 9:1 的上限在 #3A 附近）。
-  static const Color inkLight = Color(0xFFD4D3CB); // 淡墨（晕染，2026-09-23 加深）
-  static const Color inkDeepLight = Color(0xFFBAB9B0); // 浓墨
-  static const Color inkDark = Color(0xFF3C3C39); // 亮墨（晕染，加深）
-  static const Color inkDeepDark = Color(0xFF4E4E4B); // 亮浓墨
+  // ── 釉色（**苔石 / 青瓷**：低彩度自然色，明暗两套）────────────────────────
+  // 亮色：纸 = 窗口底 #F8F8F6；釉比纸深 ⇒ "白纸淡青瓷"。
+  // 暗色：纸 = #171715；釉比纸浅 ⇒ "黑纸亮青瓷"（别取太亮：暗色的次文字是**浅色**，
+  // 面越亮对比越差，实测可用上限在 L\* 30 附近）。
+  // ⚠️ 改这四个值后**必须**跑 `test/theme/nav_ink_test.dart`：彩度上限（12%）与两条
+  // APCA 闸门（主 65 / 次 60）全是实测判的，看色号断不出来。
+  static const Color inkLight = Color(0xFFCFDCD0); // 淡釉（青瓷）
+  static const Color inkDeepLight = Color(0xFFB4C9B7); // 浓釉
+  static const Color inkDark = Color(0xFF2A332B); // 亮釉（暗色）
+  // #333E36（比初版 #37443A 压暗一档）：暗色的次文字是**浅色**，积釉越亮对比越差
+  // ——初版实测次文字 Lc 62.5（门槛 60，余量只有 2.5）。压暗后余量翻倍，
+  // 视觉上这一档几乎看不出来。
+  static const Color inkDeepDark = Color(0xFF333E36); // 亮浓釉
 
   static final Map<Brightness, ui.Image> _lut = <Brightness, ui.Image>{};
   static ui.FragmentProgram? _program;
@@ -70,7 +78,7 @@ abstract final class NavInk {
   /// ## 为什么要有它（2026-09-23 的"打开要点一下才出来"）
   /// [preload] 是 `unawaited` 的、在 `runApp` 之后才异步完成；而 [HubNav] 只在
   /// `build` 时读一次 [painter]。preload 完成前首帧拿到的是 `null`（回退实色底），
-  /// 完成后**没有任何 setState 会把它重新读出** ⇒ 必须靠点击触发某次重建水墨才出现。
+  /// 完成后**没有任何 setState 会把它重新读出** ⇒ 必须靠点击触发某次重建釉面才出现。
   /// 这里翻一下，[HubNav] 订阅它即可自动重绘接上 painter，无需用户点击。
   static final ValueNotifier<bool> readyNotifier = ValueNotifier<bool>(false);
 
@@ -94,7 +102,7 @@ abstract final class NavInk {
         _lut[b] = await _buildLut(b);
       }
     }
-    // 通知调用方重绘：首帧若已画过回退底，此刻才把水墨 painter 接上。
+    // 通知调用方重绘：首帧若已画过回退底，此刻才把釉面 painter 接上。
     readyNotifier.value = true;
   }
 
@@ -131,13 +139,13 @@ abstract final class NavInk {
     return frame.image;
   }
 
-  /// 画水墨的 painter；**未就绪返回 null**（调用方用实色兜底）。
+  /// 画釉面的 painter；**未就绪返回 null**（调用方用实色兜底）。
   static CustomPainter? painter(Brightness brightness) =>
       (_program == null || lutFor(brightness) == null)
       ? null
       : NavInkPainter(brightness);
 
-  // ── 水墨数学（闸门测的就是这一份；shader 只采样它烘焙出来的 LUT） ────────────
+  // ── 釉面数学（闸门测的就是这一份；shader 只采样它烘焙出来的 LUT） ────────────
 
   /// 整数 hash（uint32 回绕；负坐标经补码自然回绕）。
   static int _uhash(int qx, int qy) {
@@ -180,25 +188,22 @@ abstract final class NavInk {
     return v / 0.9375;
   }
 
-  /// 墨场（0..1，越大越"该染"）：fBm + **域扭曲** + 墨势。
-  /// 域扭曲是"无规则染色"的关键——等值线弯折勾连，才像墨洇而不是椭圆噪点。
+  /// 釉场（0..1，越大越"该上釉"）：**纵向渐变 + 极淡颗粒**。
+  ///
+  /// 2026-09-23 由"fBm + 域扭曲 + 墨势"换成这套：用户反馈墨洇勾连的轮廓"怪异"，
+  /// 要的是**材质渐变**而不是墨块。主体现在是沿 v 的一条平滑斜坡——像青瓷釉
+  /// 自上而下**积釉**，越靠底越浓；fBm 只剩 ±[grain] 的极淡调制，保留一点材质
+  /// 颗粒感，但不再形成可辨认的墨块形状（域扭曲 `warp` 就是勾连的来源，已去除）。
   static double fieldAt({
     required double u,
     required double v,
     double aspect = designAspect,
   }) {
-    final double px = u * aspect * scale + offsetX;
-    final double py = v * scale + offsetY;
-    final double qx = _fbm(px, py);
-    final double qy = _fbm(px + 5.2, py + 1.3);
-    final double f = _fbm(px + warp * qx, py + warp * qy);
-    final double dx = (u - flowX) * aspect;
-    final double dy = v - flowY;
-    final double flow = (1 - math.sqrt(dx * dx + dy * dy) / flowRadius).clamp(
-      0.0,
-      1.0,
-    );
-    return f * 0.72 + flow * 0.28;
+    final double grad = _smoothstep(gradTop, gradBottom, v);
+    final double px = u * aspect * grainScale + offsetX;
+    final double py = v * grainScale + offsetY;
+    final double noise = _fbm(px, py) - 0.5; // 居中，避免把整条渐变整体推亮/推暗
+    return (grad + noise * grain).clamp(0.0, 1.0);
   }
 
   static double _smoothstep(double e0, double e1, double x) {
@@ -226,7 +231,7 @@ abstract final class NavInk {
   }
 }
 
-/// 把水墨 shader 铺满给定区域（导航列用）。圆角裁切由调用方负责。
+/// 把釉面 shader 铺满给定区域（导航列用）。圆角裁切由调用方负责。
 class NavInkPainter extends CustomPainter {
   NavInkPainter(this.brightness);
 

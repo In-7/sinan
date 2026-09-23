@@ -1,7 +1,5 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
-// 官方 material：块手柄的图标用的是它（material_ui 的同名类型是另一套）。
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/material.dart' as official;
 import 'package:flutter/services.dart'
     show FontLoader, LogicalKeyboardKey, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
 import 'package:sinan/src/theme/app_theme.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 /// 块手柄的两个按钮（**对齐官方 `BlockAddButton` / `OptionButton`**，2026-09-15）：
 ///
@@ -113,7 +112,7 @@ Future<void> _openActionsMenu(
     of: find
         .ancestor(of: block, matching: find.byType(BlockComponentActionWrapper))
         .first,
-    matching: find.byIcon(official.Icons.drag_indicator_rounded),
+    matching: find.byType(tabler.GripVertical),
   );
   expect(dragHandle, findsOneWidget, reason: '该块的 ⠿ 没浮出');
   await tester.tap(dragHandle);
@@ -122,7 +121,7 @@ Future<void> _openActionsMenu(
 
 /// 悬停指定块 → 点**它自己的** “+”（[alt] 为 true 时全程按住 Alt）。
 ///
-/// ⚠️ 必须按块定位手柄：`find.byIcon(Icons.add)` 会命中**每一个**块的手柄，
+/// ⚠️ 必须按块定位手柄：`find.byType(tabler.Plus)` 会命中**每一个**块的手柄，
 /// `.first` 是第 0 块的那个（第一版就是这么错点、断言全废的）。
 Future<void> _tapAdd(
   WidgetTester tester, {
@@ -144,7 +143,7 @@ Future<void> _tapAdd(
 
   final Finder addButton = find.descendant(
     of: wrapper,
-    matching: find.byIcon(official.Icons.add),
+    matching: find.byType(tabler.Plus),
   );
   expect(addButton, findsOneWidget, reason: '该块的手柄没浮出（悬停没生效？）');
 

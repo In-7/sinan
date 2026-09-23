@@ -46,7 +46,7 @@ class CanvasInsertButton extends StatelessWidget {
                   // 形状、还是已经回到选择工具（这正是"矩形像框选"的知觉根源）。
                   isSelected: isOpen || controller.tool == CanvasTool.shape,
                   onPressed: toggle,
-                  icon: tabler.Shape(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                  icon: const tabler.Shape(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 ),
         builder: (BuildContext context, VoidCallback close) => Padding(
           padding: const EdgeInsets.all(Tokens.spaceXs),
@@ -55,7 +55,7 @@ class CanvasInsertButton extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _MenuItem(
-                icon: tabler.Square(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.Square(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '矩形',
                 onTap: () {
                   controller.setShapeTool(CanvasShapeKind.rectangle);
@@ -63,7 +63,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: tabler.Circle(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.Circle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '椭圆',
                 onTap: () {
                   controller.setShapeTool(CanvasShapeKind.ellipse);
@@ -71,7 +71,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: tabler.Photo(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.Photo(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '图片…',
                 onTap: () {
                   close();
@@ -81,7 +81,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: tabler.Hierarchy(height: 24, width: 24, strokeWidth: 1.5),
+                icon: const tabler.Hierarchy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 label: '思维导图',
                 onTap: () {
                   insertMindMap(controller);

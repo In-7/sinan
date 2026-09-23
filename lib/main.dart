@@ -21,6 +21,7 @@ import 'src/dev/frame_probe.dart';
 import 'src/domain/settings.dart';
 import 'src/editor/core/editor_icons.dart';
 import 'src/app/providers.dart';
+import 'src/theme/app_icon_theme.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/nav_ink.dart';
 import 'src/window/window_base.dart';
@@ -28,8 +29,8 @@ import 'src/window/window_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 编辑器图标统一为 Lucide：官方工具栏/斜杠菜单/图片工具条的图标是包内 SVG，
-  // 这里注册映射让它们走 Lucide 字形（vendored 侧的钩子见
+  // 编辑器图标统一为 Tabler：官方工具栏/斜杠菜单/图片工具条的图标是包内 SVG，
+  // 这里注册映射让它们走 Tabler 控件（vendored 侧的钩子见
   // third_party/appflowy_editor/PATCHES.md 补丁 4）。未登记的名字自动回落 SVG。
   installEditorIcons();
   // 帧探针（人工场景"连打"的 p90，见 docs/perf_baseline.md §2.1）：
@@ -46,7 +47,7 @@ Future<void> main() async {
   };
   // 移动端 / Web 上会自动跳过，不会崩。
   await WindowService.init();
-  // 导航列的水墨 shader：**预装载**（异步）。失败也无所谓 —— `NavInk.painter`
+  // 导航列的釉面 shader：**预装载**（异步）。失败也无所谓 —— `NavInk.painter`
   // 会返回 null ⇒ 导航列退回 `AppTheme.boardFill` 的实色底，不会白屏。
   unawaited(NavInk.preload());
 
@@ -268,9 +269,14 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
         // 窗口底 + 顶边/顶角缩放手柄都在 [WindowBase] 里——**一处管全窗口**，且它抽成
         // 具名件就是为了可测（这个 builder 在 `main.dart`、测不到）。取值、只圈顶边的
         // 理由、以及"由微渐变改纯色"的那笔账，全写在那个类的文档里。
-        return WindowBase(
-          // ignore: deprecated_member_use
-          child: MaterialUiCompatibilityBridge(child: child!),
+        // ⚠️ [AppIconTheme] 不是装饰：tabler 图标自带一套独立 IconTheme、**不读
+        // Material 的**，不桥接就恒定死黑（既不随明暗、也没有未激活的浅色）。
+        // 完整病因与做法见该类的文档。
+        return AppIconTheme(
+          child: WindowBase(
+            // ignore: deprecated_member_use
+            child: MaterialUiCompatibilityBridge(child: child!),
+          ),
         );
       },
       // 官方的 MaterialUiCompatibilityBridge 是过渡期工具（已标记

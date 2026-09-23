@@ -17,6 +17,7 @@ import '../blocks/formula_block_component.dart';
 import '../blocks/note_picker.dart';
 import '../blocks/ref_block_component.dart';
 import '../blocks/toggle_block_component.dart';
+import '../../theme/tokens.dart';
 
 /// 斜杠菜单的配色——**从应用主题色构造**，不能省。
 ///
@@ -124,7 +125,7 @@ SelectionMenuItem _toggleSlashMenuItem({
   required Node Function() nodeBuilder,
 }) => SelectionMenuItem.node(
   getName: () => name,
-  iconData: tabler.ChevronRight(height: 24, width: 24, strokeWidth: 1.5),
+  iconData: const tabler.ChevronRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
   keywords: keywords,
   nodeBuilder: (editorState, context) => nodeBuilder(),
   replace: (editorState, node) => node.delta?.isEmpty ?? false,
@@ -139,7 +140,7 @@ SelectionMenuItem _toggleSlashMenuItem({
 /// `['callout']`，中文用户会直接打"高亮块"）。
 final SelectionMenuItem calloutSlashMenuItem = SelectionMenuItem.node(
   getName: () => '高亮块',
-  iconData: tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
+  iconData: const tabler.InfoCircle(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
   keywords: const <String>['callout', '高亮块', '提示', '强调'],
   nodeBuilder: (editorState, context) => calloutNode(),
   // 空块 → 原地替换（与官方 callout / table 同一判据），不留多余空段落。
@@ -164,7 +165,7 @@ bool _isNotMaterialIconItem(SelectionMenuItem item) =>
 final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.table,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Table(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Table(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -208,7 +209,7 @@ final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem dividerSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.divider,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Minus(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Minus(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -317,7 +318,7 @@ bool _containsCjk(String value) => RegExp(r'[\u4e00-\u9fa5]').hasMatch(value);
 /// 我们只回答三个问题：造什么节点、要不要替换、光标放哪。
 final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
   getName: () => '代码块',
-  iconData: tabler.Terminal(height: 24, width: 24, strokeWidth: 1.5),
+  iconData: const tabler.Terminal(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
   keywords: const <String>['code', 'code block', '代码', '代码块'],
   nodeBuilder: (editorState, context) => codeBlockNode(delta: Delta()),
   // 空块 → 原地替换（与官方 tableMenuItem 同一判据），不留多余空段落。
@@ -331,7 +332,7 @@ final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
 final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
   getName: () => '公式',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.$Function(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.$Function(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -355,7 +356,7 @@ final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
   getName: () => '附件',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Paperclip(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Paperclip(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -381,7 +382,7 @@ final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
   getName: () => '引用笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Link(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Link(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -428,7 +429,7 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '引用块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
     // 与「引用笔记」的 link 图标区分：这里强调的是"引用一段正文"。
-    icon: tabler.FileText(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.FileText(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -466,7 +467,7 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Quote(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Quote(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -501,7 +502,7 @@ final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedNoteSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Quote(height: 24, width: 24, strokeWidth: 1.5),
+    icon: const tabler.Quote(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),

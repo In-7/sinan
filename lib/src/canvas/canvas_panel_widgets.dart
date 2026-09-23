@@ -6,8 +6,6 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/tokens.dart';
-
 /// 紧凑高度的小滑杆：默认 `Slider` 的上下留白在浮层面板里太空。
 ///
 /// [onChanged] 传 null 表示该项当前不适用（如填充形状的"描边粗细"）——

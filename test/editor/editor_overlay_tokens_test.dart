@@ -8,6 +8,7 @@ import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 /// **编辑器子树内两个浮层菜单的"浮层三件套"**（2026-09-15 探针实测后钉住）。
 ///
@@ -60,7 +61,7 @@ void main() {
   testWidgets('斜杠菜单：底色/描边/投影 = 浮层令牌（补丁 14）', (WidgetTester tester) async {
     await _pumpEditor(tester);
     // 点 “+” 会打开斜杠菜单（见 `_addBlock`）。
-    await _tapHandle(tester, icon: official.Icons.add);
+    await _tapHandle(tester, iconType: tabler.Plus);
 
     final Color expected = AppTheme.floatSurface(Brightness.light);
     final BoxDecoration panel = tester
@@ -87,7 +88,7 @@ void main() {
 }
 
 /// 悬停首块 → 点手柄上的某个按钮。
-Future<void> _tapHandle(WidgetTester tester, {required IconData icon}) async {
+Future<void> _tapHandle(WidgetTester tester, {required Type iconType}) async {
   final Finder wrapper = find.byType(BlockComponentActionWrapper).first;
   final Finder block = find
       .descendant(of: wrapper, matching: find.byType(RichText))
@@ -101,14 +102,14 @@ Future<void> _tapHandle(WidgetTester tester, {required IconData icon}) async {
   await tester.pumpAndSettle();
 
   final Finder handle =
-      find.descendant(of: wrapper, matching: find.byIcon(icon));
+      find.descendant(of: wrapper, matching: find.byType(iconType));
   expect(handle, findsOneWidget, reason: '手柄没浮出（悬停没生效？）');
   await tester.tap(handle);
   await tester.pumpAndSettle();
 }
 
 Future<void> _openBlockActionsMenu(WidgetTester tester) =>
-    _tapHandle(tester, icon: official.Icons.drag_indicator_rounded);
+    _tapHandle(tester, iconType: tabler.GripVertical);
 
 Future<void> _pumpEditor(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1200, 900);

@@ -188,12 +188,12 @@ class _AskCardState extends ConsumerState<_AskCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              tabler.Sparkles(height: 18, width: 18, strokeWidth: 1.5),
+              const tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
               const SizedBox(width: Tokens.spaceSm),
               Text('问笔记', style: theme.textTheme.titleSmall),
               const Spacer(),
               IconButton(
-                icon: tabler.X(height: 18, width: 18, strokeWidth: 1.5),
+                icon: const tabler.X(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 tooltip: '关闭（Esc）',
                 onPressed: widget.onClose,
               ),

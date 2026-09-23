@@ -16,6 +16,7 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/domain/settings.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
+import 'package:sinan/src/editor/panels/backlink_panel.dart';
 import 'package:sinan/src/editor/panels/toc_panel.dart';
 import 'package:sinan/src/editor/widgets/link_hover_tooltip.dart';
 import 'package:sinan/src/notes/note_editor_view_appflowy.dart';
@@ -41,6 +42,43 @@ void main() {
 
     expect(_renders(tester, '你好世界'), isTrue, reason: '正文没上树');
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('反链面板贴在反链按钮下边（定位锚点没漏挂）', (WidgetTester tester) async {
+    // 实测现场（2026-09-23）：面板飞到了**屏幕左上角**而不是按钮下方。
+    // 根因不是定位算式，是那个 `GlobalKey` **漏挂**在按钮上 ⇒
+    // `_backlinkButtonKey.currentContext == null` ⇒ 静默走兜底坐标
+    // （`top: 56 / right: 16`）。这类 bug 编译期、数据层测试全都看不见，
+    // 只有几何断言能钉住，所以补在这里。
+    final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
+    await _pumpView(tester, notes);
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('editor.ear.backlink'),
+    );
+    expect(button, findsOneWidget, reason: '反链按钮没渲染出来');
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    final Finder panel = find.byType(BacklinkPanel);
+    expect(panel, findsOneWidget, reason: '点了反链按钮但面板没打开');
+
+    final Rect buttonRect = tester.getRect(button);
+    final Rect panelRect = tester.getRect(panel);
+
+    // 面板**右边缘**与按钮右边缘对齐（浮层右对齐），**顶边**与按钮底边无缝相接。
+    expect(
+      panelRect.right,
+      closeTo(buttonRect.right, 1),
+      reason: '面板右边缘没对齐按钮——多半是 `_backlinkButtonKey` 漏挂，'
+          '定位回落到兜底坐标飞到左上角',
+    );
+    expect(
+      panelRect.top,
+      closeTo(buttonRect.bottom, 1),
+      reason: '面板顶边没接住按钮底边',
+    );
   });
 
   testWidgets('卸载兜底落盘：不碰 ref，且防抖里的编辑真的写下去', (WidgetTester tester) async {

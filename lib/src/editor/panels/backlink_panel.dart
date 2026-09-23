@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
-import 'package:flutter_riverpod/flutter_riverpod.dart';import '../../app/providers.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../app/providers.dart';
 import '../../domain/backlink.dart';
-import '../../domain/note.dart';
 import '../../theme/tokens.dart';
 
 /// 反链面板：**谁引用了我**（双链的读侧）。
@@ -103,7 +103,6 @@ class BacklinkPanel extends ConsumerWidget {
 
   Widget _row(BuildContext context, Backlink b) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool canvas = b.sourceKind == NoteKind.canvas;
     return InkWell(
       onTap: () => onOpenNote(b.sourceNoteId),
       child: Padding(
@@ -113,7 +112,7 @@ class BacklinkPanel extends ConsumerWidget {
         ),
         child: Row(
           children: <Widget>[
-            tabler.LayoutDashboard(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+            tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
             const SizedBox(width: Tokens.spaceSm),
             Expanded(
               child: Column(

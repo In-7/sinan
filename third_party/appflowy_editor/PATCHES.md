@@ -504,6 +504,44 @@ keyword 非空时照旧删掉刚输入的搜索字符。
 **何时可撤销**: 上游在 `_deleteLastCharacters` 里自加边界检查（或让 `_onKeyEvent` 在
 `keyword.isEmpty` 时不再调它）后，还原这一处即可。
 
+### [2026-09-23] 补丁 19 — 斜杠菜单图标槽位 `IconData?` → `Widget?`（应用侧图标整体改走 tabler 控件）
+
+**文件**：
+- `lib/src/editor/selection_menu/selection_menu_icon.dart`（`icon` 字段类型 + 渲染改 `SizedBox(18)`）
+- `lib/src/editor/selection_menu/selection_menu_widget.dart`（`iconData` 参数类型 + 渲染同上）
+- `lib/src/editor/block_component/table_block_component/table_block_component.dart`（`tableMenuItem` 图标包 `Icon()`）
+- `lib/src/editor/block_component/divider_block_component/divider_menu_item.dart`（`dividerMenuItem` 同上）
+
+**问题**：应用侧把编辑器图标从**字体图标**（`IconData`）整体换成 **tabler 控件**
+（`tabler_icons_next` 的 SVG Widget）——映射表 `editor_icons.dart` 的
+`EditorIconBuilder` 现在返回 `Widget`，经 `EditorSvg.iconOverride`（补丁 4）换皮。
+但斜杠菜单这条路径**不经过 `EditorSvg`**：`SelectionMenuItem.icon` 直接把图标交给
+`SelectionMenuIconWidget`，而后者字段是 `IconData?` ⇒ 应用侧换成 Widget 后类型对不上。
+
+**改动**：两个 widget 的图标槽位改收 `Widget?`；渲染处的 `Icon(...)` 换成
+`SizedBox(width: 18, height: 18, child: icon)`——18 是官方工具栏的 `iconSize` 契约，
+原先靠 `Icon` 自带的 24 框约束，换成任意 Widget 后必须显式定框，否则 tabler 控件的
+固有尺寸（24）会让斜杠菜单条目比官方条目大一圈。`SelectionMenuItem(_iconWidget)`
+的**构造点本来就不必动**（它一直收 `Widget`）。
+
+⚠️ 官方自带的两条 item（`tableMenuItem` / `dividerMenuItem`）在**各自文件里**传的是
+`Icons.table_view` / `Icons.horizontal_rule`：字段放宽成 `Widget?` 后这两处编译不过
+（`IconData` 不是 `Widget`）⇒ 就地包一层 `Icon(...)`，**上游语义逐字保留**。
+这两条在应用侧被 `slash_menu_items.dart` 的 `_isNotMaterialIconItem` **整体剔除**
+（换成了自己的 tabler 版条目，见 `test/editor/slash_menu_items_test.dart` 的断言），
+所以**永远不会被渲染**，包 `Icon()` 只为编译通过。
+
+**验证**：`flutter test`（仓库根）**897 passed / 0 failed**；`flutter analyze` 零问题 ✓
+
+⚠️ **这道补丁的漏改很难自查**：`analysis_options.yaml` 排除了 `third_party/**`
+⇒ **`flutter analyze` 看不见本目录的编译错误**，漏改只由 `flutter test` /
+`flutter build windows` 暴露（当时的症状是 25 个测试文件**加载即失败**：
+`Compilation failed ... The argument type 'IconData' can't be assigned to the
+parameter type 'Widget?'`）。改本目录后**务必跑一次仓库根的 `flutter test`**。
+
+**何时可撤销**: 上游把 `SelectionMenuItem.icon` 也接到 `EditorSvg.iconOverride`
+（或直接把图标槽位类型放宽为 `Widget`）后，还原这四个文件即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

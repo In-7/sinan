@@ -421,7 +421,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                         errorText: _error,
                         suffixIcon: IconButton(
                           tooltip: '清空',
-                          icon: tabler.X(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                          icon: const tabler.X(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                           onPressed: () => setState(() {
                             _urlController.clear();
                             _error = null;
@@ -449,7 +449,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       const Divider(height: 1),
                       _action(
                         context,
-                        icon: tabler.ExternalLink(height: 24, width: 24, strokeWidth: 1.5),
+                        icon: const tabler.ExternalLink(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                         label: '打开链接',
                         onPressed: () async {
                           await editorLaunchUrl(widget.currentHref);
@@ -458,7 +458,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       ),
                       _action(
                         context,
-                        icon: tabler.Copy(height: 24, width: 24, strokeWidth: 1.5),
+                        icon: const tabler.Copy(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                         label: '复制链接',
                         onPressed: () {
                           unawaited(
@@ -471,7 +471,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       ),
                       _action(
                         context,
-                        icon: tabler.Trash(height: 24, width: 24, strokeWidth: 1.5),
+                        icon: const tabler.Trash(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                         label: '移除链接',
                         onPressed: _removeLink,
                       ),

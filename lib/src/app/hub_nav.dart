@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../command/commands.dart';
 import '../theme/app_theme.dart';
@@ -16,9 +17,9 @@ import 'settings_panel.dart' show showSettingsPanel;
 /// [hubNavGroups] 的某个组，再在 `home_screen.dart` 的主页分支按 index 分发。
 const List<({Widget icon, String label})> hubNavItems =
     <({Widget icon, String label})>[
-      (icon: tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5), label: '主页'),
-      (icon: tabler.FileText(height: 24, width: 24, strokeWidth: 1.5), label: '全部笔记'),
-      (icon: tabler.Crop(height: 24, width: 24, strokeWidth: 1.5), label: '画布'),
+      (icon: tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '主页'),
+      (icon: tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '全部笔记'),
+      (icon: tabler.Crop(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '画布'),
     ];
 
 /// 导航板的**分组**（显示用）：组标题（null = 不显示标题）+ 组内分区 index。
@@ -94,11 +95,11 @@ class HubNav extends ConsumerWidget {
         // （压在圆角底上，看着像 bug）。
         child: ClipRRect(
           borderRadius: radius,
-          // 🎨 水墨底（fBm + 域扭曲 + 同 pass 抖动 ⇒ 晕染边缘无 8-bit 色带）。
+          // 🎨 青瓷釉底（纵向渐变 + 极淡颗粒 + 同 pass 抖动 ⇒ 无 8-bit 色带）。
           // `painter` 画在 child **之下**；shader 未就绪时它是 null ⇒ 只剩回退底。
           //
           // ⚠️ **订阅 [NavInk.readyNotifier]**：preload 在 `runApp` 之后才异步完成，
-          // 若不在这里接信号，首帧之后的水墨就绪不会触发重绘（要用户点一下才出来）。
+          // 若不在这里接信号，首帧之后的釉面就绪不会触发重绘（要用户点一下才出来）。
           // `child` 是整列导航、只建一次，翻信号时只重建外层 CustomPaint。
           child: ValueListenableBuilder<bool>(
             valueListenable: NavInk.readyNotifier,
@@ -112,7 +113,7 @@ class HubNav extends ConsumerWidget {
                 const SizedBox(height: Tokens.spaceSm),
                 // 顶部主操作：Craft 的 "New Doc" 同位——最常用的动作不该埋在内容区里。
                 _NavItem(
-                  icon: tabler.Plus(height: 24, width: 24, strokeWidth: 1.5),
+                  icon: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   label: '新建笔记',
                   selected: false,
                   onTap: () => unawaited(runCommandById(ref, 'note.new')),
@@ -142,7 +143,7 @@ class HubNav extends ConsumerWidget {
                 ],
                 const Spacer(),
                 const _NavItem(
-                  icon: tabler.Settings(height: 24, width: 24, strokeWidth: 1.5),
+                  icon: tabler.Settings(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   label: '设置',
                   selected: false,
                   onTap: showSettingsPanel,

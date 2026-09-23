@@ -52,7 +52,7 @@ class CanvasBrushButton extends StatelessWidget {
                       controller.tool == CanvasTool.pen ||
                       controller.tool == CanvasTool.eraser,
                   onPressed: toggle,
-                  icon: tabler.Brush(height: 24, width: 24, strokeWidth: 1.5),
+                  icon: const tabler.Brush(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                 ),
         // 面板里滑杆要连着调，不需要"选完即关"，故忽略 close。
         builder: (BuildContext context, VoidCallback _) =>

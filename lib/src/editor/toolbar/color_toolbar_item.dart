@@ -225,7 +225,7 @@ class _SinanColorPanel extends StatelessWidget {
                       }
                       onDone();
                     },
-                    icon: tabler.Eraser(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                    icon: const tabler.Eraser(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                     label: const Text('恢复默认'),
                   ),
                 ),
@@ -324,9 +324,9 @@ class _ColorSwatch extends StatelessWidget {
           ),
         ),
         child: color == null
-            ? tabler.X(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn))
+            ? tabler.X(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn))
             : isSelected
-            ? tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onPrimary, ui.BlendMode.srcIn))
+            ? tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onPrimary, ui.BlendMode.srcIn))
             : null,
       ),
     );

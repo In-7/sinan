@@ -71,7 +71,7 @@ class _CanvasAiButtonState extends State<CanvasAiButton> {
                 : 'AI 未配置（到「设置 → AI」填写模型）',
             isSelected: isOpen,
             onPressed: widget.enabled ? toggle : null,
-            icon: tabler.Sparkles(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+            icon: const tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
           ),
       builder: (BuildContext context, VoidCallback close) => Padding(
         padding: const EdgeInsets.all(Tokens.spaceSm),

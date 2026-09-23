@@ -330,7 +330,7 @@ class _TableBlockComponentWidgetState extends State<TableBlockComponentWidget>
 SelectionMenuItem tableMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.table,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: Icons.table_view,
+    icon: const Icon(Icons.table_view),
     isSelected: isSelected,
     style: style,
   ),

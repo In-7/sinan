@@ -183,8 +183,6 @@ class _RefBlockComponentWidgetState
     // 嵌入模式：就地展开目标内容（只读）。**断链时仍走链接卡片**——"引用已
     // 失效"这个位置在那边。
     if (!missing && _view == RefBlockKeys.viewEmbed) return _embedCard(context);
-    final bool toCanvas = target?.kind == NoteKind.canvas;
-
     final Color base = missing ? scheme.error : scheme.primary;
     return MouseRegion(
       cursor: missing ? SystemMouseCursors.basic : SystemMouseCursors.click,
@@ -208,7 +206,7 @@ class _RefBlockComponentWidgetState
           ),
           child: Row(
             children: <Widget>[
-              tabler.LinkOff(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(base, ui.BlendMode.srcIn)),
+              tabler.LinkOff(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(base, ui.BlendMode.srcIn)),
               const SizedBox(width: Tokens.spaceSm),
               Expanded(
                 child: Text(
@@ -272,7 +270,7 @@ class _RefBlockComponentWidgetState
             onTap: () => widget.bridge?.open(_refType, _refId),
             child: Row(
               children: <Widget>[
-                tabler.LayoutDashboard(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+                tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -320,7 +318,7 @@ class _RefBlockComponentWidgetState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            tabler.Checkbox(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(done ? scheme.primary : scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+            tabler.Checkbox(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(done ? scheme.primary : scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
             const SizedBox(width: 6),
             Expanded(child: Text(line.text, style: base)),
           ],
