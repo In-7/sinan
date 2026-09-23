@@ -130,7 +130,7 @@ class _MenuRow extends StatelessWidget {
     this.trailing,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final String? trailing;
   final VoidCallback onTap;
@@ -152,7 +152,7 @@ class _MenuRow extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              Icon(icon, size: 20, color: scheme.onSurface),
+              icon,
               const SizedBox(width: Tokens.spaceSm + 4),
               Text(label, style: theme.textTheme.bodyMedium),
               if (trailing != null) ...<Widget>[

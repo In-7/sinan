@@ -1765,7 +1765,7 @@ class _HistoryButton extends StatelessWidget {
 
   /// 测试定位用 key（'editor.undo' / 'editor.redo'）。
   final String itemKey;
-  final IconData icon;
+  final Widget icon;
   final String tooltip;
 
   /// 可用（历史栈非空）；false ⇒ 灰显且不可点。
@@ -1799,7 +1799,7 @@ class _HistoryButton extends StatelessWidget {
             alpha: 0.38,
           ),
         ),
-        icon: Icon(icon, size: Tokens.iconSm),
+        icon: icon,
       ),
     );
   }
@@ -1824,7 +1824,7 @@ class _EarButton extends StatelessWidget {
 
   /// 测试定位用 key（'editor.ear.find' / 'editor.ear.toc'）。
   final String itemKey;
-  final IconData icon;
+  final Widget icon;
   final String tooltip;
   final VoidCallback onPressed;
 
@@ -1850,11 +1850,7 @@ class _EarButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
         ),
       ),
-      icon: Icon(
-        icon,
-        size: Tokens.iconSm,
-        color: active ? scheme.onSurface : scheme.onSurfaceVariant,
-      ),
+      icon: icon,
     );
   }
 }

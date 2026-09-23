@@ -378,7 +378,7 @@ bool _inTextBlock(EditorState editorState) {
 /// **没有反馈**，只在 2026-09-15 实机反馈后才补上。）
 Widget _iconItem({
   required BuildContext context,
-  required IconData icon,
+  required Widget icon,
   required Color? iconColor,
   required Color highlightColor,
   required VoidCallback? onPressed,
@@ -396,7 +396,7 @@ Widget _iconItem({
       onPressed == null ? base.withValues(alpha: base.a * 0.35) : base;
   return SVGIconItemWidget(
     iconBuilder: (BuildContext context) =>
-        Icon(icon, size: Tokens.iconSm, color: color),
+        icon,
     isHighlight: isHighlight,
     highlightColor: highlightColor,
     iconColor: color,

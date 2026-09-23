@@ -13,20 +13,14 @@ class SelectionMenuIconWidget extends StatelessWidget {
   }
 
   final String? name;
-  final IconData? icon;
+  final Widget? icon;
   final bool isSelected;
   final SelectionMenuStyle style;
 
   @override
   Widget build(BuildContext context) {
     if (icon != null) {
-      return Icon(
-        icon,
-        size: 18.0,
-        color: isSelected
-            ? style.selectionMenuItemSelectedIconColor
-            : style.selectionMenuItemIconColor,
-      );
+      return SizedBox(width: 18.0, height: 18.0, child: icon);
     } else if (name != null) {
       return EditorSvg(
         name: 'selection_menu/$name',

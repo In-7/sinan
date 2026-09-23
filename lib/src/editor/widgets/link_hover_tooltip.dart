@@ -392,7 +392,7 @@ class _PanelAction extends StatefulWidget {
     required this.onPressed,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final VoidCallback onPressed;
 
@@ -429,11 +429,7 @@ class _PanelActionState extends State<_PanelAction> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
-                widget.icon,
-                size: Tokens.iconSm,
-                color: scheme.onSurfaceVariant,
-              ),
+              widget.icon,
               const SizedBox(width: Tokens.spaceXs),
               Text(
                 widget.label,

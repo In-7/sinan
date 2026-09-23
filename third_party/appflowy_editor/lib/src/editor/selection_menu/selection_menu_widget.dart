@@ -113,7 +113,7 @@ class SelectionMenuItem {
     required List<String> keywords,
     required Node Function(EditorState editorState, BuildContext context)
         nodeBuilder,
-    IconData? iconData,
+    Widget? iconData,
     Widget Function(
       EditorState editorState,
       bool onSelected,
@@ -138,12 +138,10 @@ class SelectionMenuItem {
       nameBuilder: nameBuilder,
       icon: (editorState, onSelected, style) {
         if (iconData != null) {
-          return Icon(
-            iconData,
-            color: onSelected
-                ? style.selectionMenuItemSelectedIconColor
-                : style.selectionMenuItemIconColor,
-            size: 18.0,
+          return SizedBox(
+            width: 18.0,
+            height: 18.0,
+            child: iconData,
           );
         } else if (iconBuilder != null) {
           return iconBuilder.call(editorState, onSelected, style);

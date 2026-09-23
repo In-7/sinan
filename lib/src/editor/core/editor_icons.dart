@@ -9,7 +9,7 @@
 /// 到 Tabler 控件 —— 于是编辑器内不再混两种字形语言。
 ///
 /// **未登记的名字返回 null ⇒ 自动回落官方 SVG**。注意这是**防御性**兜底、
-/// 不是现状：官方**现有**的图标资源已**全部登记**（editor_icons_test.dart
+/// 不是现状：官方**现有**的图标资源已**全部登记**（`editor_icons_test.dart`
 /// 直接读 `third_party/appflowy_editor/assets/images` 逐项核对，缺一个就红）。
 /// 回落只在"上游升级新增了图标、我们还没登记"时生效。
 ///
@@ -33,15 +33,9 @@ typedef EditorIconBuilder = Widget Function({
 
 const double _editorStroke = 1.5;
 
-/// 用统一描边 + 着色封装任意 Tabler 控件构造器。
-Widget _icon(
-  Widget Function({
-    double? height,
-    double? width,
-    Color? color,
-    double? strokeWidth,
-    ui.ColorFilter? colorFilter,
-  }) ctor, {
+Widget _mk({
+  required Widget Function({double? height, double? width, Color? color, double? strokeWidth})
+      ctor,
   required double height,
   required double width,
   Color? color,
@@ -55,82 +49,97 @@ Widget _icon(
   );
 }
 
-/// 构造器封装：把 Tabler 控件类（构造器 tearoff）包成 [EditorIconBuilder]。
-Widget Function({double height, double width, Color? color}) _eb(
-  Widget Function({
-    double? height,
-    double? width,
-    Color? color,
-    double? strokeWidth,
-    ui.ColorFilter? colorFilter,
-  }) ctor,
-) =>
-    ({double height = 24, double width = 24, Color? color}) =>
-        _icon(ctor, height: height, width: width, color: color);
-
-final Map<String, EditorIconBuilder> kEditorIcons = <String, EditorIconBuilder>{
+const Map<String, EditorIconBuilder> kEditorIcons = <String, EditorIconBuilder>{
   // ── 顶部工具栏（官方 toolbar/*）────────────────────────────────
-  'toolbar/text': _eb(tabler.Typography),
-  'toolbar/h1': _eb(tabler.H1),
-  'toolbar/h2': _eb(tabler.H2),
-  'toolbar/h3': _eb(tabler.H3),
-  'toolbar/bold': _eb(tabler.Bold),
-  'toolbar/italic': _eb(tabler.Italic),
-  'toolbar/underline': _eb(tabler.Underline),
-  'toolbar/strikethrough': _eb(tabler.Strikethrough),
-  'toolbar/code': _eb(tabler.Code),
-  'toolbar/bulleted_list': _eb(tabler.List),
-  'toolbar/numbered_list': _eb(tabler.ListNumbers),
-  'toolbar/quote': _eb(tabler.Quote),
-  'toolbar/left': _eb(tabler.AlignLeft),
-  'toolbar/center': _eb(tabler.AlignCenter),
-  'toolbar/right': _eb(tabler.AlignRight),
-  'toolbar/divider': _eb(tabler.Minus),
-  'toolbar/link': _eb(tabler.Link),
-  'toolbar/text_color': _eb(tabler.TextColor),
-  'toolbar/highlight_color': _eb(tabler.Highlight),
-  'toolbar/text_direction_auto': _eb(tabler.ArrowLeftRight),
-  'toolbar/text_direction_ltr': _eb(tabler.TextDirectionLtr),
-  'toolbar/text_direction_rtl': _eb(tabler.TextDirectionRtl),
+  'toolbar/text': (h, w, c) => _mk(ctor: tabler.Typography, height: h, width: w, color: c),
+  'toolbar/h1': (h, w, c) => _mk(ctor: tabler.H1, height: h, width: w, color: c),
+  'toolbar/h2': (h, w, c) => _mk(ctor: tabler.H2, height: h, width: w, color: c),
+  'toolbar/h3': (h, w, c) => _mk(ctor: tabler.H3, height: h, width: w, color: c),
+  'toolbar/bold': (h, w, c) => _mk(ctor: tabler.Bold, height: h, width: w, color: c),
+  'toolbar/italic': (h, w, c) => _mk(ctor: tabler.Italic, height: h, width: w, color: c),
+  'toolbar/underline': (h, w, c) =>
+      _mk(ctor: tabler.Underline, height: h, width: w, color: c),
+  'toolbar/strikethrough': (h, w, c) =>
+      _mk(ctor: tabler.Strikethrough, height: h, width: w, color: c),
+  'toolbar/code': (h, w, c) => _mk(ctor: tabler.Code, height: h, width: w, color: c),
+  'toolbar/bulleted_list': (h, w, c) =>
+      _mk(ctor: tabler.List, height: h, width: w, color: c),
+  'toolbar/numbered_list': (h, w, c) =>
+      _mk(ctor: tabler.ListNumbers, height: h, width: w, color: c),
+  'toolbar/quote': (h, w, c) => _mk(ctor: tabler.Quote, height: h, width: w, color: c),
+  'toolbar/left': (h, w, c) =>
+      _mk(ctor: tabler.AlignLeft, height: h, width: w, color: c),
+  'toolbar/center': (h, w, c) =>
+      _mk(ctor: tabler.AlignCenter, height: h, width: w, color: c),
+  'toolbar/right': (h, w, c) =>
+      _mk(ctor: tabler.AlignRight, height: h, width: w, color: c),
+  'toolbar/divider': (h, w, c) => _mk(ctor: tabler.Minus, height: h, width: w, color: c),
+  'toolbar/link': (h, w, c) => _mk(ctor: tabler.Link, height: h, width: w, color: c),
+  'toolbar/text_color': (h, w, c) =>
+      _mk(ctor: tabler.TextColor, height: h, width: w, color: c),
+  'toolbar/highlight_color': (h, w, c) =>
+      _mk(ctor: tabler.Highlight, height: h, width: w, color: c),
+  'toolbar/text_direction_auto': (h, w, c) =>
+      _mk(ctor: tabler.ArrowLeftRight, height: h, width: w, color: c),
+  'toolbar/text_direction_ltr': (h, w, c) =>
+      _mk(ctor: tabler.TextDirectionLtr, height: h, width: w, color: c),
+  'toolbar/text_direction_rtl': (h, w, c) =>
+      _mk(ctor: tabler.TextDirectionRtl, height: h, width: w, color: c),
 
   // ── 斜杠菜单（官方 selection_menu/*）──────────────────────────
-  'selection_menu/text': _eb(tabler.Typography),
-  'selection_menu/h1': _eb(tabler.H1),
-  'selection_menu/h2': _eb(tabler.H2),
-  'selection_menu/h3': _eb(tabler.H3),
-  'selection_menu/bulleted_list': _eb(tabler.List),
-  'selection_menu/number': _eb(tabler.ListNumbers),
-  'selection_menu/checkbox': _eb(tabler.Checkbox),
-  'selection_menu/quote': _eb(tabler.Quote),
-  'selection_menu/image': _eb(tabler.Photo),
+  'selection_menu/text': (h, w, c) =>
+      _mk(ctor: tabler.Typography, height: h, width: w, color: c),
+  'selection_menu/h1': (h, w, c) => _mk(ctor: tabler.H1, height: h, width: w, color: c),
+  'selection_menu/h2': (h, w, c) => _mk(ctor: tabler.H2, height: h, width: w, color: c),
+  'selection_menu/h3': (h, w, c) => _mk(ctor: tabler.H3, height: h, width: w, color: c),
+  'selection_menu/bulleted_list': (h, w, c) =>
+      _mk(ctor: tabler.List, height: h, width: w, color: c),
+  'selection_menu/number': (h, w, c) =>
+      _mk(ctor: tabler.ListNumbers, height: h, width: w, color: c),
+  'selection_menu/checkbox': (h, w, c) =>
+      _mk(ctor: tabler.Checkbox, height: h, width: w, color: c),
+  'selection_menu/quote': (h, w, c) =>
+      _mk(ctor: tabler.Quote, height: h, width: w, color: c),
+  'selection_menu/image': (h, w, c) =>
+      _mk(ctor: tabler.Photo, height: h, width: w, color: c),
 
   // ── 图片工具条（官方 image_toolbar/*）──────────────────────────
-  'image_toolbar/align_left': _eb(tabler.AlignLeft),
-  'image_toolbar/align_center': _eb(tabler.AlignCenter),
-  'image_toolbar/align_right': _eb(tabler.AlignRight),
-  'image_toolbar/copy': _eb(tabler.Copy),
-  'image_toolbar/delete': _eb(tabler.Trash),
-  'image_toolbar/divider': _eb(tabler.Minus),
-  'image_toolbar/share': _eb(tabler.Share),
+  'image_toolbar/align_left': (h, w, c) =>
+      _mk(ctor: tabler.AlignLeft, height: h, width: w, color: c),
+  'image_toolbar/align_center': (h, w, c) =>
+      _mk(ctor: tabler.AlignCenter, height: h, width: w, color: c),
+  'image_toolbar/align_right': (h, w, c) =>
+      _mk(ctor: tabler.AlignRight, height: h, width: w, color: c),
+  'image_toolbar/copy': (h, w, c) => _mk(ctor: tabler.Copy, height: h, width: w, color: c),
+  'image_toolbar/delete': (h, w, c) =>
+      _mk(ctor: tabler.Trash, height: h, width: w, color: c),
+  'image_toolbar/divider': (h, w, c) =>
+      _mk(ctor: tabler.Minus, height: h, width: w, color: c),
+  'image_toolbar/share': (h, w, c) =>
+      _mk(ctor: tabler.Share, height: h, width: w, color: c),
 
   // ── 无前缀的零散名（色板勾选 / 链接菜单 / 查找替换 / 表格操作）──
-  'checkmark': _eb(tabler.Check), // 色板里的"已选"
+  'checkmark': (h, w, c) => _mk(ctor: tabler.Check, height: h, width: w, color: c),
   // 待办勾选：✓ 改为"方框内带勾"（checkbox），符合"点框内出现对号"的直觉，
   // 且与斜杠菜单的 selection_menu/checkbox 图标统一；uncheck 仍是空心方框。
-  'check': _eb(tabler.Checkbox),
-  'uncheck': _eb(tabler.Square),
-  'clear': _eb(tabler.X),
-  'copy': _eb(tabler.Copy),
-  'delete': _eb(tabler.Trash),
-  'link': _eb(tabler.Link),
-  'point': _eb(tabler.Mouse),
-  'quote': _eb(tabler.Quote),
-  'regex': _eb(tabler.Function),
-  'case_sensitive': _eb(tabler.LetterCase),
-  'image': _eb(tabler.Photo),
-  'reset_text_color': _eb(tabler.Rotate),
-  'clear_highlight_color': _eb(tabler.Eraser),
-  'upload_image': _eb(tabler.FileUpload),
+  'check': (h, w, c) => _mk(ctor: tabler.Checkbox, height: h, width: w, color: c),
+  'uncheck': (h, w, c) => _mk(ctor: tabler.Square, height: h, width: w, color: c),
+  'clear': (h, w, c) => _mk(ctor: tabler.X, height: h, width: w, color: c),
+  'copy': (h, w, c) => _mk(ctor: tabler.Copy, height: h, width: w, color: c),
+  'delete': (h, w, c) => _mk(ctor: tabler.Trash, height: h, width: w, color: c),
+  'link': (h, w, c) => _mk(ctor: tabler.Link, height: h, width: w, color: c),
+  'point': (h, w, c) => _mk(ctor: tabler.Mouse, height: h, width: w, color: c),
+  'quote': (h, w, c) => _mk(ctor: tabler.Quote, height: h, width: w, color: c),
+  'regex': (h, w, c) => _mk(ctor: tabler.$Function, height: h, width: w, color: c),
+  'case_sensitive': (h, w, c) =>
+      _mk(ctor: tabler.LetterCase, height: h, width: w, color: c),
+  'image': (h, w, c) => _mk(ctor: tabler.Photo, height: h, width: w, color: c),
+  'reset_text_color': (h, w, c) =>
+      _mk(ctor: tabler.Rotate, height: h, width: w, color: c),
+  'clear_highlight_color': (h, w, c) =>
+      _mk(ctor: tabler.Eraser, height: h, width: w, color: c),
+  'upload_image': (h, w, c) =>
+      _mk(ctor: tabler.FileUpload, height: h, width: w, color: c),
 };
 
 /// 安装到官方渲染层（幂等；启动时调一次即可，见 `main.dart`）。

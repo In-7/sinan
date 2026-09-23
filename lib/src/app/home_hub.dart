@@ -171,7 +171,7 @@ class HomeHub extends ConsumerWidget {
   }
 }
 
-IconData _iconOf(Note note) => note.kind == NoteKind.canvas
+Widget _iconOf(Note note) => note.kind == NoteKind.canvas
     ? tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5)
     : tabler.FileText(height: 24, width: 24, strokeWidth: 1.5);
 
@@ -323,7 +323,7 @@ class _HubCard extends StatefulWidget {
     this.size = _CardSize.medium,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -405,11 +405,7 @@ class _HubCardState extends State<_HubCard> {
     children: <Widget>[
       Row(
         children: <Widget>[
-          Icon(
-            widget.icon,
-            size: 20,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          widget.icon,
           const Spacer(),
           if (widget.trailing != null) widget.trailing!,
         ],
@@ -439,11 +435,7 @@ class _HubCardState extends State<_HubCard> {
     children: <Widget>[
       Row(
         children: <Widget>[
-          Icon(
-            widget.icon,
-            size: 18,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+          widget.icon,
           const SizedBox(width: Tokens.spaceSm),
           Expanded(
             child: Text(
@@ -472,7 +464,7 @@ class _HubCardState extends State<_HubCard> {
   /// 小卡：横排（图标 + 标题 + 说明 + 右侧动作）。
   Widget _smallBody(ThemeData theme) => Row(
     children: <Widget>[
-      Icon(widget.icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+      widget.icon,
       const SizedBox(width: Tokens.spaceMd),
       Expanded(
         child: Column(

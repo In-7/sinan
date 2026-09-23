@@ -382,11 +382,7 @@ class _PaletteRow extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(
-              _groupIcon(command.group),
-              size: Tokens.iconSm,
-              color: foreground,
-            ),
+            _groupIcon(command.group),
             const SizedBox(width: Tokens.spaceMd),
             Expanded(
               child: Text(
@@ -441,7 +437,7 @@ String _groupLabel(CommandGroup group) => switch (group) {
 
 /// 分组图标（复用仓库里已有的 Lucide 字形；`app` 用 info 是因为
 /// `lucide_icons_flutter` 的这套 300 档里没有齿轮，等换图标族时一起处理）。
-IconData _groupIcon(CommandGroup group) => switch (group) {
+Widget _groupIcon(CommandGroup group) => switch (group) {
   CommandGroup.file => tabler.FileText(height: 24, width: 24, strokeWidth: 1.5),
   CommandGroup.edit => tabler.Edit(height: 24, width: 24, strokeWidth: 1.5),
   CommandGroup.navigate => tabler.List(height: 24, width: 24, strokeWidth: 1.5),

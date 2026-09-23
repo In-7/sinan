@@ -50,7 +50,7 @@ class CanvasPanelSlider extends StatelessWidget {
 class CanvasInkDotIcon extends StatelessWidget {
   const CanvasInkDotIcon({super.key, required this.icon, required this.ink});
 
-  final IconData icon;
+  final Widget icon;
 
   /// 已解析成实际绘制色的颜色（哨兵要先解析，否则暗色下发黑）。
   final Color ink;
@@ -60,7 +60,7 @@ class CanvasInkDotIcon extends StatelessWidget {
     return Stack(
       alignment: Alignment.center,
       children: <Widget>[
-        Icon(icon, size: Tokens.iconSm),
+        icon,
         Positioned(
           right: 0,
           bottom: 0,

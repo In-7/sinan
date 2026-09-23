@@ -104,7 +104,7 @@ class _MenuItem extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final VoidCallback onTap;
 
@@ -121,11 +121,7 @@ class _MenuItem extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(
-              icon,
-              size: Tokens.iconSm,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            icon,
             const SizedBox(width: Tokens.spaceSm),
             Text(label, style: theme.textTheme.bodyMedium),
           ],

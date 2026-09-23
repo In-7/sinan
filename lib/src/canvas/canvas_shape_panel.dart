@@ -35,7 +35,7 @@ class CanvasShapeButton extends StatelessWidget {
                     tooltip: '图形属性：颜色 / 填充 / 描边',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: CanvasInkDottabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
+                    icon: tabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
                   ),
           // 滑杆/色板要连着调，不需要"选完即关"（同笔刷面板）。
           builder: (BuildContext context, VoidCallback _) =>

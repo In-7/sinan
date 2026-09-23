@@ -5,7 +5,8 @@ import 'dart:convert';
 import 'package:appflowy_editor/appflowy_editor.dart';
 // 只用到 BuildContext（句柄签名要求）；widgets 层是两套 Material 共用的，
 // 这里不需要也不该牵进任何一方的 Material。
-import 'package:flutter/widgets.dart';import '../../notes/services/attachment_meta.dart';
+import 'package:flutter/widgets.dart';
+import '../../notes/services/attachment_meta.dart';
 import '../../notes/services/formula_render.dart';
 import '../../notes/services/note_media_service.dart';
 import '../blocks/attachment_block_component.dart';
@@ -71,7 +72,7 @@ SelectionMenuStyle sinanSlashMenuStyle({
 ///
 /// 条目形态照官方（如 `dividerMenuItem` / `tableMenuItem`）写：
 /// `getName` + `icon`（官方 [SelectionMenuIconWidget] 渲染，我们的图标是
-/// Lucide 字体图标，它本来就收 `IconData`）+ `keywords`（中英都给，中文用户
+/// Lucide 字体图标，它本来就收 `Widget`）+ `keywords`（中英都给，中文用户
 /// 会直接打汉字）+ `handler`。
 List<SelectionMenuItem> sinanSelectionMenuItems() {
   return _withChineseKeywords(<SelectionMenuItem>[
@@ -157,7 +158,7 @@ bool _isNotMaterialIconItem(SelectionMenuItem item) =>
 
 /// 表格：**语义照抄官方 `tableMenuItem`**，只换图标。
 ///
-/// `SelectionMenuIconWidget` 本身收 `IconData`，所以换图标**不需要任何补丁**。
+/// `SelectionMenuIconWidget` 本身收 `Widget`，所以换图标**不需要任何补丁**。
 /// 行为与官方逐字一致：光标所在块为空 ⇒ **就地替换**（不留多余空段落），
 /// 非空则插到下一行；收尾把光标放进新表格左上单元格。
 final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
@@ -330,7 +331,7 @@ final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
 final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
   getName: () => '公式',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: tabler.Function(height: 24, width: 24, strokeWidth: 1.5),
+    icon: tabler.$Function(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),

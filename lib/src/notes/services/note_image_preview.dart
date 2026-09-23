@@ -215,14 +215,14 @@ class _ToolButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String tooltip;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(icon, size: 18, color: Colors.white70),
+      icon: icon,
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,
       onPressed: onTap,

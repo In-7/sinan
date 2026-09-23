@@ -4,6 +4,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:provider/provider.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'attachment_block_component.dart';
 import 'block_markers.dart';
@@ -556,7 +557,7 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           _HandleButton(
-            icon: Icons.add,
+            icon: tabler.Plus(height: 16, width: 16, strokeWidth: 1.5),
             color: color,
             tooltip: _addButtonTooltip,
             onTap: () => _addBlock(editorState, node, context),
@@ -590,7 +591,7 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
                 Widget? child,
               ) =>
                   _HandleButton(
-                icon: Icons.drag_indicator_rounded,
+                icon: tabler.GripVertical(height: 16, width: 16, strokeWidth: 1.5),
                 color: color,
                 tooltip: _dragButtonTooltip,
                 cursor: SystemMouseCursors.grab,
@@ -618,7 +619,7 @@ class _HandleButton extends StatelessWidget {
     this.showTooltip = true,
   });
 
-  final IconData icon;
+  final Widget icon;
   final Color color;
 
   /// 富文本提示（**两行**：主要动作 + 次要动作）——结构照官方
@@ -642,7 +643,7 @@ class _HandleButton extends StatelessWidget {
         child: SizedBox(
           width: _SinanBlockHandle._buttonSize,
           height: _SinanBlockHandle._buttonSize,
-          child: Icon(icon, size: _SinanBlockHandle._iconSize, color: color),
+          child: icon,
         ),
       ),
     );

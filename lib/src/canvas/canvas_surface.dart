@@ -290,13 +290,13 @@ class _CanvasToolbar extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (BuildContext context, Widget? child) {
-        Widget toolButton(CanvasTool tool, IconData icon, String tooltip) {
+        Widget toolButton(CanvasTool tool, Widget icon, String tooltip) {
           final bool selected = controller.tool == tool;
           // `FocusRingIconButton`：统一焦点环（§5.2）。工具条本来键盘可达
           // （`IconButton` 自带焦点），缺的是"我在哪"的表达——此前只有 M3
           // 那层淡色状态层，键盘用户在 11 个同形按钮里看不出自己在哪个上。
           return FocusRingIconButton(
-            icon: Icon(icon, size: Tokens.iconSm),
+            icon: icon,
             tooltip: tooltip,
             style: ButtonStyle(
               // 选中态直接用主题主色（real 种子色），不借派生色角色——

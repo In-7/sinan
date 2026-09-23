@@ -14,8 +14,8 @@ import 'settings_panel.dart' show showSettingsPanel;
 ///
 /// ⚠️ 除 0（主页）外都是**占位**——对应页面还没建。接新页面时：往这里加一项、挂进
 /// [hubNavGroups] 的某个组，再在 `home_screen.dart` 的主页分支按 index 分发。
-const List<({IconData icon, String label})> hubNavItems =
-    <({IconData icon, String label})>[
+const List<({Widget icon, String label})> hubNavItems =
+    <({Widget icon, String label})>[
       (icon: tabler.LayoutDashboard(height: 24, width: 24, strokeWidth: 1.5), label: '主页'),
       (icon: tabler.FileText(height: 24, width: 24, strokeWidth: 1.5), label: '全部笔记'),
       (icon: tabler.Crop(height: 24, width: 24, strokeWidth: 1.5), label: '画布'),
@@ -202,7 +202,7 @@ class _NavItem extends StatefulWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -252,13 +252,7 @@ class _NavItemState extends State<_NavItem> {
               child: Row(
                 children: <Widget>[
                   const SizedBox(width: 10),
-                  Icon(
-                    widget.icon,
-                    size: 18,
-                    color: widget.selected
-                        ? theme.colorScheme.onSurface
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
+                  widget.icon,
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(

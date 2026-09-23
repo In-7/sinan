@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
@@ -109,7 +110,7 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
 
   @override
   Widget build(BuildContext context) {
-    final IconData icon = switch (widget.align) {
+    final Widget icon = switch (widget.align) {
       'center' => tabler.AlignCenter(height: 24, width: 24, strokeWidth: 1.5),
       'right' => tabler.AlignRight(height: 24, width: 24, strokeWidth: 1.5),
       _ => tabler.AlignLeft(height: 24, width: 24, strokeWidth: 1.5),
@@ -121,8 +122,8 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
       iconBuilder: (BuildContext context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: Tokens.iconSm, color: color),
-          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7, ui.BlendMode.srcIn))),
+          icon,
+          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withOpacity(0.7), ui.BlendMode.srcIn)),
         ],
       ),
       isHighlight: false,
@@ -138,7 +139,7 @@ class _AlignOption {
 
   final String align;
   final String label;
-  final IconData icon;
+  final Widget icon;
   final String shortcut;
 }
 
@@ -203,13 +204,7 @@ class _AlignOverlay extends StatelessWidget {
                     ),
                     child: Row(
                       children: <Widget>[
-                        Icon(
-                          o.icon,
-                          size: Tokens.iconSm,
-                          color: active
-                              ? scheme.onSurface
-                              : scheme.onSurfaceVariant,
-                        ),
+                        o.icon,
                         const SizedBox(width: Tokens.spaceSm),
                         Expanded(
                           child: Text(

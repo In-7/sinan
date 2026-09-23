@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
@@ -95,7 +96,7 @@ class _BlockStyle {
 
   final int? level;
   final String label;
-  final IconData icon;
+  final Widget icon;
   final String shortcut;
 }
 
@@ -176,8 +177,8 @@ class _SinanHeadingButtonState extends State<_SinanHeadingButton> {
       iconBuilder: (BuildContext context) => Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(current.icon, size: Tokens.iconSm, color: color),
-          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7, ui.BlendMode.srcIn))),
+          current.icon,
+          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withOpacity(0.7), ui.BlendMode.srcIn)),
         ],
       ),
       // 光标落在标题里时点亮（"你在某级标题上"），与旧的四按钮行为等价。
@@ -273,7 +274,7 @@ class _HeadingOverlay extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(style.icon, size: Tokens.iconSm, color: color),
+            style.icon,
             const SizedBox(width: Tokens.spaceSm),
             Expanded(
               child: Text(

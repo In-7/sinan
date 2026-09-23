@@ -488,7 +488,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
 
   Widget _action(
     BuildContext context, {
-    required IconData icon,
+    required Widget icon,
     required String label,
     required VoidCallback onPressed,
   }) {
@@ -497,7 +497,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: Tokens.iconSm),
+        icon: icon,
         label: Text(label),
         style: TextButton.styleFrom(
           foregroundColor: scheme.onSurfaceVariant,

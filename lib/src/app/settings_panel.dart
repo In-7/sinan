@@ -79,7 +79,7 @@ extension _SettingsSectionSpec on _SettingsSection {
     _SettingsSection.about => '关于',
   };
 
-  IconData get icon => switch (this) {
+  Widget get icon => switch (this) {
     _SettingsSection.appearance => tabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
     _SettingsSection.editor => tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5),
     _SettingsSection.ai => tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
@@ -543,13 +543,7 @@ class _NavTileState extends State<_NavTile> {
                     : null,
                 child: Row(
                   children: <Widget>[
-                    Icon(
-                      widget.section.icon,
-                      size: Tokens.iconSm,
-                      color: widget.selected
-                          ? scheme.onSurface
-                          : scheme.onSurfaceVariant,
-                    ),
+                    widget.section.icon,
                     const SizedBox(width: Tokens.spaceSm),
                     Text(
                       widget.section.label,

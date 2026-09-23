@@ -260,7 +260,7 @@ class _NoteTileState extends State<_NoteTile> {
   }
 
   PopupMenuItem<void> _menuItem({
-    required IconData icon,
+    required Widget icon,
     required String label,
     required VoidCallback onTap,
     bool danger = false,
@@ -271,7 +271,7 @@ class _NoteTileState extends State<_NoteTile> {
       onTap: onTap,
       child: Row(
         children: <Widget>[
-          Icon(icon, size: Tokens.iconSm, color: color),
+          icon,
           const SizedBox(width: Tokens.spaceSm),
           Text(label, style: TextStyle(color: color)),
         ],
