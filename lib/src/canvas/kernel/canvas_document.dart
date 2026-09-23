@@ -298,10 +298,17 @@ class CanvasDocument {
       final CanvasItem? from = itemByBlockId(edge.fromId);
       final CanvasItem? to = itemByBlockId(edge.toId);
       if (from == null || to == null) continue;
-      final EdgeGeometry? geo = CanvasEdges.geometryOf(edge, from.rect, to.rect);
+      final EdgeGeometry? geo = CanvasEdges.geometryOf(
+        edge,
+        from.rect,
+        to.rect,
+      );
       if (geo == null) continue;
       // 粗筛：两端锚点的包围盒（放宽 64 —— 贝塞尔的控制点会甩到盒外一点）。
-      if (!Rect.fromPoints(geo.from, geo.to).inflate(64).overlaps(worldViewport)) {
+      if (!Rect.fromPoints(
+        geo.from,
+        geo.to,
+      ).inflate(64).overlaps(worldViewport)) {
         continue;
       }
       out.add(geo);
@@ -324,7 +331,11 @@ class CanvasDocument {
       final CanvasItem? from = itemByBlockId(edge.fromId);
       final CanvasItem? to = itemByBlockId(edge.toId);
       if (from == null || to == null) continue;
-      final EdgeGeometry? geo = CanvasEdges.geometryOf(edge, from.rect, to.rect);
+      final EdgeGeometry? geo = CanvasEdges.geometryOf(
+        edge,
+        from.rect,
+        to.rect,
+      );
       if (geo == null) continue;
       final double d = _distanceToPath(geo.path(), world);
       if (d <= bestDist) {
@@ -651,7 +662,7 @@ class CanvasDocument {
     final Map<String, dynamic> doc = CanvasMigrations.migrate(j);
 
     final CanvasDocument out = CanvasDocument();
-    final dynamic strokesRaw = doc['strokes'];
+    final Object? strokesRaw = doc['strokes'];
     if (strokesRaw is Map) {
       (strokesRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
         if (v is! Map<String, dynamic>) return;
@@ -659,7 +670,7 @@ class CanvasDocument {
         out._strokes[st.id] = st;
       });
     }
-    final dynamic itemsRaw = doc['items'];
+    final Object? itemsRaw = doc['items'];
     if (itemsRaw is Map) {
       (itemsRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
         if (v is! Map<String, dynamic>) return;
@@ -668,10 +679,11 @@ class CanvasDocument {
       });
     }
     // z 序：显式数组（迁移已保证存在）。非 String 的脏元素跳过。
-    for (final dynamic id in (doc['strokeOrder'] as List?) ?? const <dynamic>[]) {
+    for (final Object? id
+        in (doc['strokeOrder'] as List?) ?? const <Object?>[]) {
       if (id is String) out._strokeOrder.add(id);
     }
-    for (final dynamic id in (doc['itemOrder'] as List?) ?? const <dynamic>[]) {
+    for (final Object? id in (doc['itemOrder'] as List?) ?? const <Object?>[]) {
       if (id is String) out._itemOrder.add(id);
     }
 
@@ -681,7 +693,7 @@ class CanvasDocument {
     // `advanceItemIdSequence` 的说明）。
     // 连线（v9，**可选键**）：缺即空。与 items 不同它没有 z 序数组 —— 连线
     // 无所谓谁上谁下，只有一条序列化顺序。
-    final dynamic edgesRaw = doc['edges'];
+    final Object? edgesRaw = doc['edges'];
     if (edgesRaw is Map) {
       (edgesRaw as Map<Object?, Object?>).forEach((Object? k, Object? v) {
         if (v is! Map<String, dynamic>) return;

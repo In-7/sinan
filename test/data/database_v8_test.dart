@@ -7,7 +7,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// 与 v7 那份同口径——这一版还没有 UI 消费新表（处在五步纪律的"双写"阶段），所以
 /// 重点是把设计约束钉死：
 /// 1. 两张新表齐备（`ink_shards` 是 v7 就有的，画布笔迹直接用它）；
-/// 2. `vec_chunks` / `vec_map` **仍然缺席**（评审结论：成对延后到接入 Ollama）；
+/// 2. `vec_chunks` 已由 v10 落地（机制 A）；`vec_map`（vec0 时代的 rowid 映射）不应存在；
 /// 3. 外键级联、`json_valid` CHECK、`userVersion` 前进三者都成立。
 void main() {
   Database openMigrated() {
@@ -34,7 +34,7 @@ void main() {
       r['name'] as String,
   ];
 
-  test('v8：画布表齐备，vec 表仍按约定缺席，userVersion 前进到 8', () {
+  test('v8：画布表齐备，userVersion 前进到 8', () {
     final Database db = openMigrated();
 
     expect(db.userVersion, greaterThanOrEqualTo(8));
@@ -49,8 +49,8 @@ void main() {
     ]) {
       expect(names, contains(t), reason: '缺少表 $t');
     }
-    // v7 的约定继续有效：sqlite-vec 那两张成对延后。
-    expect(names, isNot(contains('vec_chunks')));
+    // v10 已落地向量路（机制 A）：vec_chunks 是普通表；vec_map 不该存在。
+    expect(names, contains('vec_chunks'));
     expect(names, isNot(contains('vec_map')));
   });
 
@@ -123,7 +123,9 @@ void main() {
       "('s1','c1','image',0,0,0,1,1,1,1,'fp1:1:1')",
     );
     expect(
-      db.select("SELECT props_json FROM canvas_items WHERE id='s1'").single['props_json'],
+      db
+          .select("SELECT props_json FROM canvas_items WHERE id='s1'")
+          .single['props_json'],
       '{}',
     );
   });

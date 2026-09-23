@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../app/undo_toast.dart';
@@ -58,10 +59,7 @@ class NoteListView extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                '笔记',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              child: Text('笔记', style: Theme.of(context).textTheme.titleMedium),
             ),
           ),
         ),
@@ -96,14 +94,11 @@ class NoteListView extends ConsumerWidget {
                     selected: note.id == selectedId,
                     onTap: () => onPick(note.id),
                     onDelete: () => deleteNote(context, note),
-                    onRename: (String title) =>
-                        ref.read(notesProvider.notifier).saveTitle(
-                              note.id,
-                              title,
-                            ),
-                    onTogglePromoted: () => ref
+                    onRename: (String title) => ref
                         .read(notesProvider.notifier)
-                        .togglePromoted(note),
+                        .saveTitle(note.id, title),
+                    onTogglePromoted: () =>
+                        ref.read(notesProvider.notifier).togglePromoted(note),
                   );
                 },
               );
@@ -199,10 +194,7 @@ class _NoteTileState extends State<_NoteTile> {
     final String title = widget.note.title;
     _renameController
       ..text = title
-      ..selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: title.length,
-      );
+      ..selection = TextSelection(baseOffset: 0, extentOffset: title.length);
     setState(() => _renaming = true);
     // 菜单刚 pop、焦点还在路由上：延到帧末再抢焦点，否则会被弹层收走。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -243,18 +235,18 @@ class _NoteTileState extends State<_NoteTile> {
       ),
       items: <PopupMenuEntry<void>>[
         _menuItem(
-          icon: LucideIcons.pencil300,
+          icon: tabler.Edit(height: 24, width: 24, strokeWidth: 1.5),
           label: '重命名',
           onTap: _startRename,
         ),
         _menuItem(
-          icon: promoted ? LucideIcons.starOff300 : LucideIcons.star300,
+          icon: promoted ? tabler.Star(height: 24, width: 24, strokeWidth: 1.5) : tabler.StarFilled(height: 24, width: 24, strokeWidth: 1.5),
           label: promoted ? '取消收藏' : '收藏',
           onTap: widget.onTogglePromoted,
         ),
         const PopupMenuDivider(),
         _menuItem(
-          icon: LucideIcons.trash2300,
+          icon: tabler.Trash(height: 24, width: 24, strokeWidth: 1.5),
           label: '删除笔记',
           // 危险动作：图标与文字都用 error 色（M3 的 destructive 口径）。
           danger: true,
@@ -305,109 +297,114 @@ class _NoteTileState extends State<_NoteTile> {
             ? null
             : (TapDownDetails details) => _openMenu(details.globalPosition),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: Tokens.spaceSm,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
           child: ClipRRect(
-          borderRadius: BorderRadius.circular(Tokens.radiusMd),
-          child: ValueListenableBuilder<bool>(
-            valueListenable: _hover,
-            // 悬浮高亮用瞬切而非渐变：渐变经过半透明中间态时，
-            // 新旧两块同时半透明，观感是「闪一下」；Win11 原生
-            // 列表的悬浮反馈也是即时的。
-            builder: (context, hovered, _) {
-              // "本条正被交互"：指针在行上，**或**本条的菜单开着。
-              // 后者是 2026-09-14 补的——菜单一开指针就落到菜单上，`hovered`
-              // 随即为 false，行高亮与「···」会一起消失，于是"菜单到底对着
-              // 哪一篇"没有任何视觉线索（用户实机反馈）。
-              final bool active = hovered || _menuOpen;
-              return Container(
-                height: Tokens.noteTileHeight,
-                // 悬浮与选中同色 = 内容区画布色（明暗各一档：亮色暖纸白 /
-                // 深色 #2B2B2B）——条目浮起即「纸面」，与右栏同源，辨识度
-                // 来自色温而非深浅；选中态由指示条承担区分职责。
-                color: widget.selected || active
-                    ? AppTheme.contentCanvas(theme.brightness)
-                    : Colors.transparent,
-                child: Row(
-                  children: <Widget>[
-                    // 选中指示条：位置固定，不随文字跳动。
-                    AnimatedContainer(
-                      duration: Tokens.durationFast,
-                      width: Tokens.indicatorWidth,
-                      color: widget.selected
-                          ? scheme.onSurface
-                          : Colors.transparent,
-                    ),
-                    const SizedBox(width: Tokens.spaceMd),
-                    // 收藏标记：星标紧贴标题（不占额外宽度，无收藏时不显示）。
-                    if (widget.note.promotedAt != null) ...<Widget>[
-                      Icon(
-                        LucideIcons.star300,
-                        size: Tokens.iconSm - 4,
-                        color: scheme.onSurfaceVariant,
+            borderRadius: BorderRadius.circular(Tokens.radiusMd),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _hover,
+              // 悬浮高亮用瞬切而非渐变：渐变经过半透明中间态时，
+              // 新旧两块同时半透明，观感是「闪一下」；Win11 原生
+              // 列表的悬浮反馈也是即时的。
+              builder: (context, hovered, _) {
+                // "本条正被交互"：指针在行上，**或**本条的菜单开着。
+                // 后者是 2026-09-14 补的——菜单一开指针就落到菜单上，`hovered`
+                // 随即为 false，行高亮与「···」会一起消失，于是"菜单到底对着
+                // 哪一篇"没有任何视觉线索（用户实机反馈）。
+                final bool active = hovered || _menuOpen;
+                return Container(
+                  height: Tokens.noteTileHeight,
+                  // 三种态各有其色（§5.1 的「当前项」读法）：
+                  // - **选中**：中性 tint 底 + 左指示条 + w600（三件齐）；
+                  // - **悬浮 / 菜单开着**：纸面色（条目"浮起"即纸面，与右栏同源）；
+                  // - 其余：透明。
+                  // 此前两者同色（都是纸面色）⇒ 指针一移上来就分不清"已选"与"正悬停"。
+                  color: widget.selected
+                      ? AppTheme.navSelectedTint(scheme.onSurface)
+                      : (active
+                            ? AppTheme.contentCanvas(theme.brightness)
+                            : Colors.transparent),
+                  child: Row(
+                    children: <Widget>[
+                      // 选中指示条：位置固定，不随文字跳动。
+                      AnimatedContainer(
+                        duration: Tokens.durationFast,
+                        width: Tokens.indicatorWidth,
+                        // 指示条取 primary（`navIndicator`）：颜色随种子换，但
+                        // "有这么一根条子"不变——形状信号比色相耐换肤（§5.1）。
+                        color: widget.selected
+                            ? AppTheme.navIndicator(scheme)
+                            : Colors.transparent,
                       ),
-                      const SizedBox(width: Tokens.spaceXs),
-                    ],
-                    Expanded(
-                      child: _renaming
-                          // 就地改名：同样的字号/字色，去掉装饰，读起来还是"标题"。
-                          ? TextField(
-                              controller: _renameController,
-                              focusNode: _renameFocus,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: scheme.onSurface,
+                      const SizedBox(width: Tokens.spaceMd),
+                      // 收藏标记：星标紧贴标题（不占额外宽度，无收藏时不显示）。
+                      if (widget.note.promotedAt != null) ...<Widget>[
+                        tabler.StarFilled(height: Tokens.iconSm - 4, width: Tokens.iconSm - 4, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                        const SizedBox(width: Tokens.spaceXs),
+                      ],
+                      Expanded(
+                        child: _renaming
+                            // 就地改名：同样的字号/字色，去掉装饰，读起来还是"标题"。
+                            ? TextField(
+                                controller: _renameController,
+                                focusNode: _renameFocus,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurface,
+                                ),
+                                cursorColor: scheme.onSurface,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
+                                onSubmitted: (_) => _commitRename(),
+                              )
+                            : Text(
+                                widget.note.title.isNotEmpty
+                                    ? widget.note.title
+                                    : '无标题',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: scheme.onSurface,
+                                  // 字重是「当前项」三件的第三件（§5.1）。
+                                  fontWeight: widget.selected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              cursorColor: scheme.onSurface,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                              onSubmitted: (_) => _commitRename(),
-                            )
-                          : Text(
-                              widget.note.title.isNotEmpty
-                                  ? widget.note.title
-                                  : '无标题',
-                              style: theme.textTheme.bodyMedium
-                                  ?.copyWith(color: scheme.onSurface),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                    ),
-                    const SizedBox(width: Tokens.spaceMd),
-                    // 「···」入口：**悬停或选中时**才显形（AppFlowy 同款），
-                    // 但**位置始终占位**——否则显隐会让标题宽度跳动。
-                    // 用 IconButton 而非自绘：拿现成的 hover/splash/Tooltip。
-                    // 改名期间让位给输入框（同时避免误点）。
-                    SizedBox(
-                      width: Tokens.formatButtonHeight,
-                      child: Visibility(
-                        // 「菜单开着」时也留着它：那是"菜单从哪弹出来"的锚点，
-                        // 一起消失会让菜单显得悬空。
-                        visible: !_renaming && (widget.selected || active),
-                        // 只留占位：maintainSize 保宽高，避免标题被挤动。
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: IconButton(
-                          key: _moreKey,
-                          tooltip: '更多',
-                          padding: EdgeInsets.zero,
-                          iconSize: Tokens.iconSm,
-                          icon: const Icon(LucideIcons.ellipsisVertical300),
-                          onPressed: _openMenu,
+                      ),
+                      const SizedBox(width: Tokens.spaceMd),
+                      // 「···」入口：**悬停或选中时**才显形（AppFlowy 同款），
+                      // 但**位置始终占位**——否则显隐会让标题宽度跳动。
+                      // 用 IconButton 而非自绘：拿现成的 hover/splash/Tooltip。
+                      // 改名期间让位给输入框（同时避免误点）。
+                      SizedBox(
+                        width: Tokens.formatButtonHeight,
+                        child: Visibility(
+                          // 「菜单开着」时也留着它：那是"菜单从哪弹出来"的锚点，
+                          // 一起消失会让菜单显得悬空。
+                          visible: !_renaming && (widget.selected || active),
+                          // 只留占位：maintainSize 保宽高，避免标题被挤动。
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: IconButton(
+                            key: _moreKey,
+                            tooltip: '更多',
+                            padding: EdgeInsets.zero,
+                            iconSize: Tokens.iconSm,
+                            icon: tabler.DotsVertical(height: 24, width: 24, strokeWidth: 1.5),
+                            onPressed: _openMenu,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
-      ),
       ),
     );
     return tile;

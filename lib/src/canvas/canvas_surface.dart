@@ -1,13 +1,13 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'dart:io';
 
-import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';import 'package:material_ui/material_ui.dart';
 
 import '../notes/services/note_media_service.dart';
 import '../theme/app_float_surface.dart';
 import '../theme/app_theme.dart';
+import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'canvas_ai_button.dart';
 import 'canvas_brush_panel.dart';
@@ -292,7 +292,10 @@ class _CanvasToolbar extends StatelessWidget {
       builder: (BuildContext context, Widget? child) {
         Widget toolButton(CanvasTool tool, IconData icon, String tooltip) {
           final bool selected = controller.tool == tool;
-          return IconButton(
+          // `FocusRingIconButton`：统一焦点环（§5.2）。工具条本来键盘可达
+          // （`IconButton` 自带焦点），缺的是"我在哪"的表达——此前只有 M3
+          // 那层淡色状态层，键盘用户在 11 个同形按钮里看不出自己在哪个上。
+          return FocusRingIconButton(
             icon: Icon(icon, size: Tokens.iconSm),
             tooltip: tooltip,
             style: ButtonStyle(
@@ -364,15 +367,15 @@ class _CanvasToolbar extends StatelessWidget {
                 // 功能对齐 tldraw"重新挂回。
                 toolButton(
                   CanvasTool.select,
-                  LucideIcons.mousePointer2300,
+                  tabler.Mouse(height: 24, width: 24, strokeWidth: 1.5),
                   '选择 / 框选',
                 ),
-                toolButton(CanvasTool.pan, LucideIcons.hand300, '抓手（空格）'),
-                toolButton(CanvasTool.pen, LucideIcons.pencil300, '画笔'),
-                toolButton(CanvasTool.eraser, LucideIcons.eraser300, '橡皮'),
+                toolButton(CanvasTool.pan, tabler.HandStop(height: 24, width: 24, strokeWidth: 1.5), '抓手（空格）'),
+                toolButton(CanvasTool.pen, tabler.Edit(height: 24, width: 24, strokeWidth: 1.5), '画笔'),
+                toolButton(CanvasTool.eraser, tabler.Eraser(height: 24, width: 24, strokeWidth: 1.5), '橡皮'),
                 toolButton(
                   CanvasTool.connect,
-                  LucideIcons.gitBranch300,
+                  tabler.Hierarchy(height: 24, width: 24, strokeWidth: 1.5),
                   '连线（从一个卡片拖到另一个）',
                 ),
                 // 笔刷设置（颜色 / 笔迹粗细 / 橡皮大小）：画笔 / 橡皮工具
@@ -395,8 +398,8 @@ class _CanvasToolbar extends StatelessWidget {
                 // Wrap 里给分隔线**显式高度**：VerticalDivider 默认不限高，
                 // 在不定高的 Wrap 里会直接报无限高度。
                 const SizedBox(height: 24, child: VerticalDivider(width: 24)),
-                IconButton(
-                  icon: const Icon(LucideIcons.zoomOut300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.ZoomOut(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '缩小',
                   onPressed: () => controller.zoomBy(1 / 1.25),
                 ),
@@ -405,44 +408,33 @@ class _CanvasToolbar extends StatelessWidget {
                 // 固定最小宽度：位数变化时按钮不会左右抖、Wrap 也不会跳行。
                 // shrinkWrap + 高 32：TextButton 默认 padded 热区（48）会把
                 // 布局也撑高，同样顶出卡片——与 IconButton 统一档位。
-                Tooltip(
-                  message: '当前缩放（点击回到 100%）',
-                  child: TextButton(
-                    onPressed: controller.resetZoom,
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(56, Tokens.toolbarButtonSize),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Tokens.spaceXs,
-                      ),
-                      foregroundColor: scheme.onSurfaceVariant,
-                      textStyle: Theme.of(context).textTheme.labelMedium,
-                    ),
-                    child: Text('${(controller.camera.scale * 100).round()}%'),
-                  ),
+                _ZoomBadge(
+                  controller: controller,
+                  foreground: scheme.onSurfaceVariant,
+                  textStyle: Theme.of(context).textTheme.labelMedium,
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.zoomIn300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.ZoomIn(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '放大',
                   onPressed: () => controller.zoomBy(1.25),
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.maximize300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.ArrowsMaximize(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '适应内容',
                   onPressed: controller.fitToContent,
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.image300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.Photo(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '导出 PNG',
                   onPressed: onExport,
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.package300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.Package(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '导出画布文件（.canvas.json，含图片）',
                   onPressed: onExportBundle,
                 ),
-                IconButton(
-                  icon: const Icon(LucideIcons.import300, size: 18),
+                FocusRingIconButton(
+                  icon: tabler.Download(height: 18, width: 18, strokeWidth: 1.5),
                   tooltip: '导入画布文件（.canvas.json，替换当前画布）',
                   onPressed: onImport,
                 ),
@@ -451,6 +443,65 @@ class _CanvasToolbar extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 缩放倍数徽标：`TextButton` + 统一焦点环（§5.2 第二步）。
+///
+/// 为什么单独一件、不复用 [FocusRingIconButton]：形状不同。`IconButton` 是圆
+/// （那件的默认圆角按 `RRect` 夹成圆），而 `TextButton` 的形状来自全局
+/// `textButtonTheme` 的 `shapeSm` ⇒ 环的圆角得显式跟它对齐，否则环与按钮"错位"
+/// 一个圆角。**这是第一个 `TextButton` 消费者**——等第二个出现再抽共用，
+/// 现在抽等于按一个调用点猜接口。
+///
+/// 其余取舍沿用原位：固定最小宽度（位数变化时按钮不左右抖、`Wrap` 不跳行）；
+/// `shrinkWrap` + 高 32（`TextButton` 默认 padded 热区 48 会把布局也撑高，顶出卡片）。
+class _ZoomBadge extends StatefulWidget {
+  const _ZoomBadge({
+    required this.controller,
+    required this.foreground,
+    required this.textStyle,
+  });
+
+  final CanvasController controller;
+  final Color foreground;
+  final TextStyle? textStyle;
+
+  @override
+  State<_ZoomBadge> createState() => _ZoomBadgeState();
+}
+
+class _ZoomBadgeState extends State<_ZoomBadge> {
+  /// 同一个节点交给**两边**（`FocusRing` + `TextButton`），理由见 [FocusRing]。
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FocusRing(
+      focusNode: _focus,
+      borderRadius: BorderRadius.circular(Tokens.radiusSm),
+      child: Tooltip(
+        message: '当前缩放（点击回到 100%）',
+        child: TextButton(
+          focusNode: _focus,
+          onPressed: widget.controller.resetZoom,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(56, Tokens.toolbarButtonSize),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
+            foregroundColor: widget.foreground,
+            textStyle: widget.textStyle,
+          ),
+          child: Text('${(widget.controller.camera.scale * 100).round()}%'),
+        ),
+      ),
     );
   }
 }
@@ -522,7 +573,9 @@ class _CanvasContextBar extends StatelessWidget {
         final Rect? worldBox = controller.selectionBounds;
         if (worldBox == null) return const SizedBox.shrink();
         // 选区世界包围盒 → 屏幕坐标（与 Stack 同原点）；视口用来夹取。
-        final Offset anchor = controller.camera.worldToScreen(worldBox.topCenter);
+        final Offset anchor = controller.camera.worldToScreen(
+          worldBox.topCenter,
+        );
         final Size viewport = controller.viewport;
         return CustomSingleChildLayout(
           delegate: _ContextBarLayout(anchor: anchor, viewport: viewport),
@@ -565,7 +618,7 @@ class _CanvasContextBar extends StatelessWidget {
                   // 分隔线（显式高度，理由同 [_CanvasToolbar]）。
                   const SizedBox(height: 24, child: VerticalDivider(width: 24)),
                   IconButton(
-                    icon: const Icon(LucideIcons.trash2300, size: 18),
+                    icon: tabler.Trash(height: 18, width: 18, strokeWidth: 1.5),
                     tooltip: '删除所选（Delete）',
                     onPressed: controller.deleteSelection,
                   ),
@@ -651,12 +704,12 @@ class _CanvasHistoryBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               IconButton(
-                icon: const Icon(LucideIcons.undo2300, size: 18),
+                icon: tabler.ArrowBackUp(height: 18, width: 18, strokeWidth: 1.5),
                 tooltip: '撤销（Ctrl+Z）',
                 onPressed: controller.document.canUndo ? controller.undo : null,
               ),
               IconButton(
-                icon: const Icon(LucideIcons.redo2300, size: 18),
+                icon: tabler.ArrowForwardUp(height: 18, width: 18, strokeWidth: 1.5),
                 tooltip: '重做（Ctrl+Shift+Z）',
                 onPressed: controller.document.canRedo ? controller.redo : null,
               ),

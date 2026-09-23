@@ -2,17 +2,19 @@ import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sinan/src/theme/apca.dart';
 import 'package:sinan/src/theme/app_float_surface.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
 
 /// 主题不变量的回归（`app_theme.dart`）。
 ///
-/// 背景：编辑区画布色 `AppTheme.contentCanvas()`（亮 `#FAFAFA` / 深 `#161616`）
-/// 是**主题外的基色**——它没进 `ColorScheme`，而 `scheme.surface` 装的是
-/// `windowBackground`（亮 `#F3F3F3` / 深 `#0A0A0A`）。所以画布上的文字用的
-/// `onSurface*` 与它并非"一套配对"，只能靠对比度兜住；这条测试把兜底变成
-/// 机器可检的不变量（编辑器正文、工具栏、附件卡都铺在画布色上）。
+/// 背景：编辑区画布色 `AppTheme.contentCanvas()` 是**主题外的基色**——它没进
+/// `ColorScheme`，而 `scheme.surface` 装的是 `windowBackground`
+/// （亮 `#F8F8F6` / 深 `#171715`，明暗同色相的极淡暖调；暗色 2026-09-22 从近黑抬了一档）。
+/// ⚠️ 2026-09-22 起二者**同色**（纸面直接复用窗口底，见 `contentCanvas` 的文档）。
+/// 所以画布上的文字用的 `onSurface*` 与它并非"一套配对"，只能靠对比度兜住；
+/// 这条测试把兜底变成机器可检的不变量（编辑器正文、工具栏、附件卡都铺在画布色上）。
 ///
 /// 浮层（菜单 / 面板 / 工具条）另有一档 `AppTheme.floatSurface()`：与纸面**只差
 /// 一档明度**，靠"三件套"（底色 + `menuBorder` 描边 + `menuElevation` 投影）
@@ -38,40 +40,96 @@ void main() {
       expect(
         contrast(theme.colorScheme.onSurface, AppTheme.contentCanvas(brightness)),
         greaterThanOrEqualTo(4.5),
-        reason: '画布是主题外基色；正文前景色必须与它可读（编辑器文字色取自 onSurface）',
+        reason: '画布是主题外基色；界面文字（onSurface）必须与它可读',
       );
     });
 
-    test('$brightness：编辑器正文色对纸面保持正文级对比（且暗色比 onSurface 更柔）', () {
-      final Color text = AppTheme.editorText(brightness, theme.colorScheme);
-      final double ratio = contrast(text, AppTheme.contentCanvas(brightness));
+    test('$brightness：APCA 公式自检（黑 on 白 / 白 on 黑锚点）', () {
+      // 先验尺子：公式或常量被改错的话，下面那条"舒适带"就没有意义了。
       expect(
-        ratio,
+        apcaLc(const Color(0xFF000000), const Color(0xFFFFFFFF)),
+        closeTo(106.04, 0.1),
+      );
+      expect(
+        apcaLc(const Color(0xFFFFFFFF), const Color(0xFF000000)),
+        closeTo(-107.88, 0.1),
+      );
+    });
+
+    test('$brightness：编辑器正文色落点（亮 `#3A3A3A` / 暗 `#DDDDDD`）', () {
+      final Color text = AppTheme.editorText(brightness, theme.colorScheme);
+      expect(
+        contrast(text, AppTheme.contentCanvas(brightness)),
         greaterThanOrEqualTo(4.5),
-        reason: '$brightness：正文色对纸面必须过 AA（实测 ${ratio.toStringAsFixed(1)}:1）',
+        reason: '$brightness：正文色对底必须过 WCAG AA（兜底下限）',
       );
       if (brightness == Brightness.dark) {
-        // 护眼取舍（2026-09-15）：纸面抬到 `#161616` + 正文降到 `#D6D6D6`
-        // ——两个杠杆各让一步，14.6:1 → 12.5:1。
-        expect(text, const Color(0xFFD6D6D6));
+        // 📌 2026-09-22 暗底抬档（`#0C0C0A` → `#171715`，+1 档）后**这档不用改**：
+        // 实测对纸面 Lc −85.0，仍在 [−92, −84] 舒适带内，也比 `onSurface`（−87.5）更柔
+        // ⇒ 两条闸门都过。（曾经在 +2 档下必须提到 `#E0E0E0`，那是抬得更多才有的连带。）
+        expect(text, const Color(0xFFDDDDDD), reason: '暗色正文档变了（Lc −85）');
         expect(
-          ratio,
+          contrast(text, AppTheme.contentCanvas(brightness)),
           lessThan(
             contrast(
               theme.colorScheme.onSurface,
               AppTheme.contentCanvas(brightness),
             ),
           ),
-          reason: '暗色正文没有比 onSurface 更柔 ⇒ 护眼改动没生效',
+          reason: '暗色正文没有比 onSurface 更柔 ⇒ 护眼取向丢了',
         );
       } else {
-        expect(text, theme.colorScheme.onSurface, reason: '亮色正文色不动');
+        expect(text, const Color(0xFF3A3A3A), reason: '亮色正文档变了（Lc ≈ +92）');
+        expect(
+          text,
+          isNot(theme.colorScheme.onSurface),
+          reason: '亮色正文退回 onSurface ⇒ Lc 又到 100，长文偏"刺"（2026-09-22 用户定要收）',
+        );
       }
     });
 
-    test('$brightness：hint 色由 onSurface 派生（35% 浓度）', () {
+    // 2026-09-22 用户定：正文按 **APCA** 定档（不是 WCAG——那把尺子在深色里失灵）。
+    // APCA 档位：正文首选 Lc 90（≥14px/400）/ 最低 75；**暗色上限约 −90**。
+    // 取偏上值：APCA 以 Helvetica 为基准，中文笔画更细、我们正文又是 13px。
+    test('$brightness：正文对比度落在 APCA 舒适带（Lc ±90 附近）', () {
+      final double lc = apcaLc(
+        AppTheme.editorText(brightness, theme.colorScheme),
+        AppTheme.contentCanvas(brightness),
+      );
+      if (brightness == Brightness.light) {
+        expect(
+          lc,
+          inInclusiveRange(88, 96),
+          reason: '亮色正文 Lc $lc：低于 88 偏灰、高于 96 比首选档（90）黑太多',
+        );
+      } else {
+        expect(
+          lc,
+          inInclusiveRange(-92, -84),
+          reason:
+              '暗色正文 Lc $lc：APCA 暗色上限约 −90，越过去就是"字在发光"；'
+              '低于 −84 又比首选档保守太多',
+        );
+      }
+    });
+
+    test('$brightness：hint 色由 onSurface 派生（低浓度 + APCA 兜底）', () {
       // 标题占位、编辑器占位、查找框 hint 共用这一个来源。
-      expect(AppTheme.hintColor(theme.colorScheme.onSurface).a, closeTo(0.35, 0.01));
+      final Color hint = AppTheme.hintColor(theme.colorScheme.onSurface);
+      if (brightness == Brightness.light) {
+        // 亮色：Material 口径的 35% 已过占位符档（实测 Lc 41.5）⇒ 保持半透明语义，
+        // 与基色**同源**（只降不透明度、不动 RGB）。
+        expect(hint.a, closeTo(0.35, 0.01));
+        expect(hint.r, theme.colorScheme.onSurface.r);
+      } else {
+        // 暗色：35% 叠完只有 Lc −16.5（占位文字看不见）⇒ 被 [withMinLc] 钳成实色。
+        // 所以这里**不断言 alpha**（细节随阈值浮动），只钉真正要命的那条：过档。
+        expect(
+          apcaLcBlended(hint, AppTheme.contentCanvas(brightness)).abs(),
+          greaterThanOrEqualTo(30),
+          reason: '暗色占位符没过 APCA 占位符档（Lc 30）⇒ 提示文字等于看不见',
+        );
+      }
     });
 
     test('$brightness：surface 与窗口底色同源（Mica 回退不跳色）', () {
@@ -79,6 +137,141 @@ void main() {
         theme.colorScheme.surface,
         AppTheme.windowBackground(brightness),
       );
+    });
+
+    // ── §5.6 底色契约：纸面 = 窗口底（2026-09-22 用户定） ────────────────
+    // 两层都必须**不透明**（否则 Mica / 桌面壁纸从底下透上来）；而"纸面比窗口底
+    // 更亮"那条序**已被用户取消**（合并成同色）⇒ 分层改由描边 + 浮层承担。
+    // 合上"浮层 > 纸面"那一条，剩下的序是：**浮层 > 底**。
+    test('$brightness：纸面与窗口底都**不透明**（Mica / 壁纸不许从底下透上来）', () {
+      expect(
+        AppTheme.contentCanvas(brightness).a,
+        1.0,
+        reason: '$brightness：纸面透明 ⇒ 二级页面会透出 Mica / 桌面壁纸',
+      );
+      expect(
+        AppTheme.windowBackground(brightness).a,
+        1.0,
+        reason: '$brightness：无 Mica 的回退底透明 ⇒ 直接露出锐利的桌面壁纸',
+      );
+    });
+
+    // ⚠️ 这叫"档位明度序"，**不是叠层**：页面是切换的（同一时刻只有一个页面在场），
+    // 但一个页面内部仍有"底"与"浮在底上的块"（主页：底 + 导航板/卡片；笔记页：底 + 菜单）。
+    // §5.6：卡片/导航项**直接坐在窗口底上**（"面板档"已实拍否决）——交互填充
+    // 叠在窗口底上仍要比底亮，否则交互态"陷进去"。
+    test('$brightness：卡片档叠在窗口底上仍比底亮', () {
+      final Color window = AppTheme.windowBackground(brightness);
+      final Color card = Color.alphaBlend(
+        AppTheme.cardFill(brightness),
+        window,
+      );
+      expect(
+        card.computeLuminance(),
+        greaterThan(window.computeLuminance()),
+        reason: '$brightness：卡片/悬停档没有比窗口底亮 ⇒ 交互态"陷进去"',
+      );
+    });
+
+    // §5.6：导航**板底**（boardFill 叠在窗口底上 = Mica 等效）上的文字对比度。
+    // Craft 式侧栏靠字重与灰度分层 ⇒ 未选中项（次文字）也不能糊。
+    test('$brightness：导航板底上，主/次文字都过 AA', () {
+      final Color board = Color.alphaBlend(
+        AppTheme.boardFill(brightness),
+        AppTheme.windowBackground(brightness),
+      );
+      for (final (String label, Color fg) in <(String, Color)>[
+        ('主文字', theme.colorScheme.onSurface),
+        ('次文字', theme.colorScheme.onSurfaceVariant),
+      ]) {
+        final double ratio = contrast(fg, board);
+        expect(
+          ratio,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              '$brightness：$label 放在导航板底上必须可读（实测 ${ratio.toStringAsFixed(1)}:1）',
+        );
+      }
+    });
+
+    // §5.6：噪点的**强度铁律**（超过 5% 就"脏"，与板底同一条教训）。
+    // ⚠️ `windowNoiseAlpha` 当前**未挂载**（渐变换纯色后没有色带可治）；这条钉的是
+    // "要么别留这个令牌、要么它得是个合理正数"，不是"它正在被用"。
+    test('$brightness：窗口底噪点令牌在铁律内（0 < α ≤ 5%）', () {
+      final double alpha = AppTheme.windowNoiseAlpha(brightness);
+      expect(alpha, greaterThan(0), reason: '强度为 0 ⇒ 这个令牌已失效，要么给正数、要么连组件一起删');
+      expect(
+        alpha,
+        lessThanOrEqualTo(0.05),
+        reason: '$brightness：噪点超过 5% 立刻变"脏"',
+      );
+    });
+
+    // §5.6（2026-09-22 用户定）：**纸面噪点**——先只做暗色一版看对比。
+    // ⚠️ 上限压到 **2%**（比窗口底那档更保守）：它离正文更近，颗粒削的是字周对比。
+    // 这条同时钉住"亮色必须是 0"——那是用户明确的选择，不是漏做。
+    test('$brightness：纸面噪点 0 ~ 2%（亮色明确为 0 = 不挂）', () {
+      final double alpha = AppTheme.paperNoiseAlpha(brightness);
+      expect(
+        alpha,
+        lessThanOrEqualTo(0.02),
+        reason: '$brightness：纸面噪点超过 2% ⇒ 字周对比被削掉一档（它比窗口底那档更危险）',
+      );
+      if (brightness == Brightness.light) {
+        expect(alpha, 0, reason: '亮色纸面明确不加噪点（黑粒在近白底上最显脏）');
+      } else {
+        expect(alpha, greaterThan(0), reason: '暗色纸面要能看到颗粒，否则这版白做了');
+      }
+    });
+
+    // §5.6：窗口渐变底的**极淡铁律**——两端每通道差 ≤ 10/255（≈4% 明度）。
+    // "淡到说不出哪里变了才对；能看出是个渐变就廉价了。"这条钉住它。
+    test('$brightness：窗口渐变极淡（两端每通道差 ≤ 10/255）', () {
+      final LinearGradient g = AppTheme.windowGradient(brightness);
+      expect(g.colors.length, 2);
+      final Color a = g.colors.first;
+      final Color b = g.colors.last;
+      final double maxDiff = <double>[
+        (a.r - b.r).abs(),
+        (a.g - b.g).abs(),
+        (a.b - b.b).abs(),
+      ].reduce(math.max);
+      expect(
+        maxDiff,
+        lessThanOrEqualTo(10 / 255),
+        reason:
+            '$brightness：渐变两端差 ${(maxDiff * 255).toStringAsFixed(0)}/255 ——'
+            '超过 10 就"能看出是个渐变"，观感立刻掉档',
+      );
+    });
+
+    // §5.6（2026-09-22 用户定）：纸面**就是**窗口底（主页与笔记页同底）。
+    // 这条把"两处不许再漂开"钉死——此前是"纸面比窗口底更亮"那条档位序，
+    // 用户明确取消（亮色侧那点差本来也只剩 ΔL\*≈0.74，低于分辨阈）。
+    test('$brightness：纸面与窗口底**同色**（不再分档，分层交给描边/浮层）', () {
+      expect(
+        AppTheme.contentCanvas(brightness),
+        AppTheme.windowBackground(brightness),
+        reason: '$brightness：纸面又和窗口底分开了 ⇒ 主页与笔记页不同底（用户已定要同底）',
+      );
+    });
+
+    // §5.6：主页整屏铺**窗口底**，卡片上要放标题 / 时间 / 一两行预览
+    // ⇒ "底色上能不能放字"不必靠感觉，用同一套对比度算法就能判。
+    test('$brightness：窗口底上，主/次文字都过 AA（主页卡片可显示预览）', () {
+      final Color base = AppTheme.windowBackground(brightness);
+      for (final (String label, Color fg) in <(String, Color)>[
+        ('主文字', theme.colorScheme.onSurface),
+        ('次文字', theme.colorScheme.onSurfaceVariant),
+      ]) {
+        final double ratio = contrast(fg, base);
+        expect(
+          ratio,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              '$brightness：$label 放在窗口底上必须可读（实测 ${ratio.toStringAsFixed(1)}:1）',
+        );
+      }
     });
 
     test('$brightness：浮层底色比纸面**抬一档**明度（且不染种子色）', () {
@@ -95,7 +288,7 @@ void main() {
       expect(floating.g, floating.b);
     });
 
-    test('$brightness：两套菜单底色 = 浮层令牌（此前一为画布色、一为 M3 表面色）', () {
+    test('$brightness：两套菜单底色 = 浮层令牌（全局实色）', () {
       final Color expected = AppTheme.floatSurface(brightness);
       expect(
         theme.popupMenuTheme.color,
@@ -105,7 +298,7 @@ void main() {
       expect(
         theme.menuTheme.style?.backgroundColor?.resolve(<WidgetState>{}),
         expected,
-        reason: '主菜单（MenuAnchor）——曾走 M3 默认 surfaceContainer',
+        reason: '主菜单主题（MenuAnchor）——本仓其实没有 MenuAnchor，见下条',
       );
       expect(
         theme.popupMenuTheme.elevation,
@@ -113,7 +306,51 @@ void main() {
         reason: '右键菜单曾 elevation 0（连投影都没有）',
       );
     });
+
+    // ⚠️ 主菜单**不再**走这两套菜单主题：2026-09-22 它换成了自家锚定浮层
+    // （`AppMenuButton`）——因为 `PopupMenuButton` 的面板在路由内部，插不进
+    // `BackdropFilter`，做不出磨砂。它那层的结构闸门在
+    // `test/app/app_menu_test.dart`（四项都在 + 模糊真的在 + 选完即关）。
+    // 这里只钉**两个旋钮的数值契约**（配对使用，缺一个就白做）：
+    test('$brightness：主菜单磨砂的两个旋钮（半透明 + 模糊半径）', () {
+      final Color fill = AppTheme.menuFill(brightness);
+      expect(
+        fill.a,
+        AppTheme.menuLayerAlpha,
+        reason: '底色透明度旋钮 = menuLayerAlpha（一处可调）',
+      );
+      expect(fill.a, lessThan(1), reason: '必须真半透明——实色会把模糊整块盖住，等于没做');
+      expect(
+        AppTheme.floatBlurSigma,
+        greaterThan(0),
+        reason: '模糊半径必须 > 0，否则"磨砂"退化成纯半透明（清晰字影那份难看）',
+      );
+      expect(
+        AppTheme.menuFillOver(
+          brightness,
+          AppTheme.windowBackground(brightness),
+        ).a,
+        1.0,
+        reason: '合成后必须是不透明色，否则"拿合成色当底量对比度"这个前提不成立',
+      );
+    });
   }
+
+  // §5.6（2026-09-22 用户定）：窗口底 **亮 `#F8F8F6` / 暗同色相**——明暗只差明度。
+  //
+  // 这是**决定**，不是巧合：切主题时不该像"换了个应用"。它同时挡住两种回退：
+  // ① 某一侧被改回**中性灰**（饱和度为 0）；② 两侧色相漂开（一暖一冷）。
+  test('窗口底：明暗**同色相**的极淡暖调（不是中性灰，也不是一冷一暖）', () {
+    final HSVColor light = HSVColor.fromColor(
+      AppTheme.windowBackground(Brightness.light),
+    );
+    final HSVColor dark = HSVColor.fromColor(
+      AppTheme.windowBackground(Brightness.dark),
+    );
+    expect(light.saturation, greaterThan(0), reason: '亮底成了纯中性灰');
+    expect(dark.saturation, greaterThan(0), reason: '暗底成了纯中性灰');
+    expect(dark.hue, closeTo(light.hue, 1), reason: '明暗色相漂开 ⇒ 切主题像换了个应用');
+  });
 
   testWidgets('浮层三件套：AppFloatSurface = 浮层底 + 描边 + 投影', (
     WidgetTester tester,
@@ -195,7 +432,8 @@ void main() {
         reason: '$label：浮条不可再与纸面逐像素同色（改回即退回"融进纸里"）',
       );
 
-      // 圆角：条加高到 40 后必须用 radiusLg（14）——10 在高条上显"方"。
+      // 圆角：条加高后必须用 radiusLg——比控件档（radiusSm）更圆，否则高条显"方"。
+      // （档位数值见 Tokens，属 Apple 口径 §9.2；这里只断言"用的是大档"。）
       expect(
         (decoration.borderRadius! as BorderRadius).topLeft.x,
         Tokens.radiusLg,
@@ -284,5 +522,111 @@ void main() {
         }
       }
     }
+  });
+
+  /// Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：规格表里的每个值都要**机器可检**
+  /// ——否则下次有人"顺手"把字号调回 14、把分隔线调回满档，没人会注意到。
+  group('Apple 口径（§9.2 规格）', () {
+    test('界面排印：正文 13 / 小字 11 / 标题靠字重分层', () {
+      for (final ThemeData theme in <ThemeData>[
+        AppTheme.light(),
+        AppTheme.dark(),
+      ]) {
+        final TextTheme t = theme.textTheme;
+        final String label = '${theme.brightness}';
+        expect(t.bodyMedium?.fontSize, 13, reason: '$label：macOS 桌面正文是 13');
+        expect(t.bodySmall?.fontSize, 11, reason: '$label：辅助文字 11');
+        expect(t.labelMedium?.fontSize, 11, reason: '$label：标签 11');
+        expect(t.titleSmall?.fontSize, 13, reason: '$label：面板标题不放大字号');
+        expect(
+          t.titleSmall?.fontWeight,
+          FontWeight.w600,
+          reason: '$label：标题用**字重**分层（§9.2）',
+        );
+        expect(
+          t.titleLarge?.letterSpacing,
+          lessThan(0),
+          reason: '$label：大字号负字距是 SF 的标志',
+        );
+        expect(t.bodyMedium?.height, greaterThan(1.2), reason: '$label：正文要留呼吸');
+        expect(
+          t.bodyMedium?.height,
+          lessThan(1.5),
+          reason: '$label：但必须比 M3 的松行高更紧——桌面手感',
+        );
+      }
+    });
+
+    test('「当前项」令牌与分段控件（§5.1）', () {
+      for (final ThemeData theme in <ThemeData>[
+        AppTheme.light(),
+        AppTheme.dark(),
+      ]) {
+        final ColorScheme scheme = theme.colorScheme;
+        final String label = '${theme.brightness}';
+
+        // 两个语义令牌：底是中性 tint，指示条是 primary（形状信号）。
+        expect(
+          AppTheme.navSelectedTint(scheme.onSurface).a,
+          closeTo(0.10, 0.001),
+          reason: '$label：navSelectedTint 的比例变了（10% 是实测下限）',
+        );
+        expect(
+          AppTheme.navIndicator(scheme),
+          scheme.primary,
+          reason: '$label：navIndicator 应取 primary',
+        );
+
+        // 分段控件：选中底 = 中性 tint（不是 M3 默认的 secondaryContainer），
+        // 且选中态加粗——"当前项"的第二支（形状上没有左侧 ⇒ 不配左条）。
+        final ButtonStyle? style = theme.segmentedButtonTheme.style;
+        expect(
+          style?.backgroundColor?.resolve(<WidgetState>{WidgetState.selected}),
+          AppTheme.navSelectedTint(scheme.onSurface),
+          reason: '$label：分段控件选中底退回了 secondaryContainer？',
+        );
+        expect(
+          style?.textStyle?.resolve(<WidgetState>{
+            WidgetState.selected,
+          })?.fontWeight,
+          FontWeight.w600,
+          reason: '$label：分段控件选中项应加粗',
+        );
+        expect(
+          style?.textStyle?.resolve(<WidgetState>{})?.fontWeight,
+          FontWeight.w400,
+          reason: '$label：未选中项不该加粗',
+        );
+      }
+    });
+
+    test('密度与分隔线：图标按钮与工具栏同档、分隔线退一档', () {
+      for (final ThemeData theme in <ThemeData>[
+        AppTheme.light(),
+        AppTheme.dark(),
+      ]) {
+        final String label = '${theme.brightness}';
+        expect(
+          theme.dividerTheme.color,
+          AppTheme.divider(theme.colorScheme),
+          reason: '$label：分隔线应与视图层共用同一个 divider 令牌',
+        );
+        expect(
+          theme.dividerTheme.color,
+          isNot(theme.colorScheme.outlineVariant),
+          reason: '$label：分隔线退回了满档 outlineVariant（比浮层边界还实，主次反了）',
+        );
+        expect(
+          theme.iconButtonTheme.style?.minimumSize?.resolve(<WidgetState>{}),
+          const Size.square(Tokens.toolbarButtonSize),
+          reason: '$label：图标按钮与 Tokens.toolbarButtonSize 不同档（曾是 40 vs 32）',
+        );
+        expect(
+          theme.listTileTheme.minVerticalPadding,
+          6,
+          reason: '$label：列表项密度（§9.2）',
+        );
+      }
+    });
   });
 }

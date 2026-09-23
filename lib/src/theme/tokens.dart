@@ -14,9 +14,14 @@ class Tokens {
   static const double spaceXl = 24;
 
   // 圆角
+  // Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：三档跨度收敛为 **6 / 8 / 12**。
+  // 控件档（6）本就与 macOS 同档、未动；改的是"大档过圆"——原 14 让菜单与面板
+  // 比 macOS 的 popover（10–12）更圆。
+  // ⚠️ 浮层族（菜单 / 气泡 / 工具条 / 斜杠菜单 / 面板）**共用 radiusLg**，不按
+  // Apple 的菜单档（6–8）单独分——族内语法一致优先（§2.3）。
   static const double radiusSm = 6;
-  static const double radiusMd = 10;
-  static const double radiusLg = 14;
+  static const double radiusMd = 8;
+  static const double radiusLg = 12;
 
   // 控件尺寸
   // 标题栏高度 == 窗口按钮高度，二者始终相等（按钮永远铺满，无留白）。
@@ -45,11 +50,15 @@ class Tokens {
   static const double toolbarButtonSize = 32;
 
   // 字号
-  static const double fontSizeSm = 12;
-  static const double fontSizeMd = 14;
+  // Apple 口径（§9.2）：桌面正文 **13**、辅助 **11**——M3 的 14/12 是移动端尺度。
+  static const double fontSizeSm = 11;
+  static const double fontSizeMd = 13;
 
   // 笔记列表条目（自绘 _NoteTile，单行标题）
-  static const double noteTileHeight = 32;
+  // Apple 口径（§9.2）：macOS 侧栏行为 24–28；32 是 M3 触控档，一屏少放两三条。
+  // ⚠️ 这是本表里**最该用眼睛确认**的一个值（它决定列表的"手感密度"），
+  // 觉得挤就调回 30/32——只动这一个数，不牵动别处。
+  static const double noteTileHeight = 28;
   // 格式工具栏按钮（自绘 NoteFormatToolbar）
   // 工具栏按钮：24×30，18px 图标四周各有 3px/6px 呼吸，
   // 悬浮高亮不贴字形，热区也稳。
@@ -57,6 +66,20 @@ class Tokens {
   static const double formatButtonHeight = 30;
   // 选中项左侧的强调色指示条
   static const double indicatorWidth = 3;
+
+  // 焦点环粗细（`docs/ui_rewrite_plan.md` §5.2）。
+  // ⚠️ 计划原文是"primary 2px + 1px offset（外间隙）"，实现取**画在边界内侧**：
+  // 向外画要多占 3px 布局（要么内容位移、要么被父容器裁剪切掉），而 1px 的外间隙
+  // 在 32px 图标按钮 / 28px 列表行上视觉收益极小。这是实现期修正，理由在
+  // `theme/focus_ring.dart`。
+  static const double focusRingWidth = 2;
+
+  // 浮层描边的**发丝宽度**（`AppTheme.menuBorder` 消费）。
+  // 1px 在近黑底上存在感偏强——用户 2026-09-22 实机反馈"边框线再细一点"。
+  // 做法是**亚像素宽度**（抗锯齿把线自然减淡、且四边均匀），而**不是降颜色对比度**：
+  // 细线恰恰需要更高对比度来补偿（空间对比敏感度，见 `apca.dart`），
+  // 把 Lc 22 调低会同时撞上"最低可见线"（Lc 15）。
+  static const double hairlineWidth = 0.5;
 
   // 笔记标题行右侧的「文档工具耳」（搜索 / 目录）：热区 30。
   // 图标 18（[iconSm]，与工具栏同档）在 30 里上下各余 6px —— 比原来的
@@ -68,6 +91,7 @@ class Tokens {
   static const double headerActionSize = 30;
 
   // 动效
-  static const Duration durationFast = Duration(milliseconds: 120);
-  static const Duration durationNormal = Duration(milliseconds: 200);
+  // Apple 口径（§9.2）：比 M3 略长、收尾更缓——"精致"有一半在节奏。
+  static const Duration durationFast = Duration(milliseconds: 150);
+  static const Duration durationNormal = Duration(milliseconds: 250);
 }

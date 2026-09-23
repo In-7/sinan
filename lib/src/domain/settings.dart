@@ -42,6 +42,7 @@ class AppSettings {
     this.aiEnabled = false,
     this.aiEndpoint = defaultAiEndpoint,
     this.aiModel = '',
+    this.aiEmbeddingModel = '',
   });
 
   /// 本地 LLM 的默认基址（Ollama 的约定端口）。
@@ -96,6 +97,14 @@ class AppSettings {
   /// 模型名（Ollama tag）。空 = 未配置 ⇒ 调用时给"去设置里填"的明确报错。
   final String aiModel;
 
+  /// **嵌入**模型名（Ollama tag，如 `bge-m3`）。空 = 未配置。
+  ///
+  /// 与 [aiModel]（对话模型）分开：嵌入模型的产物会**长期存在库里**
+  /// （`vec_chunks`），换它等于换整个向量空间——所以它的名字会进 `index_state.model`
+  /// 的身份串（`provider:model:dim`，见 `docs/data_layer.md` 6.6①），
+  /// 换了就全量重算。留空时索引/检索**自动降级为纯关键词**（6.4）。
+  final String aiEmbeddingModel;
+
   /// 正文列宽（固定像素，不随窗口放大而变）。
   double get contentWidth => switch (widthMode) {
     // 三档都含块手柄的 48px（见 [EditorWidthMode] 的说明）。
@@ -115,6 +124,7 @@ class AppSettings {
     bool? aiEnabled,
     String? aiEndpoint,
     String? aiModel,
+    String? aiEmbeddingModel,
   }) => AppSettings(
     brightnessMode: brightnessMode ?? this.brightnessMode,
     widthMode: widthMode ?? this.widthMode,
@@ -123,6 +133,7 @@ class AppSettings {
     aiEnabled: aiEnabled ?? this.aiEnabled,
     aiEndpoint: aiEndpoint ?? this.aiEndpoint,
     aiModel: aiModel ?? this.aiModel,
+    aiEmbeddingModel: aiEmbeddingModel ?? this.aiEmbeddingModel,
   );
 
   // ── 持久化：key-value 与 store 的边界 ────────────────────
@@ -135,6 +146,7 @@ class AppSettings {
   static const String _kAiEnabled = 'ai.enabled';
   static const String _kAiEndpoint = 'ai.endpoint';
   static const String _kAiModel = 'ai.model';
+  static const String _kAiEmbeddingModel = 'ai.embeddingModel';
 
   /// 从 store 还原；任何键缺失或解析失败都回落到默认值
   /// （升级/降级/手工改库都不会崩）。
@@ -157,6 +169,7 @@ class AppSettings {
       aiEnabled: store.get(_kAiEnabled) == 'true',
       aiEndpoint: store.get(_kAiEndpoint) ?? defaultAiEndpoint,
       aiModel: store.get(_kAiModel) ?? '',
+      aiEmbeddingModel: store.get(_kAiEmbeddingModel) ?? '',
     );
   }
 
@@ -169,6 +182,7 @@ class AppSettings {
       ..set(_kLineHeight, lineHeight.toString())
       ..set(_kAiEnabled, aiEnabled.toString())
       ..set(_kAiEndpoint, aiEndpoint)
-      ..set(_kAiModel, aiModel);
+      ..set(_kAiModel, aiModel)
+      ..set(_kAiEmbeddingModel, aiEmbeddingModel);
   }
 }

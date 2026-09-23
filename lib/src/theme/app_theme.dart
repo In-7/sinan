@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'apca.dart';
+import 'surface_ladder.dart';
 import 'tokens.dart';
 
 /// 主题：严格遵循 Material 3 官方最佳实践——
@@ -80,24 +82,26 @@ class AppTheme {
   /// `#FAFAFA`——纯白降一档亮度，与冷灰 Mica 同色系，读感是白纸又不眩光
   /// （要更"纯"可改 `0xFFFFFFFF`，要更柔可降到 `0xFFF2F2F2`）。
   ///
-  /// ## 深色：**近黑深灰 `#161616`**（2026-09-15 用户定案）
-  /// 演变：`#2B2B2B`（离黑 17.5 L\*；对亮色那侧的"离白 1.7 L\*"差十倍，看
-  /// 着灰蒙蒙）→ `#121212`（L\* 5.1）→ **`#161616`（L\* 7.2）**。最后一步是
-  /// 实机观感回退一档：**大面积黑的压迫感来自瞳孔开度**，抬一档更舒展
-  /// （与 [editorText] 的降档是同一轮的两个杠杆，见其文档）。
+  /// ## ⚠️ 2026-09-22 用户定：**与窗口底同色**（不再单独一档）
+  /// 直接复用 [windowBackground]（亮 `#F8F8F6` / 暗 `#0C0C0A`）⇒ 主页与笔记页
+  /// **同一个底**，"编辑页浮在窗口底之上"的那点明度差**刻意取消**了。
   ///
-  /// **为什么刻意不取纯黑**：底色越黑瞳孔开得越大，浅色字在近黑面上的
-  /// "光晕（halation）"越明显——这是多数阅读器不用纯黑的共同原因。纯黑留给
-  /// [windowBackground]，纸面留一档（与窗口底差 6.4 L\*）。
+  /// **代价（用户已确认）**：面板与窗口底的**色差不再承担分层**——笔记页的
+  /// "纸面浮起"读数归零，侧栏/主区的分界也不再由底色档差表达（那条 1px 竖线
+  /// 2026-09-18 就是为了"让底色档差去分界"才撤掉的，见 `home_screen.dart`）。
+  /// 分层现在只剩 [divider] 描边 + [floatSurface] 浮层。顺带：亮色侧那点余量
+  /// 本来也只剩 **ΔL\*≈0.74**（低于人眼分辨阈 ≈1）⇒ 合并几乎无损，是顺水推舟。
   ///
-  /// ⚠️ 改纸面明度**必须连带**两处：① [windowBackground] 要更深（否则窗口底
-  /// 比纸面亮 ⇒ 编辑页从"浮起"变"凹陷"，关系反转）；② [floatSurface] 要同向
-  /// 抬（纸面抬一档后若浮层不动，两者只差 0.8 L\*、层次直接消失）。
-  /// 本次配套：纸 `#161616` / 窗口底 `#0A0A0A` / 浮 `#222222`（纸面上方 +6.0 L\*）。
+  /// **历史（保留是为了记住几笔取舍）**：`#2B2B2B`（L\* 17.5，比亮色那侧厚十倍，
+  /// 灰蒙蒙）→ `#121212` → `#161616`（L\* 7.2，"大面积黑的压迫感来自瞳孔开度"，
+  /// 抬一档更舒展，与 [editorText] 的降档是同轮的两个杠杆）→ 暖纸
+  /// `#FBFAF7` / `#181613`（2026-09-22，Craft / Bear 口径的纸感）→ **并入窗口底**。
+  ///
+  /// ⚠️ **要再分开**：只改这个函数（body 换成独立字面量即可，调用方无需动），
+  /// 但必须同时看 [windowBackground]：两者的明度关系有契约测试钉着
+  /// （`test/theme/app_theme_test.dart` 的"纸面与窗口底"那几条）。
   static Color contentCanvas(Brightness brightness) =>
-      brightness == Brightness.light
-          ? const Color(0xFFFAFAFA)
-          : const Color(0xFF161616);
+      windowBackground(brightness);
 
   /// **浮层表面**：压在纸面之上的所有"短暂块"（菜单 / 面板 / 工具条）共用这一档底。
   ///
@@ -105,13 +109,19 @@ class AppTheme {
   /// 此前 6 个浮层全直接吃 [contentCanvas]（与编辑器纸面**逐像素同色**），其中
   /// 4 个连描边和投影都没有 ⇒ 浮层"只能靠内容自己看起来像个面板"，同屏还会撞出
   /// 4 种底色（画布色 / M3 表面色 / 选区色 / 反色）。现在给浮层单独一档：
-  /// **同色系、明度各抬一档**——亮色 纸 `#FAFAFA` → 浮 `#FFFFFF`；
-  /// 深色 纸 `#161616` → 浮 `#222222`——配合**三件套**（[menuBorder] 描边 +
-  /// [menuElevation] 投影 + `Tokens.radiusMd` 圆角）表达"浮起"。
+  /// **同色系、明度各抬一档**——亮色 纸 → 浮 **+2.5 L\***、深色 纸 → 浮 **+11.7 L\***
+  /// （当前落地值：亮 `#FFFFFF` / 暗 `#2F2F2F`）——配合**三件套**
+  /// （[menuBorder] 描边 + [menuElevation] 投影 + `Tokens.radiusMd` 圆角）表达"浮起"。
+  /// 📌 值与档差**都不在这里写**：来自 [ladder] 的 `floating` 档（`surface_ladder.dart`，
+  /// 形状是 [SurfaceShape.neutral]）。改档位请改那张表 —— 这一处只负责"谁是浮层"。
   ///
-  /// ⚠️ **深色下这一档要比亮色跨得大**（+5.2 L\* vs +1.7）：亮色纸面本来就在
-  /// 白端、只能让 5/255；而深色纸面压到近黑后**投影几乎失效**（黑影落在黑底上
-  /// 不可见），"浮起"只剩底色差 + 描边两件——差距太小就分不出层次。
+  /// ⚠️ **深色下这一档要比亮色跨得大得多**（+11.7 vs +2.5）：亮色纸面本来就在
+  /// 白端、只能让 2.5；而深色的**投影天然更弱**（黑影落在暗底上对比小），
+  /// "浮起"要多靠底色差 + 描边两件 ⇒ 差距小了就分不出层次。
+  /// 📌 2026-09-22 暗底从近黑 `#0C0C0A` 抬到 `#171715`（+1 档）时，这档是**跟着抬**的
+  /// （保持同样的 11.7 L\* 档差）——只抬底不抬浮层，档序会直接反转。
+  /// ⚠️ **它必须是中性灰**（R==G==B）：`app_theme_test` 有闸门钉着"大面不染种子色"，
+  /// 别顺手把底的暖调复制过来（那条试过，测试当场报）。
   ///
   /// ## 为什么不随主题种子色
   /// 与本文件头部"大面不染种子色"同一条规则：浮层也是大面，染色会稀释强调感
@@ -123,9 +133,232 @@ class AppTheme {
   /// 那个容器的（悬浮工具栏 / 斜杠菜单 / 右键菜单 / 主菜单），也取这个函数填色。
   /// **改这一处，全场浮层跟着变。**
   static Color floatSurface(Brightness brightness) =>
-      brightness == Brightness.light
-          ? const Color(0xFFFFFFFF)
-          : const Color(0xFF222222);
+      ladder(brightness).floating;
+
+  /// **主菜单（MenuAnchor）的 Layer 档**：`floatSurface` 加透明（2026-09-22 试验）。
+  ///
+  /// ⚠️ **只有它一处半透明**（用户定："先把菜单一个做成 Layer"）：右键菜单 /
+  /// [AppFloatSurface] / 浮动工具条仍是**实色**。依据见 §5.6：菜单压在**正文**上，
+  /// 透明度高了会"透出字影"（历史那次"发脏"）；压在均匀纸面上又几乎看不出
+  /// （合成色只差 1~2 级）。
+  ///
+  /// **旋钮之一**：`0` = 全透、`1` = 实色。现值 **0.80**。
+  /// 📌 吃它的是**主菜单 / 关于面板**（设置面板走**实色** [floatSurface]，不用这一档）。
+  /// 2026-09-22 的历程：0.85 → 0.92 → 0.95（"字影太重"就往回收），
+  /// **加上局部模糊（[floatBlurSigma]）后再降回 0.80**——因为模糊会把"清晰字影"
+  /// 变成"糊开的色块"，正是 Craft 那种磨砂观感；此时底色就该更透一点才看得出来。
+  /// ⚠️ 两个旋钮要**配对调**：只加模糊不降 α ⇒ 模糊被实色盖住、等于没做；
+  /// 只降 α 不加模糊 ⇒ 清晰字影（难看的那个）。
+  /// ⚠️ 改它之后要看两处：① 菜单压住文字时脏不脏；② 合成后的对比度——
+  /// 体检表 `test/theme/apca_audit_test.dart` 会拿 [menuFillOver] 当底来量。
+  static const double menuLayerAlpha = 0.80;
+
+  /// **浮层局部模糊的半径**（`AppFloatSurface(blur: true)` 消费）。
+  ///
+  /// 12 ≈ macOS 菜单那档"看得出是磨砂、但读得出背后有大块色形"。
+  /// ⚠️ 成本与**面积 × 重绘次数**成正比：这里只糊面板那块（约全屏 1/20~1/30），
+  /// 与"全屏压在画布上"不是一回事（后者才是仓库里那条红线）。
+  /// 量法：profile 构建 + `F9`（`lib/src/dev/frame_probe.dart`）看 `raster_p90_ms`。
+  static const double floatBlurSigma = 12;
+
+  /// **磨砂浮层的实际填色**（半透明纯色）；合成观感见 [menuFillOver]。
+  ///
+  /// **两处**共用（2026-09-22）：**主菜单 / 关于面板**（都是 `blur: true` 的磨砂）。
+  /// ⚠️ **设置面板不在这两处里**：它面积大（11% 屏）且不开模糊 ⇒ 走**实色**
+  /// [floatSurface]（半透没有模糊托着就是"清晰字影"，这一点在面板那档尤其要紧）。
+  /// 另：关于面板背后原本是 `showDialog` 的黑色模态遮罩，2026-09-22 已改成
+  /// **透明 barrier**（与设置面板一致）；生成合成色时**不需要**再算背后那层。
+  static Color menuFill(Brightness brightness) =>
+      floatSurface(brightness).withValues(alpha: menuLayerAlpha);
+
+  /// [menuFill] 叠在 [bg] 上的**合成色**——描边钳制与体检表拿它当"真实底"。
+  static Color menuFillOver(Brightness brightness, Color bg) =>
+      Color.alphaBlend(menuFill(brightness), bg);
+
+  // ── 面板（设置 / 关于）：底 = [floatSurface]，玻璃感全交给光泽 ───────────────
+  //
+  // 这里曾经有过一档 `panelFill`（0.80 → 0.88 → 0.98，2026-09-22 内的三次调整）。
+  // 删掉它的理由：半透的代价是**清晰鬼影** ∝ `1 − α`，而面板**面积大**
+  // （设置面板 720×560 ≈ 全屏 11%，菜单约 1/20）且**不开模糊**（见
+  // [AppFloatSurface.blur] 的面积分档）⇒ 鬼影的面积与清晰度都最大；实测收到 0.98 时
+  // 它已经**与实色无观感差别**（体检表两档只差 1~3 Lc）⇒ 索性删掉这一档，
+  // 少一个"名不副实、又要反复纠结"的旋钮。面板口径因此回到一句话：
+  // **底 = [floatSurface]（实色）+ 两层纯绘制的光（[glassSheen] / [glassRim]）**。
+  // ⚠️ 想再要"透"，唯一的正解是**开模糊**（[AppFloatSurface.blur]）——
+  // 没有模糊托着的半透就是"清晰字影"（本仓历史上"发脏"那个观感）。
+
+  /// **暗色下最亮的一块面** —— 暗色文字的对比**参考底**（见 `onSurfaceVariant` 的钳制）。
+  ///
+  /// 组成 = 面板底（[floatSurface]）再叠**玻璃光泽**的顶端 —— 面板是实色，所以
+  /// **背后是什么都影响不到它**，最亮处只由"面板色 + 光泽"决定。
+  /// ⚠️ 为什么参考底不能直接取 [floatSurface]：光泽会把它**再抬亮 5%**，而暗色的文字是
+  /// **浅色**的 ⇒ **面越亮、对比越差**；漏掉这一层，`onSurfaceVariant` 在实际面板顶上
+  /// 就会掉出 60 档（2026-09-22 体检表当场抓过）。
+  /// ⚠️ 它**只对暗色有意义**：亮色下最亮的面是浮层的白、文字是深色，方向相反。
+  static Color lightestDarkSurface() => Color.alphaBlend(
+    const Color(0xFFFFFFFF).withValues(alpha: glassSheenAlpha),
+    floatSurface(Brightness.dark),
+  );
+
+  // ── 玻璃档的三个令牌（`AppFloatSurface(glass: true)` 消费） ──────────────
+  //
+  // "玻璃"在视觉上由三件构成：①镜面高光 / 光边 ②厚度（上亮下沉）③**透光 / 折射**。
+  // 前两件纯绘制就能做（本组令牌），第三件只有透明度 / 模糊能提供 —— 所以纯色 +
+  // 高光得到的是"**釉面 / 抛光玻璃板**"，不是"看得见背后的磨砂玻璃"。
+
+  /// **内光泽**顶端的白度：竖向渐变从上沿最亮到 45% 处归零。
+  ///
+  /// 5% 是"看得出来是光、但看不出是一层白"的量级；超过 ~8% 立刻读成"塑料 / 油面"。
+  static const double glassSheenAlpha = 0.05;
+
+  /// **顶沿光边**的白度（按明暗分档）。
+  ///
+  /// 亮色 **50%**：面板本来就近白，这条线是它唯一的"亮"——好在它是一条**线**
+  /// （不是一片面），与底色 1~2 级的差也看得见。
+  /// ⚠️ 暗色只有 **8%**：近黑面板上一根白线极显眼，再加一点就成"塑料亮边"。
+  static double glassRimAlpha(Brightness brightness) =>
+      brightness == Brightness.light ? 0.50 : 0.08;
+
+  /// **玻璃内光泽**：竖向，上沿最亮 → 45% 处归零。
+  ///
+  /// ⚠️ 两端必须**同色（都是白）只改 alpha**：写成 `Colors.transparent`
+  /// （= 透明**黑**）会在渐变中段插出灰带，近黑面板上就是一道脏印。
+  /// 闸门：`test/theme/glass_test.dart`（钉住"另一端是**白**的透明"）。
+  static LinearGradient glassSheen(Brightness brightness) => LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: <Color>[
+      const Color(0xFFFFFFFF).withValues(alpha: glassSheenAlpha),
+      const Color(0xFFFFFFFF).withValues(alpha: 0),
+    ],
+    stops: const <double>[0, 0.45],
+  );
+
+  /// **玻璃顶沿光边**：横向（`LinearGradient` 的默认方向就是左 → 右），两端淡出、
+  /// 中间一条亮线。
+  ///
+  /// 两端淡出有两个好处：① 圆角处不会突然断头；② 不与两侧的描边抢边界。
+  static LinearGradient glassRim(Brightness brightness) {
+    final Color rim = const Color(0xFFFFFFFF)
+        .withValues(alpha: glassRimAlpha(brightness));
+    final Color clear = const Color(0xFFFFFFFF).withValues(alpha: 0);
+    return LinearGradient(
+      colors: <Color>[clear, rim, rim, clear],
+      stops: const <double>[0, 0.08, 0.92, 1],
+    );
+  }
+
+  /// ⚠️ 主菜单**曾经**靠覆写 `popupMenuTheme` 来取这层底色；2026-09-22 它换成自家
+  /// 锚定浮层（`AppPopover(blur: true)`）之后就不需要了——那支覆写函数随之删除。
+  /// 留这条注记是为了别再走回头路：`PopupMenuButton` 的面板在路由内部，
+  /// **插不进 `BackdropFilter`**，做不出模糊。
+
+  /// **导航板的板底**（Craft 的"悬浮 sheet"语言，2026-09-22 对照实机截图定）。
+  ///
+  /// 值来自 [ladder] 的 `board` 档：暗色是"底 + **9.9 L\***"的 [SurfaceShape.cool] 灰
+  /// 叠 95%（当前 `#2A2B2F` @95%）；亮色**不走明度序**，直接用 `Color(0xF2FFFFFF)`
+  /// （板底贴白端，底怎么动它都不会"陷进去"，见 `surface_ladder.dart` 的说明）。
+  ///
+  /// ⚠️ 为什么是**近实中性色**、而不是半透明低 alpha：上一版 `#3A3A3A`@30% 发"脏"，
+  /// 根源是**半透明**——壁纸的色相混了进来。Craft 的板几乎不透却也不脏，因为它
+  /// **中性 + 近实**，靠 6px 缝和周围更淡的区域把"浮起来"说清楚。
+  /// **通透感 ≠ 低不透明度**；也**不要**用灰色中 alpha（那两版都踩过）。
+  ///
+  /// ⚠️ **方向按明暗分两种语义**（此前一律"必须比底亮"，2026-09-23 起只保住暗色那侧）：
+  /// - **暗色**：板是"浮在窗口底上的 sheet" ⇒ **必须比底亮**。`#2A2B2F` = L\* 17.6，比抬档
+  ///   后的底 `#171715`（7.7）高 **+9.9**，与抬档前的关系一致。2026-09-22 暗底抬档时**它是
+  ///   跟着抬的**（`#1E1F23` 只有 L\* 11.7 ⇒ 不抬就比底还暗、整块陷进去）。
+  /// - **亮色**：板底是**下沉的一列**（非 Mica 平台的导航列实色 `#EFEFED`，比主区
+  ///   `#F8F8F6` 深 **3.1 ΔL\***）——亮色那端已贴到白，往上提就是"白面板压白底"。
+  ///   完整理由与候选表见 `surface_ladder.dart` 的 [boardOverride]（**值改那里，别改这里**）。
+  /// 📌 暗色板底的**冷灰形状**（R, R+1, R+5）是刻意的（Craft 那种"中性 sheet"），与底的暖调不同，
+  /// 别把它也改成 `R=G, B=R−2`。亮色回退档则是**与底同族**（暖调），读作"同一材质深一档"。
+  static Color boardFill(Brightness brightness) => ladder(brightness).board;
+
+  /// [boardFill] 之上的**叠加档**（导航项悬停）：暗 = 白 6%，亮 = 黑 5%。
+  /// 是**叠在近实板底上的量**，不是从零算的绝对值。
+  static Color boardFillHover(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.06)
+      : Colors.black.withValues(alpha: 0.05);
+
+  /// **卡片/导航项的填充**（WinUI `CardBackgroundFillColorDefault` 同款）：
+  /// 直接坐在 Mica 上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
+  ///
+  /// 半透明**纯色** ⇒ 每像素一次混合、**不产生 saveLayer**（成本 ≈ 不透明纯色）。
+  /// ⚠️ 想调透感就改这里的 alpha，**不要**用 `Opacity`/`AnimatedOpacity` widget
+  /// （那才强制 saveLayer），也**不要**碰 `BackdropFilter`（模糊是红线）。
+  ///
+  /// ⚠️ **不要**给常驻内容加"面板底"：曾按 WinUI `LayerFillColorDefault` 铺过
+  /// `#3A3A3A`@30%——灰罩在壁纸染色的 Mica 上显"脏"（2026-09-22 与系统设置并排
+  /// 对比后否决，记录在 `docs/ui_rewrite_plan.md` §5.6）。
+  static Color cardFill(Brightness brightness) => brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.05)
+      : Colors.white.withValues(alpha: 0.70);
+
+  /// [cardFill] 的悬停/选中态：**叠在 [cardFill] 上的量**（与 [boardFillHover]
+  /// 同构——交互态一律是"再叠一档"，不是换色）。
+  static Color cardFillHover(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.08)
+      : Colors.white.withValues(alpha: 0.80);
+
+  /// [cardFill] 的极淡描边（读作"边缘"不是"线"）：暗 = 白 6%，亮 = 黑 6%
+  /// （WinUI `CardStrokeColorDefault` 量级）。
+  static Color cardStroke(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.06)
+      : Colors.black.withValues(alpha: 0.06);
+
+  /// **窗口渐变底**（§5.6；2026-09-22 当过半天窗口底，**当天即被纯色取代** ⇒ 现在未挂载）。
+  ///
+  /// 留着它是因为"想要渐变味道"的路没关——但**唯一正解是同时抖动**（`FragmentShader`
+  /// 里做有序抖动，只在量化前加一次噪点），见 [WindowBase] 与 `docs/ui_rewrite_plan.md` §5.6。
+  ///
+  /// - 暗 = `#0D0C0A → #141310`，亮 = `#F5F4F0 → #FBFAF7`，**对角向**
+  /// - **暖调一致**：明暗两侧**同向偏暖**——不做"暗冷亮暖"，那会色温断裂（切换
+  ///   主题时像换了个应用）
+  /// - ⚠️ 两端只差 **6~7 个 8-bit 台阶** ⇒ 铺满全屏（≈2900 逻辑 px）时
+  ///   **每 ~420px 一条**能看见的色带（2026-09-22 用户实报）——**台阶数 = 色带数**，
+  ///   这就是它被撤掉的原因。
+  /// ⚠️ **铁律：两端每通道差 ≤ 10/255（≈4% 明度）**——淡到说不出哪里变了才对，
+  /// 能看出"这是个渐变"就廉价了（有测试钉着）。它曾替代 DWM 的 Mica（渐变不透明
+  /// ⇒ 盖住材质），窗口材质已取消，这条历史留着。
+  static LinearGradient windowGradient(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF0D0C0A), Color(0xFF141310)],
+        )
+      : const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFFF5F4F0), Color(0xFFFBFAF7)],
+        );
+
+  /// **窗口底的噪点强度**（§5.6）：暗 3% / 亮 1.5%。
+  ///
+  /// ⚠️ **当前未挂载**（`WindowBase` 里没有它）：撤销微渐变后**没有色带可治**——
+  /// 纯色在 8-bit 下不产生色带；而"独立噪点图层"也治不了渐变的色带
+  /// （2026-09-22 实测：摘掉它色带仍在、加回它更重）。留作"想要颗粒感"的现成件。
+  /// ⚠️ **铁律 ≤ 5%**——超过就"脏"（与板底同一条教训），有测试钉着。
+  static double windowNoiseAlpha(Brightness brightness) =>
+      brightness == Brightness.dark ? 0.03 : 0.015;
+
+  /// 噪点颗粒的颜色：暗色底用**白粒**（黑粒在近黑底上看不见），亮色底用**黑粒**。
+  static Color windowNoiseGrain(Brightness brightness) =>
+      brightness == Brightness.dark ? Colors.white : Colors.black;
+
+  /// **纸面噪点强度**（2026-09-22 用户定：**先只做暗色**一版看对比）：
+  /// 暗 `2%` 白粒 / 亮 `0`（不挂）。挂在 `home_screen.dart` 的 `_PaperNoise`。
+  ///
+  /// ⚠️ **纯审美，不治任何东西**：纸面是纯色 ⇒ **没有色带**（色带是渐变的产物）。
+  /// 效果 = 纸感/颗粒，暗色下能破掉大面纯色的死板；**代价**是纸面就是阅读面，
+  /// 颗粒直接铺在字下面——字本身不糊（字画在噪点之上），但字周的局部对比被削一档。
+  /// ⚠️ **≤ 2%**：比窗口底那档更保守，因为它离正文更近（有测试钉着）。
+  static double paperNoiseAlpha(Brightness brightness) =>
+      brightness == Brightness.dark ? 0.02 : 0;
 
   /// **Callout 块的底色**（`callout` 块；节点没存颜色时的回退值）。
   ///
@@ -136,10 +369,15 @@ class AppTheme {
   /// ⚠️ 它是**懒解析**的目标：callout 节点默认**不存**颜色（`transparent`
   /// 哨兵），渲染时才来取这里 ⇒ 改这个色、切明暗，存量笔记自动跟着变，
   /// 不需要迁移文档（官方同款技巧）。
+  ///
+  /// ⚠️ **暗色的值也是"绝对色"、必须跟着纸面抬**：它原本是 `#222222`（L\* 13.2），
+  /// 而纸面 2026-09-22 抬到了 `#232321`（L\* 13.7）⇒ 不抬就**比纸面还暗**，
+  /// callout 从"纸面里的一块记号"变成"纸面上挖的坑"。现值 `#2F2F2F`（L\* 19.4，
+  /// 与 [floatSurface] 同值 —— 这是它一直以来的口径），比纸面亮的关系保持不变。
   static Color calloutBackground(Brightness brightness) =>
       brightness == Brightness.light
-          ? const Color(0xFFF2F2F2)
-          : const Color(0xFF222222);
+      ? const Color(0xFFF2F2F2)
+      : floatSurface(brightness);
 
   /// 浮层投影高度——**浮层三件套**之一（另两件：[floatSurface] 底色、
   /// [menuBorder] 描边）。
@@ -148,10 +386,49 @@ class AppTheme {
   /// 缺任何一件，浮层都会退化成"内容自己看起来像个面板"。
   static const double menuElevation = 6;
 
-  /// 浮层描边——**浮层三件套**之一（`outlineVariant` 本身就淡，
-  /// 这里不再额外降透明度，否则深色下几乎看不见）。
-  static BorderSide menuBorder(ColorScheme scheme) =>
-      BorderSide(color: scheme.outlineVariant);
+  /// 浮层描边——**浮层三件套**之一。
+  ///
+  /// ⚠️ **必须钳到 APCA Lc 22**（2026-09-22 体检出来的）：`outlineVariant` 在暗色下
+  /// 压在 `floatSurface`（当时是 `#222222`）上只有 **Lc −8.2**——那不是"淡"，是**看不见**，
+  /// 三件套白缺一件。钳制对亮色是空操作（实测 Lc 30.6 已达标）。
+  /// ⚠️ [width] 默认 **发丝宽**（0.5 逻辑 px，见 [Tokens.hairlineWidth]）：用户实机反馈
+  /// "菜单边框线再细一点"（2026-09-22）。与"看得见"不冲突——细线靠**颜色对比**兜底，
+  /// 宽度只负责"薄"（所以那个 Lc 22 不能跟着降）。
+  ///
+  /// ⚠️ **唯一要传 1 的调用方是 [neuFloatBar]**（编辑器浮动工具条）：它的**外高按
+  /// "38 + 上下各 1px"算**，宽度一变小就与预测器脱节（`fixed_toolbar_test` 与
+  /// `app_theme_test` 各有一条闸门钉着"浮条描边必须 1px"）。菜单/面板不受影响。
+  static BorderSide menuBorder(
+    ColorScheme scheme, {
+    double width = Tokens.hairlineWidth,
+  }) => BorderSide(
+    width: width,
+    color: menuBorderColor(scheme.outlineVariant, scheme.brightness),
+  );
+
+  /// [menuBorder] 的**裸色版**（只收描边基色 + 明暗）——给走**官方 material** 的
+  /// 编辑器子树用：那边是官方 `ColorScheme`，与应用侧的 `material_ui` 类型不通
+  /// （背景见 `editor/widgets/float_menu_style.dart` 的文档）。
+  /// 阈值与钳制**只在这一处**，别在调用点再写一个 22。
+  ///
+  /// ⚠️ **参考底有两个，两个都要钳**（2026-09-22 改）：
+  /// - [menuFillOver]：主菜单那种**半透明**档的合成色；
+  /// - [floatSurface]：**实色**浮层（面板 / 工具栏 / 卡片的那种底）。
+  ///
+  /// 早先只钳前者，理由是"半透明合成色更贴近窗口底 ⇒ 更严苛"——**这个判断只在暗色浮层
+  /// 比底亮一点点时成立**。2026-09-22 暗底抬到 +2 档、浮层跟着抬到 `#3C3C3C`（L\* 25.3）
+  /// 之后，实色浮层成了**更亮的那个** ⇒ 反而更严苛，一行当场掉到 Lc −20.9（需 22）。
+  /// ⇒ 改成**两个底都钳一遍**（`withMinLc` 在已达标时是恒等操作，不会叠加过冲）。
+  static Color menuBorderColor(Color outlineVariant, Brightness brightness) =>
+      withMinLc(
+        withMinLc(
+          outlineVariant,
+          menuFillOver(brightness, windowBackground(brightness)),
+          22,
+        ),
+        floatSurface(brightness),
+        22,
+      );
 
   /// 浮层投影——**双层软阴影**（2026-09-19 起 Apple 菜单口径，替换单层
   /// Material 投影）：
@@ -210,8 +487,8 @@ class AppTheme {
   /// 用户反馈对比度不足、像"融进纸里"。
   ///
   /// 改回浮层三件套口径（与菜单 / 查找面板一致）：
-  /// - 底色 [floatSurface]：亮色 `#FFFFFF` / 深色 `#222222`，与纸面各抬一档
-  ///   （亮 +1.7 L\* / 深 +6 L\*），本身就是一道明确明度差；
+  /// - 底色 [floatSurface]：亮色 `#FFFFFF` / 深色 `#3C3C3C`，与纸面各抬一档
+  ///   （亮 **+2.5 L\*** / 深 **+11.6 L\***），本身就是一道明确明度差；
   /// - 描边 [menuBorder]（满档 `outlineVariant`）：清晰勾边，不再含蓄；
   /// - 投影 [neuShadows]：单向下投的"抬起"实体感（非双向柔光）。
   /// 三者叠加，条在亮/暗两种模式下都明显浮在纸面上。
@@ -223,7 +500,9 @@ class AppTheme {
       BoxDecoration(
         color: floatSurface(brightness),
         borderRadius: BorderRadius.circular(Tokens.radiusLg),
-        border: Border.fromBorderSide(menuBorder(scheme)),
+        // ⚠️ **显式 1px**（不是菜单那档发丝宽）：本条的**外高 = 38 + 上下各 1px**，
+        // 宽度一改就与预测器/布局补偿脱节（两条闸门钉着）。
+        border: Border.fromBorderSide(menuBorder(scheme, width: 1)),
         boxShadow: neuShadows(brightness),
       );
 
@@ -231,8 +510,10 @@ class AppTheme {
   ///
   /// 单向下投 + 左上受光提示：底色已是与纸面差一档的 [floatSurface]，
   /// 投影只负责补"实体抬起"感。亮色下白高光落在白面上基本隐形、无妨；
-  /// 深色下投影最弱（黑影落黑底），故暗影加重、位移略大，配合 `#222222` 条底
-  /// 与 `#161616` 纸面的明度差才读得出层次。
+  /// 深色下投影最弱（黑影落在暗底上对比小），故暗影加重、位移略大，配合
+  /// `#3C3C3C` 条底与 `#232321` 纸面的明度差才读得出层次。
+  /// 📌 2026-09-22 暗底抬到 +2 档后，**暗侧的投影空间第一次出现**（原来底是近黑，
+  /// 黑影落上去等于没画）⇒ 这几个 offset / alpha 的幅度可以重新调大一点。
   static List<BoxShadow> neuShadows(Brightness brightness) =>
       brightness == Brightness.light
           ? const <BoxShadow>[
@@ -268,11 +549,29 @@ class AppTheme {
   /// 业务代码一律从这三处取，不要手写 `withValues(alpha: ...)` 的比例——
   /// 颜色来自 scheme（换主题安全），但比例散在各文件会渐渐失同步。
 
-  /// 分隔线：`outlineVariant` 打六折。亮色下是极浅灰勾边、深色下亮一档，
-  /// 但仍弱于 [menuBorder]（浮层要被"挑"出来，分隔线只需"分"）。
-  /// 用于：左右分区界线、工具栏分组线、目录面板侧边线。
-  static Color divider(ColorScheme scheme) =>
-      scheme.outlineVariant.withValues(alpha: 0.6);
+  /// 分隔线：`outlineVariant` 打六折，但仍弱于 [menuBorder]（浮层要被"挑"出来，
+  /// 分隔线只需"分"）。用于：左右分区界线、工具栏分组线、目录面板侧边线、**画布网格**。
+  ///
+  /// ⚠️ **必须钳到 APCA Lc 20**（2026-09-22 体检）：暗色下 `outlineVariant@60%` 叠在
+  /// 当时的近黑底上只剩 **Lc 0.0**——线**完全不可见**（亮色侧 15.0，也刚踩在"任何
+  /// 非文本元素的最低线"上）。钳制对亮色是轻推（15 → 20），对暗色是**从 0 救回来**。
+  ///
+  /// 参考底取**最严苛**的那个（同一个色压在不同的底上 Lc 不同）：
+  /// 亮色的线**比底暗** ⇒ 越暗的底越苛刻 ⇒ 取**纸面**；暗色的线**比底亮** ⇒
+  /// 越亮的底越苛刻 ⇒ 取 [floatSurface]。取反了就会出现"按白底算达标、
+  /// 画在纸面上只有 15.9"（体检表当场抓到过一次）。
+  /// ⚠️ 与 [menuBorder] 同一个机制（[withMinLc]），但阈值更低：它只需"分"，不必"挑"。
+  static Color divider(ColorScheme scheme) {
+    final Brightness b = scheme.brightness;
+    final Color reference = b == Brightness.light
+        ? contentCanvas(b)
+        : floatSurface(b);
+    return withMinLc(
+      scheme.outlineVariant.withValues(alpha: 0.6),
+      reference,
+      20,
+    );
+  }
 
   /// 状态层：悬停高亮（M3 状态层同语言，`onSurfaceVariant @ 12%`）。
   /// 用于：工具栏按钮槽位等自绘交互件；IconButton 系走 M3 默认不用它。
@@ -282,29 +581,91 @@ class AppTheme {
   /// 两者同为 12% 时按下几乎看不出变化。
   static Color stateLayerPressed(Color base) => base.withValues(alpha: 0.18);
 
-  /// 激活/选中底色：`onSurface @ 10%`（中性不染种子色；8% 在浅色下
-  /// 几乎看不出选中态，实测 10% 是下限）。
-  /// 用于：目录面板激活项、斜杠菜单选中项等"当前项"标识。
-  static Color activeTint(Color onSurface) => onSurface.withValues(alpha: 0.10);
+  /// **「当前项」的底**（`docs/ui_rewrite_plan.md` §5.1 的统一出口）：
+  /// `onSurface @ 10%`。
+  ///
+  /// ## 为什么中性、而不是 M3 的 `secondaryContainer`
+  /// **种子色用户可换**（克莱因蓝 / 绛红 / 蒂芙尼 / 紫罗兰），染色会随种子飘，
+  /// 而"我在哪"的**读法必须恒定**——中性 tint 在任何种子下都是同一个灰阶。
+  /// （§2.2 允许强调色出现在"我在哪"，但"**能**用"与"**该**用"是两件事：
+  /// 形状信号比色相更耐换肤。）
+  ///
+  /// 比例 10% 是实测下限：8% 在浅色下几乎看不出选中态。
+  ///
+  /// 用于：笔记列表项、目录面板激活项、设置面板左导航、命令面板行、跳转闪烁块
+  /// ——**新代码一律用它**，不要自己挑比例（分叉的根因）。
+  static Color navSelectedTint(Color onSurface) =>
+      onSurface.withValues(alpha: 0.10);
 
-  /// 窗口底色（亮色）：Win11 系统应用的标准色（Mica 的等价纯色）。
+  /// **「当前项」的左指示条色**（§5.1 的第二件）：取 `primary`。
   ///
-  /// 两处共用：
+  /// 它是**形状信号**（一根 `Tokens.indicatorWidth` 宽的竖条）：换种子只换色相、
+  /// 不改读法——这正是"形状为主、颜色为辅"的落点。
+  static Color navIndicator(ColorScheme scheme) => scheme.primary;
+
+  /// 当前主题的**明度序**（`surface_ladder.dart`）：应用里每一块"面"的底色都从它取。
+  ///
+  /// **抬档 = 改 `SurfaceLadder.dark.baseLstar` 一个数**（或 `light` 那份），
+  /// 底 / 纸面 / 浮层 / 板底会一起动 —— 这是 2026-09-22 把"四处绝对色值"收成一张表的原因。
+  /// ⚠️ 文字档**不在**明度序里（它们被对比度闸门夹住），抬完档要重验
+  /// （`app_theme_test` + `apca_audit_test` 会当场报）。
+  static SurfaceLadder ladder(Brightness brightness) =>
+      brightness == Brightness.light ? SurfaceLadder.light : SurfaceLadder.dark;
+
+  /// **统一焦点环**（`docs/ui_rewrite_plan.md` §5.2）：`primary`
+  /// [Tokens.focusRingWidth] 描边。
+  ///
+  /// 取 primary 是**合法**的：§2.2 的三语义里，"我在哪"（焦点）正是其一。
+  /// 画在**边界内侧**（`foregroundDecoration`）——理由见 [Tokens.focusRingWidth]
+  /// 与 `theme/focus_ring.dart`。
+  ///
+  /// 界面统一用 [FocusRing] 这个 widget，不要各自拼 BoxDecoration。
+  static BoxDecoration focusRing(
+    ColorScheme scheme, {
+    required BorderRadius borderRadius,
+  }) => BoxDecoration(
+    border: Border.all(color: scheme.primary, width: Tokens.focusRingWidth),
+    borderRadius: borderRadius,
+  );
+
+  /// **窗口底**（纯色）：主页整屏铺它；笔记 / 画布页整块铺 [contentCanvas] 盖住它。
+  ///
+  /// 三处共用：
   /// 1. 主题的 `surface`，作为整套色板的基准；
-  /// 2. Win10 等无 Mica 的系统上，`WindowEffect.solid` 的回退底色——
-  ///    与 Mica 的观感一致，切换时界面不会跳色。
+  /// 2. `main.dart` 的 `MaterialApp.builder` ⇒ **全路由共用一层底**（主页的 6px 缝、
+  ///    笔记页侧栏区都吃到它）；
+  /// 3. 没铺到纸面的区域（浮层之间的缝、过渡帧）。
   ///
-  /// ## ⚠️ 深色值**故意偏离** Win11（`#0A0A0A`，原 `#1A1A1A`）
-  /// 2026-09-15 随纸面一起压近黑（见 [contentCanvas] 的光晕说明）。它必须
-  /// **比纸面更深**才能维持"编辑页浮在窗口底之上"的读数（亮色同理：
-  /// `#F3F3F3` < `#FAFAFA`）。这一档不再等于系统 Mica 色——是刻意的取舍：
-  /// 层级关系优先于"与系统底同色"。
+  /// ## 取值来自**明度序**（`surface_ladder.dart`，2026-09-22 起）
+  /// 这里**不再写死 hex**：值是 [ladder] 的 `base` 档（亮的 L\* 97.5 = `#F8F8F6`，
+  /// 暗的 L\* 7.67 = `#171715`，都是 [SurfaceShape.warm] 的 H=60° 极淡暖调）。
+  /// ⇒ **抬档 = 改 `SurfaceLadder` 里的 `baseLstar` 一个数**：[floatSurface] /
+  /// [boardFill] 会自动跟随，不会再出现"只抬底、浮层比底还暗"的漏改
+  /// （2026-09-22 手工抬档时踩过：那次一共动了四处绝对色值）。
+  ///
+  /// ## ⚠️ 暗色抬了**一档**（2026-09-22 同日第二次定，用户选 "+1 档"）
+  /// 暗色原本是 L\* 1.8（近黑）⇒ **所有"往下走"的手段都被压死了**：投影、内阴影、
+  /// 凹陷、轻拟态的暗侧一律没有空间（黑影落近黑底上等于没画）。
+  /// 抬到 **L\* 7.67（+6 L\* 一档）** 后暗侧有了 ~8 L\* 的空间（试过 +2 档 = 13.7，
+  /// 实机看下来"有点多"）。代价：底上的文字对比略降（正文 Lc −86.7 → **−85**，
+  /// 仍远高于 75 档）。
+  ///
+  /// ## 与 [contentCanvas] 的关系（2026-09-22 用户定：**同色**）
+  /// 纸面**直接复用它** ⇒ 主页 / 笔记页同一个底；"编辑页浮起"的明度差刻意取消。
+  /// ⚠️ **改这里的值 = 同时改纸面**（两处共用一个令牌，这是刻意的：不许再漂开）。
+  /// 也是"抬这里 = 同时改**阅读底色**"的原因——这是本档唯一的全局代价。
+  ///
+  /// ## 余量（改之前先看这里）
+  /// 亮 L\* 97.5 ⇒ 到纯白只剩 2.5，**亮色那一边"白侧没空间"**（白高光 / 白内边在
+  /// 亮色下天然隐形，只能靠暗侧承力）；暗 L\* 7.67 ⇒ 到纯黑有 7.7，
+  /// 暗侧（黑影 / 内阴影 / 凹陷）能工作。
+  /// 合并前纸面是亮 L\* 98.3 / 暗 7.3，两两之差只有 ΔL\*≈0.74（亮，低于分辨阈）与
+  /// 5.5（暗）⇒ 取窗口底这一档当合并值，亮色"损失"的是本来就看不出来的那点差。
+  ///
   /// 另：它是 `scheme.surface` 的基准，改它会牵动 M3 派生的 container 系列；
   /// 本项目的浮层一律走 [floatSurface] / `AppFloatSurface`，不受影响。
   static Color windowBackground(Brightness brightness) =>
-      brightness == Brightness.light
-          ? const Color(0xFFF3F3F3)
-          : const Color(0xFF0A0A0A);
+      ladder(brightness).base;
 
   /// 编辑器中性色板：对标 Notion / Obsidian / Typora 文档风（GitHub-Flavored
   /// Markdown 观感），正文 / 代码 / 光标 / 选区 / 标记走中性系、不随种子色；
@@ -313,31 +674,51 @@ class AppTheme {
   /// 行内代码 / 代码块用中性灰底；光标 / 选区 / 标记 / 激活态全部走 onSurface 中性系。
   /// **编辑器正文色**（正文 / 标题 / 列表 / 引用 / 代码块里的一切内容文字）。
   ///
-  /// - **亮色**：直接取 `scheme.onSurface`（M3 中性深灰，与界面文字同源，不动）；
-  /// - **暗色**：**`#D6D6D6`**（2026-09-15 用户定案）——比 `onSurface`
-  ///   （派生出来 ≈ `#E3E3E3`）低一档，与纸面 `#161616` 组合成 **12.5:1**。
+  /// ## 口径：**APCA**（不是 WCAG），两边落在 **Lc ±90**
+  /// WCAG 的 4.5 / 7 只是**下限**，而且它**对深色严重高估**（APCA 官方口径：WCAG 的
+  /// 4.5:1 在近黑底上可能实际不可读）——这正是此前"暗色 12.5 还是 13.5:1"越调越
+  /// 没把握的原因：**那把尺子在深色里是失灵的**。改用 APCA 档位
+  /// （`docs/ui_rewrite_plan.md` §5.6）：
+  /// **正文首选 Lc 90**（≥14px / 400）、**最低 Lc 75**；**暗色上限约 −90**（初步结论，
+  /// 再高就是"字在发光"）。背后是**对比恒常性**：过了临界对比，再加大对比**不会**更好读。
   ///
-  /// ## 为什么"抬背景"和"降正文"各让一步
-  /// 刺眼有两个来源，作用面不同：
-  /// - **大面积黑的压迫感**（瞳孔开度）⇒ 靠 [contentCanvas] 抬一档
-  ///   （`#121212` → `#161616`）缓解，但对比度只降 ~0.5 点（14.6 → 14.1）；
-  /// - **浅字本身的发光**（halation）⇒ 靠本条降一档缓解，对比度降 ~2.6 点。
+  /// | | 取值 | 对 [contentCanvas] | APCA |
+  /// |---|---|---|---|
+  /// | 亮 | `#3A3A3A` | `#F8F8F6` | **Lc ≈ +92** |
+  /// | 暗 | `#DDDDDD` | `#0C0C0A` | **Lc ≈ −86** |
   ///
-  /// 两个杠杆都只动一半：纸面抬一档 + 正文降一档，合计 14.6 → **12.5:1**。
-  /// 仍远超 AA（4.5），可读性没有代价。
+  /// ⚠️ **亮色刻意不取 `onSurface`**：那档是 `#1A1A1A`（Lc **+100**），比首选档黑了
+  /// 10 级，长文偏"刺"。现在与 Notion 同档（它正文默认 `#37352F`）。
+  /// ⚠️ **暗色别越过 −90**：`#DDDDDD` 已到 −86，`onSurface`（≈`#E3E3E3`）是 −88.3。
+  /// ⚠️ APCA 档位以 **Helvetica/Arial** 为基准，**中文笔画更细**，且我们正文 13px
+  /// （低于 14px 那档）⇒ **取偏上值**（往 90 靠，别往 75 靠）。
   ///
   /// ## 只作用于编辑器内容
-  /// 界面文字（侧栏 / 菜单 / 工具栏 / 字数条）继续走 `scheme.onSurface`
-  /// ——它们是小字号 UI 文字，不承担长文阅读，没必要跟着降一档。
+  /// 界面文字（侧栏 / 菜单 / 工具栏 / 字数条）继续走 `scheme.onSurface`——短文本、
+  /// 小字号、不承担长文阅读，**越高越好**，不跟着收。
+  ///
+  /// ## 历史（看懂那几笔取舍）
+  /// 2026-09-15 定的是 WCAG 口径的"纸面抬一档 + 正文降一档，14.6 → **12.5:1**"，
+  /// 目的是压 halation；2026-09-22 换 APCA 后**两边都重算**：亮色往回收、暗色往上去。
   ///
   /// ⚠️ 视图里**两处**必须同时取它：`EditorStyle.textStyleConfiguration` 与
   /// `BlockHeightPredictor` 的那份（预测器复刻渲染 span，两处不同源就会脱节）。
   static Color editorText(Brightness brightness, ColorScheme scheme) =>
-      brightness == Brightness.dark ? _textDark : scheme.onSurface;
+      brightness == Brightness.dark ? _textDark : _textLight;
 
-  /// 暗色档正文字色。[editorText] 与 [canvasInk] **共用**同一个常量：画布墨迹
-  /// 必须与正文一个字色，否则同一份内容在两处是两种黑。
-  static const Color _textDark = Color(0xFFD6D6D6);
+  /// 暗色档正文字色（对纸面 **Lc −86**）。[editorText] 与 [canvasInk] **共用**同一个常量：
+  /// 画布墨迹必须与正文一个字色，否则同一份内容在两处是两种黑。
+  ///
+  /// ⚠️ 它被**两条闸门同时夹住**，窗口很窄（`app_theme_test` 两条都钉在这一档上）：
+  /// 1. **APCA 舒适带** `[−92, −84]`（暗色上限约 −90，越过去就是"字在发光"）；
+  /// 2. **必须比 `onSurface` 更柔**（护眼取向：正文不该是界面上最亮的字）。
+  /// 📌 2026-09-22 暗底抬档时试过 `#E0E0E0`（+2 档下 `#DDDDDD` 只剩 −83.5、掉出下界），
+  /// 最终**回到 +1 档** ⇒ 这个值可以不动（实测 −85.5 左右，两条闸门都过）。
+  static const Color _textDark = Color(0xFFDDDDDD);
+
+  /// 亮色档正文字色（Lc ≈ +92）。**刻意不等于** `scheme.onSurface`（那是 `#1A1A1A`、
+  /// Lc +100）——界面文字越高越好，长文正文要高得**刚好**。
+  static const Color _textLight = Color(0xFF3A3A3A);
 
   /// 画布**墨迹**色（`kThemeInk` 色的笔迹按它绘制，见
   /// `CanvasController.pictureFor` / `resolveInk`）。
@@ -349,16 +730,52 @@ class AppTheme {
   /// - **亮色** `#1F1F1F`：与哨兵 `kThemeInk`（`ink_stroke.dart`）**同值**
   ///   ⇒ 亮色下渲染逐像素不变、存量画布观感零回归。这个等价性由
   ///   `test/canvas/canvas_ink_test.dart` 钉住（不靠注释约定）；
-  /// - **暗色** `#D6D6D6`：与 [editorText] 暗色同值，对 `#161616` 纸面约 12.7:1。
+  /// - **暗色** `#E0E0E0`：与 [editorText] 暗色同值（**Lc −85.3**），对 `#232321` 约 11.9:1。
   static Color canvasInk(Brightness brightness) =>
       brightness == Brightness.dark ? _textDark : const Color(0xFF1F1F1F);
 
-  /// 链接色：**直接取主题 primary 原色**，不削弱、不写死。
+  /// 链接色：取主题 `primary` **原色**，但**钳到 APCA Lc 80**（正文档）。
   ///
-  /// 之前是写死的两套青色（亮/暗各一），既不随主题种子色、又和品牌脱节。
-  /// 现在与引用块竖条一致，都吃 [ColorScheme.primary]，明暗切换自动跟随、
-  /// 且用满强度（不靠 alpha 削弱）——与"主题原色直接上、不稀释"的取向一致。
-  static Color editorLink(ColorScheme scheme) => scheme.primary;
+  /// 取向仍是"种子即主色、不稀释"（与引用块竖条同源、明暗自动跟随）；钳制只在
+  /// **不达标时**才动它 ⇒ 多数种子（如默认青 `#0ABAB5`）拿到的就是原色。
+  ///
+  /// ⚠️ 为什么非钳不可（2026-09-22 体检）：`primary` 是**用户可换的种子色**，
+  /// 深种子（蓝 `#002FA7` / 洋红 `#990F4B`）压在近黑底上只有 **1.83:1**（Lc ≈ −20）
+  /// ——链接是**正文级**内容，即使有下划线也读不了；亮色侧同样吃紧（默认种子只有
+  /// **Lc 44.8**，低于正文最低档 75）。写死一个"够亮的链接色"不行：换个种子又坏了。
+  static Color editorLink(ColorScheme scheme) =>
+      withMinLc(scheme.primary, contentCanvas(scheme.brightness), 80);
+
+  /// **代码块语法高亮配色**（8 个 token 类，明暗两套）。
+  ///
+  /// ⚠️ 色相参考 Material / One Dark 的观感，但**明度全部按 APCA 重定**
+  /// （2026-09-22 体检：原表 8 色里亮色有 7 个、暗色有 5 个低于 `Lc 65`，
+  /// 暗色 `comment` 更是只有 −16.9——注释等于看不见）。
+  /// 消费方：`notes/services/note_code_syntax.dart`（`_tokenStyle`）与体检表
+  /// `test/theme/apca_audit_test.dart`（**同一份事实，不许各留一份**）。
+  ///
+  /// 档位：代码是**短 token 但属正文级阅读面** ⇒ 取 **≥ 65**（正文最低 75 与
+  /// 非分栏文本 60 之间）。底色是 [editorCodeBlockBg]。
+  static Map<String, Color> syntaxColors(Brightness brightness) {
+    final bool dark = brightness == Brightness.dark;
+    return <String, Color>{
+      // 关键字 / 字符串 / 数字（字面量）
+      'keyword': dark ? const Color(0xFFD9B5F1) : const Color(0xFF643ECF),
+      'string': dark ? const Color(0xFFC3E88D) : const Color(0xFF276A2B),
+      'number': dark ? const Color(0xFFFAB19B) : const Color(0xFF914900),
+      // 注释（最容易被写得太淡的一档）
+      'comment': dark ? const Color(0xFFC4C7CC) : const Color(0xFF5A5E63),
+      // 函数名 / 类名
+      'title': dark ? const Color(0xFFA6C3FF) : const Color(0xFF016194),
+      // 属性 / 变量
+      'attr': dark ? const Color(0xFFFFABB9) : const Color(0xFFAD164D),
+      // 内建 / 类型
+      'built_in': dark ? const Color(0xFF89DDFF) : const Color(0xFF026099),
+      // 元信息（预处理指令等）——沿用中性灰
+      'meta': dark ? const Color(0xFF89DDFF) : const Color(0xFF5E5E5E),
+    };
+  }
+
   /// 行内代码 / 代码块底色：**纯中性灰**（R=G=B），刻意不染暖色。
   ///
   /// 之前亮色是 `#EDEBE6` / `#E6E1D8`——R>G>B 的暖米调，与代码语法的
@@ -433,12 +850,24 @@ class AppTheme {
     ...cjkFontFallback,
   ];
 
-  /// 「待输入」占位色：Material 规范浓度（onSurface 35%）。
+  /// 「待输入」占位色：`onSurface` 低浓度，**按 APCA 兜底到 Lc 30**。
   /// 用于标题 hint、编辑器占位符、查找框 hint 等一切待输入提示。
-  /// 参数收 `onSurface` 基础色而非 ColorScheme——material_ui 与官方
-  /// material 的 ColorScheme 是两个类型，收 Color 才能两侧通用。
-  static Color hintColor(Color onSurface) =>
-      onSurface.withValues(alpha: 0.35);
+  ///
+  /// ⚠️ **不能只用固定 35%**（2026-09-22 体检）：那个浓度是**亮色**口径——暗色下
+  /// 浅色字压在近黑底上，35% 叠完只剩 **Lc −16.5**，占位文字基本看不见（提到 45%
+  /// 也只是缓解）。所以改成"明暗各一档 + 钳到 30"（APCA 对占位符的最低档）。
+  ///
+  /// 参数收 `onSurface` 基础色而非 ColorScheme——material_ui 与官方 material 的
+  /// ColorScheme 是两个类型，收 Color 才能两侧通用；明暗由 `onSurface` 自身明度推断
+  /// （它是**浅色** ⇒ 暗主题）。
+  static Color hintColor(Color onSurface) {
+    final bool dark = onSurface.computeLuminance() > 0.5;
+    return withMinLc(
+      onSurface.withValues(alpha: dark ? 0.45 : 0.35),
+      contentCanvas(dark ? Brightness.dark : Brightness.light),
+      30,
+    );
+  }
 
   /// **图标与次级色"退染"**：HSL 饱和度清零、明度保留。
   ///
@@ -463,6 +892,42 @@ class AppTheme {
   static ThemeData dark({Color seed = defaultDarkSeed}) =>
       _build(seed, Brightness.dark);
 
+  /// **界面排印档位（Apple 口径）**，见 `docs/ui_rewrite_plan.md` §9.2。
+  ///
+  /// 为什么不直接用 M3 默认：M3 的档位是**移动端**尺度（bodyLarge 16 /
+  /// bodyMedium 14 / titleLarge 22）配松行高，在 1280 宽的桌面窗口里整体偏大偏松
+  /// ——"大字号 + 大行高"正是安卓感的来源。Apple 的桌面正文是 **13**、小字 11，
+  /// 标题靠**字重**分层而不是字号，大字号带轻微负字距（视觉对齐）。
+  ///
+  /// ⚠️ **只作用于界面**：编辑器走 `EditorTypography`（自带字体与字号，取自
+  /// `AppSettings.fontSize`），**不吃这里** ⇒ 改这组值不会牵动块高预测器与滚动
+  /// 几何（那是按编辑器度量逐像素标定的，见 `block_height_predictor.dart`）。
+  static TextTheme typography(TextTheme base) => base.copyWith(
+    bodyLarge: base.bodyLarge?.copyWith(fontSize: 14, height: 1.35),
+    bodyMedium: base.bodyMedium?.copyWith(fontSize: 13, height: 1.4),
+    bodySmall: base.bodySmall?.copyWith(fontSize: 11, height: 1.35),
+    labelLarge: base.labelLarge?.copyWith(fontSize: 13),
+    labelMedium: base.labelMedium?.copyWith(fontSize: 11),
+    titleSmall: base.titleSmall?.copyWith(
+      fontSize: 13,
+      height: 1.2,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.1,
+    ),
+    titleMedium: base.titleMedium?.copyWith(
+      fontSize: 15,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.2,
+    ),
+    titleLarge: base.titleLarge?.copyWith(
+      fontSize: 17,
+      height: 1.25,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.3,
+    ),
+  );
+
   static ThemeData _build(Color seed, Brightness brightness) {
     final ColorScheme base = ColorScheme.fromSeed(
       seedColor: seed,
@@ -486,7 +951,19 @@ class AppTheme {
       // 正文 onSurface 同样退染（用户要求，2026-09-11）：编辑器正文/标题/
       // 列表文字全走这一档，C6~10 的染色虽淡，但正文是阅读面，统一中性。
       onSurface: _desaturate(base.onSurface),
-      onSurfaceVariant: _desaturate(base.onSurfaceVariant),
+      // ⚠️ **暗色要钳一道 60 档的下限**（参考底 = 全应用最亮的那块面，见 [lightestDarkSurface]）：
+      // 面板顶上那道**玻璃光泽**会把面再抬亮 5%，而暗色的次文字是**浅色** ⇒ 面越亮对比越差。
+      // 📌 当前它是**空操作**（实测那处 −62.1，本来就过）；留着是**下限保险** ——
+      // `glassSheenAlpha` 或浮层色一旦被调亮，这条会先把次文字顶在 60 档上，
+      // 而不是让它悄悄掉下去（2026-09-22 那次面板半透时它确实顶过一次）。
+      // 亮色不需要：那边最亮的面是浮层的白、文字是深色，越亮反而越好。
+      onSurfaceVariant: brightness == Brightness.dark
+          ? withMinLc(
+              _desaturate(base.onSurfaceVariant),
+              lightestDarkSurface(),
+              60,
+            )
+          : _desaturate(base.onSurfaceVariant),
     );
 
     // 统一的形状，供多处复用
@@ -508,6 +985,11 @@ class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
       visualDensity: VisualDensity.standard,
+
+      // 全局图标字重 300（Material Symbols Light）：字重走 IconTheme 的 `weight`
+      // 轴，所有 Symbols 图标默认细描边；强调态在具体调用处临时抬到 400/500。
+      iconTheme: const IconThemeData(weight: 300),
+      primaryIconTheme: const IconThemeData(weight: 300),
 
       // ── 结构 ───────────────────────────────────────────────
       appBarTheme: AppBarTheme(
@@ -563,7 +1045,8 @@ class AppTheme {
       ),
       listTileTheme: ListTileThemeData(
         shape: shapeMd,
-        minVerticalPadding: Tokens.spaceSm,
+        // 6：Apple 口径的桌面密度（§9.2）。8 是 M3 的默认档，行高偏松。
+        minVerticalPadding: 6,
         horizontalTitleGap: Tokens.spaceMd,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: Tokens.spaceMd,
@@ -572,7 +1055,10 @@ class AppTheme {
       dividerTheme: DividerThemeData(
         space: 1,
         thickness: 1,
-        color: scheme.outlineVariant,
+        // Apple 口径（§9.2）：分隔线"只需分、不需挑出来"——取与视图层同一个
+        // [divider] 令牌（60%）。此前是满档 `outlineVariant`，与浮层描边**同强度**：
+        // 分隔线比浮层边界还实，主次反了。
+        color: divider(scheme),
       ),
       expansionTileTheme: const ExpansionTileThemeData(
         // 折叠分组（如按日期/文件夹归类的笔记）
@@ -619,28 +1105,31 @@ class AppTheme {
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           shape: shapeSm,
-          minimumSize: const Size.square(40),
+          // 32 = [Tokens.toolbarButtonSize]（Apple 口径 §9.2：桌面控件比移动端小一档）。
+          // 此前是 M3 的 40，与工具栏按钮（32）**同一个"图标按钮"两种尺寸**。
+          // ⚠️ 下限仍受 a11y 约束（桌面 24×24，见 `test/a11y`），32 有余量。
+          minimumSize: const Size.square(Tokens.toolbarButtonSize),
           padding: EdgeInsets.zero,
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           shape: shapeSm,
-          minimumSize: const Size(64, 40),
-          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceLg),
+          minimumSize: const Size(56, Tokens.toolbarButtonSize),
+          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           shape: shapeSm,
-          minimumSize: const Size(64, 40),
-          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceLg),
+          minimumSize: const Size(56, Tokens.toolbarButtonSize),
+          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           shape: shapeSm,
-          minimumSize: const Size(64, 40),
+          minimumSize: const Size(56, Tokens.toolbarButtonSize),
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
       ),
@@ -653,8 +1142,40 @@ class AppTheme {
         shape: shapeLg,
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
-        // 视图切换：列表 / 网格 / 时间线
-        style: SegmentedButton.styleFrom(shape: shapeSm),
+        // 设置项（明暗 / 正文宽度 / 连线端点形状）的分段选择。
+        //
+        // 选中态走 §5.1 的「当前项」读法：**中性 tint 底 + 字重 w600**，
+        // **不加左指示条**——分段控件在形状上没有"左侧"可言（族内的合法例外）。
+        // 此前走 M3 默认的 `secondaryContainer`，那是第三种"选中"画法。
+        // 不用 `SegmentedButton.styleFrom`：它的 `textStyle` 参数收的是**单个**
+        // `TextStyle`、表达不了"选中加粗"，所以这里直接给 `ButtonStyle`
+        // （`WidgetStateProperty` 才能按态取值）。
+        style: ButtonStyle(
+          shape: WidgetStatePropertyAll<OutlinedBorder>(shapeSm),
+          backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+            (Set<WidgetState> states) => states.contains(WidgetState.selected)
+                ? navSelectedTint(scheme.onSurface)
+                : Colors.transparent,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith<Color>(
+            (Set<WidgetState> states) => states.contains(WidgetState.selected)
+                ? scheme.onSurface
+                : scheme.onSurfaceVariant,
+          ),
+          // ⚠️ 必须显式带上 `fontFamily` / 回退链：裸 `TextStyle` 会丢掉打包的
+          // 霞鹜新晰黑，分段控件的文字会悄悄回落到系统字体。
+          // （不能从 `theme.textTheme` 派生——`theme` 正在构造中，自引用编译不过。）
+          textStyle: WidgetStateProperty.resolveWith<TextStyle>(
+            (Set<WidgetState> states) => TextStyle(
+              fontFamily: editorFont,
+              fontFamilyFallback: cjkFontFallback,
+              fontSize: Tokens.fontSizeMd,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w600
+                  : FontWeight.w400,
+            ),
+          ),
+        ),
       ),
 
       // ── 标签与菜单 ─────────────────────────────────────────
@@ -683,6 +1204,8 @@ class AppTheme {
       ),
       menuTheme: MenuThemeData(
         style: MenuStyle(
+          // 实色。⚠️ Layer 试验**不在这一层**：本仓没有任何 `MenuAnchor`，
+          // 主菜单是 `PopupMenuButton` ⇒ 覆写在它的调用点（见 [layerMenuTheme]）。
           backgroundColor: WidgetStatePropertyAll<Color>(
             floatSurface(brightness),
           ),
@@ -748,11 +1271,13 @@ class AppTheme {
       ),
     );
 
-    // 统一中文回退链：消除逐字符回退导致的笔画粗细不一致。
+    // 两步合流（顺序无关）：① Apple 口径的界面排印（§9.2）；② 统一中文回退链
+    // ——消除逐字符回退导致的笔画粗细不一致。
     return theme.copyWith(
-      textTheme: theme.textTheme.apply(fontFamilyFallback: cjkFontFallback),
-      primaryTextTheme:
-          theme.primaryTextTheme.apply(fontFamilyFallback: cjkFontFallback),
+      textTheme: typography(theme.textTheme)
+          .apply(fontFamilyFallback: cjkFontFallback),
+      primaryTextTheme: typography(theme.primaryTextTheme)
+          .apply(fontFamilyFallback: cjkFontFallback),
     );
   }
 }

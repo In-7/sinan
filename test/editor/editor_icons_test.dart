@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:sinan/src/editor/core/editor_icons.dart';
 
 /// `…/assets/images/toolbar/bold.svg` → `toolbar/bold`。
@@ -16,7 +16,7 @@ String _iconNameOf(String path) => path
     .replaceAll(RegExp(r'\.svg$'), '');
 
 void main() {
-  group('编辑器图标：全 Lucide', () {
+  group('编辑器图标：全 Material Symbols', () {
     test('官方图标名全部有映射（缺一个就退回 SVG ⇒ 混排重现）', () {
       // 直接读 vendored 的资源目录，而不是手写清单：手写清单在**上游升级新增
       // 图标**时不会报错，而"新图标没登记"正是混排重现最可能的入口。
@@ -37,16 +37,16 @@ void main() {
       expect(onDisk, isNotEmpty, reason: '一个 SVG 都没读到，这条测试就失去意义');
 
       final List<String> missing = onDisk
-          .where((String name) => !kLucideEditorIcons.containsKey(name))
+          .where((String name) => !kEditorIcons.containsKey(name))
           .toList()
         ..sort();
-      expect(missing, isEmpty, reason: '这些官方图标还没换成 Lucide：$missing');
+      expect(missing, isEmpty, reason: '这些官方图标还没换成 Material Symbols：$missing');
     });
 
     test('未登记的名字返回 null ⇒ 回落官方 SVG（上游新增图标不会坏）', () {
-      installLucideEditorIcons();
+      installEditorIcons();
       expect(EditorSvg.iconOverride, isNotNull, reason: '钩子没装上，全在走 SVG');
-      expect(EditorSvg.iconOverride!('toolbar/bold'), LucideIcons.bold300);
+      expect(EditorSvg.iconOverride!('toolbar/bold'), Symbols.format_bold);
       expect(
         EditorSvg.iconOverride!('upstream_new_icon'),
         isNull,
@@ -54,12 +54,12 @@ void main() {
       );
     });
 
-    test('档位统一 300（粗细是字体族级的，见 editor_icons.dart 说明）', () {
-      // `bold300` 与 `bold` 码点相同、字体族不同 ⇒ 这两个断言等价于
-      // "描边是 1.55px 那档，而不是 Lucide 默认的 2.0px"。
-      expect(kLucideEditorIcons['toolbar/bold'], LucideIcons.bold300);
-      expect(kLucideEditorIcons['toolbar/bold'], isNot(LucideIcons.bold));
-      expect(kLucideEditorIcons['toolbar/h1'], LucideIcons.heading1300);
+    test('映射使用 Material Symbols（基名，字重由主题统一）', () {
+      // Material Symbols 是**可变字体**：字重走 IconTheme 的 `weight` 轴
+      // （100–700），不再有 Lucide 那种"字体族级档位"（bold300 ≠ bold）。
+      // 这里只锁死"映射确实指向 Symbols 字形"，字重一致性由 AppTheme 保障。
+      expect(kEditorIcons['toolbar/bold'], Symbols.format_bold);
+      expect(kEditorIcons['toolbar/h1'], Symbols.format_h1);
     });
   });
 }

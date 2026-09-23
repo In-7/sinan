@@ -1,9 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
 
 import '../ai/llm_client.dart';
 import '../app/providers.dart';
@@ -185,7 +185,7 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     final String text = raw.trim();
     if (text.isEmpty || !text.startsWith('{')) return null;
     try {
-      final dynamic decoded = jsonDecode(text);
+      final Object? decoded = jsonDecode(text);
       return decoded is Map<String, dynamic> ? decoded : null;
     } on FormatException {
       return null;
@@ -397,7 +397,9 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
   /// ② 提供块文本（`reference_block` 造卡片要全文，不是截断过的标签）；
   /// ③ 把结果说给用户听：改了几处、忽略了什么、以及**一次撤销**。
   Future<void> _runAi(String instruction) async {
-    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
+      context,
+    );
     if (ref.read(settingsProvider).aiModel.trim().isEmpty) {
       messenger?.showSnackBar(
         const SnackBar(content: Text('还没配置模型：到「设置 → AI」填写模型名')),
@@ -533,11 +535,7 @@ class _LoadFailedNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
-            LucideIcons.triangleAlert300,
-            size: Tokens.iconSm,
-            color: scheme.onErrorContainer,
-          ),
+          tabler.AlertTriangle(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onErrorContainer, ui.BlendMode.srcIn)),
           const SizedBox(width: Tokens.spaceSm),
           Expanded(
             child: Text(

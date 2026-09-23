@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
@@ -261,12 +262,7 @@ class _SinanLinkButtonState extends State<_SinanLinkButton> {
   @override
   Widget build(BuildContext context) {
     return SVGIconItemWidget(
-      iconBuilder: (BuildContext context) => Icon(
-        LucideIcons.link300,
-        size: Tokens.iconSm,
-        color:
-            widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
+      iconBuilder: (BuildContext context) => tabler.Link(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant, ui.BlendMode.srcIn)),
       isHighlight: widget.isHref,
       highlightColor: widget.highlightColor,
       iconColor: widget.iconColor,
@@ -425,7 +421,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                         errorText: _error,
                         suffixIcon: IconButton(
                           tooltip: '清空',
-                          icon: const Icon(LucideIcons.x300, size: Tokens.iconSm),
+                          icon: tabler.X(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                           onPressed: () => setState(() {
                             _urlController.clear();
                             _error = null;
@@ -453,7 +449,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       const Divider(height: 1),
                       _action(
                         context,
-                        icon: LucideIcons.externalLink300,
+                        icon: tabler.ExternalLink(height: 24, width: 24, strokeWidth: 1.5),
                         label: '打开链接',
                         onPressed: () async {
                           await editorLaunchUrl(widget.currentHref);
@@ -462,7 +458,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       ),
                       _action(
                         context,
-                        icon: LucideIcons.copy300,
+                        icon: tabler.Copy(height: 24, width: 24, strokeWidth: 1.5),
                         label: '复制链接',
                         onPressed: () {
                           unawaited(
@@ -475,7 +471,7 @@ class _LinkOverlayState extends State<_LinkOverlay> {
                       ),
                       _action(
                         context,
-                        icon: LucideIcons.trash2300,
+                        icon: tabler.Trash(height: 24, width: 24, strokeWidth: 1.5),
                         label: '移除链接',
                         onPressed: _removeLink,
                       ),

@@ -35,7 +35,8 @@ void main() {
       expect(
         violations,
         isEmpty,
-        reason: '画布内核出现了对外依赖。内核必须保持可单测、可复用：\n'
+        reason:
+            '画布内核出现了对外依赖。内核必须保持可单测、可复用：\n'
             '  ${violations.join('\n  ')}\n'
             '若非加不可，请在 docs/architecture.md §2 说明理由并显式放行。',
       );
@@ -55,7 +56,8 @@ void main() {
       expect(
         violations,
         isEmpty,
-        reason: '数据库驱动泄漏到了数据层之外——换存储/写测试都会被牵连：\n'
+        reason:
+            '数据库驱动泄漏到了数据层之外——换存储/写测试都会被牵连：\n'
             '  ${violations.join('\n  ')}\n'
             '请改为经 app/providers 取 *Store。',
       );
@@ -65,7 +67,8 @@ void main() {
       final Set<String> offenders = <String>{};
       for (final File file in _dartFilesUnder('lib')) {
         if (_rel(file).startsWith('lib/src/data/')) continue; // 同层互相引用合法
-        if (_dependenciesOf(file).any((String dep) => _referencesDataLayer(file, dep))) {
+        if (_dependenciesOf(file)
+            .any((String dep) => _referencesDataLayer(file, dep))) {
           offenders.add(_rel(file));
         }
       }
@@ -73,8 +76,37 @@ void main() {
       expect(
         offenders.difference(_legit),
         _debt,
-        reason: '若上面报"多出文件"：新代码越过了 DI，请改为经 app/providers 取数据；\n'
+        reason:
+            '若上面报"多出文件"：新代码越过了 DI，请改为经 app/providers 取数据；\n'
             '若报"少了文件"：债已清掉，请**同时删掉 _debt 里那一行**，别让账本烂掉。',
+      );
+    });
+
+    test('只有 locateProvider 能写"当前笔记"（跳转只此一条路）', () {
+      // `docs/ui_rewrite_plan.md` §4：换笔记**就是**跳转。别处若也能直接写选中态，
+      // 两条路会立刻分叉——表现为"列表点了编辑器没反应""角标跳过去了、列表高亮
+      // 还停在旧笔记"，而且这类分叉**不会编译报错**，只能靠这里拦。
+      //
+      // 允许写在 providers.dart 内：`locateProvider` 本体就在那儿，且"删空后回到
+      // 空态"是清空（不是"跳到哪里"，`locate` 要求有个目标才成立）。
+      const Set<String> allowed = <String>{'lib/src/app/providers.dart'};
+
+      final List<String> offenders = <String>[];
+      for (final File file in _dartFilesUnder('lib')) {
+        if (allowed.contains(_rel(file))) continue;
+        if (file.readAsStringSync().contains(
+          'selectedNoteIdProvider.notifier',
+        )) {
+          offenders.add(_rel(file));
+        }
+      }
+
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '请改为 `ref.read(locateProvider.notifier).locate(noteId: …)`：\n'
+            '  ${offenders.join('\n  ')}',
       );
     });
   });
@@ -101,11 +133,12 @@ const String _kernelDir = 'lib/src/canvas/kernel';
 
 // ─── 辅助 ──────────────────────────────────────────────────────────────────
 
-List<File> _dartFilesUnder(String dir) => Directory(dir)
-    .listSync(recursive: true)
-    .whereType<File>()
-    .where((File f) => f.path.endsWith('.dart'))
-    .toList();
+List<File> _dartFilesUnder(String dir) =>
+    Directory(dir)
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((File f) => f.path.endsWith('.dart'))
+        .toList();
 
 /// 取文件里所有 `import` / `export` 的目标路径。
 List<String> _dependenciesOf(File file) {

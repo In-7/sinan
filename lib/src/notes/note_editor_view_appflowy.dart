@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+
 import 'package:flutter/gestures.dart';
+
 import 'dart:math' as math;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -17,9 +20,7 @@ import 'package:appflowy_editor/src/editor/find_replace_menu/find_replace_widget
 // `Material` 祖先，material_ui 的同名类不算数，见 [_buildFindMenu]。
 // ignore: implementation_imports
 import 'package:flutter/material.dart' as official;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
 
 import '../domain/note.dart';
 import '../domain/settings.dart';
@@ -127,11 +128,16 @@ class _NoteEditorViewAppFlowyState
   final ValueNotifier<bool> _canRedo = ValueNotifier<bool>(false);
 
   /// 合并成一个 [Listenable] 供标题行覆盖层用（别每帧新建 merge）。
-  late final Listenable _historyAvailability = Listenable.merge(
-    <Listenable>[_canUndo, _canRedo],
-  );
+  late final Listenable _historyAvailability = Listenable.merge(<Listenable>[
+    _canUndo,
+    _canRedo,
+  ]);
 
   StreamSubscription<EditorTransactionValue>? _changesSub;
+
+  /// 跳转请求的订阅（见 [_maybeConsumeLocate]）。
+  ProviderSubscription<LocateRequest?>? _locateSub;
+
   /// 正文 / 标题的落盘调度：**带上限**的防抖（见 [SaveDebounce]）。
   ///
   /// 纯防抖在连续输入下会**一直不落盘**（每次事务都重置计时器 ⇒ "停顿"永不成立），
@@ -365,11 +371,8 @@ class _NoteEditorViewAppFlowyState
     ),
   );
 
-
-
   /// 固定工具栏的静态条目段（全局常量，不依赖任何视图状态）。
-  static final List<ToolbarItem> _staticToolbarItems =
-      sinanFixedToolbarItems();
+  static final List<ToolbarItem> _staticToolbarItems = sinanFixedToolbarItems();
 
   @override
   void initState() {
@@ -382,14 +385,24 @@ class _NoteEditorViewAppFlowyState
     // 正文按 id 从存储**单行**取（SELECT ... WHERE id）：列表快照不带
     // content 大字段（见 NoteStore.allNotes），不能从这里拿正文。
     final Note? note = _findNote();
-    final String? content =
-        ref.read(noteStoreProvider).noteById(widget.noteId)?.content;
+    final String? content = ref
+        .read(noteStoreProvider)
+        .noteById(widget.noteId)
+        ?.content;
 
     _editor = EditorState(
       document: NoteDocumentAdapter.documentFromStoredContent(content),
     );
     _scroll = EditorScrollController(editorState: _editor);
     _placeInitialCursor();
+    // 跳转请求（`locateProvider`，§4）：本视图按 `ValueKey(noteId)` 重建 ⇒ 切到
+    // 目标笔记时这里是**新 State**，所以 initState 就能消费请求（见
+    // `LocateNotifier` 的说明）。
+    _locateSub = ref.listenManual(
+      locateProvider,
+      (LocateRequest? _, LocateRequest? _) => _maybeConsumeLocate(),
+    );
+    _maybeConsumeLocate();
     // 事务流同时驱动两件事：防抖落盘、以及撤销/重做按钮的可用态
     // （撤销本身也走 `apply` ⇒ 这个流同样会响，见官方 `UndoManager.undo`）。
     _changesSub = _editor.transactionStream.listen((_) {
@@ -440,9 +453,7 @@ class _NoteEditorViewAppFlowyState
   void _placeInitialCursor() {
     for (final Node node in _editor.document.root.children) {
       if (node.delta == null) continue;
-      _editor.selection = Selection.collapsed(
-        Position(path: node.path),
-      );
+      _editor.selection = Selection.collapsed(Position(path: node.path));
       return;
     }
   }
@@ -510,7 +521,8 @@ class _NoteEditorViewAppFlowyState
     final RenderBox? titleBox =
         _titleRowKey.currentContext?.findRenderObject() as RenderBox?;
     if (titleBox != null && titleBox.hasSize) {
-      topOffset = titleBox.localToGlobal(Offset.zero).dy +
+      topOffset =
+          titleBox.localToGlobal(Offset.zero).dy +
           titleBox.size.height +
           Tokens.spaceSm;
     }
@@ -526,6 +538,7 @@ class _NoteEditorViewAppFlowyState
 
   @override
   void dispose() {
+    _locateSub?.close();
     // 先注销退出前落盘：本视图即将消失，退出口径不该再找它（见 [PendingSaves]）。
     _exitFlush();
     // 关闭/切换前兜底落盘，但**只在有未写库的编辑时**（与 quill 版同节奏）：
@@ -541,7 +554,9 @@ class _NoteEditorViewAppFlowyState
     if (_loaded) {
       if (pendingContent) _flushContent();
       if (pendingTitle) {
-        unawaited(_notes.saveTitle(widget.noteId, _titleController.text.trim()));
+        unawaited(
+          _notes.saveTitle(widget.noteId, _titleController.text.trim()),
+        );
       }
     }
     unawaited(_changesSub?.cancel());
@@ -577,6 +592,115 @@ class _NoteEditorViewAppFlowyState
     _flashTimer = Timer(_flashHold, () {
       if (mounted) _flashedNodeId.value = null;
     });
+  }
+
+  // == 跨笔记跳块（问答角标 → 原文）============================================
+  // 通道是 `locateProvider`（§4）：调用方只写"想跳到哪里"，由本视图在自身就绪
+  // 时消费（消费即置空，避免重开笔记时重复跳）。
+
+  /// 有跳转请求、且是**本笔记**的就立即消费（先置空再跳，防重复触发）。
+  ///
+  /// 三种触发时机都要覆盖：新 State 的 initState（切笔记进来）、listener
+  /// （笔记已打开时点角标）、以及列表尚未挂载时的重试（见 [_jumpToBlockRetrying]）。
+  void _maybeConsumeLocate() {
+    final LocateRequest? req = ref.read(locateProvider);
+    if (req == null || req.noteId != widget.noteId) return;
+    // ⚠️ 消费与跳转都**延到帧后**：本方法会在 initState（构建期间）被调，
+    // 而构建期间改 provider 状态会撞 Riverpod 的断言。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(locateProvider.notifier).consume();
+      final String? blockId = req.blockId;
+      if (blockId != null) _jumpToBlockRetrying(blockId);
+      // 焦点只有请求方明确要才交出去：从列表点开一篇时抢焦点，键盘上下选笔记就断了。
+      if (req.focus) _focusAt(blockId);
+    });
+  }
+
+  /// 把光标落到 [blockId]（null ⇒ 首个文本块），顺带让编辑器拿到键盘焦点。
+  ///
+  /// 为什么"设选区"就等于"聚焦"：vendored 的键盘服务在**选区变化**时会
+  /// `focusNode.requestFocus()`（见 [_focusEndOfDocument] 的说明）。
+  /// 目标不是文本块（图片 / 分隔线 / 已不存在）时退回 [_placeInitialCursor]——
+  /// 给没有 delta 的块硬塞一个 offset 0 的光标没有意义。
+  void _focusAt(String? blockId) {
+    final Node? node = blockId == null ? null : _nodeById(blockId);
+    if (node != null && node.delta != null) {
+      _editor.selection = Selection.collapsed(Position(path: node.path));
+      return;
+    }
+    _placeInitialCursor();
+  }
+
+  /// 按 id 找节点（含嵌套子树——目标可能在列表 / 引用 / 折叠块内部）。
+  Node? _nodeById(String blockId) {
+    for (final Node top in _editor.document.root.children) {
+      final Node? hit = _findIn(top, blockId);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
+  static Node? _findIn(Node node, String blockId) {
+    if (node.id == blockId) return node;
+    for (final Node child in node.children) {
+      final Node? hit = _findIn(child, blockId);
+      if (hit != null) return hit;
+    }
+    return null;
+  }
+
+  /// 等到列表挂上再跳（刚切笔记的那一两帧里 `itemScrollController` 还没 attach）。
+  void _jumpToBlockRetrying(String blockId, {int attempts = 0}) {
+    final items = _scroll.itemScrollController;
+    if (!items.isAttached || _editor.document.root.children.isEmpty) {
+      if (attempts < 10) {
+        Timer(const Duration(milliseconds: 120), () {
+          if (mounted) _jumpToBlockRetrying(blockId, attempts: attempts + 1);
+        });
+      }
+      return;
+    }
+    _jumpToBlock(blockId);
+  }
+
+  /// 瞬时定位 + 闪烁高亮。
+  ///
+  /// 与目录跳转同一套手法（`toc_panel.dart` 的 `_jump` 有完整推演）：先压住官方
+  /// 的"自动滚回光标"（`disableAutoScroll`，两帧后恢复——它是 post-frame 发起的），
+  /// 且必须用 `jumpTo`（瞬时、单列表）：动画版会起第二个列表把同一批 item 建两遍，
+  /// 撞出重复 GlobalKey。这里不做目录那套"目标已在视口但够不到顶部"的细节判断
+  /// （那段逻辑与目录的激活态耦合）。
+  void _jumpToBlock(String blockId) {
+    final int? index = _topLevelIndexOf(blockId);
+    if (index == null) return;
+    final bool previousDisableAutoScroll = _editor.disableAutoScroll;
+    _editor.disableAutoScroll = true;
+    _scroll.itemScrollController.jumpTo(index: index);
+    _flashNode(blockId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _editor.disableAutoScroll = previousDisableAutoScroll;
+      });
+    });
+  }
+
+  /// blockId → **顶层块索引**（列表 item 索引）。目标可能在嵌套子树里
+  /// （列表 / 引用 / 折叠块内部），故找它所属的顶层祖先。
+  int? _topLevelIndexOf(String blockId) {
+    final List<Node> top = _editor.document.root.children;
+    for (int i = 0; i < top.length; i++) {
+      if (_subtreeContains(top[i], blockId)) return i;
+    }
+    return null;
+  }
+
+  static bool _subtreeContains(Node node, String blockId) {
+    if (node.id == blockId) return true;
+    for (final Node child in node.children) {
+      if (_subtreeContains(child, blockId)) return true;
+    }
+    return false;
   }
 
   // == 悬浮目录气泡 ==========================================================
@@ -652,7 +776,9 @@ class _NoteEditorViewAppFlowyState
 
   void _tocRemovePointerRoute() {
     if (_tocPointerRoute != null) {
-      WidgetsBinding.instance.pointerRouter.removeGlobalRoute(_tocPointerRoute!);
+      WidgetsBinding.instance.pointerRouter.removeGlobalRoute(
+        _tocPointerRoute!,
+      );
       _tocPointerRoute = null;
     }
   }
@@ -681,8 +807,9 @@ class _NoteEditorViewAppFlowyState
     final Size screen = info.overlaySize;
     final RenderBox? box =
         _tocButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final Offset origin =
-        box == null ? const Offset(0, 48) : box.localToGlobal(Offset.zero);
+    final Offset origin = box == null
+        ? const Offset(0, 48)
+        : box.localToGlobal(Offset.zero);
     // 与按钮底边**直接相接**（无缝隙）：消除「按钮↔气泡」之间的悬停死区，
     // 鼠标在两者之间移动不会经过既非按钮也非气泡的空白，避免误关 / onExit 漏触发。
     final double top = box == null ? 56 : origin.dy + box.size.height;
@@ -753,7 +880,7 @@ class _NoteEditorViewAppFlowyState
   /// 顺手关掉面板是刻意的：跳走之后它悬在原处没有意义（下次打开会重算）。
   void _openBacklink(String noteId) {
     _closeBacklink();
-    ref.read(selectedNoteIdProvider.notifier).select(noteId);
+    ref.read(locateProvider.notifier).locate(noteId: noteId);
   }
 
   /// 解析引用块的目标（标题 + 形态）；目标不存在返回 null ⇒ 块显示"引用已失效"。
@@ -764,7 +891,9 @@ class _NoteEditorViewAppFlowyState
       final String? owner = store.blockNoteId(refId);
       if (owner == null) return null;
       final Note? n = store.noteById(owner);
-      return n == null ? null : RefTarget(title: _displayTitle(n), kind: n.kind);
+      return n == null
+          ? null
+          : RefTarget(title: _displayTitle(n), kind: n.kind);
     }
     final Note? n = store.noteById(refId);
     return n == null ? null : RefTarget(title: _displayTitle(n), kind: n.kind);
@@ -777,7 +906,7 @@ class _NoteEditorViewAppFlowyState
         ? store.blockNoteId(refId)
         : refId;
     if (noteId == null) return;
-    ref.read(selectedNoteIdProvider.notifier).select(noteId);
+    ref.read(locateProvider.notifier).locate(noteId: noteId);
   }
 
   static String _displayTitle(Note n) =>
@@ -788,8 +917,9 @@ class _NoteEditorViewAppFlowyState
     final Size screen = info.overlaySize;
     final RenderBox? box =
         _backlinkButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final Offset origin =
-        box == null ? const Offset(0, 48) : box.localToGlobal(Offset.zero);
+    final Offset origin = box == null
+        ? const Offset(0, 48)
+        : box.localToGlobal(Offset.zero);
     final double top = box == null ? 56 : origin.dy + box.size.height;
     final double right = box == null
         ? 16
@@ -856,7 +986,7 @@ class _NoteEditorViewAppFlowyState
             decoration: BoxDecoration(
               // 与目录面板的激活底色**同一个令牌**：点哪一条、落在哪一块，
               // 两处的色是同一族。
-              color: on ? AppTheme.activeTint(scheme.onSurface) : null,
+              color: on ? AppTheme.navSelectedTint(scheme.onSurface) : null,
               borderRadius: BorderRadius.circular(Tokens.radiusSm),
             ),
             foregroundDecoration: BoxDecoration(
@@ -979,8 +1109,8 @@ class _NoteEditorViewAppFlowyState
       // 与 `EditorStyle.textStyleConfiguration` **同一份**：预测器要复刻渲染的
       // span 构造（行内加粗 / 斜体 / 等宽 / 链接都会改行盒）。
       textStyleConfiguration: typography.toTextStyleConfiguration(
-        // 正文色走 [AppTheme.editorText]（暗色比 onSurface 低一档，护眼），
-        // 与下面编辑器那份**必须同源**。
+        // 正文色走 [AppTheme.editorText]（两边都按 APCA 收到 Lc ±90 附近，
+        // 见其文档），与下面编辑器那份**必须同源**。
         text: AppTheme.editorText(scheme.brightness, scheme),
         link: AppTheme.editorLink(scheme),
         codeBackground: AppTheme.editorInlineCodeBg(scheme.brightness),
@@ -1165,7 +1295,10 @@ class _NoteEditorViewAppFlowyState
     // 标题：与控制器不一致时就采纳（正在输入、防抖未落盘时跳过，别打断）。
     // 注意用 listen（不重建）而非 watch：列表快照变化不需要编辑器重跑 build，
     // 重建范围由各消费方自己订阅（如 _MetaBar 的 revisedAt）。
-    ref.listen(notesProvider, (AsyncValue<List<Note>>? _, AsyncValue<List<Note>> next) {
+    ref.listen(notesProvider, (
+      AsyncValue<List<Note>>? _,
+      AsyncValue<List<Note>> next,
+    ) {
       final List<Note>? notes = next.value;
       if (notes == null || _titleSave.pending) return;
       for (final Note n in notes) {
@@ -1177,7 +1310,10 @@ class _NoteEditorViewAppFlowyState
 
     // 引用块的标题是**查出来的**（块里只存 id）：别处改名 / 删除后，块里那份要
     // 跟着变。列表快照一变就 +1，让引用块自己重建（listen 而非 watch，理由同上）。
-    ref.listen(notesProvider, (AsyncValue<List<Note>>? _, AsyncValue<List<Note>> _) {
+    ref.listen(notesProvider, (
+      AsyncValue<List<Note>>? _,
+      AsyncValue<List<Note>> _,
+    ) {
       _refsRevision.value++;
     });
 
@@ -1247,7 +1383,7 @@ class _NoteEditorViewAppFlowyState
                       // 左：常驻撤销 / 重做（灰显表达"现在按不了"）。
                       _HistoryButton(
                         itemKey: 'editor.undo',
-                        icon: LucideIcons.undo2300,
+                        icon: tabler.ArrowBackUp(height: 24, width: 24, strokeWidth: 1.5),
                         tooltip: kEditorTooltips['sinan.undo']!,
                         enabled: _canUndo.value,
                         onPressed: _editor.undoManager.undo,
@@ -1255,7 +1391,7 @@ class _NoteEditorViewAppFlowyState
                       const SizedBox(width: Tokens.spaceXs),
                       _HistoryButton(
                         itemKey: 'editor.redo',
-                        icon: LucideIcons.redo2300,
+                        icon: tabler.ArrowForwardUp(height: 24, width: 24, strokeWidth: 1.5),
                         tooltip: kEditorTooltips['sinan.redo']!,
                         enabled: _canRedo.value,
                         onPressed: _editor.undoManager.redo,
@@ -1267,7 +1403,7 @@ class _NoteEditorViewAppFlowyState
                       // "搜索·反链·目录"——目录是最常用的那个，靠边更好按。
                       _EarButton(
                         itemKey: 'editor.ear.find',
-                        icon: LucideIcons.search300,
+                        icon: tabler.Search(height: 24, width: 24, strokeWidth: 1.5),
                         tooltip: '搜索（Ctrl+F）',
                         onPressed: _showFind,
                       ),
@@ -1281,7 +1417,7 @@ class _NoteEditorViewAppFlowyState
                           groupId: _backlinkTapGroupId,
                           child: _EarButton(
                             itemKey: 'editor.ear.backlink',
-                            icon: LucideIcons.link300,
+                            icon: tabler.Link(height: 24, width: 24, strokeWidth: 1.5),
                             tooltip: '反链（谁引用了我）',
                             active: _backlinkVisible,
                             onPressed: _toggleBacklink,
@@ -1312,7 +1448,7 @@ class _NoteEditorViewAppFlowyState
                               },
                               child: _EarButton(
                                 itemKey: 'editor.ear.toc',
-                                icon: LucideIcons.listTree300,
+                                icon: tabler.List(height: 24, width: 24, strokeWidth: 1.5),
                                 tooltip: '目录（Ctrl+Shift+O）',
                                 active: _tocVisible || _tocHovering,
                                 onPressed: _toggleTocPin,
@@ -1378,138 +1514,143 @@ class _NoteEditorViewAppFlowyState
             child: LinkHoverTooltip(
               editorState: _editor,
               child: AppFlowyEditor(
-            editorState: _editor,
-            editorScrollController: _scroll,
-            autoFocus: true,
-            // 正文右键菜单：官方 `contextMenuBuilder` **不传就完全不弹**
-            // （`_showContextMenu` 首行判空返回——此前右键毫无反应）。
-            // 面板与条目见 `widgets/editor_context_menu.dart`。
-            contextMenuBuilder: (
-              BuildContext menuContext,
-              Offset position,
-              EditorState editorState,
-              VoidCallback onDismiss,
-            ) =>
-                sinanEditorContextMenu(
-              context: menuContext,
-              position: position,
-              editorState: editorState,
-              onDismiss: onDismiss,
-            ),
-            // 末尾留白 = 官方口径的**一屏可点热区**：点它 = 继续写
-            // （官方 `editor_page.dart` 的 footer 就是这么挂的；取值与取舍见
-            // `editorTrailingSpace` 的文档）。
-            //
-            // 官方把 `footer` 作为滚动列表的**最后一项**（`page_block_component
-            // .dart` 的 ScrollablePositionedList.builder），所以它只加尾部空间，
-            // 不让任何块的索引偏移——目录按顶层块索引 jumpTo，照旧对得上。
-            footer: GestureDetector(
-              key: const ValueKey<String>('editor.trailingArea'),
-              // translucent：空白处的**点击**归我们（继续写），滚轮/悬停照旧
-              // 穿透给滚动器；footer 外层已被官方包了
-              // `IgnoreEditorSelectionGesture`，不会和编辑器选字打架。
-              behavior: HitTestBehavior.translucent,
-              // ⚠️ [a11y] 不要把这块"点空白把光标放到末尾"的**鼠标便利区**暴露给
-              // 语义树。它没有任何文字，语义会**向上合并进滚动视口节点**（视口是最近的
-              // 一层语义边界），于是视口变成一个"没有名字的可点目标"——2026-09-17
-              // `test/a11y/` 的 `labeledTapTargetGuideline` 报的正是这条。
-              // 将来若要让读屏用户也有"跳到末尾"，正确做法是在工具栏加一个**有名字的
-              // 按钮**，而不是让一片无名区域可点。
-              excludeFromSemantics: true,
-              onTap: _focusEndOfDocument,
-              // 空白区右键：不再自建菜单，走官方链路（见官方
-              // `_onSecondaryTapDown` 的 sinan 补丁 16——非文本块 / 空白 /
-              // 无选区都会弹，且不会叠成两个菜单）。
-              child: const SizedBox(
-                width: double.infinity,
-                height: editorTrailingSpace,
+                editorState: _editor,
+                editorScrollController: _scroll,
+                autoFocus: true,
+                // 正文右键菜单：官方 `contextMenuBuilder` **不传就完全不弹**
+                // （`_showContextMenu` 首行判空返回——此前右键毫无反应）。
+                // 面板与条目见 `widgets/editor_context_menu.dart`。
+                contextMenuBuilder:
+                    (
+                      BuildContext menuContext,
+                      Offset position,
+                      EditorState editorState,
+                      VoidCallback onDismiss,
+                    ) => sinanEditorContextMenu(
+                      context: menuContext,
+                      position: position,
+                      editorState: editorState,
+                      onDismiss: onDismiss,
+                    ),
+                // 末尾留白 = 官方口径的**一屏可点热区**：点它 = 继续写
+                // （官方 `editor_page.dart` 的 footer 就是这么挂的；取值与取舍见
+                // `editorTrailingSpace` 的文档）。
+                //
+                // 官方把 `footer` 作为滚动列表的**最后一项**（`page_block_component
+                // .dart` 的 ScrollablePositionedList.builder），所以它只加尾部空间，
+                // 不让任何块的索引偏移——目录按顶层块索引 jumpTo，照旧对得上。
+                footer: GestureDetector(
+                  key: const ValueKey<String>('editor.trailingArea'),
+                  // translucent：空白处的**点击**归我们（继续写），滚轮/悬停照旧
+                  // 穿透给滚动器；footer 外层已被官方包了
+                  // `IgnoreEditorSelectionGesture`，不会和编辑器选字打架。
+                  behavior: HitTestBehavior.translucent,
+                  // ⚠️ [a11y] 不要把这块"点空白把光标放到末尾"的**鼠标便利区**暴露给
+                  // 语义树。它没有任何文字，语义会**向上合并进滚动视口节点**（视口是最近的
+                  // 一层语义边界），于是视口变成一个"没有名字的可点目标"——2026-09-17
+                  // `test/a11y/` 的 `labeledTapTargetGuideline` 报的正是这条。
+                  // 将来若要让读屏用户也有"跳到末尾"，正确做法是在工具栏加一个**有名字的
+                  // 按钮**，而不是让一片无名区域可点。
+                  excludeFromSemantics: true,
+                  onTap: _focusEndOfDocument,
+                  // 空白区右键：不再自建菜单，走官方链路（见官方
+                  // `_onSecondaryTapDown` 的 sinan 补丁 16——非文本块 / 空白 /
+                  // 无选区都会弹，且不会叠成两个菜单）。
+                  child: const SizedBox(
+                    width: double.infinity,
+                    height: editorTrailingSpace,
+                  ),
+                ),
+                // 目录跳转的落点高亮：逐块包一层（见 [_flashWrapper]）。
+                blockWrapper: _flashWrapper,
+                blockComponentBuilders: sinanBlockComponentBuilders(
+                  typography: typography,
+                  markerColor: scheme.onSurfaceVariant,
+                  // 引用块的目标标题 / 跳转（双链）——块本身不碰 provider。
+                  refBridge: _refBridge,
+                ),
+                characterShortcutEvents: sinanCharacterShortcutEvents(
+                  // 斜杠菜单配色：官方默认是硬编码浅色盘（白底 + 青蓝强调色，
+                  // 不看种子色也不看明暗）——不喂就是"菜单没跟随主题"。
+                  slashMenuStyle: sinanSlashMenuStyle(
+                    // 浮层令牌：斜杠菜单是浮层（不是纸面），底色走 floatSurface。
+                    background: AppTheme.floatSurface(
+                      Theme.of(context).brightness,
+                    ),
+                    foreground: scheme.onSurface,
+                    muted: scheme.onSurfaceVariant,
+                    outline: scheme.outlineVariant,
+                    error: scheme.error,
+                  ),
+                ),
+                // 官方 Find&Replace 的快捷键（ctrl+F 查找 / ctrl+H 替换）**不在**
+                // `standardCommandShortcutEvents` 里（它需要 BuildContext 与样式），
+                // 必须自己追加——这正是此前"Ctrl+F 完全无效"的原因。
+                // 追加时必须带上标准表，否则会顶掉全部内置快捷键。
+                commandShortcutEvents: <CommandShortcutEvent>[
+                  // 粘贴 URL 自动转链（Ctrl+V）：**必须排在官方 paste 之前**
+                  // （先命中先赢），并把官方那条从标准表里摘掉，避免两条 ctrl+v
+                  // 并存（我们的实现读不到网址时会回退调官方 paste）。
+                  sinanPasteCommand,
+                  ...standardCommandShortcutEvents.where(
+                    (CommandShortcutEvent event) =>
+                        event.key != pasteCommand.key,
+                  ),
+                  ...findAndReplaceCommands(
+                    context: context,
+                    style: _findStyle,
+                  ),
+                  // 以下都是**官方没有**的工具栏快捷键（tooltip 里已声明）：
+                  // 代码块 Ctrl+Shift+`、无序列表 Ctrl+Shift+8、有序列表 Ctrl+Shift+7、
+                  // 引用 Ctrl+Shift+Q、对齐 Ctrl+Shift+L/E/R、目录 Ctrl+Shift+O。
+                  sinanCodeBlockCommand,
+                  sinanBulletedListCommand,
+                  sinanNumberedListCommand,
+                  sinanQuoteCommand,
+                  ...sinanAlignCommands,
+                  sinanTocCommand(onToggle: _toggleTocPin),
+                  // 折叠块 Ctrl/Cmd+Enter 切换展开/折叠（官方同款 toggleToggleListCommand）。
+                  toggleToggleListCommand,
+                ],
+                editorStyle: EditorStyle.desktop(
+                  // maxWidth = 内容列限宽：官方按块居中（滚动器仍铺满全宽，
+                  // 空白处滚轮照样生效），等价于 quill 的 maxContentWidth。
+                  maxWidth: settings.contentWidth,
+                  // ⚠️ **按块**生效的内边距（不是编辑器外框）：竖直值会加在
+                  // 每一个块上。详见 EditorTypography.blockPadding 的说明。
+                  padding: EditorTypography.blockPadding,
+                  // 跟随系统"文字大小/缩放"（鸿蒙排版五项要求之一：支持系统大字体；
+                  // Windows 在 设置 → 辅助功能 → 文本大小 里调）。
+                  // 编辑器内部用的是显式 fontSize（不走 Ambient 样式），官方给的口子
+                  // 就是 textScaleFactor —— 不传它等于忽略系统的无障碍字号设置。
+                  // 标题输入框（TextField/EditableText）默认就会跟随，故两侧一致。
+                  textScaleFactor: MediaQuery.textScalerOf(context).scale(1.0),
+                  cursorColor: scheme.onSurface,
+                  // 选区色兼作**查找命中高亮**：SearchServiceV3 用"把选区移到
+                  // 命中处"表达当前命中（FindReplaceStyle 的颜色字段对 V3 无效，
+                  // 见 _findStyle 注释）。中性灰选区在深色画布上几乎不可见
+                  // （用户反馈），改主题色半透明——手动选择文字也会是同一色
+                  // （V3 无法区分"查找命中"与"手动选择"，选区高亮本就是同一
+                  // 视觉语义）。
+                  selectionColor: scheme.primary.withValues(
+                    alpha: scheme.brightness == Brightness.dark ? 0.40 : 0.30,
+                  ),
+                  // 中文排版（单一来源）：字号/行高取自设置，外加字距 0、
+                  // CJK 回退链、w400、even 行盒——官方默认这几项全无。
+                  // ⚠️ `text` 必须给：编辑器走 `RichText`、不继承 Ambient 样式，
+                  // 不给就是引擎默认白（深色侥幸正常、亮色正文隐形——实测过）。
+                  textStyleConfiguration: typography.toTextStyleConfiguration(
+                    // 正文色走 [AppTheme.editorText]（亮 `#3A3A3A` / 暗 `#DDDDDD`
+                    // ——APCA Lc ±90 附近，见其文档）。
+                    text: AppTheme.editorText(scheme.brightness, scheme),
+                    link: AppTheme.editorLink(scheme),
+                    codeBackground: AppTheme.editorInlineCodeBg(
+                      scheme.brightness,
+                    ),
+                    muted: scheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-            ),
-            // 目录跳转的落点高亮：逐块包一层（见 [_flashWrapper]）。
-            blockWrapper: _flashWrapper,
-            blockComponentBuilders: sinanBlockComponentBuilders(
-              typography: typography,
-              markerColor: scheme.onSurfaceVariant,
-              // 引用块的目标标题 / 跳转（双链）——块本身不碰 provider。
-              refBridge: _refBridge,
-            ),
-            characterShortcutEvents: sinanCharacterShortcutEvents(
-              // 斜杠菜单配色：官方默认是硬编码浅色盘（白底 + 青蓝强调色，
-              // 不看种子色也不看明暗）——不喂就是"菜单没跟随主题"。
-              slashMenuStyle: sinanSlashMenuStyle(
-                // 浮层令牌：斜杠菜单是浮层（不是纸面），底色走 floatSurface。
-                background: AppTheme.floatSurface(Theme.of(context).brightness),
-                foreground: scheme.onSurface,
-                muted: scheme.onSurfaceVariant,
-                outline: scheme.outlineVariant,
-                error: scheme.error,
-              ),
-            ),
-            // 官方 Find&Replace 的快捷键（ctrl+F 查找 / ctrl+H 替换）**不在**
-            // `standardCommandShortcutEvents` 里（它需要 BuildContext 与样式），
-            // 必须自己追加——这正是此前"Ctrl+F 完全无效"的原因。
-            // 追加时必须带上标准表，否则会顶掉全部内置快捷键。
-            commandShortcutEvents: <CommandShortcutEvent>[
-              // 粘贴 URL 自动转链（Ctrl+V）：**必须排在官方 paste 之前**
-              // （先命中先赢），并把官方那条从标准表里摘掉，避免两条 ctrl+v
-              // 并存（我们的实现读不到网址时会回退调官方 paste）。
-              sinanPasteCommand,
-              ...standardCommandShortcutEvents.where(
-                (CommandShortcutEvent event) => event.key != pasteCommand.key,
-              ),
-              ...findAndReplaceCommands(context: context, style: _findStyle),
-              // 以下都是**官方没有**的工具栏快捷键（tooltip 里已声明）：
-              // 代码块 Ctrl+Shift+`、无序列表 Ctrl+Shift+8、有序列表 Ctrl+Shift+7、
-              // 引用 Ctrl+Shift+Q、对齐 Ctrl+Shift+L/E/R、目录 Ctrl+Shift+O。
-              sinanCodeBlockCommand,
-              sinanBulletedListCommand,
-              sinanNumberedListCommand,
-              sinanQuoteCommand,
-              ...sinanAlignCommands,
-              sinanTocCommand(
-                onToggle: _toggleTocPin,
-              ),
-              // 折叠块 Ctrl/Cmd+Enter 切换展开/折叠（官方同款 toggleToggleListCommand）。
-              toggleToggleListCommand,
-            ],
-            editorStyle: EditorStyle.desktop(
-              // maxWidth = 内容列限宽：官方按块居中（滚动器仍铺满全宽，
-              // 空白处滚轮照样生效），等价于 quill 的 maxContentWidth。
-              maxWidth: settings.contentWidth,
-              // ⚠️ **按块**生效的内边距（不是编辑器外框）：竖直值会加在
-              // 每一个块上。详见 EditorTypography.blockPadding 的说明。
-              padding: EditorTypography.blockPadding,
-              // 跟随系统"文字大小/缩放"（鸿蒙排版五项要求之一：支持系统大字体；
-              // Windows 在 设置 → 辅助功能 → 文本大小 里调）。
-              // 编辑器内部用的是显式 fontSize（不走 Ambient 样式），官方给的口子
-              // 就是 textScaleFactor —— 不传它等于忽略系统的无障碍字号设置。
-              // 标题输入框（TextField/EditableText）默认就会跟随，故两侧一致。
-              textScaleFactor: MediaQuery.textScalerOf(context).scale(1.0),
-              cursorColor: scheme.onSurface,
-              // 选区色兼作**查找命中高亮**：SearchServiceV3 用"把选区移到
-              // 命中处"表达当前命中（FindReplaceStyle 的颜色字段对 V3 无效，
-              // 见 _findStyle 注释）。中性灰选区在深色画布上几乎不可见
-              // （用户反馈），改主题色半透明——手动选择文字也会是同一色
-              // （V3 无法区分"查找命中"与"手动选择"，选区高亮本就是同一
-              // 视觉语义）。
-              selectionColor: scheme.primary.withValues(
-                alpha:
-                    scheme.brightness == Brightness.dark ? 0.40 : 0.30,
-              ),
-              // 中文排版（单一来源）：字号/行高取自设置，外加字距 0、
-              // CJK 回退链、w400、even 行盒——官方默认这几项全无。
-              // ⚠️ `text` 必须给：编辑器走 `RichText`、不继承 Ambient 样式，
-              // 不给就是引擎默认白（深色侥幸正常、亮色正文隐形——实测过）。
-              textStyleConfiguration: typography.toTextStyleConfiguration(
-                // 正文色走 [AppTheme.editorText]（暗色 `#D6D6D6`：纸面抬到
-                // `#161616` 后与 onSurface 之间再让一档，合起来 12.5:1）。
-                text: AppTheme.editorText(scheme.brightness, scheme),
-                link: AppTheme.editorLink(scheme),
-                codeBackground: AppTheme.editorInlineCodeBg(scheme.brightness),
-                muted: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
             ),
           ),
         ),

@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
@@ -110,9 +110,9 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
   @override
   Widget build(BuildContext context) {
     final IconData icon = switch (widget.align) {
-      'center' => LucideIcons.alignCenter300,
-      'right' => LucideIcons.alignRight300,
-      _ => LucideIcons.alignLeft300,
+      'center' => tabler.AlignCenter(height: 24, width: 24, strokeWidth: 1.5),
+      'right' => tabler.AlignRight(height: 24, width: 24, strokeWidth: 1.5),
+      _ => tabler.AlignLeft(height: 24, width: 24, strokeWidth: 1.5),
     };
     final Color color =
         widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
@@ -122,11 +122,7 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(icon, size: Tokens.iconSm, color: color),
-          Icon(
-            LucideIcons.chevronDown300,
-            size: 12,
-            color: color.withValues(alpha: 0.7),
-          ),
+          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7, ui.BlendMode.srcIn))),
         ],
       ),
       isHighlight: false,
@@ -171,9 +167,9 @@ class _AlignOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     const List<_AlignOption> options = <_AlignOption>[
-      _AlignOption('left', '左对齐', LucideIcons.alignLeft300, 'Ctrl+Shift+L'),
-      _AlignOption('center', '居中', LucideIcons.alignCenter300, 'Ctrl+Shift+E'),
-      _AlignOption('right', '右对齐', LucideIcons.alignRight300, 'Ctrl+Shift+R'),
+      _AlignOption('left', '左对齐', tabler.AlignLeft(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+L'),
+      _AlignOption('center', '居中', tabler.AlignCenter(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+E'),
+      _AlignOption('right', '右对齐', tabler.AlignRight(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+R'),
     ];
 
     return Stack(
@@ -231,11 +227,7 @@ class _AlignOverlay extends StatelessWidget {
                           ),
                         ),
                         if (active) ...<Widget>[
-                          Icon(
-                            LucideIcons.check300,
-                            size: 14,
-                            color: scheme.onSurface,
-                          ),
+                          tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
                           const SizedBox(width: Tokens.spaceXs),
                         ],
                         // 快捷键右对齐标注（与块样式菜单同一惯例）。

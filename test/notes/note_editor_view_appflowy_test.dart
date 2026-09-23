@@ -70,9 +70,7 @@ void main() {
     );
   });
 
-  testWidgets('退出前落盘：防抖窗口内关窗口，最后那次编辑也要写下去', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('退出前落盘：防抖窗口内关窗口，最后那次编辑也要写下去', (WidgetTester tester) async {
     // 用户实测的丢数据现场（2026-09-17）：删掉一段文字 → 马上关窗口 → 重开后
     // 那段文字又回来了。原因是关窗口是**进程级退出**：走不到 dispose 兜底落盘，
     // 500ms 防抖也再没机会触发。本用例就钉这一条：退出路径必须能等到写完。
@@ -83,28 +81,18 @@ void main() {
     await _expandSelection(tester);
     await tester.tap(_toolbarItem('sinan.todo_list'));
     await tester.pump();
-    expect(
-      notes.savedContent,
-      isNull,
-      reason: '前置条件不成立：防抖已经自己落盘了，本用例就测不到退出路径',
-    );
+    expect(notes.savedContent, isNull, reason: '前置条件不成立：防抖已经自己落盘了，本用例就测不到退出路径');
 
     // 关窗口：引擎发来退出请求 → `didRequestAppExit` → 先等落盘
     // （见 `pending_saves.dart` 的 `flushThenExit`）。
     await saves.flushAll();
 
-    expect(
-      notes.savedContent,
-      isNotNull,
-      reason: '关窗口时最后一次编辑没写下去——用户实测丢的正是它',
-    );
+    expect(notes.savedContent, isNotNull, reason: '关窗口时最后一次编辑没写下去——用户实测丢的正是它');
     expect(notes.savedContent, contains('todo_list'));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('退出前落盘：没有未落盘的编辑就不写（关窗口不该重写正文）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('退出前落盘：没有未落盘的编辑就不写（关窗口不该重写正文）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     final PendingSaves saves = await _pumpView(tester, notes);
 
@@ -116,9 +104,7 @@ void main() {
     expect(notes.savedTitle, isNull, reason: '什么都没改却重写了标题');
   });
 
-  testWidgets('只打开不编辑就关闭 → 不写库（避免把存量笔记重写一遍）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('只打开不编辑就关闭 → 不写库（避免把存量笔记重写一遍）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
 
@@ -129,9 +115,7 @@ void main() {
     expect(notes.savedTitle, isNull, reason: '什么都没改却重写了标题');
   });
 
-  testWidgets('Ctrl+F 打开官方查找面板（此前 Ctrl+F 完全无效）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('Ctrl+F 打开官方查找面板（此前 Ctrl+F 完全无效）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
     expect(find.byKey(const Key('closeButton')), findsNothing);
@@ -175,9 +159,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final _FakeNotes notes = _FakeNotes(
-      <Note>[_note(content: _longNoteContent(sections: 150))],
-    );
+    final _FakeNotes notes = _FakeNotes(<Note>[
+      _note(content: _longNoteContent(sections: 150)),
+    ]);
     await _pumpView(tester, notes);
 
     await tester.tap(find.byKey(const ValueKey<String>('editor.ear.toc')));
@@ -202,7 +186,11 @@ void main() {
     // Duplicate GlobalKey detected（落在 block_component_container 的 Consumer<Node>）。
     // 顺序**由前到后**：scrollUntilVisible 只会向后滚（往回要找会抛 No element）。
     for (final String label in <String>['第 20 节', '第 60 节', '第 150 节']) {
-      await tester.scrollUntilVisible(tocEntry(label), 300, scrollable: tocList);
+      await tester.scrollUntilVisible(
+        tocEntry(label),
+        300,
+        scrollable: tocList,
+      );
       await tester.tap(tocEntry(label));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '跳到「$label」后出错');
@@ -214,9 +202,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final _FakeNotes notes = _FakeNotes(
-      <Note>[_note(content: _longNoteContent(sections: 6))],
-    );
+    final _FakeNotes notes = _FakeNotes(<Note>[
+      _note(content: _longNoteContent(sections: 6)),
+    ]);
     await _pumpView(tester, notes);
     await tester.tap(find.byKey(const ValueKey<String>('editor.ear.toc')));
     await tester.pumpAndSettle();
@@ -258,9 +246,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
-    final _FakeNotes notes = _FakeNotes(
-      <Note>[_note(content: _longNoteContent(sections: 150))],
-    );
+    final _FakeNotes notes = _FakeNotes(<Note>[
+      _note(content: _longNoteContent(sections: 150)),
+    ]);
     await _pumpView(tester, notes);
     await tester.tap(find.byKey(const ValueKey<String>('editor.ear.toc')));
     await tester.pumpAndSettle();
@@ -284,7 +272,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       _tocRowTint(tester, '第 150 节'),
-      AppTheme.activeTint(AppTheme.light().colorScheme.onSurface),
+      AppTheme.navSelectedTint(AppTheme.light().colorScheme.onSurface),
       reason: '末尾条目应当显示激活底色',
     );
 
@@ -309,17 +297,15 @@ void main() {
     }
   });
 
-  testWidgets('点击已在视口内的条目：瞬时到位 + 落点高亮（不能像按钮坏了）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('点击已在视口内的条目：瞬时到位 + 落点高亮（不能像按钮坏了）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
 
     // 30 节：够长到能滚（内容 > 一屏），又让"第 5 节"落在首屏里。
-    final _FakeNotes notes = _FakeNotes(
-      <Note>[_note(content: _longNoteContent(sections: 30))],
-    );
+    final _FakeNotes notes = _FakeNotes(<Note>[
+      _note(content: _longNoteContent(sections: 30)),
+    ]);
     await _pumpView(tester, notes);
     await tester.tap(find.byKey(const ValueKey<String>('editor.ear.toc')));
     await tester.pumpAndSettle();
@@ -342,7 +328,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       _tocRowTint(tester, '第 5 节'),
-      AppTheme.activeTint(AppTheme.light().colorScheme.onSurface),
+      AppTheme.navSelectedTint(AppTheme.light().colorScheme.onSurface),
       reason: '跳转后「第 5 节」应当成为当前章节（页面确实动了）',
     );
   });
@@ -442,9 +428,7 @@ void main() {
   // 的情形（首屏高块扎堆、末尾一屏留白）。C 之后两条一并消失：应用侧通过
   // `EditorScrollController.itemExtentOf` 逐块给出高度（实测 → `TextPainter`
   // 预算 → 类型兜底），列表三段 sliver 各自求和 ⇒ **总高从第一帧起就是精确值**。
-  testWidgets('C：总高从第一帧起精确——高矮块扎堆时全程不变', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('C：总高从第一帧起精确——高矮块扎堆时全程不变', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1000, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -513,9 +497,7 @@ void main() {
     expect((thumb(lo) - thumb(hi)).abs(), lessThan(0.5));
   });
 
-  testWidgets('点末尾留白 = 继续写（末尾补空段落；已是空段落则不重复加）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('点末尾留白 = 继续写（末尾补空段落；已是空段落则不重复加）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
 
@@ -549,9 +531,7 @@ void main() {
   // 为什么搬：悬浮栏**只在有选区时出现**，而撤销最常用的时刻是"刚打完字、
   // 光标还停在那儿"——那时按钮够不着（用户实机反馈）。搬出来必须满足两件事：
   // ①**没有选区**也能点；②可用态跟着历史栈走（空则灰显，不假装能点）。
-  testWidgets('撤销/重做常驻标题行：没有选区也能用，且随历史栈灰显', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('撤销/重做常驻标题行：没有选区也能用，且随历史栈灰显', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
 
@@ -757,9 +737,7 @@ void main() {
     expect(state.selection?.end.offset, 4, reason: '全选应覆盖"你好世界"四个字');
   });
 
-  testWidgets('页面留白右键：同一个菜单（官方链路不管这片空白）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('页面留白右键：同一个菜单（官方链路不管这片空白）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
 
@@ -785,9 +763,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('链接悬浮提示：停在链接上浮出 URL 面板，移开收起', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('链接悬浮提示：停在链接上浮出 URL 面板，移开收起', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[
       _note(content: _linkNoteContent()),
     ]);
@@ -843,7 +819,9 @@ void main() {
     await mouse.moveTo(Offset(panelRect.center.dx, linkRect.bottom + 3)); // 空隙里
     await tester.pump(const Duration(milliseconds: 40));
     await mouse.moveTo(panelRect.center); // 面板上
-    await tester.pump(LinkHoverTooltip.hideGrace + const Duration(milliseconds: 60));
+    await tester.pump(
+      LinkHoverTooltip.hideGrace + const Duration(milliseconds: 60),
+    );
     expect(
       find.text('打开'),
       findsOneWidget,
@@ -884,9 +862,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('点击链接：只弹链接编辑菜单，不再连带浮动工具栏', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('点击链接：只弹链接编辑菜单，不再连带浮动工具栏', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[
       _note(content: _linkNoteContent()),
     ]);
@@ -906,8 +882,8 @@ void main() {
     // 标记 ⇒ 两个浮层叠一起（补丁 15 修的正是这条）。
     expect(
       find.byWidgetPredicate(
-        (Widget widget) => (widget.key?.toString() ?? '')
-            .contains('floating_toolbar_item_'),
+        (Widget widget) =>
+            (widget.key?.toString() ?? '').contains('floating_toolbar_item_'),
       ),
       findsNothing,
       reason: '浮动工具栏不该跟着弹（与链接编辑菜单叠在一起）',
@@ -954,11 +930,7 @@ void main() {
     await tester.tap(_toolbarItem('editor.underline'));
     await tester.pumpAndSettle();
 
-    expect(
-      blockHeight(),
-      before,
-      reason: '反复点格式按钮后块被撑高——手柄对齐在累积（见用例头注释）',
-    );
+    expect(blockHeight(), before, reason: '反复点格式按钮后块被撑高——手柄对齐在累积（见用例头注释）');
   });
 }
 
@@ -1018,8 +990,7 @@ Offset? _richTextCenterOf(WidgetTester tester, String needle) {
 
 // ─────────────────────────── 脚手架 ───────────────────────────
 
-const String _kDelta =
-    '{"ops":[{"insert":"你好世界"},{"insert":"\\n"}]}';
+const String _kDelta = '{"ops":[{"insert":"你好世界"},{"insert":"\\n"}]}';
 
 /// 长文档：[sections] 组「H2 标题 + 段落」。够长（150 节 ≈ 8000px）时，
 /// 跳到最后一条必然远到需要官方 `scrollTo` 的双列表交叉淡入——那是
@@ -1119,7 +1090,7 @@ bool _hasFlashingBlock(WidgetTester tester) => tester
       return d is BoxDecoration && d.color != null;
     });
 
-/// 目录里某条目的行底色（激活态 = `AppTheme.activeTint`，见 toc_panel 的
+/// 目录里某条目的行底色（激活态 = `AppTheme.navSelectedTint`，见 toc_panel 的
 /// `_itemOf`：条目 Container 的 decoration）。
 Color? _tocRowTint(WidgetTester tester, String label) {
   final Finder container = find
@@ -1155,11 +1126,10 @@ double _editorOffset(WidgetTester tester) => tester
 /// `EditorState`——widget 测试里键盘事件路由不到编辑器（见
 /// fixed_toolbar_test.dart 的说明），手势模拟又脆， setter 是官方公开口子。
 Future<void> _expandSelection(WidgetTester tester) async {
-  final EditorState state =
-      tester.widget<AppFlowyEditor>(find.byType(AppFlowyEditor)).editorState;
-  state.selection = Selection.collapsed(
-    Position(path: <int>[0]),
-  );
+  final EditorState state = tester
+      .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+      .editorState;
+  state.selection = Selection.collapsed(Position(path: <int>[0]));
   state.selection = Selection(
     start: Position(path: <int>[0]),
     end: Position(path: <int>[0], offset: 2),

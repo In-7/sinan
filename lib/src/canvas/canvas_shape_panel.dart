@@ -1,4 +1,4 @@
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
@@ -35,10 +35,7 @@ class CanvasShapeButton extends StatelessWidget {
                     tooltip: '图形属性：颜色 / 填充 / 描边',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: CanvasInkDotIcon(
-                      icon: LucideIcons.palette300,
-                      ink: _displayInk(context, shapes.first.color),
-                    ),
+                    icon: CanvasInkDottabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
                   ),
           // 滑杆/色板要连着调，不需要"选完即关"（同笔刷面板）。
           builder: (BuildContext context, VoidCallback _) =>

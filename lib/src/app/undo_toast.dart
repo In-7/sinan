@@ -1,6 +1,5 @@
 import 'dart:async';
-
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/tokens.dart';
@@ -193,7 +192,7 @@ class _UndoToastState extends State<_UndoToast>
                       visualDensity: VisualDensity.compact,
                       iconSize: Tokens.iconSm,
                       color: foreground,
-                      icon: const Icon(LucideIcons.x300),
+                      icon: tabler.X(height: 24, width: 24, strokeWidth: 1.5),
                     ),
                   ],
                 ),

@@ -16,6 +16,9 @@ dependencies:
   # 图片渲染/存储用自建实现，机制对齐官方扩展）。
   file_picker: ^12.2.0
   sqlite3: ^3.5.2
+  # 向量检索扩展（sqlite.ai 官方 sqlite-vector 的 Dart 绑定）：R1 落地，
+  # 选型与风险见 docs/data_layer.md 6.7（机制 A；构建钩子自动编译，免手动分发 DLL）。
+  sqlite_vector: ^1.1.2
   uuid: ^4.6.0
   window_manager: ^0.5.2
   flutter_riverpod: 3.4.3
@@ -24,7 +27,6 @@ dependencies:
   flutter_math_fork: ^0.7.2
   # 语法高亮（纯 Dart highlighter）：代码块着色用（纯渲染层，不动文档）。
   highlight: ^0.7.0
-  lucide_icons_flutter: ^3.1.18
   win32: ^6.4.0
   image: ^4.9.2
   ffi: ^2.2.0
@@ -41,8 +43,19 @@ dependencies:
   # 0.1.12，与官方 6.2.0 天差地别）② 可就地打补丁（见 PATCHES.md）。
   appflowy_editor:
     path: third_party/appflowy_editor
+  material_symbols_icons: ^4.2960.0
+  tabler_icons_next: 3.47.0
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  # 性能基线：**Flutter SDK 自带**的包（不是第三方依赖）。用法见
+  # `docs/perf_baseline.md` §2 与 `integration_test/perf_test.dart`。
+  #
+  # 注：**不引入 flutter_driver** —— 桌面端 `flutter drive` 不上报
+  #（`integration_test plugin was not detected`），而 `traceAction` 在 3.47 返回
+  # void、`ProcessInfo.currentRss` 在 Windows 恒为 0。数字改由测试自己用
+  # `addTimingsCallback` 采集并落盘 `build/perf/*.json`。
+  integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   riverpod_lint: 3.1.9
@@ -54,6 +67,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # 导航列的**水墨底**（fBm + 域扭曲 + 阈值晕染，**含同 pass 有序抖动** ⇒ 晕染边缘
+  # 不出 8-bit 色带）。形状常数与 lib/src/theme/nav_ink.dart 的镜像由
+  # test/theme/nav_ink_test.dart 逐个数比对（改一边忘另一边会被抓）。
+  shaders:
+    - assets/shaders/nav_ink.frag
   # 打包字体：霞鹜新晰黑·屏幕阅读版（轻微加粗、调整度量；SIL OFL 开源可
   # 商用）。作为编辑器正文字体（AppTheme.editorFont）：自带中英全套字形 ⇒
   # 中英混排同源、基线恒定；全平台同一份文件，观感一致（11MB）。

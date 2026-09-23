@@ -50,8 +50,8 @@ class CanvasStore {
     final Map<String, dynamic>? json = _parseCanvasDocument(content);
     if (json == null) return 0;
 
-    final Map<String, dynamic> document =
-        (json['document'] as Map).cast<String, dynamic>();
+    final Map<String, dynamic> document = (json['document'] as Map)
+        .cast<String, dynamic>();
     final int schemaVersion = (document['schemaVersion'] as num?)?.toInt() ?? 1;
     final String cameraJson = jsonEncode(
       (json['camera'] as Map).cast<String, dynamic>(),
@@ -94,7 +94,9 @@ class CanvasStore {
     // 首次落行时 `rag_meta` 里没有指纹 ⇒ `_metaChanged` 返回 true，天然覆盖"新建"。
     final List<_EdgeRow> edges = _edgeRows(document);
     final Map<String, _ExistingEdge> oldEdges = _existingEdges(noteId);
-    final Set<String> keepEdges = <String>{for (final _EdgeRow r in edges) r.id};
+    final Set<String> keepEdges = <String>{
+      for (final _EdgeRow r in edges) r.id,
+    };
     final List<String> removedEdgeIds = <String>[
       for (final String id in oldEdges.keys)
         if (!keepEdges.contains(id)) id,
@@ -273,7 +275,8 @@ class CanvasStore {
     );
     int done = 0;
     for (final Row row in rs) {
-      if (replaceCanvasRows(row['id'] as String, row['content'] as String) > 0) {
+      if (replaceCanvasRows(row['id'] as String, row['content'] as String) >
+          0) {
         done++;
       }
     }
@@ -281,12 +284,10 @@ class CanvasStore {
   }
 
   /// 这篇笔记当前有没有画布行（第 2 步回填、第 3 步校验的判据）。
-  bool hasRows(String noteId) => db
-      .select(
-        'SELECT 1 FROM canvas_meta WHERE note_id = ? LIMIT 1',
-        <Object?>[noteId],
-      )
-      .isNotEmpty;
+  bool hasRows(String noteId) => db.select(
+    'SELECT 1 FROM canvas_meta WHERE note_id = ? LIMIT 1',
+    <Object?>[noteId],
+  ).isNotEmpty;
 
   // ── 第 3 步：校验（行 → JSON，与原文深比较）───────────────────────
 
@@ -442,9 +443,10 @@ class CanvasStore {
   /// blob 是**连续**的 Float32 三元组，每笔的点数记在
   /// `style_json.strokes[i].points` ⇒ 必须按它切片，否则点会在笔之间串位。
   static List<Map<String, dynamic>> _decodeShard(_ShardRowRead shard) {
-    final Map<String, dynamic> style =
-        (jsonDecode(shard.styleJson) as Map).cast<String, dynamic>();
-    final List<dynamic> metas = (style['strokes'] as List?) ?? const <dynamic>[];
+    final Map<String, dynamic> style = (jsonDecode(shard.styleJson) as Map)
+        .cast<String, dynamic>();
+    final List<Object?> metas =
+        (style['strokes'] as List?) ?? const <Object?>[];
     final Float32List floats = Float32List.view(
       shard.points.buffer,
       shard.points.offsetInBytes,
@@ -452,7 +454,7 @@ class CanvasStore {
     );
     final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
     int i = 0;
-    for (final dynamic raw in metas) {
+    for (final Object? raw in metas) {
       if (raw is! Map) continue;
       final Map<String, dynamic> meta = raw.cast<String, dynamic>();
       final int n = (meta['points'] as num?)?.toInt() ?? 0;
@@ -476,8 +478,8 @@ class CanvasStore {
   /// item 行 → item JSON。各子类字段不同，**不多写也不少写**：多一个键或
   /// 少一个键都会让深比较失败（对照 `ShapeItem.toJson` 等）。
   static Map<String, dynamic>? _itemJsonOf(_ItemRowRead row, String cardText) {
-    final Map<String, dynamic> props =
-        (jsonDecode(row.propsJson) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> props = (jsonDecode(row.propsJson) as Map)
+        .cast<String, dynamic>();
     switch (row.kind) {
       case 'card':
         // 内容是**另一半**（在 blocks），由 [readVerifiedCanvas] 取回后传进来。
@@ -611,32 +613,33 @@ class CanvasStore {
   /// 被挡掉），于是它可以像 `replaceNoteBlocks` 一样被无脑调用。
   static Map<String, dynamic>? _parseCanvasDocument(String content) {
     if (content.trim().isEmpty) return null;
-    final dynamic decoded;
+    final Object? decoded;
     try {
       decoded = jsonDecode(content);
     } on FormatException {
       return null;
     }
     if (decoded is! Map<String, dynamic>) return null;
-    final dynamic camera = decoded['camera'];
-    final dynamic document = decoded['document'];
+    final Object? camera = decoded['camera'];
+    final Object? document = decoded['document'];
     if (camera is! Map || document is! Map) return null;
     if (document['strokes'] is! Map && document['items'] is! Map) return null;
     return decoded;
   }
 
   static List<_ItemRow> _itemRows(Map<String, dynamic> document) {
-    final dynamic itemsRaw = document['items'];
+    final Object? itemsRaw = document['items'];
     if (itemsRaw is! Map) return const <_ItemRow>[];
     final Map<String, dynamic> items = itemsRaw.cast<String, dynamic>();
-    final List<dynamic> order = (document['itemOrder'] as List?) ?? const <dynamic>[];
+    final List<Object?> order =
+        (document['itemOrder'] as List?) ?? const <Object?>[];
     // z 序 = `itemOrder` 的下标；不在 order 里的（异常存档）按 Map 顺序排到末尾。
     final Set<String> inOrder = <String>{
-      for (final dynamic id in order)
+      for (final Object? id in order)
         if (id is String && items.containsKey(id)) id,
     };
     final List<String> ids = <String>[
-      for (final dynamic id in order)
+      for (final Object? id in order)
         if (inOrder.contains(id)) id as String,
       for (final String id in items.keys)
         if (!inOrder.contains(id)) id,
@@ -649,13 +652,13 @@ class CanvasStore {
 
   /// 一行 item：几何用 rect 的**四条边**（不做 `w = r - l` 的换算，避免浮点往返误差，
   /// 第 3 步要拿它和原文深比较）；`kind` 把内核对 `type` + 形状 `kind` 两级判别拍平成一列。
-  static _ItemRow? _itemRowOf(String id, dynamic raw, int z) {
+  static _ItemRow? _itemRowOf(String id, Object? raw, int z) {
     if (raw is! Map) return null;
     final Map<String, dynamic> item = raw.cast<String, dynamic>();
-    final dynamic rectRaw = item['rect'];
+    final Object? rectRaw = item['rect'];
     if (rectRaw is! List || rectRaw.length < 4) return null;
     final List<double> rect = <double>[
-      for (final dynamic v in rectRaw.take(4)) (v as num).toDouble(),
+      for (final Object? v in rectRaw.take(4)) (v as num).toDouble(),
     ];
     final String type = item['type'] as String? ?? 'shape';
     final String? shapeKind = item['kind'] as String?;
@@ -680,7 +683,8 @@ class CanvasStore {
       // 写了会让"行 ⇄ 原文"深比较失配 ⇒ 老画布静默回退 JSON。
       if (item['colorSlot'] != null) 'colorSlot': item['colorSlot'],
       // 分组框标题（非空才写，与内核 `CanvasGroupItem.toJson` 同口径）。
-      if ((item['label'] as String?)?.isNotEmpty ?? false) 'label': item['label'],
+      if ((item['label'] as String?)?.isNotEmpty ?? false)
+        'label': item['label'],
       // 成员指向分组框的 id（分组框自身恒为 null，不写）：落 `props_json` 扩展位，
       // 不占独立列（与 meta / nodes 同思路）。
       if (item['groupId'] != null) 'groupId': item['groupId'],
@@ -719,7 +723,7 @@ class CanvasStore {
   /// 但落库时被拆到 blocks —— 两边由 [verifyCanvasRows] 的深比较守住一致。
 
   static List<_EdgeRow> _edgeRows(Map<String, dynamic> document) {
-    final dynamic raw = document['edges'];
+    final Object? raw = document['edges'];
     // 旧存档 / 无边画布：这个键**不存在**（内核 toJson 也是空则不写）。
     if (raw is! Map) return const <_EdgeRow>[];
     final Map<String, dynamic> edges = raw.cast<String, dynamic>();
@@ -730,7 +734,7 @@ class CanvasStore {
   }
 
   /// 一行连线：**端点存 id**（binding）——坐标从不落库，绘制时才由两端卡片现算。
-  static _EdgeRow? _edgeRowOf(String id, dynamic raw) {
+  static _EdgeRow? _edgeRowOf(String id, Object? raw) {
     if (raw is! Map) return null;
     final Map<String, dynamic> e = raw.cast<String, dynamic>();
     final String? fromId = e['fromId'] as String?;
@@ -756,17 +760,17 @@ class CanvasStore {
   }
 
   static Map<int, _ShardRow> _shardRows(Map<String, dynamic> document) {
-    final dynamic strokesRaw = document['strokes'];
+    final Object? strokesRaw = document['strokes'];
     if (strokesRaw is! Map) return const <int, _ShardRow>{};
     final Map<String, dynamic> strokes = strokesRaw.cast<String, dynamic>();
-    final List<dynamic> order =
-        (document['strokeOrder'] as List?) ?? const <dynamic>[];
+    final List<Object?> order =
+        (document['strokeOrder'] as List?) ?? const <Object?>[];
 
     final List<Map<String, dynamic>> list = <Map<String, dynamic>>[];
     final Set<String> seen = <String>{};
-    for (final dynamic id in order) {
+    for (final Object? id in order) {
       if (id is! String) continue;
-      final dynamic s = strokes[id];
+      final Object? s = strokes[id];
       if (s is Map && seen.add(id)) list.add(s.cast<String, dynamic>());
     }
     for (final MapEntry<String, dynamic> e in strokes.entries) {
@@ -817,10 +821,10 @@ class CanvasStore {
     final Float32List out = Float32List(total * 3);
     int i = 0;
     for (final Map<String, dynamic> s in slice) {
-      final List<dynamic>? points = s['points'] as List?;
+      final List<Object?>? points = s['points'] as List?;
       if (points == null) continue;
-      for (final dynamic p in points) {
-        final List<dynamic> triple = p as List;
+      for (final Object? p in points) {
+        final List<Object?> triple = p as List;
         out[i++] = (triple[0] as num).toDouble();
         out[i++] = (triple[1] as num).toDouble();
         out[i++] = (triple[2] as num).toDouble();
@@ -882,9 +886,7 @@ class CanvasStore {
       ))
         r['id'] as String: r['fingerprint'] as String,
     };
-    final Set<String> keep = <String>{
-      for (final _ItemRow r in own) r.blockId!,
-    };
+    final Set<String> keep = <String>{for (final _ItemRow r in own) r.blockId!};
     final List<String> removed = <String>[
       for (final String id in existing.keys)
         if (!keep.contains(id)) id,
@@ -955,7 +957,10 @@ class CanvasStore {
   /// 不存在于 `blocks` 的 id **不在结果里** —— 调用方按"当作自有、走新建"处理。
   Map<String, _BlockOwner> _ownersOf(List<String> blockIds) {
     if (blockIds.isEmpty) return const <String, _BlockOwner>{};
-    final String placeholders = List<String>.filled(blockIds.length, '?').join(',');
+    final String placeholders = List<String>.filled(
+      blockIds.length,
+      '?',
+    ).join(',');
     final ResultSet rs = db.select(
       'SELECT id, note_id, type, props_json FROM blocks WHERE id IN ($placeholders)',
       blockIds,
@@ -992,7 +997,9 @@ class CanvasStore {
 
   // ── 差量所需的既有行 ──────────────────────────────────────────────
 
-  Map<String, _ExistingItem> _existingItems(String noteId) => <String, _ExistingItem>{
+  Map<String, _ExistingItem> _existingItems(
+    String noteId,
+  ) => <String, _ExistingItem>{
     for (final Row r in db.select(
       'SELECT id, fingerprint, created_at FROM canvas_items WHERE note_id = ?',
       <Object?>[noteId],
@@ -1003,26 +1010,26 @@ class CanvasStore {
       ),
   };
 
-  Map<int, _ExistingShard> _existingShards(String noteId) => <int, _ExistingShard>{
-    for (final Row r in db.select(
-      'SELECT shard_index, fingerprint FROM ink_shards WHERE note_id = ?',
-      <Object?>[noteId],
-    ))
-      r['shard_index'] as int: _ExistingShard(
-        fingerprint: r['fingerprint'] as String,
-      ),
-  };
-
-  Map<String, _ExistingEdge> _existingEdges(String noteId) =>
-      <String, _ExistingEdge>{
+  Map<int, _ExistingShard> _existingShards(String noteId) =>
+      <int, _ExistingShard>{
         for (final Row r in db.select(
-          'SELECT id, fingerprint FROM canvas_edges WHERE note_id = ?',
+          'SELECT shard_index, fingerprint FROM ink_shards WHERE note_id = ?',
           <Object?>[noteId],
         ))
-          r['id'] as String: _ExistingEdge(
+          r['shard_index'] as int: _ExistingShard(
             fingerprint: r['fingerprint'] as String,
           ),
       };
+
+  Map<String, _ExistingEdge> _existingEdges(
+    String noteId,
+  ) => <String, _ExistingEdge>{
+    for (final Row r in db.select(
+      'SELECT id, fingerprint FROM canvas_edges WHERE note_id = ?',
+      <Object?>[noteId],
+    ))
+      r['id'] as String: _ExistingEdge(fingerprint: r['fingerprint'] as String),
+  };
 
   /// 读出连线行（还原用）。按主键顺序即可——连线没有 z 序语义。
   List<_EdgeRowRead> _readEdges(String noteId) => <_EdgeRowRead>[
@@ -1056,8 +1063,7 @@ class CanvasStore {
     String cameraJson,
     int schemaVersion,
     List<String> itemIds,
-  ) =>
-      contentFingerprint('$cameraJson|$schemaVersion|${itemIds.join(',')}');
+  ) => contentFingerprint('$cameraJson|$schemaVersion|${itemIds.join(',')}');
 }
 
 class _ItemRow {
@@ -1243,8 +1249,8 @@ class _EdgeRowRead {
   /// 还原成连线 JSON：**缺省字段不写**——与 `CanvasEdge.toJson` 逐项对齐，
   /// 否则深比较会差一个键（表现是所有带连线的画布静默回退 JSON）。
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> props =
-        (jsonDecode(propsJson) as Map).cast<String, dynamic>();
+    final Map<String, dynamic> props = (jsonDecode(propsJson) as Map)
+        .cast<String, dynamic>();
     // 端点形状从 props_json 里取出、升回顶层（与内核 toJson 同口径）。
     final Object? startShape = props.remove('startShape');
     final Object? endShape = props.remove('endShape');

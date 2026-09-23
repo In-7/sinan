@@ -1,10 +1,9 @@
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-/// 图片全屏预览（lightbox，对标网页/飞书预览器）：
+import 'package:flutter/material.dart';/// 图片全屏预览（lightbox，对标网页/飞书预览器）：
 ///
 /// - 进入：编辑器内单击图片（也可从右键菜单进）
 /// - 缩放：滚轮 / 顶部 −+ 按钮 / 双击 1x↔2.5x——全部围绕**预览中心**，
@@ -146,7 +145,7 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
                 child: Row(
                   children: <Widget>[
                     _ToolButton(
-                      icon: LucideIcons.minus300,
+                      icon: tabler.Minus(height: 24, width: 24, strokeWidth: 1.5),
                       tooltip: '缩小',
                       onTap: () => _zoomStep(1 / _wheelStep),
                     ),
@@ -164,19 +163,19 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
                     ),
                     const SizedBox(width: 4),
                     _ToolButton(
-                      icon: LucideIcons.plus300,
+                      icon: tabler.Plus(height: 24, width: 24, strokeWidth: 1.5),
                       tooltip: '放大',
                       onTap: () => _zoomStep(_wheelStep),
                     ),
                     const SizedBox(width: 8),
                     _ToolButton(
-                      icon: LucideIcons.maximize300,
+                      icon: tabler.ArrowsMaximize(height: 24, width: 24, strokeWidth: 1.5),
                       tooltip: '适应窗口',
                       onTap: _reset,
                     ),
                     const Spacer(),
                     _ToolButton(
-                      icon: LucideIcons.x300,
+                      icon: tabler.X(height: 24, width: 24, strokeWidth: 1.5),
                       tooltip: '关闭（Esc）',
                       onTap: () => Navigator.of(context).pop(),
                     ),
@@ -194,7 +193,7 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        const Icon(LucideIcons.imageOff300, size: 40, color: Colors.white38),
+        tabler.PhotoOff(height: 40, width: 40, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(Colors.white38, ui.BlendMode.srcIn)),
         const SizedBox(height: 12),
         Text(
           '图片无法加载',

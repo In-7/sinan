@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-import '../../app/providers.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+import 'package:flutter_riverpod/flutter_riverpod.dart';import '../../app/providers.dart';
 import '../../domain/backlink.dart';
 import '../../domain/note.dart';
 import '../../theme/tokens.dart';
@@ -114,11 +113,7 @@ class BacklinkPanel extends ConsumerWidget {
         ),
         child: Row(
           children: <Widget>[
-            Icon(
-              canvas ? LucideIcons.layoutDashboard300 : LucideIcons.fileText300,
-              size: Tokens.iconSm,
-              color: scheme.onSurfaceVariant,
-            ),
+            tabler.LayoutDashboard(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
             const SizedBox(width: Tokens.spaceSm),
             Expanded(
               child: Column(

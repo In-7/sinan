@@ -1,6 +1,7 @@
 import 'package:highlight/highlight.dart' as hl;
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/app_theme.dart';
 import 'lru_cache.dart';
 
 /// 代码块语法高亮（**纯渲染层**）：把一整块代码文本转成多色 span。
@@ -72,9 +73,31 @@ void _appendTokenSpans(
 /// 每次重启后首次渲染代码块就会往控制台打两条 FormatException）。
 /// 白名单里的定义成熟无噪音，且只试十几个语言，比全量探测更快。
 const List<String> _tryLanguages = <String>[
-  'dart', 'javascript', 'typescript', 'python', 'java', 'kotlin', 'json',
-  'yaml', 'sql', 'cpp', 'c', 'go', 'rust', 'swift', 'cs', 'php', 'bash',
-  'shell', 'html', 'css', 'xml', 'markdown', 'ini', 'properties', 'dockerfile',
+  'dart',
+  'javascript',
+  'typescript',
+  'python',
+  'java',
+  'kotlin',
+  'json',
+  'yaml',
+  'sql',
+  'cpp',
+  'c',
+  'go',
+  'rust',
+  'swift',
+  'cs',
+  'php',
+  'bash',
+  'shell',
+  'html',
+  'css',
+  'xml',
+  'markdown',
+  'ini',
+  'properties',
+  'dockerfile',
 ];
 
 /// 解析结果缓存（文本 → token 节点）。
@@ -161,43 +184,38 @@ hl.Result _detectAndParse(String text) {
   return best ?? hl.highlight.parse(text, language: 'plaintext');
 }
 
-/// token 类名 → 颜色（明暗两套，参考 Material/One Dark 的观感）。
+/// token 类名 → 颜色（明暗两套）。**色表在 [AppTheme.syntaxColors]**——
+/// 明度全部按 APCA 定过（`test/theme/apca_audit_test.dart` 体检表与它同源，
+/// 这里不再自带一份，避免"两处各说一套"）。
 /// hljs 的 className 可能是空格分隔的多类（如 "title function"），
 /// 用 contains 匹配主要类别。
 TextStyle? _tokenStyle(String? className, Brightness brightness) {
   if (className == null || className.isEmpty) return null;
-  final bool dark = brightness == Brightness.dark;
-  Color pick(int light, int darkC) => Color(dark ? darkC : light);
+  final Map<String, Color> colors = AppTheme.syntaxColors(brightness);
 
   if (className.contains('keyword')) {
-    return TextStyle(
-      color: pick(0xFF7C4DFF, 0xFFC792EA),
-      fontWeight: FontWeight.w600,
-    );
+    return TextStyle(color: colors['keyword'], fontWeight: FontWeight.w600);
   }
   if (className.contains('string') || className.contains('regexp')) {
-    return TextStyle(color: pick(0xFF2E7D32, 0xFFC3E88D));
+    return TextStyle(color: colors['string']);
   }
   if (className.contains('number') || className.contains('literal')) {
-    return TextStyle(color: pick(0xFFF57C00, 0xFFF78C6C));
+    return TextStyle(color: colors['number']);
   }
   if (className.contains('comment')) {
-    return TextStyle(
-      color: pick(0xFF8A9199, 0xFF5C6370),
-      fontStyle: FontStyle.italic,
-    );
+    return TextStyle(color: colors['comment'], fontStyle: FontStyle.italic);
   }
   if (className.contains('title')) {
-    return TextStyle(color: pick(0xFF0288D1, 0xFF82AAFF));
+    return TextStyle(color: colors['title']);
   }
   if (className.contains('attr') || className.contains('variable')) {
-    return TextStyle(color: pick(0xFFD81B60, 0xFFFF5370));
+    return TextStyle(color: colors['attr']);
   }
   if (className.contains('built_in') || className.contains('type')) {
-    return TextStyle(color: pick(0xFF0277BD, 0xFF89DDFF));
+    return TextStyle(color: colors['built_in']);
   }
   if (className.contains('meta')) {
-    return TextStyle(color: pick(0xFF616161, 0xFF89DDFF));
+    return TextStyle(color: colors['meta']);
   }
   return null;
 }

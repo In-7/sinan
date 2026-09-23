@@ -59,7 +59,7 @@ abstract final class CanvasMigrations {
 
   /// 读出处看到的版本号；**缺键 = v1**（v1 存档不写版本）。
   static int _versionOf(Map<String, dynamic> doc) {
-    final dynamic raw = doc['schemaVersion'];
+    final Object? raw = doc['schemaVersion'];
     return raw is num ? raw.toInt() : 1;
   }
 
@@ -71,11 +71,11 @@ abstract final class CanvasMigrations {
   static Map<String, dynamic> _v1ToV2(Map<String, dynamic> j) {
     final Map<String, dynamic> out = Map<String, dynamic>.of(j);
 
-    final dynamic strokes = j['strokes'];
+    final Object? strokes = j['strokes'];
     if (strokes is List) {
       final Map<String, dynamic> map = <String, dynamic>{};
       final List<String> order = <String>[];
-      for (final dynamic s in strokes) {
+      for (final Object? s in strokes) {
         if (s is Map && s['id'] is String) {
           final String id = s['id'] as String;
           map[id] = s;
@@ -86,11 +86,11 @@ abstract final class CanvasMigrations {
       out['strokeOrder'] = order;
     }
 
-    final dynamic items = j['items'];
+    final Object? items = j['items'];
     if (items is List) {
       final Map<String, dynamic> map = <String, dynamic>{};
       final List<String> order = <String>[];
-      for (final dynamic i in items) {
+      for (final Object? i in items) {
         if (i is Map && i['id'] is String) {
           final String id = i['id'] as String;
           map[id] = i;

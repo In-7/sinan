@@ -1,4 +1,4 @@
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
@@ -47,10 +47,7 @@ class CanvasColorSlotButton extends StatelessWidget {
                     tooltip: '语义色：给卡片 / 思维导图标一个"含义色"',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: const Icon(
-                      LucideIcons.palette300,
-                      size: Tokens.iconSm,
-                    ),
+                    icon: tabler.Palette(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                   ),
           // 连着试色不需要"选完即关"（同笔刷 / 形状面板）。
           builder: (BuildContext context, VoidCallback _) =>

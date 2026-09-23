@@ -55,9 +55,10 @@ void main() {
           ],
         ),
       );
-      expect(tocEntriesOf(document).map((TocEntry e) => e.text).toList(), <String>[
-        '一级',
-      ]);
+      expect(
+        tocEntriesOf(document).map((TocEntry e) => e.text).toList(),
+        <String>['一级'],
+      );
     });
 
     test('空标题（只有格式没有字）跳过：点一个空条目没有意义', () {
@@ -70,9 +71,10 @@ void main() {
           ],
         ),
       );
-      expect(tocEntriesOf(document).map((TocEntry e) => e.text).toList(), <String>[
-        '有字',
-      ]);
+      expect(
+        tocEntriesOf(document).map((TocEntry e) => e.text).toList(),
+        <String>['有字'],
+      );
     });
   });
 
@@ -110,10 +112,7 @@ void main() {
         entries.length - 1,
       );
       // 末尾不在视口里时，照旧走"视口顶部之上最近的标题"（不误伤）。
-      expect(
-        activeTocIndex(entries: entries, visibleRange: (4, 6)),
-        1,
-      );
+      expect(activeTocIndex(entries: entries, visibleRange: (4, 6)), 1);
       // 没有标题时不抛（-1）。
       expect(
         activeTocIndex(
@@ -192,10 +191,7 @@ void main() {
       );
       // 只剩一块（至少一行 ≈20px）⇒ 可滚余量下界只有 0.62 屏，而目标在
       // 0.9 处，够不到顶部 ⇒ 宁可不动（靠高亮给反馈），也不要跳了还不到位。
-      expect(
-        canReach(leadingEdge: 0.9, blocksBelow: 1),
-        isFalse,
-      );
+      expect(canReach(leadingEdge: 0.9, blocksBelow: 1), isFalse);
     });
 
     test('视口量不到（0）⇒ 不武断拦（true）', () {
@@ -260,8 +256,9 @@ void main() {
       // 收起期间文档加新章节 ⇒ 面板不跟随（冻结，实测这里占滚动每步
       // ~35-40% 的泵帧成本）。
       final transaction = state.transaction
-        ..insertNode(<int>[state.document.root.children.length],
-            headingNode(level: 1, text: '冻结期新增章节'));
+        ..insertNode(<int>[
+          state.document.root.children.length,
+        ], headingNode(level: 1, text: '冻结期新增章节'));
       await state.apply(transaction);
       await tester.pump();
       expect(find.text('冻结期新增章节'), findsNothing);
@@ -308,12 +305,12 @@ void main() {
       expect(find.text('第一章'), findsOneWidget);
       expect(find.text('小节'), findsOneWidget);
       expect(find.text('末节'), findsOneWidget);
-      // 激活项：中性 onSurface 文字 + onSurface @10% 底色（activeTint 令牌；
+      // 激活项：中性 onSurface 文字 + onSurface @10% 底色（navSelectedTint 令牌；
       // 2026-09-11 统一中性后不再染 primary，测试口径同步）。
       expect(_colorOf(tester, '第一章'), theme.colorScheme.onSurface);
       expect(
         _containerColorOf(tester, '第一章'),
-        AppTheme.activeTint(theme.colorScheme.onSurface),
+        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
       );
       expect(_colorOf(tester, '小节'), theme.colorScheme.onSurfaceVariant);
       expect(_containerColorOf(tester, '小节'), isNull);
@@ -327,11 +324,11 @@ void main() {
       expect(_containerColorOf(tester, '第一章'), isNull);
     });
 
-    testWidgets('没有标题时给引导文案；点击条目不抛（滚动器未挂载时安全退出）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('没有标题时给引导文案；点击条目不抛（滚动器未挂载时安全退出）', (WidgetTester tester) async {
       final EditorState state = EditorState(
-        document: Document(root: pageNode(children: <Node>[paragraphNode(text: '只有正文')])),
+        document: Document(
+          root: pageNode(children: <Node>[paragraphNode(text: '只有正文')]),
+        ),
       );
       final EditorScrollController scroll = EditorScrollController(
         editorState: state,
@@ -341,7 +338,9 @@ void main() {
         state.dispose();
       });
 
-      final TextEditingController title = TextEditingController(text: '只有正文的笔记');
+      final TextEditingController title = TextEditingController(
+        text: '只有正文的笔记',
+      );
       addTearDown(title.dispose);
       await tester.pumpWidget(
         MaterialApp(
@@ -361,9 +360,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('窄宽度不 overflow（面板宽是 0↔208 的滑出动画）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('窄宽度不 overflow（面板宽是 0↔208 的滑出动画）', (WidgetTester tester) async {
       final EditorState state = EditorState(document: doc());
       final EditorScrollController scroll = EditorScrollController(
         editorState: state,
@@ -425,9 +422,7 @@ void main() {
       expect(titleEntryOf('   ', fallbackText: '   ').text, '无标题');
     });
 
-    testWidgets('显示标题、随标题实时更新、滚到顶部时高亮、点击不抛', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('显示标题、随标题实时更新、滚到顶部时高亮、点击不抛', (WidgetTester tester) async {
       final EditorState state = EditorState(document: doc());
       final EditorScrollController scroll = EditorScrollController(
         editorState: state,
@@ -460,7 +455,7 @@ void main() {
       expect(_colorOf(tester, '第一章'), theme.colorScheme.onSurface);
       expect(
         _containerColorOf(tester, '第一章'),
-        AppTheme.activeTint(theme.colorScheme.onSurface),
+        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
       );
 
       // 标题变化 → 目录实时更新（直接监听标题控制器）。
@@ -470,12 +465,12 @@ void main() {
       expect(find.text('我的笔记'), findsNothing);
 
       // 视口回到文档最顶（首个可见块 = 0）→ 首条高亮。首条文字色本就是
-      // 实色 onSurface，激活的可见差异在底色（activeTint）。
+      // 实色 onSurface，激活的可见差异在底色（navSelectedTint）。
       scroll.visibleRangeNotifier.value = (0, 3);
       await tester.pump();
       expect(
         _containerColorOf(tester, '改过的标题'),
-        AppTheme.activeTint(theme.colorScheme.onSurface),
+        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
       );
 
       // 点击首条（滚动器未挂载时安全退出，不抛）。
@@ -486,9 +481,7 @@ void main() {
   });
 
   group('首块标题与页面标题合并', () {
-    testWidgets('首块是标题时目录里只出现一条（否则是同一目标的重复）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('首块是标题时目录里只出现一条（否则是同一目标的重复）', (WidgetTester tester) async {
       final EditorState state = EditorState(
         document: Document(
           root: pageNode(
@@ -579,8 +572,9 @@ void main() {
 
       // 3 条 + "页面标题"首条 + 标题行：远低于测试视口 600 ⇒ 面板应被内容撑起
       // 而非铺满（旧行为会顶到 600）。
-      final double panelHeight =
-          tester.getSize(find.byType(AppFlowyTocPanel)).height;
+      final double panelHeight = tester
+          .getSize(find.byType(AppFlowyTocPanel))
+          .height;
       expect(panelHeight, lessThan(300));
       // 条目全量构建：首条标题块与"页面标题"合并成一条（点击目标相同），
       // 所以树里是「我的笔记 / 章节 2 / 章节 3」而不是 4 条。
@@ -644,7 +638,7 @@ void main() {
 Color? _colorOf(WidgetTester tester, String text) =>
     tester.widget<Text>(find.text(text)).style?.color;
 
-/// 条目容器的底色（激活项是 activeTint，非激活为 null）。
+/// 条目容器的底色（激活项是 navSelectedTint，非激活为 null）。
 Color? _containerColorOf(WidgetTester tester, String text) {
   final Container container = tester.widget<Container>(
     find.ancestor(of: find.text(text), matching: find.byType(Container)).first,

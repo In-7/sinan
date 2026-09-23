@@ -6,7 +6,7 @@ import 'package:flutter/material.dart' as official;
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, LogicalKeyboardKey, PhysicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/blocks/code_block_component.dart';
 import 'package:sinan/src/editor/core/editor_icons.dart';
@@ -239,7 +239,7 @@ void main() {
       WidgetTester tester,
     ) async {
       // main() 里的那一步（测试不跑 main，必须显式安装）。
-      installLucideEditorIcons();
+      installEditorIcons();
       final EditorState state = await _pump(tester);
       // 浮动栏只在扩展选区时渲染条目（折叠光标下整条不挂载）。
       state.selection = _selection(0, 2);
@@ -251,25 +251,18 @@ void main() {
           .whereType<IconData>()
           .toSet();
 
-      // 官方条目（加粗 / 标题 1 / 左对齐）渲染的是映射表里的 Lucide 字形。
-      // 注意 `bold300` 与 `bold` **码点相同、字体族不同**（Lucide300 vs
-      // Lucide），所以下面这几条同时验证了"换成 Lucide"与"档位是 300"。
+      // 官方条目（加粗 / 标题 1 / 左对齐）渲染的是映射表里的 Material Symbols 字形
+      // （字重 300 由主题 iconTheme 统一控制，不再有 Lucide 那种"字体族档位"之分）。
       expect(
         rendered,
-        contains(LucideIcons.bold300),
+        contains(Symbols.format_bold),
         reason: '官方"加粗"仍是包内 SVG（钩子没接上）',
       );
       // 块样式按钮显示**当前样式**（此处光标在段落里 ⇒ 正文图标 T）。
-      expect(rendered, contains(LucideIcons.type300));
-      expect(rendered, contains(LucideIcons.alignLeft300));
-      // 自研条目同档位（撤销/重做已搬去标题行，这里改用待办条目当代表）。
-      expect(rendered, contains(LucideIcons.listTodo300));
-      // 默认档（400/2px 描边）不该出现在编辑器里——出现就说明有图标漏换。
-      expect(
-        rendered,
-        isNot(contains(LucideIcons.bold)),
-        reason: '有图标没走映射（仍是默认粗档）',
-      );
+      expect(rendered, contains(Symbols.text_fields));
+      expect(rendered, contains(Symbols.format_align_left));
+      // 自研条目（撤销/重做已搬去标题行，这里改用待办条目当代表）。
+      expect(rendered, contains(Symbols.checklist));
     });
 
     test('tooltip 承诺的快捷键 = 真实绑定（"按了没反应"就出在这里）', () {

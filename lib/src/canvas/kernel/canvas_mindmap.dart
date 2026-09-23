@@ -72,7 +72,7 @@ class MindNode {
     id: j['id'] as String?,
     text: j['text'] as String? ?? '',
     children: <MindNode>[
-      for (final dynamic c in (j['children'] as List?) ?? const <dynamic>[])
+      for (final Object? c in (j['children'] as List?) ?? const <Object?>[])
         MindNode.fromJson((c as Map).cast<String, dynamic>()),
     ],
   );
@@ -259,14 +259,7 @@ class MindMapItem extends CanvasItem {
           canvas.drawPath(
             ui.Path()
               ..moveTo(from.dx, from.dy)
-              ..cubicTo(
-                from.dx + dx,
-                from.dy,
-                to.dx - dx,
-                to.dy,
-                to.dx,
-                to.dy,
-              ),
+              ..cubicTo(from.dx + dx, from.dy, to.dx - dx, to.dy, to.dx, to.dy),
             paint,
           );
         }
@@ -326,14 +319,14 @@ class MindMapItem extends CanvasItem {
     if (cached != null && _paragraphTexts[node.id] == node.text) return cached;
     final ui.Paragraph p =
         (ui.ParagraphBuilder(
-              ui.ParagraphStyle(
-                fontSize: MindMapMetrics.fontSize,
-                height: MindMapMetrics.lineHeight,
-                textAlign: ui.TextAlign.center,
-                maxLines: 1,
-                ellipsis: '…',
-              ),
-            )
+                ui.ParagraphStyle(
+                  fontSize: MindMapMetrics.fontSize,
+                  height: MindMapMetrics.lineHeight,
+                  textAlign: ui.TextAlign.center,
+                  maxLines: 1,
+                  ellipsis: '…',
+                ),
+              )
               ..pushStyle(
                 ui.TextStyle(color: color, fontSize: MindMapMetrics.fontSize),
               )
@@ -379,15 +372,17 @@ class MindMapItem extends CanvasItem {
     'meta': meta,
   };
 
-  factory MindMapItem.fromJson(Map<String, dynamic> j, {MediaResolver? media}) =>
-      MindMapItem(
-        id: j['id'] as String?,
-        rect: _rectFromJson(j['rect'] as List),
-        angle: (j['angle'] as num?)?.toDouble() ?? 0,
-        root: MindNode.fromJson((j['nodes'] as Map).cast<String, dynamic>()),
-        colorSlot: canvasColorSlotOf(j['colorSlot']),
-        meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
-      );
+  factory MindMapItem.fromJson(
+    Map<String, dynamic> j, {
+    MediaResolver? media,
+  }) => MindMapItem(
+    id: j['id'] as String?,
+    rect: _rectFromJson(j['rect'] as List),
+    angle: (j['angle'] as num?)?.toDouble() ?? 0,
+    root: MindNode.fromJson((j['nodes'] as Map).cast<String, dynamic>()),
+    colorSlot: canvasColorSlotOf(j['colorSlot']),
+    meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
+  );
 }
 
 /// 新建一张默认思维导图（"中心主题" + 两个分支），插入即可见、可拖。
@@ -395,6 +390,9 @@ MindMapItem newMindMapItem({required Rect rect}) => MindMapItem(
   rect: rect,
   root: MindNode(
     text: '中心主题',
-    children: <MindNode>[MindNode(text: '分支一'), MindNode(text: '分支二')],
+    children: <MindNode>[
+      MindNode(text: '分支一'),
+      MindNode(text: '分支二'),
+    ],
   ),
 );

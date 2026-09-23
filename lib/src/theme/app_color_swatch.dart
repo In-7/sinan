@@ -1,4 +1,4 @@
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import 'tokens.dart';
@@ -59,14 +59,7 @@ class AppColorSwatch extends StatelessWidget {
           ),
         ),
         child: isSelected
-            ? Icon(
-                LucideIcons.check300,
-                size: size * 0.58,
-                // 对勾取对比色：深底用白勾、浅底用深勾（纯白勾在黄/浅色块上看不见）。
-                color: color.computeLuminance() > 0.5
-                    ? const Color(0xFF1F1F1F)
-                    : const Color(0xFFFFFFFF),
-              )
+            ? tabler.Check(height: size * 0.58, width: size * 0.58, strokeWidth: 1.5)
             : null,
       ),
     );

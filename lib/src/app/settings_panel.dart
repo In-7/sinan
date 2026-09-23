@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../domain/settings.dart';
 import 'app_info.dart';
 import 'providers.dart';
+import '../theme/app_float_surface.dart';
+import '../theme/app_theme.dart';
+import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 
 /// 行高滑杆的上下限与步长（值夹取 / Slider 范围 / 格数三处共用）。
@@ -76,16 +80,31 @@ extension _SettingsSectionSpec on _SettingsSection {
   };
 
   IconData get icon => switch (this) {
-    _SettingsSection.appearance => LucideIcons.palette300,
-    _SettingsSection.editor => LucideIcons.penLine300,
-    _SettingsSection.ai => LucideIcons.sparkles300,
-    _SettingsSection.about => LucideIcons.info300,
+    _SettingsSection.appearance => tabler.Palette(height: 24, width: 24, strokeWidth: 1.5),
+    _SettingsSection.editor => tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5),
+    _SettingsSection.ai => tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
+    _SettingsSection.about => tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
   };
 }
 
-/// 遮罩浓度：压暗主界面以聚焦设置，**但不模糊**——
-/// 用户要能透过它看到背后内容的实时变化（宽度/字号/主题）。
-const double _scrimAlpha = 0.4;
+/// 遮罩**颜色**的浓度。现值 **0 = 不压暗**（2026-09-22 用户定）。
+///
+/// ## 这里有两件事，别混
+/// 1. **手势层**（`_SettingsOverlay` 里那层 `Positioned.fill` + `GestureDetector`）：
+///    **必须有**——它负责"点面板外面关闭"，还挡住误点到背后控件。去掉它，
+///    桌面端用户点外面**毫无反应**，像卡死。
+/// 2. **压暗的颜色**：**可以不要**——本常量就是它，现在为 `0`（那层只剩行为、没有像素）。
+///    压暗原本承担"聚焦 + 帮面板浮起"；取消后**面板浮起要由自己承担**（三件套，
+///    或轻拟态的底差 / 光影 / 内边）。
+///
+/// ⚠️ **公开**（不是私有 `_`）：早期体检表拿"遮罩压在最坏内容上"当面板的合成底算过
+/// 对比度，那个值必须与这里同源。
+/// 📌 **现在体检表不再用它**（2026-09-22 面板改成**实色** ⇒ 背后那层影响不到面板，
+/// 闸门按"面板色 + 光泽顶端"算就够）。保留公开、并在手势层里取它，是因为浓度随时
+/// 可能被调回去——**调回去时体检表要跟着改回带遮罩的算式**。
+/// 📌 **它曾经是承重的**：面板底还是半透（α 0.88）时，暗色下副标题靠这 0.4 遮罩才从
+/// "不遮罩的 −55.2"回到 −61.7（过 60 档）。
+const double settingsScrimAlpha = 0;
 
 /// 弹出设置面板：悬浮卡片 + 背后半透明遮罩，**非模态路由**。
 ///
@@ -95,9 +114,10 @@ const double _scrimAlpha = 0.4;
 /// - 不用路由栈，不影响导航历史。
 ///
 /// 关闭：右上角 ✕ / 点遮罩 / Esc。
-Future<void> showSettingsPanel(BuildContext context) {
-  // 不用传入的 context 找 Overlay：触发处可能在 MaterialApp 之上
-  // （见 appNavigatorKey 的说明），一律走导航根。
+Future<void> showSettingsPanel() {
+  // 不接 context：触发处可能在 MaterialApp 之上（见 appNavigatorKey 的说明），
+  // 也可能根本没有 context（命令层只能给不可变数据，见 command/command.dart 的
+  // CommandContext），一律走导航根。
   final OverlayState overlay = appNavigatorKey.currentState!.overlay!;
   final Completer<void> closed = Completer<void>();
   OverlayEntry? entry;
@@ -153,8 +173,36 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
     curve: Curves.easeOut,
   );
 
+  /// 面板自己的**作用域**节点：打开时接管焦点，同时它就是 Tab 的**边界**。
+  ///
+  /// 为什么不能只靠 Esc 的全局 handler：那个拦得住 Esc，**拦不住 Tab**。
+  /// 面板打开时焦点还留在编辑器（编辑器 `autoFocus: true`）⇒ 按 Tab 只是在
+  /// 编辑器所在的作用域里转，面板里"按了毫无反应"（2026-09-21 用户实报）。
+  ///
+  /// 为什么要**作用域**节点而不是普通 `FocusNode`：Tab 的边界由 `nearestScope`
+  /// 决定（SDK `FocusTraversalPolicy._moveFocus`），而作用域节点**不在** Tab 序列
+  /// 里——它是"进第一个控件的入口"。用普通节点的话，绕回到头时会多出一格落在
+  /// 面板本身、**没有焦点环的空档**。
+  final FocusScopeNode _panelScope = FocusScopeNode(
+    debugLabel: 'settings.panel',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // ⚠️ 用显式 `requestFocus()` 而不是 `Focus(autofocus: true)`：面板挂在
+    // `navigator.overlay` 上，`autofocus` 只在"所属作用域内没有已聚焦节点"时才
+    // 生效，而路由内的编辑器已经占着焦点 ⇒ 不保证生效。`requestFocus()` 可以
+    // 跨作用域搬焦点（命令面板的输入框用的就是这条，已实测）。
+    // 延到帧后：本 State 刚建、节点还没 attach，当场 request 无效。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _panelScope.requestFocus();
+    });
+  }
+
   @override
   void dispose() {
+    _panelScope.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -164,7 +212,10 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
     final Size screen = MediaQuery.sizeOf(context);
     return Stack(
       children: <Widget>[
-        // 遮罩：点击关闭（点卡片内不触发——卡片在其上层且吸收事件）。
+        // 手势层：点击关闭（点卡片内不触发——卡片在其上层且吸收事件）。
+        // ⚠️ 它是**行为**，不是视觉：颜色浓度由 [settingsScrimAlpha] 给，现在是 **0**
+        // （2026-09-22 用户定"不要压暗"）⇒ 这一层只剩"点外关闭 + 挡住误点"。
+        // 别因为"看不见"就把它删了——删掉就是"点外面没反应"。
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -174,9 +225,8 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
               child: ColoredBox(
                 // 用 M3 的 scrim **色角色**而不是 `Colors.black`：默认值就是黑，
                 // 观感不变，但不再是硬编码色（换主题时 scrim 若被定制会跟着走）。
-                color: Theme.of(
-                  context,
-                ).colorScheme.scrim.withValues(alpha: _scrimAlpha),
+                color: Theme.of(context).colorScheme.scrim
+                    .withValues(alpha: settingsScrimAlpha),
               ),
             ),
           ),
@@ -195,7 +245,20 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
                     maxWidth: _panelWidth,
                     maxHeight: screen.height * 0.85,
                   ),
-                  child: _SettingsCard(onClose: widget.onClose),
+                  // Tab 顺序 = 视觉顺序（§5.2）。
+                  child: FocusTraversalGroup(
+                    // ⚠️ 圈住 traversal 的是**这个作用域**，不是上面的 group：
+                    // SDK 里 `_moveFocus` 取 `nearestScope`，再
+                    // `_sortAllDescendants(scope, …)` **只收该作用域的子孙**，走到
+                    // 末尾按 `traversalEdgeBehavior`（默认 `closedLoop`）绕回本作用域
+                    // 第一个。`FocusTraversalGroup` 只管**顺序**、不管边界——只加它
+                    // 的话，Tab 走出最后一个控件就进了遮罩背后的主界面
+                    // （2026-09-21 用户实报，那里几乎没人有焦点环，看起来像"没反应"）。
+                    child: FocusScope(
+                      node: _panelScope,
+                      child: _SettingsCard(onClose: widget.onClose),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -245,6 +308,8 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
       const _AiEnabledRow(),
       const _AiEndpointRow(),
       const _AiModelRow(),
+      const _AiEmbeddingModelRow(),
+      const _BuildIndexRow(),
     ],
     // 「关于」是设置页的固定分区（Win11 / macOS 系统设置都有）：应用信息、
     // 开源许可、数据目录。除了许可页本身，内容都是几行 `ListTile` ——
@@ -254,27 +319,39 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
+    final Brightness brightness = Theme.of(context).brightness;
 
-    return Material(
-      // 底色与「关于」对话框**同一档**：M3 的 `surfaceContainerHigh`
-      // —— 官方 `Dialog`/`AlertDialog` 未显式设背景时的默认值（见
-      // `material/dialog.dart`，M3 defaults 里就是它）。
-      //
-      // 为什么必须换掉原来的 [AppTheme.windowBackground]（2026-09-18 用户反馈
-      // "设置页不如关于页好看"）：那是**窗口最底层**的底色（亮 #F3F3F3 /
-      // 暗 #0A0A0A，比纸面还深一档、纯中性无微染），拿它当浮起面板的底 ⇒
-      // 面板看着像"贴在窗口上的一块暗板"，既低于关于页一档，也不像浮层。
-      // 也不用项目的 [AppTheme.floatSurface]：那一档是给**菜单/气泡**的
-      // （比纸面抬一档的纯中性白），而设置面板与对话框同类（模态遮罩上的
-      // 内容面板），走 M3 内容表面档才与关于页同一语言。
-      color: scheme.surfaceContainerHigh,
-      // **刻意不给 elevation**（默认 0，同 `dialogTheme`）：M3 里 elevation 会
-      // 再叠一层 surface tint，把上面这个色又染偏；而且遮罩已经承担了"浮起"
-      // 的读数 —— 关于页正是这样（无阴影、无 tint）。
-      borderRadius: BorderRadius.circular(Tokens.radiusLg),
-      clipBehavior: Clip.antiAlias,
+    // ## 底 = **实色** [AppTheme.floatSurface] + 玻璃光泽（与关于面板同一档）
+    // 2026-09-22 用户定：两处面板**统一**成这一档（此前是 A/B 对照：设置 = 半透 0.98、
+    // 关于 = 实色，实测两者只差 1~3 Lc、肉眼不可分 ⇒ 对照已无意义，只留一个）。四件别随手改：
+    //
+    // ① 底 = [AppTheme.floatSurface]（实色）。这里曾有一档 `panelFill`（0.80 → 0.88 →
+    //    0.98，半透），删掉的理由见 `app_theme.dart` 里那段"面板"区块注释：**面积大 +
+    //    不开模糊** ⇒ 鬼影既大又清晰，收到 0.98 时已与实色无差别。
+    //    再往前这里是**不透明**的 `scheme.surfaceContainerHigh`（实测带种子色相：
+    //    亮 `#E3E9E9` / 暗 `#242B2B`，与本文件头部"大面不染种子色"冲突）——换掉它
+    //    另有两条老账：主菜单进浮层族后，"内容面板"该与它同族。
+    // ② `glass: true` = 内光泽 + 顶沿光边。**这是面板现在唯一的"玻璃感"来源**
+    //    （亮色下"透"本来就只差 1~2 级，见 [AppTheme.menuLayerAlpha] 的注释实测）。
+    // ③ `blur` **留默认 `false`**（刻意，不是省略：写 `blur: false` 会撞
+    //    `avoid_redundant_argument_values`，测试里有闸门）。成本 ∝ 面积 × 重绘次数，
+    //    而拖字号 / 行高滑杆时背后**每帧重绘** ⇒ 那块滤镜要每帧重算。换来的是"背后
+    //    内容清晰可辨"——正是本面板"改设置时能看见背后实时变化"的设计初衷。
+    //    🔧 要开回来先按 [AppTheme.floatBlurSigma] 实测（profile + `F9` 看 p90）。
+    // ④ 描边 + 双层投影由容器自带（浮层三件套），别另加。
+    //
+    // ⚠️ 合成色：**底是实色 ⇒ 背后是什么都影响不到面板**（遮罩浓度 `settingsScrimAlpha`
+    //   也已归 0，见其说明）⇒ 面板上的对比度只由"面板色 + 光泽"决定。
+    //   实测：底 `#FFFFFF` / `#2F2F2F`，**光泽顶端**（白 5%）`#FFFFFF` / `#464646`
+    //   ⇒ 面板上 `onSurface` Lc **104.3 / −80.8**、`onSurfaceVariant` **93.4 / −62.1**
+    //   （体检表"玻璃面板 光泽顶端"两行钉着）。
+    //   📌 闸门按**顶端**算：光泽最亮的地方正是**标题栏**所在；标题之下只会更暗。
+    //   ⚠️ 暗色的 −62.1 是**钳制出来的**（`onSurfaceVariant` 钳到 60 档，
+    //   参考底 = [AppTheme.lightestDarkSurface]）⇒ 它就该贴着档位，不是"余量不足"。
+    return AppFloatSurface(
+      glass: true,
+      color: AppTheme.floatSurface(brightness),
       child: SizedBox(
         height: _panelHeight,
         child: Column(
@@ -297,7 +374,7 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(LucideIcons.x300, size: Tokens.iconSm),
+                    icon: tabler.X(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                     tooltip: '关闭（Esc）',
                     onPressed: widget.onClose,
                   ),
@@ -387,8 +464,10 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
   }
 }
 
-/// 目录导航项：M3 选中态（secondaryContainer 圆角底 + 图标文字同色系）。
-class _NavTile extends StatelessWidget {
+/// 目录导航项：选中态走 §5.1 的统一读法——**中性 tint 底 + 3px primary 左指示条 +
+/// 字重 w600**。此前是 M3 的 `secondaryContainer`（带种子色的底）：同一个设置面板里，
+/// 左导航与分段控件曾各画各的"选中"。
+class _NavTile extends StatefulWidget {
   const _NavTile({
     required this.section,
     required this.selected,
@@ -400,6 +479,21 @@ class _NavTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_NavTile> createState() => _NavTileState();
+}
+
+class _NavTileState extends State<_NavTile> {
+  /// 焦点环要观察的节点——**同一个节点也要交给 InkWell**（见 [FocusRing] 的
+  /// 说明：环必须跟着控件自己的节点，不能用"祖先探针"）。
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
@@ -409,42 +503,65 @@ class _NavTile extends StatelessWidget {
       // 读屏用户听不出"我在哪一页"。InkWell 自带 button 语义与键盘焦点，
       // 这里只补 selected。
       child: Semantics(
-        selected: selected,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            onTap: onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              padding: const EdgeInsets.symmetric(
-                horizontal: Tokens.spaceMd,
-                vertical: Tokens.spaceSm + 2,
-              ),
-              decoration: BoxDecoration(
-                color: selected ? scheme.secondaryContainer : null,
-                borderRadius: BorderRadius.circular(Tokens.radiusSm),
-              ),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    section.icon,
-                    size: Tokens.iconSm,
-                    color: selected
-                        ? scheme.onSecondaryContainer
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: Tokens.spaceSm),
-                  Text(
-                    section.label,
-                    style: text.bodyMedium?.copyWith(
-                      color: selected
-                          ? scheme.onSecondaryContainer
-                          : scheme.onSurface,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        selected: widget.selected,
+        // 焦点环跟的是 **InkWell 自己的节点**（`_focus`）：不能用"祖先探针"，
+        // 实测那个在焦点移到别的控件时不回调（见 [FocusRing] 的说明）。
+        child: FocusRing(
+          focusNode: _focus,
+          borderRadius: BorderRadius.circular(Tokens.radiusSm),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(Tokens.radiusSm),
+              focusNode: _focus,
+              onTap: widget.onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Tokens.spaceMd,
+                  vertical: Tokens.spaceSm + 2,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? AppTheme.navSelectedTint(scheme.onSurface)
+                      : null,
+                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                ),
+                // 左指示条走 `foregroundDecoration`（**不占位**）：写进 `border`
+                // 会让内容在选中/未选中之间横移 3px——"文字跳一下"是最容易被忽略的
+                // 粗糙感（编辑器跳转闪烁块用同一个手法）。
+                foregroundDecoration: widget.selected
+                    ? BoxDecoration(
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                        border: Border(
+                          left: BorderSide(
+                            color: AppTheme.navIndicator(scheme),
+                            width: Tokens.indicatorWidth,
+                          ),
+                        ),
+                      )
+                    : null,
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      widget.section.icon,
+                      size: Tokens.iconSm,
+                      color: widget.selected
+                          ? scheme.onSurface
+                          : scheme.onSurfaceVariant,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text(
+                      widget.section.label,
+                      style: text.bodyMedium?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: widget.selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -689,26 +806,139 @@ class _SliderSetting extends StatelessWidget {
   }
 }
 
-/// 弹出「关于」：走**框架原生** [showAboutDialog]。
+/// 弹出「关于」：**玻璃浮层**（自绘，2026-09-22 定）。
 ///
-/// 比手写 `AlertDialog` 多拿到两件自己做不划算的东西：
-/// - **版本号有位置**（`applicationVersion`）—— 此前那个对话框没有版本；
-/// - **自带「查看许可」入口** → [LicensePage]：它把 `LicenseRegistry` 里全部
-///   依赖的许可收集成可搜索列表（要自己做得遍历整棵依赖树）。
+/// ## 为什么不走框架原生 [showAboutDialog] 了
+/// 它的面板 Material 在 `_DialogRoute` **内部**，外面**插不进**任何自绘层；而
+/// `showAboutDialog` 本身**没有 `builder` 参数**（SDK 签名里查过）⇒ 想给面板加
+/// 模糊 / 内光泽都无处下手。现在面板由 [_AboutPanel] 自绘。
+/// 它原来的两件好处照旧保留：
+/// - **版本号有位置**；
+/// - **「查看许可」入口** → [LicensePage]（把 `LicenseRegistry` 里全部依赖的许可
+///   收集成可搜索列表，要自己做得遍历整棵依赖树）。
 ///
-/// 数据目录、依赖清单的常驻入口在**设置 → 关于**分区（见 [_AboutSection]）。
+/// ⚠️ 面板底色**整个让给 [AppFloatSurface]**（`Dialog` 自己透明、elevation 0）：
+/// 跟着 `dialogTheme` 走的话，框架那层不透明 Material 会盖住自绘的底与光泽。
 ///
-/// ⚠️ 返回 `void`（不是 `Future`）：官方 `showAboutDialog` 本身不回报"对话框
-/// 关闭了"，包装成 Future 只会让调用方以为 await 到了关闭 —— 不如如实。
+/// ⚠️ 返回 `void`（不是 `Future`）：调用方是菜单项，按完就收菜单、不该 await
+/// 对话框关闭（`app_menu.dart` 的 `pick`）。
 void showAboutPanel(BuildContext context) {
-  final ColorScheme scheme = Theme.of(context).colorScheme;
-  showAboutDialog(
-    context: context,
-    applicationName: AppInfo.name,
-    applicationVersion: AppInfo.version,
-    applicationIcon: Icon(LucideIcons.penLine300, color: scheme.primary),
-    applicationLegalese: AppInfo.description,
+  // `unawaited`：本函数刻意不返回 Future（见上），但 `showDialog` 会返回一个
+  // 关闭才 complete 的 Future ⇒ 不接就会撞 `discarded_futures`。
+  unawaited(
+    showDialog<void>(
+      context: context,
+      // ⚠️ **不压暗**（2026-09-22 用户定）：默认的 `Colors.black54` 会把整屏压暗，
+      // 而设置面板那层遮罩浓度已归 0 ⇒ 两处面板**背后的处理也必须一致**，
+      // 否则"同款面板"在两种幕布上观感差得比材质本身还大。
+      // 📌 屏障**仍在**（只是不带颜色）：点外面关闭、挡住误点，行为与默认完全一样。
+      barrierColor: Colors.transparent,
+      builder: (BuildContext _) => const Dialog(
+        backgroundColor: Colors.transparent,
+        // elevation 归零有两层含义：不叠 M3 的 surface tint（会把底染偏），
+        // 也不与 [AppFloatSurface] 自带的双层软阴影打架。
+        elevation: 0,
+        child: _AboutPanel(),
+      ),
+    ),
   );
+}
+
+/// 「关于」面板本体：**玻璃浮层** + 应用信息 + 两个动作。
+///
+/// 结构照应官方 `AboutDialog`（图标 + 名称版本 + 简介 + 「查看许可」/「关闭」），
+/// 但外观走项目自己的玻璃档（**实色底 + 光泽**，与设置面板**同一档**）——理由见
+/// [_AboutPanel.build] 与 [showAboutPanel] 的文档。
+class _AboutPanel extends StatelessWidget {
+  const _AboutPanel();
+
+  /// 面板宽度：够放下「sinan 0.1.0」一行 + 两三行简介 + 两个按钮，不拉成横幅。
+  static const double _width = 380;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+
+    return AppFloatSurface(
+      // ## 底 = **实色** + 玻璃光泽（与设置面板**同一档**，2026-09-22 用户定）
+      // 底色用 [AppTheme.floatSurface]（**不透明**）⇒ 面板背后是什么都不影响它，
+      // 读作"一块抛光的实板"；"玻璃"完全由内光泽 + 顶沿光边提供。
+      // 📌 早先这里是"B 档"、设置面板是"半透的 A 档"，作为对照存在；实测两者只差
+      // 1~3 Lc（肉眼不可分）⇒ 对照删掉，两处统一走这一档。
+      // ⚠️ 因此 [AppFloatSurface.blur] 也一并去掉：实色底下模糊本来就看不见，
+      //   留着只是白付一次 `saveLayer`（关于面板小、付得起，但没必要）。
+      glass: true,
+      color: AppTheme.floatSurface(theme.brightness),
+      width: _width,
+      padding: const EdgeInsets.all(Tokens.spaceLg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+              const SizedBox(width: Tokens.spaceMd),
+              Expanded(
+                child: Text(
+                  '${AppInfo.name} ${AppInfo.version}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.spaceMd),
+          Text(
+            AppInfo.description,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: Tokens.spaceLg),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              TextButton(
+                onPressed: () => _openLicenses(context),
+                child: const Text('查看许可'),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('关闭'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 打开许可页（框架原生 [LicensePage]，与设置面板的「关于」分区同一个页面）。
+  ///
+  /// ⚠️ 本面板是**路由**（`showDialog`），不是设置面板那种 OverlayEntry ⇒ 直接
+  /// `pop()` 就行；但 `NavigatorState` 与主题色都要在 pop **之前**取好 ——
+  /// pop 之后本 widget 的 context 已失效，那时再 `Navigator.of(context)` 会抛
+  /// （设置面板那支 `_openLicenses` 踩过同一个坑）。
+  void _openLicenses(BuildContext context) {
+    final NavigatorState navigator = Navigator.of(context);
+    final Color primary = Theme.of(context).colorScheme.primary;
+    navigator.pop();
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => LicensePage(
+            applicationName: AppInfo.name,
+            applicationVersion: AppInfo.version,
+            applicationIcon: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(primary, ui.BlendMode.srcIn)),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 「关于」分区：应用信息 + 开源许可 + 数据目录。
@@ -737,37 +967,27 @@ class _AboutSection extends ConsumerWidget {
       children: <Widget>[
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(LucideIcons.penLine300, color: scheme.primary),
+          leading: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
           title: const Text('${AppInfo.name} ${AppInfo.version}'),
           subtitle: Text(AppInfo.tagline, style: hint),
           isThreeLine: true,
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            LucideIcons.scrollText300,
-            color: scheme.onSurfaceVariant,
-          ),
+          leading: tabler.Article(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           title: const Text('开源许可'),
           subtitle: Text('第三方依赖的许可清单（由框架自动收集）', style: hint),
-          trailing: Icon(
-            LucideIcons.chevronRight300,
-            size: Tokens.iconSm,
-            color: scheme.onSurfaceVariant,
-          ),
+          trailing: tabler.ChevronRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           onTap: () => _openLicenses(context),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            LucideIcons.folderOpen300,
-            color: scheme.onSurfaceVariant,
-          ),
+          leading: tabler.FolderOpen(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           title: const Text('数据目录'),
           // 可选中：路径以 AppData 开头、肉眼抄不下。
           subtitle: SelectableText(dataDir, style: hint),
           trailing: IconButton(
-            icon: const Icon(LucideIcons.copy300, size: Tokens.iconSm),
+            icon: tabler.Copy(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
             tooltip: '复制路径',
             onPressed: () => _copyDataDir(context, dataDir),
           ),
@@ -788,10 +1008,7 @@ class _AboutSection extends ConsumerWidget {
     final Widget page = LicensePage(
       applicationName: AppInfo.name,
       applicationVersion: AppInfo.version,
-      applicationIcon: Icon(
-        LucideIcons.penLine300,
-        color: Theme.of(context).colorScheme.primary,
-      ),
+      applicationIcon: tabler.Pencil(height: 24, width: 24, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(Theme.of(context).colorScheme.primary, ui.BlendMode.srcIn)),
     );
     onClose();
     unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => page)));
@@ -864,6 +1081,176 @@ class _AiModelRow extends ConsumerWidget {
       hint: 'qwen3.5',
       onCommit: (String value) =>
           ref.read(settingsProvider.notifier).setAiModel(value),
+    );
+  }
+}
+
+/// 嵌入模型名（Ollama tag）。空 = 只用关键词检索。
+class _AiEmbeddingModelRow extends ConsumerWidget {
+  const _AiEmbeddingModelRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return _TextSettingRow(
+      label: '嵌入模型',
+      description:
+          '语义检索用的模型（`ollama list` 可查），如 bge-m3。'
+          '留空 ⇒ 检索与索引自动只用关键词，功能照常可用。'
+          '**换模型后要重建索引**（向量空间变了）。',
+      value: settings.aiEmbeddingModel,
+      hint: 'bge-m3',
+      onCommit: (String value) =>
+          ref.read(settingsProvider.notifier).setAiEmbeddingModel(value),
+    );
+  }
+}
+
+/// 「建立 / 更新索引」：待处理块数 + 一键增量索引（有进度、可取消）。
+///
+/// ## 为什么放在设置页
+/// 它是 6.5 定的那个"**显式、可预期、可取消**的维护动作"，不属于日常写作路径。
+/// 待处理数为 0 时按钮显示「已是最新」，用户一眼就知道不必点。
+///
+/// ## 没配嵌入模型也点得动
+/// 那时只建**关键词**索引（本地 FTS5，不需要模型）——检索侧同样是"降级而非
+/// 不可用"，这与 6.4 是一套口径。
+class _BuildIndexRow extends ConsumerStatefulWidget {
+  const _BuildIndexRow();
+
+  @override
+  ConsumerState<_BuildIndexRow> createState() => _BuildIndexRowState();
+}
+
+class _BuildIndexRowState extends ConsumerState<_BuildIndexRow> {
+  int _pending = 0;
+  IndexProgress? _progress;
+  IndexCancelToken? _token;
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开设置面板就算一次待处理数（它是一次 COUNT 查询，成本可忽略）。
+    _refreshPending();
+  }
+
+  void _refreshPending() {
+    _pending = ref.read(indexJobProvider).pendingCount();
+  }
+
+  Future<void> _run() async {
+    final IndexJob job = ref.read(indexJobProvider);
+    final int total = job.pendingCount();
+    if (total == 0) return;
+    final IndexCancelToken token = IndexCancelToken();
+    setState(() {
+      _token = token;
+      _message = null;
+      _progress = (done: 0, total: total, failed: 0);
+    });
+    try {
+      final IndexResult result = await job.run(
+        onProgress: (IndexProgress p) {
+          if (mounted) setState(() => _progress = p);
+        },
+        cancelToken: token,
+      );
+      if (!mounted) return;
+      setState(() {
+        _token = null;
+        _progress = null;
+        _refreshPending();
+        _message =
+            result.abortReason ??
+            (result.cancelled
+                ? '已取消（已写入的批次保持有效）'
+                : '完成 ${result.done} 块'
+                      '${result.failed > 0 ? '，失败 ${result.failed} 块（可再点重试）' : ''}');
+      });
+    } on Object catch (e) {
+      // 索引任务只在"模型不可达/脏响应"时正常返回；能落到这里的是意外错误，
+      // **显示出来**而不是吞掉（否则用户只看到按钮没反应）。
+      if (!mounted) return;
+      setState(() {
+        _token = null;
+        _progress = null;
+        _refreshPending();
+        _message = '索引失败：$e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool keywordOnly = ref
+        .watch(settingsProvider)
+        .aiEmbeddingModel
+        .trim()
+        .isEmpty;
+    final IndexProgress? progress = _progress;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Tokens.spaceLg,
+        Tokens.spaceSm,
+        Tokens.spaceLg,
+        Tokens.spaceSm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text('建立 / 更新索引', style: theme.textTheme.bodyLarge),
+              ),
+              if (progress != null)
+                TextButton(
+                  onPressed: () => _token?.cancel(),
+                  child: const Text('取消'),
+                )
+              else
+                FilledButton(
+                  onPressed: _run,
+                  child: Text(_pending > 0 ? '建立索引（$_pending 块待处理）' : '已是最新'),
+                ),
+            ],
+          ),
+          const SizedBox(height: Tokens.spaceXs),
+          Text(
+            keywordOnly
+                ? '未填嵌入模型 ⇒ 只建关键词索引（搜索照常可用，只是没有语义召回）。'
+                : '增量更新：只重算内容变过的块，可随时取消。'
+                      '嵌入模型换了要重建一次。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (progress != null) ...<Widget>[
+            const SizedBox(height: Tokens.spaceSm),
+            LinearProgressIndicator(
+              value: progress.total == 0
+                  ? null
+                  : progress.done / progress.total,
+            ),
+            const SizedBox(height: Tokens.spaceXs),
+            Text(
+              '${progress.done} / ${progress.total}',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+          if (_message != null) ...<Widget>[
+            const SizedBox(height: Tokens.spaceXs),
+            Text(
+              _message!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

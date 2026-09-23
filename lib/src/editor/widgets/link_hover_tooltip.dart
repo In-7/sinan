@@ -1,9 +1,8 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/gestures.dart' show PointerHoverEvent;
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show PointerHoverEvent;import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
@@ -163,8 +162,7 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     const double height = 84;
     const double gap = 6;
     // 下方放不下 ⇒ 翻到链接上方（命中区的空隙跟着换到另一侧）。
-    final bool below =
-        link.anchor.bottom + gap + height <= window.height - 8;
+    final bool below = link.anchor.bottom + gap + height <= window.height - 8;
     double left = link.anchor.left;
     if (left + LinkHoverTooltip.panelWidth > window.width - 8) {
       left = window.width - 8 - LinkHoverTooltip.panelWidth;
@@ -228,8 +226,8 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
 
     // 指针落在字符**右半边**时 `getPositionInOffset` 指向下一个字符，故
     // `index` 与 `index - 1` 都要试——不试的话链接末尾那半字判不中。
-    final _HrefRun? run = _runAt(delta, position.offset) ??
-        _runAt(delta, position.offset - 1);
+    final _HrefRun? run =
+        _runAt(delta, position.offset) ?? _runAt(delta, position.offset - 1);
     if (run == null) return null;
 
     // ⚠️ 两步都要：`getRectsInSelection(+base)` 给的是**容器内**坐标，还得
@@ -252,7 +250,9 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     // 行尾空白也算作"最近的位置"，不校验的话停在链接右侧的空白上也会弹面板。
     // 容差 2px：字形行盒两侧的"手感边界"比墨迹略宽一点，太严会让人觉得
     // "明明指着链接了却不弹"（行盒本身已含行距，纵向本来就宽）。
-    if (!rects.any((Rect rect) => rect.inflate(2).contains(global))) return null;
+    if (!rects.any((Rect rect) => rect.inflate(2).contains(global))) {
+      return null;
+    }
 
     Rect anchor = rects.first;
     for (final Rect rect in rects.skip(1)) {
@@ -360,21 +360,19 @@ class _LinkHoverPanel extends StatelessWidget {
             href,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurface,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurface),
           ),
           const SizedBox(height: Tokens.spaceXs),
           Row(
             children: <Widget>[
               _PanelAction(
-                icon: LucideIcons.externalLink300,
+                icon: tabler.ExternalLink(height: 24, width: 24, strokeWidth: 1.5),
                 label: '打开',
                 onPressed: onOpen,
               ),
               const SizedBox(width: Tokens.spaceXs),
               _PanelAction(
-                icon: LucideIcons.copy300,
+                icon: tabler.Copy(height: 24, width: 24, strokeWidth: 1.5),
                 label: '复制',
                 onPressed: onCopy,
               ),

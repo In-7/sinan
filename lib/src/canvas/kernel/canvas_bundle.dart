@@ -32,13 +32,13 @@ Future<Map<String, dynamic>> encodeCanvasBundle(
   required MediaResolver media,
 }) async {
   final Map<String, dynamic> bundle = controller.toJson(media: media);
-  final dynamic document = bundle['document'];
+  final Object? document = bundle['document'];
   if (document is! Map<String, dynamic>) return bundle;
-  final dynamic manifest = document['media'];
+  final Object? manifest = document['media'];
   if (manifest is! Map<String, dynamic>) return bundle;
 
   for (final MapEntry<String, dynamic> entry in manifest.entries) {
-    final dynamic value = entry.value;
+    final Object? value = entry.value;
     if (value is! Map<String, dynamic>) continue;
     final File file = File(media.toPath(entry.key));
     if (!file.existsSync()) continue;
@@ -86,15 +86,15 @@ Future<Map<String, dynamic>> materializeCanvasBundle(
   Map<String, dynamic> bundle, {
   required MediaResolver media,
 }) async {
-  final dynamic document = bundle['document'];
+  final Object? document = bundle['document'];
   if (document is! Map<String, dynamic>) return bundle;
-  final dynamic manifest = document['media'];
+  final Object? manifest = document['media'];
   if (manifest is! Map<String, dynamic>) return bundle;
 
   for (final MapEntry<String, dynamic> entry in manifest.entries) {
-    final dynamic value = entry.value;
+    final Object? value = entry.value;
     if (value is! Map<String, dynamic>) continue;
-    final dynamic data = value['data'];
+    final Object? data = value['data'];
     if (data is! String || data.isEmpty) continue;
     final File file = File(media.toPath(entry.key));
     if (file.existsSync()) continue;
@@ -113,7 +113,7 @@ Future<CanvasController> importCanvasBundleText(
   required MediaResolver media,
   AiGenerator? generator,
 }) async {
-  final dynamic decoded = jsonDecode(text);
+  final Object? decoded = jsonDecode(text);
   if (decoded is! Map<String, dynamic>) {
     throw const FormatException('画布文件的顶层不是 JSON 对象');
   }

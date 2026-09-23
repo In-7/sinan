@@ -1,8 +1,7 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
 
 import '../../theme/tokens.dart';
 import '../blocks/code_block_component.dart';
@@ -168,7 +167,7 @@ final ToolbarItem todoListItem = ToolbarItem(
     final bool isHighlight = node.type == TodoListBlockKeys.type;
     final Widget child = _iconItem(
       context: context,
-      icon: LucideIcons.listTodo300,
+      icon: tabler.ListCheck(height: 24, width: 24, strokeWidth: 1.5),
       iconColor: iconColor,
       highlightColor: highlightColor,
       isHighlight: isHighlight,
@@ -209,7 +208,7 @@ final ToolbarItem codeBlockItem = ToolbarItem(
     final bool isHighlight = node.type == CodeBlockKeys.type;
     final Widget child = _iconItem(
       context: context,
-      icon: LucideIcons.squareCode300,
+      icon: tabler.Terminal(height: 24, width: 24, strokeWidth: 1.5),
       iconColor: iconColor,
       highlightColor: highlightColor,
       isHighlight: isHighlight,

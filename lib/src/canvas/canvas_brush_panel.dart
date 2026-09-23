@@ -1,9 +1,10 @@
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
 import '../theme/app_popover.dart';
 import '../theme/app_theme.dart';
+import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'canvas_panel_widgets.dart';
 import 'kernel/canvas_controller.dart';
@@ -41,19 +42,17 @@ class CanvasBrushButton extends StatelessWidget {
         panelWidth: CanvasBrushPanel.width,
         anchorBuilder:
             (BuildContext context, VoidCallback toggle, bool isOpen) =>
-                IconButton(
+                FocusRingIconButton(
                   tooltip: '笔刷：颜色 / 粗细 / 橡皮',
                   // 浮层打开或画笔 / 橡皮工具生效期间都保持"选中"：否则用户
                   // 看不出当前笔迹粗细 / 橡皮大小改的是哪个工具的参数
                   //（同 [CanvasInsertButton] 对形状工具的处理）。
-                  isSelected: isOpen ||
+                  isSelected:
+                      isOpen ||
                       controller.tool == CanvasTool.pen ||
                       controller.tool == CanvasTool.eraser,
                   onPressed: toggle,
-                  icon: CanvasInkDotIcon(
-                    icon: LucideIcons.brush300,
-                    ink: resolvedInkOf(context, controller),
-                  ),
+                  icon: tabler.Brush(height: 24, width: 24, strokeWidth: 1.5),
                 ),
         // 面板里滑杆要连着调，不需要"选完即关"，故忽略 close。
         builder: (BuildContext context, VoidCallback _) =>

@@ -187,6 +187,9 @@ SqliteExtension.inLibrary(DynamicLibrary library, String symbol)
 留到「接入 Ollama（含嵌入）」那一步一起加。FTS5 是 SQLite 自带的，所以现在就建。
 `test/data/database_v7_test.dart` 里有一条断言专门钉住"vec 表缺席"，防止有人提前加回来。
 
+> 2026-09-21 补：本节的加载机制有了**免手动打包的候选**（native-assets 构建钩子类包），
+> 三条路径的对比与本轮最终决策（首选 `sqlite_vector`，兜底本节原方案）见 **6.7**。
+
 容量估算（Ollama 的嵌入模型，dim 常见 768/1024）：
 
 | 块数 | float32 | int8 量化 |
@@ -304,6 +307,76 @@ CREATE TABLE pending_delete (
 > 📌 **画布侧入检索的形状**：只有**文本对象**值得向量化（文本卡 / 便签 / 图片 OCR 文本）；
 > 几何描述（"x=100 的红圆"）没有检索价值。因此**文本卡落地时必须给它全局唯一的 id**——
 > 现在的 `CanvasItem.id` 是进程内计数器、跨会话会重复（见 `docs/canvas_architecture.md` 第七与第八章）。
+
+### 6.7 施工规划（2026-09-21 定）：R 系列主线 + W 系列补位
+
+> 本章是 6.1–6.6 的**施工顺序**，不引入新设计；引用处只给指针。
+> 定位：**笔记语料全程进程内（R 系列）**；外部文件知识库（WeKnora sidecar，W 系列）
+> 只在真实需求出现后作为补位，不预做。
+
+#### 复核结论：整条链路**不需要 Rust**（2026-09-21 二次核实）
+
+6.2 的结论维持成立，且出现了更省的机制。向量检索执行在 **SQLite（C 库）进程内**——
+vec0 是它自己的虚拟表模块；嵌入走 **Ollama HTTP**（Dart 侧已有 `OllamaLlmClient` 的
+同族客户端即可）；融合是 SQL + 纯 Dart（6.4）。Rust 能触到的每一层（SQLite 执行、
+HTTP、融合计算）都不在它的优势区；容量预算（十级块暴力 cosine 毫秒级，见 九）也远够
+不着"要换实现语言"的规模。**所以：检索层留在 Dart，与 blocks 同库同事务——这是比
+语言更重要的收益（删除/编辑与索引原子一致，6.3 的三个坑自动消失）。**
+
+加载向量扩展有三条已核实路径（2026-09-21 复核；本机 Flutter 3.47.4 / Dart 3.13.3，
+满足各包对 native-assets 工具链的要求）：
+
+| | 机制 A：`sqlite_vector`（**首选**） | 机制 B：官方 sqlite-vec 预编译产物（**兜底**） | 机制 C：`sqlite3_vec`（降为备选） |
+|---|---|---|---|
+| 核心扩展 | sqlite.ai 官方 `sqlite-vector`（Apache-2.0、verified publisher、~1.8k 下载） | sqlite-vec（社区事实标准的 C 核心） | 捆绑 sqlite-vec v0.1.9 |
+| 加载 | `sqlite3.loadSqliteVectorExtension()`，同为构建钩子自动打包 | 自带 `vec0.dll/.dylib/.so` 三平台 + `SqliteExtension.inLibrary` | `loadSqliteVec()`，同 A 免打包 |
+| **API 形态** | **无虚拟表**：普通表 BLOB 列存向量 + `vector_init` / `vector_full_scan` 表值函数 | vec0 虚拟表（6.2 原设计） | 同 B |
+| 对 schema 的影响 | **比 6.2 更简**：`vec_map` 整个不需要（rowid 映射消失），向量表是普通表 ⇒ 可挂外键/级联，6.3 的删除一致性坑再少一个 | 按 6.2 原设计 | 同 B |
+| 成熟度 | 包 v1.1.2，公司维护、文档全 | **C 核心最成熟**，代价是三平台产物维护线 | ⚠️ 个人项目（0 star、6 commits、发布数天）——C 核心没问题，**包装层无社区验证** |
+| 共同风险 | A/C 同走 native-assets 构建钩子 ⇒ "**钩子 × 本项目工具链**"这道坎两个包相同，R1 第一天即见分晓；B 无此坎、有打包坎 |||
+
+**决策**：R1 先试 A；其构建钩子与工具链不兼容则切 B。**风险的真实边界**：无论选哪个，
+向量检索的 C 本体都不是风险点——可变的只有"打包/加载"这层薄壳，且被隔离在
+`database.dart` 打开序列 + `EmbeddingBackend`（R2）后面，**换包是单文件改动**。
+
+实现期注意点（随机制取舍）：
+- A：加载同样必须在连接打开前调用；`vector_full_scan` 是暴力扫描（与 6.2 容量预算同一
+  口径，无 ANN）；维度/类型在 `vector_init` 声明，实现时以其当版文档核对。
+- B/C：vec0 表只能在注册了扩展的连接上 DROP——移除扩展前先删表，否则向量滞留影子表；
+  `AppDatabase.open()` 与**测试的内存库**都要先注册。
+
+#### R 系列（严格串行，每块独立可验证）
+
+| 块 | 内容 | 验收 |
+|---|---|---|
+| **R1** vec 落地 | ✅ **2026-09-21 完成**。机制 A 实测通过（Flutter 3.47.4 构建钩子直接可用，未动用兜底 B）；v10 迁移：`vec_chunks`（普通表 BLOB 列，无 `vec_map`）+ `index_state.chunker_version` 列 + `pending_delete` 孤岛表；DDL 全部幂等重入（IF NOT EXISTS / 表列存在守卫，沿 v9 补列口径）；扩展加载失败不阻断启动（`AppDatabase.vectorExtensionAvailable` ⇒ 检索降级纯 FTS） | `test/data/database_v10_test.dart`（迁移 / 级联 / 孤岛 / **向量冒烟**：vector_init + full_scan 全链）；v7/v8/v9 的"vec 缺席"断言已按约翻转 |
+| **R2** 嵌入后端 | ✅ **2026-09-21 完成**。`lib/src/ai/embedding_client.dart`：`EmbeddingClient` 接口 + `OllamaEmbeddingClient`（`/api/embed` 批量，`input` 数组已核实；请求体/响应解析为纯函数钉进单测，异常复用 LLM 通道）。`lib/src/data/embedding_backend.dart`：`EmbeddingBackend`（index / delete / query，6.6③）+ 本地实现（`vec_chunks` + `index_state` 同事务 upsert；身份串 `provider:model:dim` 写 `index_state.model` 与 `rag_meta['embedding_identity']`）。**实现期核实补记**：`vector_init` 是 `vector_full_scan` 的硬前提（维度/度量进扩展元数据表）⇒ 维度记账在 `rag_meta['vec_dim']`，index 时幂等 init；query 设**身份闸**（未索引 ⇒ 空；维度不符 ⇒ 大声失败走降级）。实测：TVF 直接吃绑定 BLOB 参数可用 | `test/ai/embedding_client_test.dart`（4）+ `test/data/embedding_backend_test.dart`（8）：同事务、幂等 upsert、级联外删除、排序映射、身份闸 |
+| **R3** 索引任务 | ✅ **2026-09-21 完成**。`lib/src/data/chunker.dart`：`kChunkerVersion='ck1'`、`chunkBlock()`（**block 即 chunk**；超长块按 `\n\n→\n→。` 降级切、无边界则硬切，512/50 重叠）、`bigram()`（写入与查询**共用**，6.1）。`lib/src/data/index_job.dart`：`IndexJob`（`pendingCount()` 四条判据 + `run()` 分批 32、进度回调、`IndexCancelToken` 批次边界取消；模型不可达⇒中止整轮、脏响应⇒只丢该批）。**两条通道一次任务**：关键词路恒写（不需模型），语义路按 [backend] 有无降级——6.4 的"降级而非不可用"在索引侧的形态。**v11 迁移**：`vec_chunks` 升到 chunk 粒度（复合主键 `(block_id, chunk_index)`）——**chunk 是检索单元、block 是新鲜度单元**，两条召回路排名口径才可比 | `test/data/chunker_test.dart`（5）+ `index_job_test.dart`（9）+ `database_v11_test.dart`（3）：**幂等（重复点零开销，且不再请求模型）**、增量（指纹变了只重算该块）、取消、不可达中止、超长块多 chunk、空文本/已删笔记不计 |
+| **R4** 检索融合 | ✅ **2026-09-21 完成**。`lib/src/data/retriever.dart`：`Retriever.search()` = 关键词路（bigram 查询侧【与写入侧同一个函数】，6.1）+ 语义路 → **RRF k=60**（纯函数 `fuse()`）。**融合粒度**：两条路各自先**归并到 block**（同块多 chunk 只留最优名次）再融合——否则"切了 5 段的块"会在分数上碾压别人（切块策略的副作用≠相关性）。命中形状 `block_id + note_id + snippet + score + fromKeyword/fromVector`（同时喂问答角标与画布结构轨的"读"端）。降级：backend 为 null / 语义路任何异常（HTTP 不可达、维度不符、扩展缺席）⇒ **只用关键词路**并回报 `vectorFallbackReason` | `test/data/retriever_test.dart`（8）：RRF 纯函数（分数公式/同通道去重/稳定排序）+ 中文 bigram 命中 + 融合排序（两路皆中排最前、纯语义命中也进榜）+ 多 chunk 归并 + **降级**（语义路抛异常仍返回关键词结果）+ 空查询 |
+| **R5** 问答层 | ✅ **2026-09-21 完成**。`lib/src/data/answer_service.dart`：`AnswerService.ask()` = 检索 → `buildUserPrompt()`（每条资料带死编号 `[1]`…，纯函数）→ `LlmClient`（复用 `OllamaLlmClient`）→ `parseCitationIndexes()`（纯函数，只认 `[数字]`，**宁可漏认不可错认**）。**契约核心：编号→block 的映射由我们控制**，模型只说"哪条对得上"、不吐 id（让模型给 id = 引到别人的话，这类功能最严重的事故）。越界编号（模型编的 `[99]`）不进引用、单独记进 `unknownCitations`。**检索为空 ⇒ 不调模型**直接答"没有相关内容"（没资料还问 = 请它编，也省一次往返）。初版不做流式（6.7 R5 行） | `test/data/answer_service_test.dart`（9）：**编号与 block 一一对应**（拿 retriever 的命中顺序反向校验）、越界编号、重复引用去重、空召回不调模型、降级信息透传、模型不可达上抛 |
+| **R6** UI 收口 | ✅ **2026-09-21 完成**。**设置**：AI 分区加「嵌入模型」行（`AppSettings.aiEmbeddingModel`，留空 ⇒ 只建关键词索引）与「建立 / 更新索引」行（待处理块数、进度条、取消、结果/失败说明；数据层符号经 `providers.dart` 转口）。**装配**：新增 `appDatabaseProvider`（main 注入，架构测试禁 data/ 之外碰 sqlite3 ⇒ 裸连接用类型推断）、`embeddingClientProvider` / `indexJobProvider` / `retrieverProvider` / `answerServiceProvider`、`pendingBlockJumpProvider`。**问答**：`lib/src/app/ask_panel.dart` 居中浮层（同设置页范式），答案 + 可点角标 + 降级提示 + 越界编号提示；角标点击 ⇒ 切笔记 + 置待跳请求。**跳块**：编辑器按 `ValueKey(noteId)` 重建 ⇒ initState 消费待跳请求（帧后消费，避 Riverpod 构建期改状态断言），`blockId → 顶层块索引` 递归解析后 `jumpTo` + 闪烁高亮（复用目录跳转那套 `disableAutoScroll`/单列表瞬时跳的手法，加重试等列表 attach）。入口闸门：`aiEnabled && aiModel` 非空才露出「问笔记」（嵌入模型不作门槛——没它只是降级） | 全链路可达：写笔记 → 建索引 → 提问 → 角标跳块；`flutter analyze` 零问题、**769 测试全绿**（含架构边界测试） |
+
+测试闸门贯穿既有文化：R1–R4 全在数据层（不碰正文存储、不碰 UI），R5–R6 才碰界面。
+
+#### W 系列（WeKnora Lite sidecar）：条件触发，不排期
+
+**唯一触发条件：出现"外部文件（PDF / 附件）进知识库"的真实需求。** 届时：
+
+- WeKnora Lite（单二进制：SQLite + FTS5 + sqlite-vec，与本项目同族栈）作 sidecar，
+  只承载**静态文件语料**（其"上传→异步解析→完成"模型恰好匹配死文件），与笔记语料
+  **物理隔离**（独立库文件，泄露面随之隔离）；
+- sinan 只做四件事：可用性探测（不可达 ⇒ 隐藏入口）、文件推送、`knowledge-search` /
+  `knowledge-chat` 代理、删除传播（**用 R1 已建好的 `pending_delete`**，约束见 6.6②）；
+- 泄露控制：默认要求其全本地（Ollama）；用户自配云端模型时 UI 明示
+  "检索到的原文会发给该厂商"。
+
+**为什么现在不预做**：R 完成后笔记问答零依赖 WeKnora；W 的全部增量价值在
+docreader（文件解析），没有文件需求时它是纯运维负担 + 数据双写。
+
+```
+R1 → R2 → R3 → R4 → R5 → R6
+ └─ pending_delete 随 R1 建好 ──────────────→ W（条件触发）
+```
 
 ## 七、写入路径的变化
 

@@ -1,5 +1,6 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
@@ -207,15 +208,7 @@ class _RefBlockComponentWidgetState
           ),
           child: Row(
             children: <Widget>[
-              Icon(
-                missing
-                    ? LucideIcons.unlink300
-                    : (toCanvas
-                        ? LucideIcons.layoutDashboard300
-                        : LucideIcons.fileText300),
-                size: Tokens.iconSm,
-                color: base,
-              ),
+              tabler.LinkOff(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(base, ui.BlendMode.srcIn)),
               const SizedBox(width: Tokens.spaceSm),
               Expanded(
                 child: Text(
@@ -279,13 +272,7 @@ class _RefBlockComponentWidgetState
             onTap: () => widget.bridge?.open(_refType, _refId),
             child: Row(
               children: <Widget>[
-                Icon(
-                  target?.kind == NoteKind.canvas
-                      ? LucideIcons.layoutDashboard300
-                      : LucideIcons.fileText300,
-                  size: Tokens.iconSm,
-                  color: scheme.primary,
-                ),
+                tabler.LayoutDashboard(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
@@ -333,11 +320,7 @@ class _RefBlockComponentWidgetState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(
-              done ? LucideIcons.checkSquare300 : LucideIcons.square300,
-              size: 14,
-              color: done ? scheme.primary : scheme.onSurfaceVariant,
-            ),
+            tabler.Checkbox(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(done ? scheme.primary : scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
             const SizedBox(width: 6),
             Expanded(child: Text(line.text, style: base)),
           ],

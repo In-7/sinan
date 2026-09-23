@@ -49,7 +49,7 @@ String _refOf(String src, MediaResolver? media) =>
     media == null || src.isEmpty ? src : media.toRef(src);
 
 /// 载入：文档内引用 → 运行时**绝对路径**（旧存档里的绝对路径原样通过）。
-String _pathOf(dynamic raw, MediaResolver? media) {
+String _pathOf(Object? raw, MediaResolver? media) {
   final String src = raw as String? ?? '';
   return media == null || src.isEmpty ? src : media.toPath(src);
 }
@@ -649,18 +649,19 @@ class CardItem extends CanvasItem {
         _paragraphWidth == width) {
       return _paragraph!;
     }
-    final ui.Paragraph paragraph = (ui.ParagraphBuilder(
-      ui.ParagraphStyle(
-        fontSize: CardMetrics.fontSize,
-        height: CardMetrics.lineHeight,
-        textAlign: ui.TextAlign.left,
-      ),
-    )
-          ..pushStyle(
-            ui.TextStyle(color: color, fontSize: CardMetrics.fontSize),
-          )
-          ..addText(text))
-        .build();
+    final ui.Paragraph paragraph =
+        (ui.ParagraphBuilder(
+                ui.ParagraphStyle(
+                  fontSize: CardMetrics.fontSize,
+                  height: CardMetrics.lineHeight,
+                  textAlign: ui.TextAlign.left,
+                ),
+              )
+              ..pushStyle(
+                ui.TextStyle(color: color, fontSize: CardMetrics.fontSize),
+              )
+              ..addText(text))
+            .build();
     paragraph.layout(ui.ParagraphConstraints(width: width));
     _paragraph?.dispose();
     _paragraph = paragraph;
@@ -749,10 +750,7 @@ class CanvasGroupItem extends CanvasItem {
   void paint(ui.Canvas canvas, {ui.Color? ink, ui.Color? slotColor}) {
     final bool marked = slotColor != null;
     final ui.Color base = slotColor ?? ink ?? const ui.Color(0xFF1F1F1F);
-    final RRect box = RRect.fromRectAndRadius(
-      rect,
-      const Radius.circular(8),
-    );
+    final RRect box = RRect.fromRectAndRadius(rect, const Radius.circular(8));
     // 容器底色极淡（框是背景，不抢内容），标色时稍加深。
     canvas.drawRRect(
       box,
@@ -869,12 +867,11 @@ abstract final class CanvasHandles {
       center += c;
     }
     center /= corners.length.toDouble();
-    return List<Offset>.of(corners)
-      ..sort(
-        (Offset a, Offset b) => math
-            .atan2(a.dy - center.dy, a.dx - center.dx)
-            .compareTo(math.atan2(b.dy - center.dy, b.dx - center.dx)),
-      );
+    return List<Offset>.of(corners)..sort(
+      (Offset a, Offset b) => math
+          .atan2(a.dy - center.dy, a.dx - center.dx)
+          .compareTo(math.atan2(b.dy - center.dy, b.dx - center.dx)),
+    );
   }
 
   /// 屏幕坐标下的手柄命中；[cornersScreen] 即 [corners] 经相机变换后的四角。

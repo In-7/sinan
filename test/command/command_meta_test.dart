@@ -1,0 +1,138 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sinan/src/command/command.dart';
+import 'package:sinan/src/command/commands.dart';
+import 'package:sinan/src/command/fuzzy.dart';
+import 'package:sinan/src/command/registry.dart';
+
+/// 命令层**元测试**：跑在**真注册表**上（`command_registry_test.dart` 用的是
+/// 假命令，验的是机制；这里验的是我们实际注册进去的那批内容）。
+///
+/// 这些断言都属"错了不会崩、只会静默变坏"那一类，所以只能用测试兜：
+/// 键位与编辑器撞车（表现为"某个键时灵时不灵"）、拼音表漏字（表现为"搜不到"）、
+/// UI 按 id 取命令而 id 被改名（表现为"按钮点了没反应"）。
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late ProviderContainer container;
+  late CommandRegistry registry;
+
+  setUp(() {
+    container = ProviderContainer();
+    registry = container.read(commandRegistryProvider);
+  });
+  tearDown(() => container.dispose());
+
+  test('真实注册表自身无冲突：id 唯一、同作用域键位不重复', () {
+    expect(CommandRegistry.conflicts(registry.all), isEmpty);
+  });
+
+  test('键位**不占用编辑器的键**（§3.4 的占用图）', () {
+    // ⚠️ 抄自 `docs/ui_rewrite_plan.md` §3.4。编辑器键位变动时要同步这张表——
+    // 它变旧了不会报错，只会让这条断言变松（那是最坏的一种测试失效）。
+    const Set<String> occupied = <String>{
+      // 编辑基础
+      'Ctrl+Z', 'Ctrl+Y', 'Ctrl+X', 'Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+V',
+      'Ctrl+A', 'Ctrl+Backspace', 'Ctrl+Delete',
+      // 行内格式
+      'Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+K',
+      'Alt+Enter',
+      // 块样式
+      'Ctrl+Shift+B', 'Ctrl+Shift+T', 'Ctrl+Shift+G', 'Ctrl+Shift+J',
+      'Ctrl+Enter', 'Ctrl+Shift+H',
+      // 本应用已加
+      'Ctrl+F', 'Ctrl+H', 'Ctrl+Shift+7', 'Ctrl+Shift+8', 'Ctrl+Shift+Q',
+      'Ctrl+Shift+L', 'Ctrl+Shift+E', 'Ctrl+Shift+R', r'Ctrl+Shift+`',
+      'Ctrl+Shift+O',
+      // 画布
+      'Space', 'Ctrl+Shift+Z', 'Escape',
+    };
+
+    final List<String> offenders = <String>[
+      for (final Command c in registry.all)
+        for (final KeyBinding b in c.keys)
+          if (occupied.contains(b.label)) '${c.id} → ${b.label}',
+    ];
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '分发器是"旁观者"、拦不下事件（见 command/bindings.dart）：与编辑器同键位\n'
+          '会让**两条命令同时执行**。要占就先让编辑器让位，或改用真消费的机制。',
+    );
+  });
+
+  test('键位都落在 §3.4 划定的空闲区', () {
+    const Set<String> declaredFree = <String>{
+      'Ctrl+P',
+      'Ctrl+Shift+P',
+      'Ctrl+N',
+      'Ctrl+Shift+N',
+      'Ctrl+,',
+      'Ctrl+W',
+      r'Ctrl+\',
+      'F1',
+    };
+    final RegExp functionKeys = RegExp(r'^F([1-9]|1[0-2])$');
+    bool isFree(String label) =>
+        declaredFree.contains(label) ||
+        label.startsWith('Ctrl+Alt+') ||
+        functionKeys.hasMatch(label);
+
+    final List<String> offenders = <String>[
+      for (final Command c in registry.all)
+        for (final KeyBinding b in c.keys)
+          if (!isFree(b.label)) '${c.id} → ${b.label}',
+    ];
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '新增键位必须先更新 §3.4 的占用图与空闲区，再写进命令——'
+          '否则"这个键为什么被吃了"永远查不出来。',
+    );
+  });
+
+  test('标题/说明里的汉字都在拼音表里（否则拼音检索**无声失效**）', () {
+    final List<String> missing = <String>[
+      for (final Command c in registry.all)
+        for (final String text in <String>[
+          c.title,
+          if (c.hint != null) c.hint!,
+        ])
+          for (final String ch in uncoveredHanChars(text)) '${c.id}：「$ch」',
+    ];
+
+    expect(
+      missing,
+      isEmpty,
+      reason: '在 `lib/src/command/fuzzy.dart` 的 _initialByRune 里补上首字母。',
+    );
+  });
+
+  test('UI 依赖的命令 id 必须在册（按钮按 id 取命令）', () {
+    // `home_screen` 的「新建笔记 / 新建画布」按钮走的就是这两个 id。
+    // 改 id 不会编译报错，只会让按钮**静默失效**——所以在这里钉住。
+    for (final String id in <String>[
+      'note.new',
+      'canvas.new',
+      'note.promote',
+      'palette.open',
+      'app.settings',
+    ]) {
+      expect(registry.byId(id), isNotNull, reason: '缺命令 $id');
+    }
+  });
+
+  test('空上下文下每条命令都能判可用性（不抛、不假设有笔记）', () {
+    for (final Command c in registry.all) {
+      expect(
+        () => c.isEnabled(const CommandContext()),
+        returnsNormally,
+        reason: '${c.id} 的 enabled 在空上下文下抛了——面板一打开就会炸。',
+      );
+    }
+  });
+}

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-import '../../app/providers.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+import 'package:flutter_riverpod/flutter_riverpod.dart';import '../../app/providers.dart';
 import '../../domain/block_hit.dart';
 import '../../domain/note.dart';
 import '../../theme/tokens.dart';
@@ -115,13 +114,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
                           // 来源笔记 = 全库结果里唯一的定位线索。
                           subtitle: Row(
                             children: <Widget>[
-                              Icon(
-                                hit.noteKind == NoteKind.canvas
-                                    ? LucideIcons.layoutDashboard300
-                                    : LucideIcons.fileText300,
-                                size: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
+                              tabler.LayoutDashboard(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(

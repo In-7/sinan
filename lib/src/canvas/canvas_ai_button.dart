@@ -1,9 +1,9 @@
 import 'dart:async';
-
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_popover.dart';
+import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 
 /// 工具条上的「AI」按钮：一句话指令 → 模型 → 改画布。
@@ -16,11 +16,7 @@ import '../theme/tokens.dart';
 /// 其余信息（画布现状、动作契约、坐标规则）全部由 [runCanvasAi] 拼进提示词，
 /// 用户只需要说人话。暴露坐标/动作给用户填，等于把模型该干的活推给人。
 class CanvasAiButton extends StatefulWidget {
-  const CanvasAiButton({
-    super.key,
-    required this.onRun,
-    this.enabled = true,
-  });
+  const CanvasAiButton({super.key, required this.onRun, this.enabled = true});
 
   /// 执行一次指令。由宿主提供：它持有 [NoteStore]（候选块 + 块文本）与 LLM 客户端。
   ///
@@ -68,14 +64,14 @@ class _CanvasAiButtonState extends State<CanvasAiButton> {
   Widget build(BuildContext context) {
     return AppPopover(
       panelWidth: CanvasAiButton.panelWidth,
-      anchorBuilder:
-          (BuildContext context, VoidCallback toggle, bool isOpen) => IconButton(
+      anchorBuilder: (BuildContext context, VoidCallback toggle, bool isOpen) =>
+          FocusRingIconButton(
             tooltip: widget.enabled
                 ? 'AI：用一句话让模型调整画布'
                 : 'AI 未配置（到「设置 → AI」填写模型）',
             isSelected: isOpen,
             onPressed: widget.enabled ? toggle : null,
-            icon: const Icon(LucideIcons.sparkles300, size: Tokens.iconSm),
+            icon: tabler.Sparkles(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
           ),
       builder: (BuildContext context, VoidCallback close) => Padding(
         padding: const EdgeInsets.all(Tokens.spaceSm),

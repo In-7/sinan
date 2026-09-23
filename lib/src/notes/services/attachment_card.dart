@@ -1,6 +1,6 @@
 import 'dart:io';
-
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_theme.dart';
@@ -60,11 +60,7 @@ class AttachmentCard extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                Icon(
-                  LucideIcons.fileText300,
-                  size: Tokens.iconSm,
-                  color: scheme.onSurfaceVariant,
-                ),
+                tabler.FileText(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                 const SizedBox(width: Tokens.spaceMd),
                 Expanded(
                   child: Column(
@@ -90,11 +86,7 @@ class AttachmentCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  LucideIcons.externalLink300,
-                  size: 14,
-                  color: scheme.onSurfaceVariant,
-                ),
+                tabler.ExternalLink(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
               ],
             ),
           ),

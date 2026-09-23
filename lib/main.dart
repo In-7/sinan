@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'dart:io' show Directory, Platform;
+import 'dart:io' show Directory;
 import 'dart:ui' show AppExitResponse, PlatformDispatcher;
 
 import 'package:appflowy_editor/appflowy_editor.dart'
@@ -9,18 +9,21 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' as acrylic;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'src/app/home_screen.dart';
 import 'src/app/pending_saves.dart';
+import 'src/command/bindings.dart';
 import 'src/app/settings_panel.dart';
 import 'src/data/database.dart';
 import 'src/data/note_store.dart';
 import 'src/data/settings_store.dart';
+import 'src/dev/frame_probe.dart';
 import 'src/domain/settings.dart';
 import 'src/editor/core/editor_icons.dart';
 import 'src/app/providers.dart';
 import 'src/theme/app_theme.dart';
+import 'src/theme/nav_ink.dart';
+import 'src/window/window_base.dart';
 import 'src/window/window_service.dart';
 
 Future<void> main() async {
@@ -28,7 +31,11 @@ Future<void> main() async {
   // 编辑器图标统一为 Lucide：官方工具栏/斜杠菜单/图片工具条的图标是包内 SVG，
   // 这里注册映射让它们走 Lucide 字形（vendored 侧的钩子见
   // third_party/appflowy_editor/PATCHES.md 补丁 4）。未登记的名字自动回落 SVG。
-  installLucideEditorIcons();
+  installEditorIcons();
+  // 帧探针（人工场景"连打"的 p90，见 docs/perf_baseline.md §2.1）：
+  // **只在 profile 构建里生效**（内部按 kProfileMode 常量判断，release 下整块
+  // 被裁掉），平时零成本——不采时不注册 timings 回调。
+  installFrameProbe();
   // 全局未捕获异步异常拦截：默认 console 对 uncaught async error 的
   // 输出可能缺调用栈——这里打印完整 stack，用于定位偶发异常
   // （如对 ""/"=" 做 int.parse 的 FormatException 来源）。
@@ -39,6 +46,9 @@ Future<void> main() async {
   };
   // 移动端 / Web 上会自动跳过，不会崩。
   await WindowService.init();
+  // 导航列的水墨 shader：**预装载**（异步）。失败也无所谓 —— `NavInk.painter`
+  // 会返回 null ⇒ 导航列退回 `AppTheme.boardFill` 的实色底，不会白屏。
+  unawaited(NavInk.preload());
 
   final AppDatabase db = await AppDatabase.open();
 
@@ -55,14 +65,12 @@ Future<void> main() async {
         settingsStoreProvider.overrideWithValue(SettingsStore(db.db)),
         // 媒体引用的基准目录（画布 JSON 只存相对引用，靠它换算成绝对路径）。
         appDataDirProvider.overrideWithValue(supportDir.path),
+        // 检索/索引设施要裸连接（见 appDatabaseProvider 的说明）。
+        appDatabaseProvider.overrideWithValue(db),
       ],
       child: const MainApp(),
     ),
   );
-
-  // 材质的应用时机移到 MainApp（initState 的 postFrame）：首次应用
-  // 需要知道用户设置的明暗模式（settingsProvider），而 provider 在
-  // ProviderScope 内才可读。
 
   // 块表回填（迁移第 3 步）：把存量笔记的块树补进 blocks。
   //
@@ -88,96 +96,32 @@ Future<void> main() async {
   });
 }
 
-/// 应用窗口材质，并处理 Win10 回退。
+/// acrylic 初始化的缓存 Future：`Window.initialize()` 内部用 Completer，
+/// **只能成功调用一次**（重复调用抛 "Future already completed"）——用 Future
+/// 缓存保证全程只初始化一次，且并发调用共享同一个 Future（无竞态）。
 ///
-/// - **Win11（build >= 22000）**：标准 Mica（`WindowEffect.mica`）——
-///   壁纸染色浅而收敛，由 DWM 合成，应用侧零渲染成本。
-///   想要更浓的染色换回 `WindowEffect.tabbed`（Mica Alt）；
-///   具体走哪条 DWM 接口由 flutter_acrylic 按系统版本内部判断。
-/// - **Win10 / macOS / Linux**：没有 Mica（或当前未启用对应平台材质）。
-///   若让窗口保持透明，会**直接露出锐利的桌面壁纸**（无材质处理，观感很差），
-///   因此回退为不透明纯色底。Flutter 侧的 Scaffold 本就是透明的，
-///   露出的就是这层纯色——界面其余部分无需任何改动。
-/// acrylic 初始化的缓存 Future：`Window.initialize()` 内部用
-/// Completer，**只能成功调用一次**（重复调用抛 "Future already
-/// completed"）——明暗切换会多次进入材质应用，这里用 Future 缓存
-/// 保证全程只初始化一次，且并发调用共享同一个 Future（无竞态）。
+/// ⚠️ 窗口材质已取消（2026-09-22：窗口底改为 Flutter 自绘的渐变，三端统一），
+/// 但这一步**仍然需要**：[acrylic.Window.hideWindowControls] 要求先 initialize。
 Future<void>? _acrylicInit;
 
-/// 隐藏系统窗控只需**一次**（幂等），并且必须在**设置 Mica 之前**完成。
+/// 隐藏系统窗控只需**一次**（幂等）。
 ///
-/// ⚠️ 此前这一步放在 [_applyWindowMaterial] 的**末尾**，等于每次设完 Mica
-/// 立刻改一次窗口样式（`flutter_acrylic` 的 `hideWindowControls` 内部是
-/// `SetWindowLong(GWL_STYLE, ... & ~WS_SYSMENU)`）——窗口样式变更会让 DWM
-/// 重建该窗口的可视状态，Mica 的 backdrop（`DWMWA_SYSTEMBACKDROP_TYPE`）
-/// 常被一并清掉。这就是 Mica 偶发失效最可疑的一环：三次启动重试与每次焦点
-/// 重应用都以它收尾，"设完立刻被清"。
-///
-/// 改为进程内**只做一次、且在做 backdrop 之前**：之后的重应用只动 backdrop，
-/// 不再碰窗口样式。全项目没有别的调用会重新加回 `WS_SYSMENU`（只用
-/// minimize/maximize/unmaximize/close），所以偷这一次没有回补风险。
+/// 自绘标题栏的前提：`flutter_acrylic` 的 `hideWindowControls` 内部是
+/// `SetWindowLong(GWL_STYLE, … & ~WS_SYSMENU)`。进程内只做一次即可；全项目没有
+/// 别的调用会重新加回 `WS_SYSMENU`（只用 minimize/maximize/unmaximize/close），
+/// 所以这一次没有回补风险。
 bool _windowControlsHidden = false;
 
-/// 上次成功应用的**有效亮度**。与 [_appliedSuccessfully] 配合做幂等短路：
-/// 亮度未变且上次已成功应用时跳过重复 `setEffect`，避免每次获得焦点 /
-/// 明暗监听都重设一次 DWM backdrop（既浪费、又在极端时序下可能微闪）。
-/// 冷启动延迟重试与热重载走 [force] 绕过此短路，保留"首次可能失败"的补偿能力。
-Brightness? _lastAppliedBrightness;
-bool _appliedSuccessfully = false;
-
+/// 窗口侧的一次性准备：初始化 flutter_acrylic + 隐藏系统窗控（幂等）。
+///
+/// **窗口材质取消后，这是启动时唯一要做的窗口侧动作**——不再有"先定窗口样式、
+/// 再设 backdrop"的顺序约束，也没有 DWM 合成的时序问题（原先那套延迟重试／幂等
+/// 短路／焦点重应用全是为 Mica 的偶发失效准备的，已一并删除）。
 Future<void> _hideWindowControlsOnce() async {
   if (_windowControlsHidden) return;
+  await (_acrylicInit ??= acrylic.Window.initialize());
   await acrylic.Window.hideWindowControls();
   _windowControlsHidden = true;
-}
-
-/// 应用窗口材质。亮度由调用方给出（**有效亮度** = 用户明暗设置的
-/// 解析结果，可能是强制浅/深，也可能是跟随系统）——材质必须与
-/// 界面亮度一致，否则 Mica 变体/回退底色会与内容色错档（浑浊发灰）。
-///
-/// - **Win11**：走 `flutter_acrylic` 的 `WindowEffect.mica`，由它负责设置
-///   DWM Backdrop + 窗口透明 surface；Flutter 侧只需保持 Scaffold 透明。
-/// - **其他桌面平台**：退回等价纯色底，避免窗口透明直接露壁纸。
-/// - 顺序固定为「**先定窗口样式 → 再设 backdrop**」（见 [_hideWindowControlsOnce]）。
-Future<void> _applyWindowMaterial(
-  Brightness brightness, {
-  bool force = false,
-}) async {
-  // 幂等短路：亮度未变且上次已成功应用 → 跳过重复 DWM 重设（见 [_lastAppliedBrightness]）。
-  // 冷启动重试 / 热重载用 force 绕过，保留失败补偿能力。
-  if (!force && _appliedSuccessfully && _lastAppliedBrightness == brightness) {
-    return;
-  }
-  // 自绘标题栏下隐藏系统标题栏按钮：只在首次设置 backdrop 之前做。
-  await _hideWindowControlsOnce();
-
-  await (_acrylicInit ??= acrylic.Window.initialize());
-
-  final bool dark = brightness == Brightness.dark;
-  final bool useMica = Platform.isWindows && WindowService.isWindows11;
-
-  if (useMica) {
-    // Win11 Mica：flutter_acrylic 会处理 DWM 属性与窗口透明 surface。
-    await acrylic.Window.setEffect(
-      effect: acrylic.WindowEffect.mica,
-      dark: dark,
-    );
-  } else {
-    // Win10 等无 Mica 的系统：回退为**等价纯色**（与 Mica 观感一致，明暗切换不跳色）。
-    //
-    // ⚠️ 这里**不做**"透明窗口 + Flutter 自绘圆角"。Win10 的 DWM 不给圆角，只把
-    // 窗口改透明的话，窗口矩形四角会留下**方角的透明区**——影子按矩形画、角上还
-    // 会抢点击（俗称"透明耳朵"，实测踩过）。要在 Win10 上真圆角只能用
-    // `SetWindowRgn` 裁**窗口区域**（整数像素、无抗锯齿，弧线带锯齿），权衡后
-    // **不做**：Win10 保持直角，Win11 由系统自动圆角。
-    await acrylic.Window.setEffect(
-      effect: acrylic.WindowEffect.solid,
-      color: AppTheme.windowBackground(brightness),
-      dark: dark,
-    );
-  }
-  _lastAppliedBrightness = brightness;
-  _appliedSuccessfully = true;
 }
 
 class MainApp extends ConsumerStatefulWidget {
@@ -192,8 +136,10 @@ class MainApp extends ConsumerStatefulWidget {
   ConsumerState<MainApp> createState() => _MainAppState();
 }
 
-class _MainAppState extends ConsumerState<MainApp>
-    with WindowListener, WidgetsBindingObserver {
+class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
+  /// 全局快捷键分发器的卸载函数（见 [installCommandDispatcher]）。
+  late final CommandDispatcherHandle _disposeDispatcher;
+
   @override
   void initState() {
     super.initState();
@@ -204,64 +150,22 @@ class _MainAppState extends ConsumerState<MainApp>
     // 接管（`WidgetsFlutterBinding` 初始化时会发 `System.initializationComplete`），
     // 我们只需登记观察者，**不要**自己去拦窗口消息。
     WidgetsBinding.instance.addObserver(this);
-    // 窗口材质由 flutter_acrylic 在 Dart 侧应用；监听焦点变化，
-    // 在获得焦点 / 切换明暗时幂等重应用，保证 DWM 合成稳定后材质必达。
-    windowManager.addListener(this);
-    // 首帧兜底 + 延迟重试：⚠️ 焦点兜底在**冷启动路径上靠不住**——
-    // WindowService.init 的 show/focus 发生在 runApp **之前**，窗口的首次
-    // 焦点事件比这里的 addListener 更早，onWindowFocus 不会再触发。
-    // 于是首帧那一次应用成了唯一的守护，而窗口刚 show 时 DWM 合成可能
-    // 未稳定，setEffect 偶发落空（实测：一次冷启动 Mica 失效，热重载
-    // 无法恢复，重启才好）。材质应用幂等，补两次短延迟重试无副作用。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_applyWindowMaterial(_effectiveBrightness(), force: true));
-      _retryMaterialAt(const Duration(milliseconds: 300));
-      _retryMaterialAt(const Duration(seconds: 1));
-    });
-  }
-
-  /// 冷启动材质重试：DWM 合成稳定的时刻没有回调可用，只能用短延迟兜。
-  void _retryMaterialAt(Duration delay) {
-    Future<void>.delayed(delay, () {
-      if (!mounted) return;
-      unawaited(_applyWindowMaterial(_effectiveBrightness(), force: true));
-    });
-  }
-
-  @override
-  void reassemble() {
-    super.reassemble();
-    // 热重载不重跑 main / initState / postFrame——此前若冷启动的材质应用
-    // 落空，热重载无法恢复（只能靠焦点事件）。这里补上：每次热重载都
-    // 幂等重应用一次材质（热重载：强制，确保重新上材质）。
-    unawaited(_applyWindowMaterial(_effectiveBrightness(), force: true));
+    // 自绘标题栏：隐藏系统窗控（幂等）。**窗口材质已取消**（窗口底 = Flutter
+    // 自绘的渐变，三端统一，见 [AppTheme.windowGradient]）⇒ 这是启动时唯一的
+    // 窗口侧动作，不再有"先定窗口样式、再设 backdrop"的顺序约束。
+    unawaited(_hideWindowControlsOnce());
+    // 全局快捷键分发（`docs/ui_rewrite_plan.md` §3.2 的①面）：命令层注册的键位
+    // 在这里落地。装载点选外壳 State 而不是 `main()`：它需要 `ref`（命令要读写
+    // provider），而 `ref` 只在 ProviderScope 内拿得到。
+    _disposeDispatcher = installCommandDispatcher(ref);
   }
 
   @override
   void dispose() {
+    // 不摘掉 handler：热重载/重建 State 会再装一个，同一条快捷键会被执行两遍。
+    _disposeDispatcher();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  /// **有效亮度**：用户明暗设置的解析结果——强制浅/深直接取值。
-  /// 窗口材质（Mica dark 变体 / Win10 底色）与界面亮度都必须用它，
-  /// 两者才不会错档。
-  Brightness _effectiveBrightness() {
-    final ThemeBrightnessMode mode =
-        ref.read(settingsProvider).brightnessMode;
-    return switch (mode) {
-      ThemeBrightnessMode.light => Brightness.light,
-      ThemeBrightnessMode.dark => Brightness.dark,
-    };
-  }
-
-  @override
-  void onWindowFocus() {
-    // 窗口获得焦点。⚠️ 冷启动**不**走这里：WindowService.init 的 show/focus
-    // 早于 addListener，首次焦点事件已错过（冷启动由 initState 的 postFrame +
-    // 延迟重试承担）。此处只兜"切回窗口"这一支，且亮度未变、上次已成功应用时
-    // 由 [_applyWindowMaterial] 的幂等短路直接跳过，不重复重设 DWM backdrop。
-    unawaited(_applyWindowMaterial(_effectiveBrightness()));
   }
 
   /// 系统请求退出（X / Alt+F4 / 标题栏关闭按钮 / 菜单"退出"都汇聚到这里）。
@@ -280,14 +184,6 @@ class _MainAppState extends ConsumerState<MainApp>
 
   @override
   Widget build(BuildContext context) {
-    // 明暗模式切换 → 窗口材质重新应用（Mica dark 变体 / Win10 底色
-    // 跟随界面亮度）——设置面板里切明暗时，材质不换就会与界面错档。
-    ref.listen<ThemeBrightnessMode>(
-      settingsProvider.select((AppSettings s) => s.brightnessMode),
-      (ThemeBrightnessMode? _, ThemeBrightnessMode _) {
-        unawaited(_applyWindowMaterial(_effectiveBrightness()));
-      },
-    );
     // 主题随设置实时变化：改明暗后面板背后的主界面立即重绘。
     // MaterialApp 按 themeMode 自动切明暗，我们直接传强制浅/深两态。
     //
@@ -344,9 +240,39 @@ class _MainAppState extends ConsumerState<MainApp>
       //   ② 把 material_ui 主题映射为官方 ThemeData，quill 组件随之换肤。
       // 桥已标记 deprecated（material_ui 未来版本会移除），当前无替代，
       // 移除前提是 quill 生态适配 material_ui——遥遥无期。
-      builder: (BuildContext context, Widget? child) =>
+      builder: (BuildContext context, Widget? child) {
+        // **窗口底 = 纯色**（§5.6；2026-09-22 定案）。
+        //
+        // 挂在 **builder 层**（Theme 之内、路由之外）⇒ 主页的 6px 缝、笔记页的
+        // 侧栏区共用同一层底；笔记/画布页整块铺纸面时它被盖住，无感知。
+        //
+        // ⚠️ **2026-09-22 由「微渐变」改成纯色**（用户实报色带后量化出来的账）：
+        // 那条渐变两端只差 **6~7 个 8-bit 台阶**（`#0D0C0A → #141310`，亮色同量级），
+        // 铺满全屏对角线 ⇒ **每 ~420px 一条**能看见的带。**台阶数 = 色带数**，所以只有
+        // 三条路：接受色带 / 抖动掉它 / 把台阶压到 1（= 纯色）。
+        // 这层是**窗口底**、不承载任何信息 ⇒ 取纯色。Windows 11 的 Mica 底本身也是
+        // 纯色（它的"层次"来自壁纸，不是自绘渐变）——想再要渐变的味道，见 §5.6：
+        // 必须**同时**把它做成同 pass 抖动（`FragmentShader` 有序抖动），
+        // ⛔ 独立噪点层治不了（已实测：摘掉它色带仍在，加回它色带更重）。
+        // 渐变令牌 `AppTheme.windowGradient` 与它的测试都留着，随时可回来。
+        //
+        // ⚠️ **窗口材质（Mica / Win10 回退纯色）已取消**：三端（Win/mac/Linux）
+        // 都用这一层自绘底，观感完全一致，也不再依赖 DWM 合成是否成功。
+        // 首帧之前的那一小段窗口仍是透明的（窗口材质本来也是首帧后才应用，
+        // 所以观感不比从前差）；要恢复材质见 git 历史里的 `_applyWindowMaterial`。
+        final Brightness brightness = Theme.of(context).brightness;
+        // ⚡ **窗口自身切成不透明**（2026-09-23）：省掉"透明窗口 ⇒ DWM 每帧把整扇窗与
+        // 桌面混合"那笔。幂等（明暗没变不会重设），且与 Mica 互斥 —— 详见
+        // [WindowService.applyWindowBackground] 的说明。
+        unawaited(WindowService.applyWindowBackground(brightness));
+        // 窗口底 + 顶边/顶角缩放手柄都在 [WindowBase] 里——**一处管全窗口**，且它抽成
+        // 具名件就是为了可测（这个 builder 在 `main.dart`、测不到）。取值、只圈顶边的
+        // 理由、以及"由微渐变改纯色"的那笔账，全写在那个类的文档里。
+        return WindowBase(
           // ignore: deprecated_member_use
-          MaterialUiCompatibilityBridge(child: child!),
+          child: MaterialUiCompatibilityBridge(child: child!),
+        );
+      },
       // 官方的 MaterialUiCompatibilityBridge 是过渡期工具（已标记
       // deprecated，material_ui 未来版本会移除）：flutter_quill 仍
       // import 旧 package:flutter/material.dart，桥不撤。

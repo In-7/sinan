@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:sqlite_vector/sqlite_vector.dart';
 
 /// 数据库层：只负责「打开 + schema + 迁移」，不碰业务查询。
 ///
@@ -17,10 +18,25 @@ class AppDatabase {
 
   final Database db;
 
+  /// 向量扩展（sqlite_vector，机制 A）是否加载成功。
+  ///
+  /// false ⇒ 检索层**降级纯 FTS**（6.4：降级而非不可用），向量路只是缺一条
+  /// 召回路。R4 的查询侧以它为闸。
+  static bool vectorExtensionAvailable = false;
+
   /// 异步只发生在「定位存储目录」这一步；打开与之后所有查询都是本地同步。
   static Future<AppDatabase> open() async {
     final Directory dir = await getApplicationSupportDirectory();
     final File file = File(p.join(dir.path, 'sinan.db'));
+    // 向量扩展在任何连接打开**之前**做进程级注册（机制 A 的 native asset 由
+    // 构建钩子编译，见 docs/data_layer.md 6.7）。失败不阻断启动——扩展缺席时
+    // 建表/迁移照常成功（普通 DDL），只在真正跑向量 SQL 时才不可用。
+    try {
+      sqlite3.loadSqliteVectorExtension();
+      vectorExtensionAvailable = true;
+    } on Object {
+      vectorExtensionAvailable = false;
+    }
     final Database db = sqlite3.open(file.path);
     // 外键开启后才能让快照随笔记删除而级联清理。
     db.execute('PRAGMA foreign_keys = ON;');
@@ -130,6 +146,7 @@ class AppDatabase {
     // `CREATE VIRTUAL TABLE` 会直接失败（不是降级）。两张表**成对**引入，
     // 留到「接入 Ollama（含嵌入）」那一步。FTS5 则不同：它是 SQLite **自带**
     // 的，所以现在就建。
+    // （已兑现：v10 落地了 `vec_chunks`——但机制换成了 A，**没有** `vec_map`，见下。）
     if (db.userVersion < 7) {
       db.execute('''
         -- ── 内容与实体统一为"块" ──────────────────────────────────
@@ -243,6 +260,85 @@ class AppDatabase {
       // DDL 抽成常量：列自愈（[_repairCanvasEdgesTable]）要重建同一张表。
       db.execute(_canvasEdgesDdl);
       db.userVersion = 9;
+    }
+
+    // v10：检索层向量路 + 远端删除墓碑（`docs/data_layer.md` 6.7 的 R1）。
+    //
+    // 机制 A（sqlite_vector，sqlite.ai 官方扩展）：**无虚拟表**——向量放普通表
+    // 的 BLOB 列（float32 little-endian），查询用 `vector_full_scan` 表值函数
+    // 暴力扫描，与 6.2 容量预算同一口径（无 ANN）。两个结构收益：
+    // - vec0 时代的 `vec_map`（rowid 映射）**整个不需要**；
+    // - 普通表**可挂外键** ⇒ 删笔记时向量行随 CASCADE 消失，6.3 的删除一致性
+    //   坑再消一个（FTS5 虚拟表那条除外，它仍要手工清）。
+    //
+    // ⚠️ 本迁移是**纯 DDL，不依赖扩展**：扩展没加载成功时（见
+    // [vectorExtensionAvailable]）建表照样成功，语义路只是整条缺席——
+    // 「降级而非不可用」从 schema 层就成立。
+    // ⚠️ 维度不钉死在 schema：嵌入模型决定维度（记在 `rag_meta.model` 的
+    // 身份串里），换模型 = 全量重算，普通表天然不怕维度变。
+    if (db.userVersion < 10) {
+      // 与 v9 的补列同口径（见 [_hasColumn] 的说明）：迁移要能**幂等重入**——
+      // 版本号被回拨的存量库、只造了部分表的测试夹具，都会让门闩再次触发，
+      // 所以建表带 IF NOT EXISTS、加列先判表与列的存在。
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS vec_chunks (
+          block_id  TEXT PRIMARY KEY REFERENCES blocks(id) ON DELETE CASCADE,
+          embedding BLOB NOT NULL              -- float32 LE；维度随 rag_meta.model
+        );
+      ''');
+      if (_hasTable(db, 'index_state') &&
+          !_hasColumn(db, 'index_state', 'chunker_version')) {
+        // 切块规则版本（6.6①）：切块规则变了而模型没变时，旧向量同样必须失效。
+        // `''`（存量行）= 永远过期 ⇒ 首次建索引时全量重算，之后走增量。
+        db.execute(
+          "ALTER TABLE index_state "
+          "ADD COLUMN chunker_version TEXT NOT NULL DEFAULT '';",
+        );
+      }
+      db.execute('''
+        -- 远端删除墓碑（6.6②）：**孤岛表**——刻意不挂任何外键、不参与级联。
+        -- 删笔记时 CASCADE 会把"该去远端删哪些块"的线索一起带走，所以墓碑必须
+        -- 放在删不掉的地方；入队与删除动作必须在同一事务里（6.6② 约束 1）。
+        -- kind = 'all' 用于"退出云端 provider"时整库清理。
+        CREATE TABLE IF NOT EXISTS pending_delete (
+          kind       TEXT NOT NULL,            -- 'chunk' | 'note' | 'all'
+          ref        TEXT NOT NULL,            -- chunk: block_id / note: note_id / all: '*'
+          note_id    TEXT,                     -- 便于按笔记清理与审计
+          queued_at  INTEGER NOT NULL,
+          attempts   INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          PRIMARY KEY (kind, ref)
+        ) WITHOUT ROWID;
+      ''');
+      db.userVersion = 10;
+    }
+
+    // v11：`vec_chunks` 由**块粒度**升到 **chunk 粒度**（`docs/data_layer.md`
+    // 6.7 R3：切块器只对超长块二次切，一个块可能有多个 chunk）。
+    //
+    // 粒度分工：**chunk 是检索单元**（`vec_chunks` 与 `chunks_fts` 都按 chunk 存），
+    // **block 是新鲜度单元**（`index_state` 仍按 block 记指纹/模型/切块版本）——
+    // 这样两条召回路的排名口径一致（RRF 才可比），而"这一块要不要重算"的判据
+    // 不会因为切法变化而变复杂。
+    //
+    // ⚠️ 重建是安全的：v10 到今天之间 `vec_chunks` **没有任何写入方**（索引任务
+    // 正是本次才落地，之前无 UI 入口）⇒ 表必为空。判据用列存在性，保证幂等
+    // 重入（沿 v9/v10 的补列口径）。
+    // ⚠️ 必须是 rowid 表：`vector_full_scan` 返回 rowid，JOIN 回原表靠它。
+    if (db.userVersion < 11) {
+      if (_hasTable(db, 'vec_chunks') &&
+          !_hasColumn(db, 'vec_chunks', 'chunk_index')) {
+        db.execute('DROP TABLE vec_chunks;');
+      }
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS vec_chunks (
+          block_id    TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+          chunk_index INTEGER NOT NULL,        -- 块内序号，0 起（chunker 产出）
+          embedding   BLOB NOT NULL,           -- float32 LE；维度随 rag_meta.vec_dim
+          PRIMARY KEY (block_id, chunk_index)
+        );
+      ''');
+      db.userVersion = 11;
     }
 
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
@@ -363,6 +459,15 @@ class AppDatabase {
       if (r['name'] == column) return true;
     }
     return false;
+  }
+
+  /// 表是否存在（v10 的 ALTER 前置判据：存量库夹具可能只造了部分表，
+  /// `PRAGMA table_info` 对缺失的表返回空集而不是报错，故需先判表本身）。
+  static bool _hasTable(Database db, String table) {
+    return db.select(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      <Object?>[table],
+    ).isNotEmpty;
   }
 
   /// v6 的 `notes` 表重建（详见调用处的说明）。

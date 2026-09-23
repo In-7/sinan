@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-import '../../app/providers.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+import 'package:flutter_riverpod/flutter_riverpod.dart';import '../../app/providers.dart';
 import '../../domain/note.dart';
 
 /// 弹「选一篇笔记」对话框，返回所选笔记 id（取消 → null）。
@@ -109,13 +108,7 @@ class _NotePickerDialogState extends State<_NotePickerDialog> {
                         final Note n = hits[i];
                         return ListTile(
                           dense: true,
-                          leading: Icon(
-                            n.kind == NoteKind.canvas
-                                ? LucideIcons.layoutDashboard300
-                                : LucideIcons.fileText300,
-                            size: 18,
-                            color: scheme.onSurfaceVariant,
-                          ),
+                          leading: tabler.LayoutDashboard(height: 18, width: 18, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
                           title: Text(
                             n.title.trim().isEmpty ? '未命名笔记' : n.title,
                             maxLines: 1,

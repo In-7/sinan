@@ -44,7 +44,18 @@ void main() {
     db.execute(
       'INSERT INTO canvas_items (id, note_id, kind, z, x1, y1, x2, y2, '
       'created_at, updated_at, fingerprint, block_id) VALUES (?,?,?,?,?,?,?,?,1,1,?,?)',
-      <Object?>[itemId, noteId, 'card', 0, 0, 0, 100, 60, 'fp1:$itemId', blockId],
+      <Object?>[
+        itemId,
+        noteId,
+        'card',
+        0,
+        0,
+        0,
+        100,
+        60,
+        'fp1:$itemId',
+        blockId,
+      ],
     );
   }
 
@@ -62,15 +73,15 @@ void main() {
     return false;
   }
 
-  test('v9：block_id 到位、canvas_edges 建成，vec 表仍按约定缺席', () {
+  test('v9：block_id 到位、canvas_edges 建成', () {
     final Database db = openMigrated();
 
     expect(db.userVersion, greaterThanOrEqualTo(9));
 
     final List<String> names = tableNames(db);
     expect(names, contains('canvas_edges'));
-    // v7 的约定继续有效：sqlite-vec 那两张成对延后。
-    expect(names, isNot(contains('vec_chunks')));
+    // v10 已落地向量路（机制 A）：vec_chunks 是普通表；vec_map 不该存在。
+    expect(names, contains('vec_chunks'));
     expect(names, isNot(contains('vec_map')));
 
     // 几何表里必须能承接"卡片"（形状/图片这一列是 NULL）。
@@ -84,12 +95,16 @@ void main() {
 
     // 内容（要能被 FTS5 / 向量检索到）。
     expect(
-      db.select("SELECT type, props_json FROM blocks WHERE id='b1'").single['type'],
+      db
+          .select("SELECT type, props_json FROM blocks WHERE id='b1'")
+          .single['type'],
       'card',
     );
     // 几何（视口裁剪每帧要用 ⇒ 必须是真列，不能塞 JSON）。
     final Row item = db
-        .select("SELECT kind, x2, y2, block_id FROM canvas_items WHERE id='card-1'")
+        .select(
+          "SELECT kind, x2, y2, block_id FROM canvas_items WHERE id='card-1'",
+        )
         .single;
     expect(item['kind'], 'card');
     expect(item['x2'], 100.0);
@@ -190,7 +205,9 @@ void main() {
     insertCanvasNote(db, 'c1');
     insertCard(db, noteId: 'c1', blockId: 'b1', itemId: 'card-1');
     expect(
-      db.select("SELECT block_id FROM canvas_items WHERE id='card-1'").single['block_id'],
+      db
+          .select("SELECT block_id FROM canvas_items WHERE id='card-1'")
+          .single['block_id'],
       'b1',
     );
 

@@ -1,13 +1,11 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'dart:convert';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 // 只用到 BuildContext（句柄签名要求）；widgets 层是两套 Material 共用的，
 // 这里不需要也不该牵进任何一方的 Material。
-import 'package:flutter/widgets.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-
-import '../../notes/services/attachment_meta.dart';
+import 'package:flutter/widgets.dart';import '../../notes/services/attachment_meta.dart';
 import '../../notes/services/formula_render.dart';
 import '../../notes/services/note_media_service.dart';
 import '../blocks/attachment_block_component.dart';
@@ -125,7 +123,7 @@ SelectionMenuItem _toggleSlashMenuItem({
   required Node Function() nodeBuilder,
 }) => SelectionMenuItem.node(
   getName: () => name,
-  iconData: LucideIcons.chevronRight300,
+  iconData: tabler.ChevronRight(height: 24, width: 24, strokeWidth: 1.5),
   keywords: keywords,
   nodeBuilder: (editorState, context) => nodeBuilder(),
   replace: (editorState, node) => node.delta?.isEmpty ?? false,
@@ -140,7 +138,7 @@ SelectionMenuItem _toggleSlashMenuItem({
 /// `['callout']`，中文用户会直接打"高亮块"）。
 final SelectionMenuItem calloutSlashMenuItem = SelectionMenuItem.node(
   getName: () => '高亮块',
-  iconData: LucideIcons.info300,
+  iconData: tabler.InfoCircle(height: 24, width: 24, strokeWidth: 1.5),
   keywords: const <String>['callout', '高亮块', '提示', '强调'],
   nodeBuilder: (editorState, context) => calloutNode(),
   // 空块 → 原地替换（与官方 callout / table 同一判据），不留多余空段落。
@@ -165,7 +163,7 @@ bool _isNotMaterialIconItem(SelectionMenuItem item) =>
 final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.table,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.table300,
+    icon: tabler.Table(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -209,7 +207,7 @@ final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem dividerSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.divider,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.minus300,
+    icon: tabler.Minus(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -318,7 +316,7 @@ bool _containsCjk(String value) => RegExp(r'[\u4e00-\u9fa5]').hasMatch(value);
 /// 我们只回答三个问题：造什么节点、要不要替换、光标放哪。
 final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
   getName: () => '代码块',
-  iconData: LucideIcons.squareCode300,
+  iconData: tabler.Terminal(height: 24, width: 24, strokeWidth: 1.5),
   keywords: const <String>['code', 'code block', '代码', '代码块'],
   nodeBuilder: (editorState, context) => codeBlockNode(delta: Delta()),
   // 空块 → 原地替换（与官方 tableMenuItem 同一判据），不留多余空段落。
@@ -332,7 +330,7 @@ final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
 final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
   getName: () => '公式',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.sigma300,
+    icon: tabler.Function(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -356,7 +354,7 @@ final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
   getName: () => '附件',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.paperclip300,
+    icon: tabler.Paperclip(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -382,7 +380,7 @@ final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
   getName: () => '引用笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.link300,
+    icon: tabler.Link(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -429,7 +427,7 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '引用块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
     // 与「引用笔记」的 link 图标区分：这里强调的是"引用一段正文"。
-    icon: LucideIcons.fileText300,
+    icon: tabler.FileText(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -467,7 +465,7 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.quote300,
+    icon: tabler.Quote(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),
@@ -502,7 +500,7 @@ final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedNoteSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: LucideIcons.quote300,
+    icon: tabler.Quote(height: 24, width: 24, strokeWidth: 1.5),
     isSelected: isSelected,
     style: style,
   ),

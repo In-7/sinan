@@ -1,5 +1,4 @@
-import 'package:flutter/gestures.dart'
-    show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -72,6 +71,39 @@ void main() {
     await settle(tester);
   }
 
+  /// §5.1 的「当前项」三件齐——任何一件被改回去，这条都会红：
+  /// 底色退回纸面色 / 指示条退回 `onSurface` / 字重退回 w400。
+  testWidgets('选中的列表项：中性 tint 底 + primary 左条 + w600（§5.1）', (tester) async {
+    await pumpList(tester);
+    final ColorScheme scheme = AppTheme.light().colorScheme;
+
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is Container &&
+            w.color == AppTheme.navSelectedTint(scheme.onSurface),
+      ),
+      findsWidgets,
+      reason: '选中项底色不是 navSelectedTint（退回纸面色或 secondaryContainer？）',
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is AnimatedContainer &&
+            (w.decoration as BoxDecoration?)?.color ==
+                AppTheme.navIndicator(scheme),
+      ),
+      findsWidgets,
+      reason: '左指示条不是 primary（navIndicator）',
+    );
+    final Text title = tester.widget<Text>(find.text('原始标题'));
+    expect(
+      title.style?.fontWeight,
+      FontWeight.w600,
+      reason: '选中项标题应是 w600（三件里的第三件）',
+    );
+  });
+
   Future<void> openMenu(WidgetTester tester) async {
     await tester.tap(find.byTooltip('更多'));
     await settle(tester);
@@ -86,9 +118,7 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('菜单打开期间：目标条目保持悬浮态（否则看不出菜单对着哪篇）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('菜单打开期间：目标条目保持悬浮态（否则看不出菜单对着哪篇）', (WidgetTester tester) async {
     // 再来一条并**不选中它**：目标行的基线底色是"无"，于是后面底色出现
     // 只可能来自菜单状态（而不是选中态——选中行本来就有底色）。
     // ⚠️ 必须 `runAsync`：Riverpod 的 future 链在 FakeAsync 里不会自己跑完
@@ -97,9 +127,7 @@ void main() {
       final Note target = await container
           .read(notesProvider.notifier)
           .createNote();
-      await container
-          .read(notesProvider.notifier)
-          .saveTitle(target.id, '目标标题');
+      await container.read(notesProvider.notifier).saveTitle(target.id, '目标标题');
     });
     await pumpList(tester);
 
@@ -161,102 +189,82 @@ void main() {
     expect(moreVisible(), isTrue, reason: '「···」锚点随高亮一起消失 ⇒ 菜单看着悬空');
   }, timeout: const Timeout(Duration(seconds: 30)));
 
-  testWidgets(
-    '删除笔记 → **左下角**通知条：窄条、带撤销、到点自动消失',
-    (WidgetTester tester) async {
-      await pumpList(tester);
-      await openMenu(tester);
-      expect(find.text('删除笔记'), findsOneWidget);
+  testWidgets('删除笔记 → **左下角**通知条：窄条、带撤销、到点自动消失', (WidgetTester tester) async {
+    await pumpList(tester);
+    await openMenu(tester);
+    expect(find.text('删除笔记'), findsOneWidget);
 
-      await tapMenuItem(tester, '删除笔记');
+    await tapMenuItem(tester, '删除笔记');
 
-      // 列表空态
-      expect(find.textContaining('还没有笔记'), findsOneWidget);
-      expect(notesNow(), isEmpty);
+    // 列表空态
+    expect(find.textContaining('还没有笔记'), findsOneWidget);
+    expect(notesNow(), isEmpty);
 
-      // 通知条（不是 SnackBar——后者铺满整行且不自动消失）。
-      final Finder toast = find.byKey(const ValueKey<String>('undo-toast'));
-      expect(toast, findsOneWidget);
-      expect(find.text('已删除「原始标题」'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, '撤销'), findsOneWidget);
+    // 通知条（不是 SnackBar——后者铺满整行且不自动消失）。
+    final Finder toast = find.byKey(const ValueKey<String>('undo-toast'));
+    expect(toast, findsOneWidget);
+    expect(find.text('已删除「原始标题」'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, '撤销'), findsOneWidget);
 
-      // 位置：贴**左下角**，且宽度远小于窗口（不是横跨整行）。
-      final Rect rect = tester.getRect(toast);
-      final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
-      expect(rect.left, lessThan(40), reason: '应贴左边');
-      expect(
-        rect.bottom,
-        greaterThan(screen.height - 40),
-        reason: '应贴底部',
-      );
-      expect(rect.width, lessThan(screen.width / 2), reason: '应是窄条不是横幅');
+    // 位置：贴**左下角**，且宽度远小于窗口（不是横跨整行）。
+    final Rect rect = tester.getRect(toast);
+    final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+    expect(rect.left, lessThan(40), reason: '应贴左边');
+    expect(rect.bottom, greaterThan(screen.height - 40), reason: '应贴底部');
+    expect(rect.width, lessThan(screen.width / 2), reason: '应是窄条不是横幅');
 
-      // 到点自动消失（8 秒）。
-      await tester.pump(const Duration(seconds: 9));
-      await settle(tester);
-      expect(toast, findsNothing, reason: '通知条到点应自动收起');
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+    // 到点自动消失（8 秒）。
+    await tester.pump(const Duration(seconds: 9));
+    await settle(tester);
+    expect(toast, findsNothing, reason: '通知条到点应自动收起');
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
-  testWidgets(
-    '通知条「撤销」→ 笔记回到列表',
-    (WidgetTester tester) async {
-      await pumpList(tester);
-      await openMenu(tester);
-      await tapMenuItem(tester, '删除笔记');
-      expect(notesNow(), isEmpty);
+  testWidgets('通知条「撤销」→ 笔记回到列表', (WidgetTester tester) async {
+    await pumpList(tester);
+    await openMenu(tester);
+    await tapMenuItem(tester, '删除笔记');
+    expect(notesNow(), isEmpty);
 
-      await tester.runAsync(() async {
-        await tester.tap(find.widgetWithText(TextButton, '撤销'));
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-      });
-      await settle(tester);
-      await tester.pump(const Duration(seconds: 1));
+    await tester.runAsync(() async {
+      await tester.tap(find.widgetWithText(TextButton, '撤销'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await settle(tester);
+    await tester.pump(const Duration(seconds: 1));
 
-      expect(find.text('原始标题'), findsOneWidget, reason: '撤销后笔记应回到列表');
-      expect(notesNow().single.id, note.id);
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+    expect(find.text('原始标题'), findsOneWidget, reason: '撤销后笔记应回到列表');
+    expect(notesNow().single.id, note.id);
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
-  testWidgets(
-    '重命名 → 就地改标题并落库',
-    (WidgetTester tester) async {
-      await pumpList(tester);
-      await openMenu(tester);
+  testWidgets('重命名 → 就地改标题并落库', (WidgetTester tester) async {
+    await pumpList(tester);
+    await openMenu(tester);
 
-      await tapMenuItem(tester, '重命名');
+    await tapMenuItem(tester, '重命名');
 
-      // 就地编辑：条目里出现输入框（不是弹窗）。
-      expect(find.byType(TextField), findsOneWidget);
-      await tester.enterText(find.byType(TextField), '改过的标题');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await settle(tester);
+    // 就地编辑：条目里出现输入框（不是弹窗）。
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '改过的标题');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
 
-      expect(find.text('改过的标题'), findsOneWidget);
-      expect(find.byType(TextField), findsNothing, reason: '提交后应退出编辑态');
-      expect(notesNow().single.title, '改过的标题');
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+    expect(find.text('改过的标题'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing, reason: '提交后应退出编辑态');
+    expect(notesNow().single.title, '改过的标题');
+  }, timeout: const Timeout(Duration(seconds: 30)));
 
-  testWidgets(
-    '收藏 → 菜单变「取消收藏」，可逆',
-    (WidgetTester tester) async {
-      await pumpList(tester);
-      await openMenu(tester);
+  testWidgets('收藏 → 菜单变「取消收藏」，可逆', (WidgetTester tester) async {
+    await pumpList(tester);
+    await openMenu(tester);
 
-      expect(find.text('收藏'), findsOneWidget);
-      await tapMenuItem(tester, '收藏');
-      expect(notesNow().single.promotedAt, isNotNull);
+    expect(find.text('收藏'), findsOneWidget);
+    await tapMenuItem(tester, '收藏');
+    expect(notesNow().single.promotedAt, isNotNull);
 
-      // 再开菜单：文案应变成「取消收藏」（可逆）。
-      await openMenu(tester);
-      expect(find.text('取消收藏'), findsOneWidget);
-      await tapMenuItem(tester, '取消收藏');
-      expect(notesNow().single.promotedAt, isNull);
-    },
-    timeout: const Timeout(Duration(seconds: 30)),
-  );
+    // 再开菜单：文案应变成「取消收藏」（可逆）。
+    await openMenu(tester);
+    expect(find.text('取消收藏'), findsOneWidget);
+    await tapMenuItem(tester, '取消收藏');
+    expect(notesNow().single.promotedAt, isNull);
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }

@@ -1,5 +1,6 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
@@ -83,12 +84,7 @@ class _SinanColorButtonState extends State<_SinanColorButton> {
   @override
   Widget build(BuildContext context) {
     return SVGIconItemWidget(
-      iconBuilder: (BuildContext context) => Icon(
-        LucideIcons.palette300,
-        size: Tokens.iconSm,
-        color:
-            widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
+      iconBuilder: (BuildContext context) => tabler.Palette(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant, ui.BlendMode.srcIn)),
       isHighlight: false,
       highlightColor: widget.highlightColor,
       iconColor: widget.iconColor,
@@ -229,7 +225,7 @@ class _SinanColorPanel extends StatelessWidget {
                       }
                       onDone();
                     },
-                    icon: const Icon(LucideIcons.eraser300, size: Tokens.iconSm),
+                    icon: tabler.Eraser(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                     label: const Text('恢复默认'),
                   ),
                 ),
@@ -328,9 +324,9 @@ class _ColorSwatch extends StatelessWidget {
           ),
         ),
         child: color == null
-            ? Icon(LucideIcons.x300, size: 14, color: scheme.onSurfaceVariant)
+            ? tabler.X(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn))
             : isSelected
-            ? Icon(LucideIcons.check300, size: 14, color: scheme.onPrimary)
+            ? tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onPrimary, ui.BlendMode.srcIn))
             : null,
       ),
     );

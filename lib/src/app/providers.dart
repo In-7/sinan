@@ -1,9 +1,14 @@
-
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ai/embedding_client.dart';
 import '../ai/llm_client.dart';
+import '../data/answer_service.dart';
+import '../data/database.dart';
+import '../data/embedding_backend.dart';
+import '../data/index_job.dart';
+import '../data/retriever.dart';
 import '../canvas/kernel/canvas_ai_cache.dart';
 import '../canvas/kernel/canvas_media.dart';
 import '../data/canvas_media_refs.dart';
@@ -13,20 +18,34 @@ import '../domain/note.dart';
 import '../domain/settings.dart';
 import 'pending_saves.dart';
 
+// ── 数据层符号的**转口** ─────────────────────────────────────────────
+//
+// `test/architecture/architecture_test.dart` 规定：只有 `main.dart` 与**本文件**
+// 可以引用 `data/`（装配根 + 唯一 DI 点）。UI 要用到数据层的**类型**
+// （`Answer` / `IndexProgress` …）时，就从这里出——否则每个 widget 都会为了一个
+// 类型名去 import `data/`，越过 DI 且让账本烂掉。
+export '../data/answer_service.dart' show Answer, Citation;
+export '../data/index_job.dart'
+    show IndexCancelToken, IndexJob, IndexProgress, IndexResult;
+
 /// 笔记存储。实例在 main 里打开 DB 后通过 override 注入，全应用单例复用。
-final noteStoreProvider =
-    Provider<NoteStore>((ref) => throw UnimplementedError('在 main 中 override 注入'));
+final noteStoreProvider = Provider<NoteStore>(
+  (ref) => throw UnimplementedError('在 main 中 override 注入'),
+);
 
 /// 设置存储。与 [noteStoreProvider] 同源（同一个 DB 文件），
 /// 同样在 main 里 override 注入。
-final settingsStoreProvider =
-    Provider<SettingsStore>((ref) => throw UnimplementedError('在 main 中 override 注入'));
+final settingsStoreProvider = Provider<SettingsStore>(
+  (ref) => throw UnimplementedError('在 main 中 override 注入'),
+);
 
 /// 退出前落盘的登记处（视图挂载时登记、关窗口时统一等待，见 [PendingSaves]）。
 ///
 /// 非 autoDispose：它是**应用级**设施，与容器同寿命——视图来去（切笔记）不该
 /// 把登记处本身也带走，否则关窗口时就没有"谁还欠着一次落盘"的记录了。
-final pendingSavesProvider = Provider<PendingSaves>((Ref ref) => PendingSaves());
+final pendingSavesProvider = Provider<PendingSaves>(
+  (Ref ref) => PendingSaves(),
+);
 
 /// 应用设置（外观 + 编辑器偏好）。
 ///
@@ -77,14 +96,20 @@ class SettingsNotifier extends Notifier<AppSettings> {
     ),
   );
 
-  void setAiModel(String value) => update(state.copyWith(aiModel: value.trim()));
+  void setAiModel(String value) =>
+      update(state.copyWith(aiModel: value.trim()));
+
+  /// 嵌入模型名。与对话模型分开（见 [AppSettings.aiEmbeddingModel]）。
+  void setAiEmbeddingModel(String value) =>
+      update(state.copyWith(aiEmbeddingModel: value.trim()));
 
   /// 恢复默认（面板底部的"重置"）。
   void reset() => update(const AppSettings());
 }
 
-final settingsProvider =
-    NotifierProvider<SettingsNotifier, AppSettings>(SettingsNotifier.new);
+final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
+  SettingsNotifier.new,
+);
 
 /// 当前选中的笔记 id（桌面双栏共用的唯一导航态）。
 ///
@@ -97,12 +122,14 @@ class SelectedNoteNotifier extends Notifier<String?> {
   void select(String? id) => state = id;
 }
 
-final selectedNoteIdProvider =
-    NotifierProvider<SelectedNoteNotifier, String?>(SelectedNoteNotifier.new);
+final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
+  SelectedNoteNotifier.new,
+);
 
 /// 笔记列表（含增删改后自动刷新）。
-final notesProvider =
-    AsyncNotifierProvider<NotesNotifier, List<Note>>(NotesNotifier.new);
+final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
+  NotesNotifier.new,
+);
 
 /// 应用数据根目录（`getApplicationSupportDirectory()` 的结果）。
 ///
@@ -111,6 +138,123 @@ final notesProvider =
 /// （`toJson` / `fromJson`），那里拿不到 `Future`。
 final appDataDirProvider = Provider<String>(
   (Ref ref) => throw UnimplementedError('在 main 中 override 注入'),
+);
+
+/// 打开好的数据库（`main` 里 open 后 override 注入）。
+///
+/// 检索/索引设施（[IndexJob] / [Retriever] / `LocalEmbeddingBackend`）都要裸
+/// [Database]，而现有 provider 只暴露了 NoteStore / SettingsStore ⇒ 补这一个
+/// 入口，免得各处从 store 里"借"连接（借来的连接迟早会有人拿它写业务 SQL）。
+final appDatabaseProvider = Provider<AppDatabase>(
+  (Ref ref) => throw UnimplementedError('在 main 中 override 注入'),
+);
+
+/// 裸连接：数据层设施的构造参数。
+///
+/// 类型靠推断（不写 `<Database>`）：显式写类型名就要 import `package:sqlite3`，
+/// 而架构测试禁止数据层之外碰这个包（见 `test/architecture`）。
+final databaseProvider = Provider(
+  (Ref ref) => ref.watch(appDatabaseProvider).db,
+);
+
+/// 嵌入客户端（Ollama `/api/embed`）。设置一改就换实例（同 `llmClientProvider`）。
+final embeddingClientProvider = Provider<EmbeddingClient>((Ref ref) {
+  final AppSettings settings = ref.watch(settingsProvider);
+  return OllamaEmbeddingClient(
+    endpoint: settings.aiEndpoint,
+    model: settings.aiEmbeddingModel,
+  );
+});
+
+/// 本地嵌入后端；**不可用时返回 null** ⇒ 检索与索引自动降级为纯关键词
+/// （6.4 的"降级而非不可用"在装配层的落点）。
+///
+/// 两道闸门缺一不可：
+/// - 没填嵌入模型名 ⇒ 无从调用；
+/// - 向量扩展没加载成功（native asset 缺席）⇒ `vec_chunks` 虽在也用不了。
+EmbeddingBackend? embeddingBackendOrNull(Ref ref) {
+  if (ref.watch(settingsProvider).aiEmbeddingModel.trim().isEmpty) return null;
+  if (!AppDatabase.vectorExtensionAvailable) return null;
+  return LocalEmbeddingBackend(
+    db: ref.watch(databaseProvider),
+    client: ref.watch(embeddingClientProvider),
+  );
+}
+
+/// 「建立 / 更新索引」任务（增量、幂等、可取消）。
+final indexJobProvider = Provider<IndexJob>(
+  (Ref ref) => IndexJob(
+    db: ref.watch(databaseProvider),
+    backend: embeddingBackendOrNull(ref),
+  ),
+);
+
+/// 混合检索（关键词 + 语义 → RRF 融合）。
+final retrieverProvider = Provider<Retriever>(
+  (Ref ref) => Retriever(
+    db: ref.watch(databaseProvider),
+    backend: embeddingBackendOrNull(ref),
+  ),
+);
+
+/// 问答（检索 → 带编号资料 → 生成 → 引用还原）。
+final answerServiceProvider = Provider<AnswerService>(
+  (Ref ref) => AnswerService(
+    retriever: ref.watch(retrieverProvider),
+    llm: ref.watch(llmClientProvider),
+  ),
+);
+
+/// 一次「要到哪里」的请求（`docs/ui_rewrite_plan.md` §4 的 `locateProvider` 载荷）。
+///
+/// `seq` 是**单调序号**：连着点同一条角标两次也必须能再跳一次——只比
+/// `(noteId, blockId)` 的话，第二次是"状态没变"，Riverpod 不会通知监听者，
+/// 用户看到的现象就是"第二次点击没反应"。
+typedef LocateRequest = ({String noteId, String? blockId, bool focus, int seq});
+
+/// 跳转的**唯一真相源**（`docs/ui_rewrite_plan.md` §4）。
+///
+/// ## 为什么要中转
+/// 目标笔记往往**还没打开**，而滚动控制器与闪烁高亮都是编辑器的私有成员——
+/// 调用方只能表达"想跳到哪"，由编辑器在自身就绪时消费（消费即置空，避免重开
+/// 笔记时重复跳）。这一层把跳转从"每个入口各修一条路"收敛成一条。
+///
+/// ## ⚠️ 只有它写 [selectedNoteIdProvider]
+/// 换笔记**就是**跳转。别处若也能直接 `select`，两条路会立刻分叉——表现为
+/// "列表点了编辑器没反应"或"角标跳过去了、列表高亮还停在旧笔记"。这条不变式由
+/// `test/architecture/architecture_test.dart` 的源码扫描钉住（不是靠自觉）。
+class LocateNotifier extends Notifier<LocateRequest?> {
+  int _seq = 0;
+
+  @override
+  LocateRequest? build() => null;
+
+  /// 切到 [noteId]，可选定位到 [blockId]。
+  ///
+  /// [focus]：跳完让**编辑器**接管键盘（"跳过去就是要写/改"）。从列表点开一篇
+  /// **不要**带它——那会把焦点从列表抢走，键盘上下选笔记就断了。
+  void locate({required String noteId, String? blockId, bool focus = false}) {
+    if (ref.read(selectedNoteIdProvider) != noteId) {
+      ref.read(selectedNoteIdProvider.notifier).select(noteId);
+    }
+    state = (noteId: noteId, blockId: blockId, focus: focus, seq: ++_seq);
+  }
+
+  /// **回主页**（§5.6：切换，不是叠加）——清空选中与待消费的跳转请求。
+  ///
+  /// 放在这里而不是别处：**写 [selectedNoteIdProvider] 的只有本 Notifier**（架构测试
+  /// 钉住，见本文件顶部的说明）。"回主页"也是一次跳转，不是"顺手把状态清掉"。
+  void goHome() {
+    ref.read(selectedNoteIdProvider.notifier).select(null);
+    state = null;
+  }
+
+  /// 编辑器消费后置空（见类注释）。
+  void consume() => state = null;
+}
+
+final locateProvider = NotifierProvider<LocateNotifier, LocateRequest?>(
+  LocateNotifier.new,
 );
 
 /// 媒体引用解析器：文档只存相对引用，运行时经它换算成绝对路径。
@@ -133,8 +277,7 @@ final aiResultCacheProvider = Provider<AiResultCache>((Ref ref) {
   final MediaResolver media = ref.read(mediaResolverProvider);
   final String dataDir = ref.read(appDataDirProvider);
   return AiResultCache(
-    resolveDirectory: () async =>
-        '$dataDir${Platform.pathSeparator}ai_cache',
+    resolveDirectory: () async => '$dataDir${Platform.pathSeparator}ai_cache',
     protectedPaths: () => _referencedCanvasMedia(store, media),
   );
 });
@@ -153,10 +296,7 @@ final aiResultCacheProvider = Provider<AiResultCache>((Ref ref) {
 /// 路径**；不做这一步，保护集就会与真实文件名对不上，淘汰可能删掉仍在用的图。
 /// 同时读侧表与 items 并取并集——侧表是派生索引，但旧存档可能只有其中一侧。
 Set<String> _referencedCanvasMedia(NoteStore store, MediaResolver media) =>
-    referencedCanvasMedia(
-      store.canvasContents(),
-      toPath: media.toPath,
-    );
+    referencedCanvasMedia(store.canvasContents(), toPath: media.toPath);
 
 class NotesNotifier extends AsyncNotifier<List<Note>> {
   NoteStore get _store => ref.read(noteStoreProvider);
@@ -189,8 +329,11 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     String content, {
     required String plainText,
   }) async {
-    final bool changed =
-        await _store.updateContent(id, content, plainText: plainText);
+    final bool changed = await _store.updateContent(
+      id,
+      content,
+      plainText: plainText,
+    );
     if (changed) state = AsyncData(_store.allNotes());
   }
 
@@ -223,16 +366,23 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
       final String? next = rest.isEmpty
           ? null
           : rest[index.clamp(0, rest.length - 1)].id;
-      ref.read(selectedNoteIdProvider.notifier).select(next);
+      if (next == null) {
+        // 空列表不是"跳到哪里"，是"没地方可去"——`locate` 要求有个目标才成立，
+        // 所以这一处直接清空（本文件就是 `locateProvider` 的家，不算另开一条路）。
+        ref.read(selectedNoteIdProvider.notifier).select(null);
+      } else {
+        ref.read(locateProvider.notifier).locate(noteId: next);
+      }
     }
     return removed;
   }
 
-  /// 撤销删除：原 id / 时间戳原样写回，并重新选中它。
+  /// 撤销删除：原 id / 时间戳原样写回，并跳回它。
   Future<void> restoreNote(Note note) async {
     await _store.restore(note);
     state = AsyncData(_store.allNotes());
-    ref.read(selectedNoteIdProvider.notifier).select(note.id);
+    // 不带 focus：撤销的入口在列表的 toast 上，用户的手还在列表那边。
+    ref.read(locateProvider.notifier).locate(noteId: note.id);
   }
 
   /// 收藏 / 取消收藏（收藏项在列表里置顶，见 `NoteStore.allNotes`）。

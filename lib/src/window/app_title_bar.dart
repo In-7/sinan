@@ -80,41 +80,35 @@ class _SidebarHeaderState extends State<SidebarHeader> with WindowListener {
       child: Row(
         children: <Widget>[
           const SizedBox(width: Tokens.spaceSm),
-          ...?widget.actions?.map((Widget action) => chromeActionButton(context, action)),
+          ...?widget.actions?.map(
+            (Widget action) => chromeActionButton(context, action),
+          ),
+          // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖一层
+          // `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的说明）。
+          // 这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
           Expanded(
-            child: Column(
-              children: <Widget>[
-                // 顶边缩放带：占拖拽区最顶几条像素。隐藏标题栏后系统顶边
-                // 缩放框缺失，且 [DragToMoveArea] 会把顶边的拖动吞成「移动窗口」，
-                // 于是顶边几乎没有可用的缩放手柄（其余三边有原生边框，不受影响）。
-                // 这条带只铺在拖拽区，避开两端贴边的按钮；详见 [_TopResizeHandle]。
-                const _TopResizeHandle(),
-                Expanded(
-                  child: DragToMoveArea(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onDoubleTap: WindowService.toggleMaximize,
-                      child: Container(
-                        alignment: Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Tokens.spaceMd,
-                        ),
-                        child: DefaultTextStyle(
-                          style: TextStyle(
-                            color: _focused
-                                ? theme.colorScheme.onSurface
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontSize: Tokens.fontSizeSm,
-                          ),
-                          child: widget.title != null
-                              ? Text(widget.title!)
-                              : const SizedBox.shrink(),
-                        ),
-                      ),
+            child: DragToMoveArea(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onDoubleTap: WindowService.toggleMaximize,
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Tokens.spaceMd,
+                  ),
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      color: _focused
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontSize: Tokens.fontSizeSm,
                     ),
+                    child: widget.title != null
+                        ? Text(widget.title!)
+                        : const SizedBox.shrink(),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -189,40 +183,32 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
           ...?widget.leading?.map(
             (Widget action) => chromeActionButton(context, action),
           ),
+          // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖一层
+          // `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的说明）。
+          // 这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
           Expanded(
-            child: Column(
-              children: <Widget>[
-                // 顶边缩放带：占拖拽区最顶几条像素。隐藏标题栏后系统顶边
-                // 缩放框缺失，且 [DragToMoveArea] 会把顶边的拖动吞成「移动窗口」，
-                // 于是顶边几乎没有可用的缩放手柄（其余三边有原生边框，不受影响）。
-                // 这条带只铺在拖拽区，避开两端贴边的按钮；详见 [_TopResizeHandle]。
-                const _TopResizeHandle(),
-                Expanded(
-                  child: DragToMoveArea(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onDoubleTap: WindowService.toggleMaximize,
-                      child: Container(
-                        alignment: Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Tokens.spaceMd,
-                        ),
-                        child: DefaultTextStyle(
-                          style: TextStyle(
-                            color: _focused
-                                ? theme.colorScheme.onSurface
-                                : theme.colorScheme.onSurfaceVariant,
-                            fontSize: Tokens.fontSizeSm,
-                          ),
-                          child: widget.title != null
-                              ? Text(widget.title!)
-                              : const SizedBox.shrink(),
-                        ),
-                      ),
+            child: DragToMoveArea(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onDoubleTap: WindowService.toggleMaximize,
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Tokens.spaceMd,
+                  ),
+                  child: DefaultTextStyle(
+                    style: TextStyle(
+                      color: _focused
+                          ? theme.colorScheme.onSurface
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontSize: Tokens.fontSizeSm,
                     ),
+                    child: widget.title != null
+                        ? Text(widget.title!)
+                        : const SizedBox.shrink(),
                   ),
                 ),
-              ],
+              ),
             ),
           ),
           ...?widget.trailing?.map(
@@ -345,34 +331,9 @@ Widget chromeActionButton(BuildContext context, Widget action) {
   );
 }
 
-/// 顶边缩放手柄：一条极窄的透明感应带，仅铺在标题栏拖拽区的最顶部。
-///
-/// 背景：隐藏标题栏 + 透明 Mica 后，系统顶边的缩放框缺失；而标题栏的
-/// [DragToMoveArea] 覆盖了整个拖拽区（含最顶端），会把顶边的拖动识别成
-/// 「移动窗口」——于是顶边几乎没有可用的缩放手柄。其余三边有原生边框、不受
-/// 影响，唯独顶边需要显式补回（这就是用户实测「其他三个边还好、顶部难触发」）。
-///
-/// 只铺在拖拽区、不压两端贴边的按钮（侧栏动作按钮 / 窗控按钮），故按钮的
-/// 点击区完好。`startResizing(ResizeEdge.top)` 发 `WM_NCLBUTTONDOWN + HTTOP`，
-/// 对无边框窗口同样生效（与 window_manager 的 `DragToResizeArea` 同一机制）。
-class _TopResizeHandle extends StatelessWidget {
-  const _TopResizeHandle();
-
-  /// 感应带高度：对齐系统窗口顶边缩放框的抓取厚度
-  /// （≈ SM_CXSIZEFRAME + SM_CXPADDEDBORDER，随 DPI 约 4~8px）。
-  static const double _height = 8;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: _height,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeUp,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) => windowManager.startResizing(ResizeEdge.top),
-        ),
-      ),
-    );
-  }
-}
+// 顶边缩放手柄曾在这里（`_TopResizeHandle`，两条 chrome 各铺一条 6~8px 感应带）。
+// 2026-09-22 搬到 `main.dart` 的 builder 层，改用 window_manager 的
+// `DragToResizeArea`（只圈 top / topLeft / topRight）：
+// ① 一处管全窗口 ⇒ 换布局不会再漏掉（漏了就是"顶边拖不动"，历史上真踩过）；
+// ② 两个**顶角**一并有了手柄（旧版只有 top）；
+// ③ 厚度收成一个常量（左/右/底三边仍是系统原生边框，不受影响）。

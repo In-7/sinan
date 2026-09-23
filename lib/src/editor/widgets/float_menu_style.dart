@@ -15,8 +15,10 @@ import '../../theme/tokens.dart';
 ///
 /// ## 与 `AppTheme.menuBorder` 的关系
 /// 那支函数收的是 **material_ui 的 `ColorScheme`**（应用侧类型），这里天然拿不到
-/// （子树里是官方 `ColorScheme`）——所以描边色直接取 `scheme.outlineVariant`，
-/// 与 `menuBorder` 用的是**同一个色源**，观感一致（这条差异只在类型层面）。
+/// （子树里是官方 `ColorScheme`）——所以改用它的**裸色版**
+/// [AppTheme.menuBorderColor]：同一个色源、同一个 APCA 钳制、同一个发丝宽度
+/// （`Tokens.hairlineWidth`）。**别再手写 `BorderSide(color: outlineVariant)`**：
+/// 那样在暗色下只有 Lc −8.2，等于没描边（2026-09-22 统一时发现的）。
 ///
 /// 场外（应用侧）的菜单**不要**用本函数：那边的 `menuTheme` 已经生效。
 MenuStyle sinanEditorFloatMenuStyle(BuildContext context) {
@@ -29,7 +31,16 @@ MenuStyle sinanEditorFloatMenuStyle(BuildContext context) {
     shape: WidgetStatePropertyAll<OutlinedBorder>(
       RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(Tokens.radiusSm),
-        side: BorderSide(color: scheme.outlineVariant),
+        // 与浮层同一道描边（发丝宽 + APCA 钳到 Lc 22）：此前这里是**裸的
+        // `outlineVariant`**，暗色下 `floatSurface` 上只有 Lc −8.2 ⇒ 等于没描边，
+        // 与 `popupMenuTheme` / `AppFloatSurface` 也不一致（2026-09-22 统一）。
+        side: BorderSide(
+          width: Tokens.hairlineWidth,
+          color: AppTheme.menuBorderColor(
+            scheme.outlineVariant,
+            theme.brightness,
+          ),
+        ),
       ),
     ),
     elevation: const WidgetStatePropertyAll<double>(AppTheme.menuElevation),

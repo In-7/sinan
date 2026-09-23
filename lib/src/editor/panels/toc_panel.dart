@@ -100,7 +100,6 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
   /// 文档结构是否已变而尚未反映到界面（[_recompute] 置位、[_refresh] 消费）。
   bool _entriesDirty = false;
 
-
   StreamSubscription<EditorTransactionValue>? _transactionSub;
 
   @override
@@ -185,8 +184,7 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
   /// "合并首块标题"的换算），供 [_refresh] 做差量判断——两处规则必须
   /// 保持一致，改一处要同步另一处。
   int _currentActiveItem() {
-    final (int, int) range =
-        widget.scrollController.visibleRangeNotifier.value;
+    final (int, int) range = widget.scrollController.visibleRangeNotifier.value;
     final bool mergeLeading = _entries.isNotEmpty && _entries.first.index == 0;
     final bool atTop = range.$1 == 0;
     final int active = activeTocIndex(
@@ -194,9 +192,7 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
       visibleRange: range,
       endInView: _endInView,
     );
-    return atTop
-        ? 0
-        : (active < 0 ? -1 : (mergeLeading ? active : active + 1));
+    return atTop ? 0 : (active < 0 ? -1 : (mergeLeading ? active : active + 1));
   }
 
   /// 文档**末尾是否已经落在视口里**（最后一块的下沿不再超出视口下沿）——
@@ -211,11 +207,7 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
     final int lastBlock = widget.editorState.document.root.children.length - 1;
     if (lastBlock < 0) return false;
     for (final position
-        in widget
-            .scrollController
-            .itemPositionsListener
-            .itemPositions
-            .value) {
+        in widget.scrollController.itemPositionsListener.itemPositions.value) {
       if (position.index == lastBlock) {
         return position.itemTrailingEdge <= 1;
       }
@@ -244,11 +236,7 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
     double lastVisibleTrailing = 0;
     double? lastBlockTrailing;
     for (final position
-        in widget
-            .scrollController
-            .itemPositionsListener
-            .itemPositions
-            .value) {
+        in widget.scrollController.itemPositionsListener.itemPositions.value) {
       if (position.index == entry.index) leadingEdge = position.itemLeadingEdge;
       if (position.itemTrailingEdge > lastVisibleTrailing) {
         lastVisibleTrailing = position.itemTrailingEdge;
@@ -370,70 +358,69 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
             child: ValueListenableBuilder<TextEditingValue>(
               valueListenable: widget.titleListenable,
               builder:
-                (BuildContext context, TextEditingValue value, Widget? _) {
-                  // 首条固定是**页面标题**（点击回到文档开头）——笔记标题在
-                  // 编辑器之外，文档里没有任何块能代表它，故在此单独构造。
-                  //
-                  // 正文**第一个块本身就是标题**时与它合并成一条：两者点击
-                  // 目标完全相同（都是"文档第 0 块"），分两条是同一个目标
-                  // 的重复；合并后标题为空则显示那条标题的文字。
-                  final bool mergeLeading =
-                      _entries.isNotEmpty && _entries.first.index == 0;
-                  final List<TocEntry> items = <TocEntry>[
-                    titleEntryOf(
-                      value.text,
-                      fallbackText: mergeLeading ? _entries.first.text : null,
-                    ),
-                    ..._entries.skip(mergeLeading ? 1 : 0),
-                  ];
-
-                  // "在页面顶部"（视口首个可见块就是文档第 0 块）时高亮首条：
-                  // 此时"页面标题"比"第一个标题块"更准确地表达用户位置。
-                  final bool atTop =
-                      widget.scrollController
-                          .visibleRangeNotifier
-                          .value
-                          .$1 ==
-                      0;
-                  final int active = activeTocIndex(
-                    entries: _entries,
-                    visibleRange:
-                        widget.scrollController.visibleRangeNotifier.value,
-                    endInView: _endInView,
-                  );
-                  // 章节高亮索引换算到 [items]：合并了首块标题时索引不变
-                  // （第 0 条就是它），否则整体 +1（-1 保持 -1）。
-                  final int activeItem = atTop
-                      ? 0
-                      : (active < 0 ? -1 : (mergeLeading ? active : active + 1));
-
-                  // 条目**全量构建**（几十条的成本可忽略），高度跟随内容自适应；
-                  // 只有在超出可用高度时外层滚动态才起作用（见上面的 Flexible）。
-                  // 不再有"激活项自动进可视区"逻辑——滚动态只是溢出兜底。
-                  return SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        left: Tokens.spaceMd,
-                        right: Tokens.spaceMd,
-                        bottom: Tokens.spaceLg,
+                  (BuildContext context, TextEditingValue value, Widget? _) {
+                    // 首条固定是**页面标题**（点击回到文档开头）——笔记标题在
+                    // 编辑器之外，文档里没有任何块能代表它，故在此单独构造。
+                    //
+                    // 正文**第一个块本身就是标题**时与它合并成一条：两者点击
+                    // 目标完全相同（都是"文档第 0 块"），分两条是同一个目标
+                    // 的重复；合并后标题为空则显示那条标题的文字。
+                    final bool mergeLeading =
+                        _entries.isNotEmpty && _entries.first.index == 0;
+                    final List<TocEntry> items = <TocEntry>[
+                      titleEntryOf(
+                        value.text,
+                        fallbackText: mergeLeading ? _entries.first.text : null,
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          for (int i = 0; i < items.length; i++)
-                            _itemOf(
-                              entry: items[i],
-                              isActive: i == activeItem,
-                              theme: theme,
-                              scheme: scheme,
-                            ),
-                          // 没有标题时在末尾追一条引导文案（首条入口仍在）。
-                          if (_entries.isEmpty) _hintOf(theme, scheme),
-                        ],
+                      ..._entries.skip(mergeLeading ? 1 : 0),
+                    ];
+
+                    // "在页面顶部"（视口首个可见块就是文档第 0 块）时高亮首条：
+                    // 此时"页面标题"比"第一个标题块"更准确地表达用户位置。
+                    final bool atTop =
+                        widget.scrollController.visibleRangeNotifier.value.$1 ==
+                        0;
+                    final int active = activeTocIndex(
+                      entries: _entries,
+                      visibleRange:
+                          widget.scrollController.visibleRangeNotifier.value,
+                      endInView: _endInView,
+                    );
+                    // 章节高亮索引换算到 [items]：合并了首块标题时索引不变
+                    // （第 0 条就是它），否则整体 +1（-1 保持 -1）。
+                    final int activeItem = atTop
+                        ? 0
+                        : (active < 0
+                              ? -1
+                              : (mergeLeading ? active : active + 1));
+
+                    // 条目**全量构建**（几十条的成本可忽略），高度跟随内容自适应；
+                    // 只有在超出可用高度时外层滚动态才起作用（见上面的 Flexible）。
+                    // 不再有"激活项自动进可视区"逻辑——滚动态只是溢出兜底。
+                    return SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          left: Tokens.spaceMd,
+                          right: Tokens.spaceMd,
+                          bottom: Tokens.spaceLg,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            for (int i = 0; i < items.length; i++)
+                              _itemOf(
+                                entry: items[i],
+                                isActive: i == activeItem,
+                                theme: theme,
+                                scheme: scheme,
+                              ),
+                            // 没有标题时在末尾追一条引导文案（首条入口仍在）。
+                            if (_entries.isEmpty) _hintOf(theme, scheme),
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
             ),
           ),
         ],
@@ -496,10 +483,23 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
           end: Tokens.spaceXs,
         ),
         decoration: BoxDecoration(
-          // 中性 onSurface，不染种子色（比例收敛进 activeTint 令牌）。
-          color: isActive ? AppTheme.activeTint(scheme.onSurface) : null,
+          // 「当前项」的统一读法（§5.1）：中性 tint 底，不染种子色。
+          color: isActive ? AppTheme.navSelectedTint(scheme.onSurface) : null,
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
         ),
+        // 3px primary 左指示条——与笔记列表项、设置左导航同一读法。
+        // 走 `foregroundDecoration`：**不占位**，激活与否文字都不横移。
+        foregroundDecoration: isActive
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                border: Border(
+                  left: BorderSide(
+                    color: AppTheme.navIndicator(scheme),
+                    width: Tokens.indicatorWidth,
+                  ),
+                ),
+              )
+            : null,
         child: Text(
           entry.text,
           maxLines: 1,
@@ -570,9 +570,7 @@ TocEntry titleEntryOf(String title, {String? fallbackText}) {
   final String fallback = (fallbackText ?? '').trim();
   return TocEntry(
     level: 0,
-    text: text.isNotEmpty
-        ? text
-        : (fallback.isNotEmpty ? fallback : '无标题'),
+    text: text.isNotEmpty ? text : (fallback.isNotEmpty ? fallback : '无标题'),
     index: 0,
     path: const <int>[],
     isTitle: true,
@@ -593,9 +591,7 @@ List<TocEntry> tocEntriesOf(Document document) {
     if (level is! int || level < 1 || level > 3) continue;
     final String text = (node.delta?.toPlainText() ?? '').trim();
     if (text.isEmpty) continue;
-    entries.add(
-      TocEntry(level: level, text: text, index: i, path: node.path),
-    );
+    entries.add(TocEntry(level: level, text: text, index: i, path: node.path));
   }
   return entries;
 }
@@ -640,8 +636,9 @@ bool tocJumpCanReachTop({
 }) {
   if (viewportHeight <= 0) return true; // 量不到视口：不武断拦
   final double trailing = trailingSpace / viewportHeight;
-  final double belowFold =
-      lastVisibleTrailingEdge > 1 ? lastVisibleTrailingEdge - 1 : 0;
+  final double belowFold = lastVisibleTrailingEdge > 1
+      ? lastVisibleTrailingEdge - 1
+      : 0;
   final double? lastTrailing = lastBlockTrailingEdge;
   if (lastTrailing != null) {
     final double needed = trailing + (lastTrailing > 1 ? lastTrailing - 1 : 0);

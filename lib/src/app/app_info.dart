@@ -15,6 +15,7 @@ abstract final class AppInfo {
   /// 一句话简介（设置 → 关于分区的副标题）。
   static const String tagline = '本地优先的流式写作工具：侧栏管理笔记，主区为沉浸式编辑器。';
 
-  /// 完整描述（官方 `showAboutDialog` 的 `applicationLegalese` 用它）。
+  /// 完整描述（关于面板的简介那一格用它 —— 它此前是官方 `showAboutDialog`
+  /// 的 `applicationLegalese`，2026-09-22 换成自绘玻璃面板后仍由它承担）。
   static const String description = '$tagline所有数据存于本机，无云端同步。';
 }

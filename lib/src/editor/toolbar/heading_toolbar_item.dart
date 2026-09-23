@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
@@ -100,10 +100,10 @@ class _BlockStyle {
 }
 
 const List<_BlockStyle> _styles = <_BlockStyle>[
-  _BlockStyle(null, '正文', LucideIcons.type300, 'Ctrl+Shift+B'),
-  _BlockStyle(1, '标题 1', LucideIcons.heading1300, 'Ctrl+Shift+T'),
-  _BlockStyle(2, '标题 2', LucideIcons.heading2300, 'Ctrl+Shift+G'),
-  _BlockStyle(3, '标题 3', LucideIcons.heading3300, 'Ctrl+Shift+J'),
+  _BlockStyle(null, '正文', tabler.Typography(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+B'),
+  _BlockStyle(1, '标题 1', tabler.H1(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+T'),
+  _BlockStyle(2, '标题 2', tabler.H2(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+G'),
+  _BlockStyle(3, '标题 3', tabler.H3(height: 24, width: 24, strokeWidth: 1.5), 'Ctrl+Shift+J'),
 ];
 
 class _SinanHeadingButton extends StatefulWidget {
@@ -177,11 +177,7 @@ class _SinanHeadingButtonState extends State<_SinanHeadingButton> {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(current.icon, size: Tokens.iconSm, color: color),
-          Icon(
-            LucideIcons.chevronDown300,
-            size: 12,
-            color: color.withValues(alpha: 0.7),
-          ),
+          tabler.ChevronDown(height: 12, width: 12, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7, ui.BlendMode.srcIn))),
         ],
       ),
       // 光标落在标题里时点亮（"你在某级标题上"），与旧的四按钮行为等价。
@@ -289,7 +285,7 @@ class _HeadingOverlay extends StatelessWidget {
             ),
             // 当前项打勾；快捷键**右对齐**标注（桌面软件菜单惯例）。
             if (active) ...<Widget>[
-              Icon(LucideIcons.check300, size: 14, color: scheme.onSurface),
+              tabler.Check(height: 14, width: 14, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
               const SizedBox(width: Tokens.spaceXs),
             ],
             Text(

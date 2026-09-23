@@ -47,9 +47,7 @@ class BlockStore {
     final List<_FlatBlock> flat = _flatten(document);
     final Map<String, _Existing> existing = _existingOf(noteId);
 
-    final Set<String> keep = <String>{
-      for (final _FlatBlock b in flat) b.id,
-    };
+    final Set<String> keep = <String>{for (final _FlatBlock b in flat) b.id};
     // 块可迁移（#5）的**安全前提**：被画布卡片引用的块（canvas_items.block_id）
     // 即便不在文档块树里，也**不许删**。否则"把块搬到画布"后，下一次文档保存
     // 的 replaceNoteBlocks 会把这块连同卡片一起删掉。所以删除集要排除这些块——
@@ -122,7 +120,8 @@ class BlockStore {
     if (rs.isEmpty) return null;
 
     // 先把所有节点建出来（含空 children），再按 parent_id 挂上去。
-    final Map<String, Map<String, Object?>> nodes = <String, Map<String, Object?>>{};
+    final Map<String, Map<String, Object?>> nodes =
+        <String, Map<String, Object?>>{};
     for (final Row row in rs) {
       final Object? props = _decodeProps(row['props_json'] as String?);
       nodes[row['id'] as String] = <String, Object?>{
@@ -137,7 +136,9 @@ class BlockStore {
       final String id = row['id'] as String;
       final String? parentId = row['parent_id'] as String?;
       final Map<String, Object?> node = nodes[id]!;
-      final Map<String, Object?>? parent = parentId == null ? null : nodes[parentId];
+      final Map<String, Object?>? parent = parentId == null
+          ? null
+          : nodes[parentId];
       if (parent == null) {
         roots.add(node); // 父节点缺失 ⇒ 顶到根，绝不丢块
       } else {
@@ -151,7 +152,9 @@ class BlockStore {
       'document': <String, Object?>{
         'id': 'root',
         'type': 'page',
-        'children': <Object?>[for (final Object? r in roots) _toOut(r! as Map<String, Object?>)],
+        'children': <Object?>[
+          for (final Object? r in roots) _toOut(r! as Map<String, Object?>),
+        ],
       },
     });
   }
@@ -259,7 +262,9 @@ class BlockStore {
   /// 投影侧总是写 `data`（默认 `{}`），而原始文档里个别节点可能压根没这个键；
   /// 不归一化的话这类笔记会永远校验失败、只能走回退分支。
   static Object? _normalize(Object? node) {
-    if (node is List) return <Object?>[for (final Object? c in node) _normalize(c)];
+    if (node is List) {
+      return <Object?>[for (final Object? c in node) _normalize(c)];
+    }
     if (node is! Map) return node;
     return <Object?, Object?>{
       for (final MapEntry<Object?, Object?> e in node.entries)
@@ -327,16 +332,16 @@ class BlockStore {
   }
 
   Map<String, _Existing> _existingOf(String noteId) => <String, _Existing>{
-        for (final Row r in db.select(
-          'SELECT id, fingerprint, ord, parent_id FROM blocks WHERE note_id = ?',
-          <Object?>[noteId],
-        ))
-          r['id'] as String: _Existing(
-            r['fingerprint'] as String,
-            r['ord'] as int,
-            r['parent_id'] as String?,
-          ),
-      };
+    for (final Row r in db.select(
+      'SELECT id, fingerprint, ord, parent_id FROM blocks WHERE note_id = ?',
+      <Object?>[noteId],
+    ))
+      r['id'] as String: _Existing(
+        r['fingerprint'] as String,
+        r['ord'] as int,
+        r['parent_id'] as String?,
+      ),
+  };
 
   /// 当前被画布卡片引用的全部 `block_id`（块可迁移 #5 用：这些块由画布托管，
   /// 即使不在任何文档块树里也不许在块投影里被删）。

@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:sinan/src/editor/toolbar/slash_menu_items.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 
@@ -155,8 +155,8 @@ void main() {
         return (widget as SelectionMenuIconWidget).icon;
       }
 
-      expect(iconOf(tableSlashMenuItem), LucideIcons.table300);
-      expect(iconOf(dividerSlashMenuItem), LucideIcons.minus300);
+      expect(iconOf(tableSlashMenuItem), Symbols.table);
+      expect(iconOf(dividerSlashMenuItem), Symbols.horizontal_rule);
     });
   });
 }

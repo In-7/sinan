@@ -33,23 +33,26 @@ Set<String> referencedCanvasMedia(
   for (final String content in canvasContents) {
     if (content.isEmpty) continue;
     try {
-      final dynamic decoded = jsonDecode(content);
+      // 边界：以下局部变量一律 `Object?` 而非 `dynamic`（2026-09-21 收紧）。
+      // 它们只被 `is` 收窄后使用，从没被当动态调用；`Object?` 让"忘了收窄就直接
+      // 取属性/下标"变成**编译错误**，而不是运行期才炸。
+      final Object? decoded = jsonDecode(content);
       if (decoded is! Map<String, dynamic>) continue;
-      final dynamic document = decoded['document'];
+      final Object? document = decoded['document'];
       if (document is! Map<String, dynamic>) continue;
 
       // 侧表（派生索引）与 items 取并集：旧存档可能只有其中一侧。
-      final dynamic manifest = document['media'];
+      final Object? manifest = document['media'];
       if (manifest is Map<String, dynamic>) {
         for (final String ref in manifest.keys) {
           add(ref);
         }
       }
-      final dynamic items = document['items'];
+      final Object? items = document['items'];
       if (items is Map<String, dynamic>) {
-        for (final dynamic item in items.values) {
+        for (final Object? item in items.values) {
           if (item is! Map<String, dynamic>) continue;
-          final dynamic src = item['src'];
+          final Object? src = item['src'];
           if (src is String) add(src);
         }
       }

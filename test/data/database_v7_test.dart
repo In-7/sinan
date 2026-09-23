@@ -29,14 +29,14 @@ void main() {
   }
 
   List<String> tableNames(Database db) => <String>[
-        for (final Row r in db.select(
-          "SELECT name FROM sqlite_master WHERE type IN ('table','view') "
-          'ORDER BY name',
-        ))
-          r['name'] as String,
-      ];
+    for (final Row r in db.select(
+      "SELECT name FROM sqlite_master WHERE type IN ('table','view') "
+      'ORDER BY name',
+    ))
+      r['name'] as String,
+  ];
 
-  test('v7：新表齐备，vec 表按约定缺席，userVersion 前进到 7', () {
+  test('v7：新表齐备，userVersion 前进到 7', () {
     final Database db = openMigrated();
 
     expect(db.userVersion, greaterThanOrEqualTo(7));
@@ -53,8 +53,9 @@ void main() {
     ]) {
       expect(names, contains(t), reason: '缺少表 $t');
     }
-    // 评审结论：sqlite-vec 那两张**成对**延后到接入 Ollama 时再建。
-    expect(names, isNot(contains('vec_chunks')));
+    // v10 已落地向量路（机制 A，docs/data_layer.md 6.7）：`vec_chunks` 是
+    // **普通表**；`vec_map` 是 vec0 时代的 rowid 映射，机制 A 下不该存在。
+    expect(names, contains('vec_chunks'));
     expect(names, isNot(contains('vec_map')));
   });
 
@@ -95,12 +96,10 @@ void main() {
     );
 
     // ③ UNINDEXED 列仍能取回原文做摘要。
-    final Row hit = db
-        .select(
-          "SELECT chunk_text FROM chunks_fts WHERE chunks_fts MATCH ? AND block_id = 'b1'",
-          <Object?>['"番茄"'],
-        )
-        .single;
+    final Row hit = db.select(
+      "SELECT chunk_text FROM chunks_fts WHERE chunks_fts MATCH ? AND block_id = 'b1'",
+      <Object?>['"番茄"'],
+    ).single;
     expect(hit['chunk_text'], '原文：番茄工作法');
   });
 
@@ -122,7 +121,12 @@ void main() {
       'INSERT INTO blocks (id, note_id, type, ord, created_at, updated_at, '
       "fingerprint) VALUES ('b2','n1','paragraph',0,1,1,'fp1:1:1')",
     );
-    expect(db.select("SELECT props_json FROM blocks WHERE id='b2'").single['props_json'], '{}');
+    expect(
+      db
+          .select("SELECT props_json FROM blocks WHERE id='b2'")
+          .single['props_json'],
+      '{}',
+    );
   });
 
   test('v7：删笔记级联清掉 blocks / ink_shards，母块级联清子块', () {
@@ -148,14 +152,13 @@ void main() {
 
     db.execute("DELETE FROM blocks WHERE id = '母'");
     expect(
-      db.select("SELECT COUNT(*) AS c FROM blocks WHERE note_id='n1'").single['c'],
+      db
+          .select("SELECT COUNT(*) AS c FROM blocks WHERE note_id='n1'")
+          .single['c'],
       0,
       reason: '删母块应级联删子块；index_state 也应随之清掉',
     );
-    expect(
-      db.select('SELECT COUNT(*) AS c FROM index_state').single['c'],
-      0,
-    );
+    expect(db.select('SELECT COUNT(*) AS c FROM index_state').single['c'], 0);
 
     db.execute("DELETE FROM notes WHERE id = 'n1'");
     expect(db.select('SELECT COUNT(*) AS c FROM ink_shards').single['c'], 0);
@@ -170,17 +173,17 @@ void main() {
     );
 
     void indexAs(String fp) => db.execute(
-          'INSERT OR REPLACE INTO index_state (block_id, fingerprint, model, '
-          'updated_at) VALUES (?,?,?,?)',
-          <Object?>['b1', fp, 'nomic-embed-text', 1],
-        );
+      'INSERT OR REPLACE INTO index_state (block_id, fingerprint, model, '
+      'updated_at) VALUES (?,?,?,?)',
+      <Object?>['b1', fp, 'nomic-embed-text', 1],
+    );
 
     indexAs('fp1:1:1');
     indexAs('fp1:1:2'); // 块改了，指纹变了
     expect(
-      db.select(
-        "SELECT fingerprint FROM index_state WHERE block_id='b1'",
-      ).single['fingerprint'],
+      db
+          .select("SELECT fingerprint FROM index_state WHERE block_id='b1'")
+          .single['fingerprint'],
       'fp1:1:2',
     );
     expect(db.select('SELECT COUNT(*) AS c FROM index_state').single['c'], 1);

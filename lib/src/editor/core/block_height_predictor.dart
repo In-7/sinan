@@ -267,9 +267,7 @@ class BlockHeightPredictor {
   /// ⇒ 折行位置与行盒与纯文本串一致（见 `note_code_syntax.dart` 的 `_tokenStyle`）。
   double _codeBlockHeightOf(Node node, double availableWidth) {
     // 与组件**同一份**等宽样式（`EditorTypography.code`：字号 / 行盒都吸附整像素）。
-    final TextStyle codeStyle = typography.code(
-      textStyleConfiguration.text,
-    );
+    final TextStyle codeStyle = typography.code(textStyleConfiguration.text);
     final double width =
         textWidthOf(node, availableWidth: availableWidth) -
         codeBlockInnerPadding.horizontal -
@@ -300,8 +298,7 @@ class BlockHeightPredictor {
   double _dividerHeightOf(Node node) {
     final BlockComponentBuilder? builder =
         standardBlockComponentBuilderMap[DividerBlockKeys.type];
-    final double padding =
-        builder?.configuration.padding(node).vertical ?? 16;
+    final double padding = builder?.configuration.padding(node).vertical ?? 16;
     final double height = builder is DividerBlockComponentBuilder
         ? builder.height
         : dividerHeight;
@@ -334,11 +331,13 @@ class BlockHeightPredictor {
       ? typography.headingPadding(node)
       : standardBlockComponentConfiguration.padding(node);
 
-  double _textHeightOf(Node node, double availableWidth) =>
-      _textHeightAtWidth(node, textWidthOf(node, availableWidth: availableWidth));
+  double _textHeightOf(Node node, double availableWidth) => _textHeightAtWidth(
+    node,
+    textWidthOf(node, availableWidth: availableWidth),
+  );
 
   /// 按**已给定**的文字宽度算文字高度（供 callout 这类"还要再扣一层内边距"
-    /// 的块使用——见 [_calloutHeightOf] 的坑 2）。
+  /// 的块使用——见 [_calloutHeightOf] 的坑 2）。
   double _textHeightAtWidth(Node node, double width) {
     // 官方 `AppFlowyRichText.build` 把"占位符那层"与正文 RichText 放在**同一个
     // `Stack`** 里（取较高者），所以两层都要算——空块由占位符那层给高度。
@@ -465,10 +464,9 @@ class BlockHeightPredictor {
 
   /// 容器块的子节点缩进（官方 `BlockComponentConfiguration.indentPadding`
   /// 的默认口径）——**只在水平方向**扣掉，用来估子块的折行宽度。
-  double indentWidthOf(Node node) =>
-      standardBlockComponentConfiguration
-          .indentPadding(node, TextDirection.ltr)
-          .horizontal;
+  double indentWidthOf(Node node) => standardBlockComponentConfiguration
+      .indentPadding(node, TextDirection.ltr)
+      .horizontal;
 
   /// 一个 span 的高度（px），按 **文本 + 样式** 缓存。
   ///
@@ -569,7 +567,9 @@ class BlockHeightPredictor {
       final TextStyle? style = child.style;
       if (style != null) {
         if (style.height != null) height = math.max(height, style.height!);
-        if (style.fontSize != null) fontSize = math.max(fontSize, style.fontSize!);
+        if (style.fontSize != null) {
+          fontSize = math.max(fontSize, style.fontSize!);
+        }
       }
       return true;
     });

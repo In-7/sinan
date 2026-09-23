@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../theme/app_theme.dart';
+
 /// 桌面窗口能力的唯一出口。
 ///
 /// 业务层不直接接触 window_manager——所有窗口操作都收在这里。
@@ -56,9 +58,8 @@ abstract final class WindowService {
   /// `"Windows 10 Home China" 10.0 (Build 26200)`（Win11 也写 "Windows 10"）。
   static int? _windowsBuild() {
     if (!Platform.isWindows) return null;
-    final RegExpMatch? match = RegExp(
-      r'Build (\d+)',
-    ).firstMatch(Platform.operatingSystemVersion);
+    final RegExpMatch? match = RegExp(r'Build (\d+)')
+        .firstMatch(Platform.operatingSystemVersion);
     return match == null ? null : int.tryParse(match.group(1)!);
   }
 
@@ -72,9 +73,10 @@ abstract final class WindowService {
       size: _initialSize,
       minimumSize: _minimumSize,
       center: true,
-      // 透明背景让 flutter_acrylic 的 Mica / solid 效果能够透出。
-      // Win10 无 Mica，flutter_acrylic 会自动回退为不透明纯色底，
-      // 不会出现"透明耳朵"或直角毛边。
+      // ⚠️ **首帧之前仍是透明**：此刻还读不到设置里的明暗（要等 provider 就绪），
+      // 写死一个不透明色会在暗色下闪一下亮色。主题一确定，
+      // [applyWindowBackground] 就把它切成**不透明**（见那里的说明）。
+      // 与材质时代一致（`setEffect` 也是首帧后才应用），观感不比从前差。
       backgroundColor: Color(0x00000000),
       titleBarStyle: TitleBarStyle.hidden,
     );
@@ -90,6 +92,43 @@ abstract final class WindowService {
     // 的 `flushThenExit`）。preventClose 会**先吞掉** WM_CLOSE（原生 `return -1`），
     // 引擎的官方流程根本收不到，于是只剩"自己 `PostQuitMessage`"这条半拆解的路
     // ——2026-09-17 实测：改完内容立刻关窗口，窗口卡在 "(未响应)"。
+  }
+
+  /// **上次应用到窗口自身的底色**（明暗）。与 [applyWindowBackground] 配合做幂等短路：
+  /// 明暗没变就不必再重设一次平台窗底（每次重设都是一次 DWM / 窗口服务器往返）。
+  static Brightness? _lastBaseBrightness;
+
+  /// 把**窗口自身**的底色设成 [AppTheme.windowBackground] 的**不透明**值。
+  ///
+  /// ## 为什么（2026-09-23）
+  /// 此前窗口是**全透明**的（`Color(0x00000000)`，Mica 时代留下的），底色靠 Flutter
+  /// 侧自绘 ⇒ 只要窗口透明，DWM 就得每帧把**整扇窗与桌面**做一次合成/混合
+  /// （它不知道我们的内容其实是实心的）。改成不透明后这笔就省了。
+  ///
+  /// ⚠️ **与 Mica 互斥**：Mica 要求窗口客户区**透明**（旧 `_applyWindowMaterial` 的
+  /// 注释原话："flutter_acrylic 会处理 DWM 属性与窗口透明 surface"）⇒ 哪天要上 Mica，
+  /// 这里必须改回 `Color(0x00000000)`，并让 [WindowBase] 那层重新担起"除左栏外铺底"。
+  ///
+  /// ⚠️ **Windows 的落点是未公开 API**：window_manager 在
+  /// `windows/window_manager.cpp:706` 用的是 `SetWindowCompositionAttribute` +
+  /// `ACCENT_ENABLE_GRADIENT`（不是画刷、也不是 `WM_ERASEBKGND`）。所以这一步
+  /// **必须实机验三条**：① Win11 圆角还在不在 ② 切明暗闪不闪 ③ 有没有黑底 / 露桌面。
+  /// ✅ 2026-09-23 **三条都已确认**（圆角由系统强制保留、切明暗不闪、无黑底）
+  /// ⇒ [WindowBase] 那层自绘底随即删除（每帧一次全屏 fill 也省掉了）。
+  ///
+  /// 🔧 **回退方案 C**（把那层自绘底加回来）**未启用**，完整配方记在
+  /// `docs/ui_rewrite_plan.md` §5.6：出现"露桌面 / 黑底 / 切明暗闪 / mac-linux 异常"
+  /// 任一情形就照它装回（代价是付回第二笔，第一笔不受影响）。
+  static Future<void> applyWindowBackground(Brightness brightness) async {
+    if (!isSupported) return;
+    if (_lastBaseBrightness == brightness) return;
+    await windowManager.setBackgroundColor(
+      AppTheme.windowBackground(brightness),
+    );
+    // ⚠️ **只在成功之后才记**：若记在 await 之前，一次平台调用失败就会被永久记住
+    // "已应用" ⇒ 之后不再重试。而自绘底已经删了，铺底失败就等于**露桌面**，
+    // 且要等用户下次切换明暗才自愈。现在失败会留给下一次 build 重试。
+    _lastBaseBrightness = brightness;
   }
 
   static Future<void> minimize() async {

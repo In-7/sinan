@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:appflowy_editor/appflowy_editor.dart';import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -436,11 +436,7 @@ class _ToggleBlockComponentWidgetState extends State<ToggleBlockComponentWidget>
           child: AnimatedRotation(
             turns: _collapsed ? 0 : 0.25,
             duration: const Duration(milliseconds: 200),
-            child: Icon(
-              LucideIcons.chevronRight300,
-              size: toggleArrowIconSize,
-              color: scheme.onSurfaceVariant,
-            ),
+            child: tabler.ChevronRight(height: toggleArrowIconSize, width: toggleArrowIconSize, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
           ),
         ),
       ),

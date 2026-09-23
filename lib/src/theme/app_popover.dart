@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'app_float_surface.dart';
+import 'app_theme.dart';
 import 'tokens.dart';
 
 /// 通用**锚定浮层**：点按钮弹出面板，点面板外任意处 / 按 Esc 关闭。
@@ -29,7 +30,12 @@ class AppPopover extends StatefulWidget {
     required this.anchorBuilder,
     required this.builder,
     required this.panelWidth,
+    this.blur = false,
   });
+
+  /// **磨砂档**：面板底色转半透明（[AppTheme.menuFill]）并在面板矩形内做局部模糊
+  /// （见 [AppFloatSurface.blur]）。主菜单用它（2026-09-22）。
+  final bool blur;
 
   /// 锚点构建器：`toggle` 开关浮层，`isOpen` 供高亮态使用。
   final Widget Function(BuildContext context, VoidCallback toggle, bool isOpen)
@@ -115,6 +121,11 @@ class _AppPopoverState extends State<AppPopover> {
             autofocus: true,
             child: AppFloatSurface(
               width: widget.panelWidth,
+              blur: widget.blur,
+              // 磨砂档必须**同时**把底色调透：实色会把模糊整块盖住。
+              color: widget.blur
+                  ? AppTheme.menuFill(Theme.of(context).brightness)
+                  : null,
               child: widget.builder(context, _hide),
             ),
           ),

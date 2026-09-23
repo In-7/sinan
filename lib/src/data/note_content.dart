@@ -101,8 +101,9 @@ class NoteContent {
   /// Quill 要求文档非空且以换行结尾：空文本给单个 `'\n'`（合法空文档），
   /// 非空文本确保换行收尾，否则 `quill.Document.fromJson` 直接抛异常。
   static List<dynamic> _deltaOfPlainText(String raw) {
-    final String insertText =
-        raw.isEmpty ? '\n' : (raw.endsWith('\n') ? raw : '$raw\n');
+    final String insertText = raw.isEmpty
+        ? '\n'
+        : (raw.endsWith('\n') ? raw : '$raw\n');
     return <dynamic>[
       <String, dynamic>{'insert': insertText},
     ];
@@ -115,9 +116,7 @@ class NoteContent {
         ? decoded
         : (decoded is Map ? decoded['ops'] : null);
     if (ops is! List) return _deltaOfPlainText('');
-    return <dynamic>[
-      for (final dynamic op in ops) _cleanOperation(op),
-    ];
+    return <dynamic>[for (final Object? op in ops) _cleanOperation(op)];
   }
 
   static Object? _tryDecode(String text) {
@@ -132,7 +131,8 @@ class NoteContent {
 
   static bool _jsonIsBlockTree(String text) {
     final Object? decoded = _tryDecode(text);
-    return decoded is Map && decoded['format'] == NoteDocumentAdapter.blocksFormat;
+    return decoded is Map &&
+        decoded['format'] == NoteDocumentAdapter.blocksFormat;
   }
 
   static bool _jsonHasOps(String text) {
@@ -144,9 +144,14 @@ class NoteContent {
   ///
   /// 旧版正文按钮写入过 0，Quill 渲染时会抛 `Invalid level 0`——
   /// 这是**给 quill 的兼容处理**，appflowy 侧不需要（其标题层为 1~6）。
-  static dynamic _cleanOperation(dynamic op) {
-    // `op['attributes']['header']` 是 **dynamic 调用**（绕过类型检查）——
+  static Object? _cleanOperation(Object? op) {
+    // `op['attributes']['header']` 曾是 **dynamic 调用**（绕过类型检查）——
     // 先落到局部变量并定类型，既让 lint 通过，也让这行在编译期可查。
+    //
+    // ⚠️ 参数与返回值是 `Object?` 而**不是** `dynamic`（2026-09-21 收紧）：它只被
+    // `is` 判过，从没被当动态调用过。用 `dynamic` 声明等于"允许"将来某行写出绕过
+    // 编译检查的调用；`Object?` 让那种写法直接编译不过 —— 动态性被锁死在"必须先
+    // 收窄"这唯一一条路上。
     final Object? rawAttributes = op is Map ? op['attributes'] : null;
     if (op is Map<String, dynamic> &&
         rawAttributes is Map &&

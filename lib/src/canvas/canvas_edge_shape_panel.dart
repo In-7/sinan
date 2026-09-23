@@ -1,4 +1,4 @@
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_popover.dart';
@@ -8,11 +8,11 @@ import 'kernel/canvas_edge.dart';
 
 /// 中文标签（面板用）。`none` 即无标记。
 String edgeShapeLabel(EdgeEndpointShape shape) => switch (shape) {
-      EdgeEndpointShape.none => '无',
-      EdgeEndpointShape.arrow => '箭头',
-      EdgeEndpointShape.dot => '圆点',
-      EdgeEndpointShape.diamond => '菱形',
-    };
+  EdgeEndpointShape.none => '无',
+  EdgeEndpointShape.arrow => '箭头',
+  EdgeEndpointShape.dot => '圆点',
+  EdgeEndpointShape.diamond => '菱形',
+};
 
 /// 工具条上的「端点形状」按钮：**只在选中一条连线时出现**，弹出
 /// [CanvasEdgeShapePanel]（起点 / 终点各自选形状）。
@@ -37,7 +37,7 @@ class CanvasEdgeShapeButton extends StatelessWidget {
                     tooltip: '端点形状：连线两端标记（箭头 / 圆点 / 菱形）',
                     isSelected: isOpen,
                     onPressed: toggle,
-                    icon: const Icon(LucideIcons.shapes300, size: Tokens.iconSm),
+                    icon: tabler.Shape(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                   ),
           builder: (BuildContext context, VoidCallback _) =>
               CanvasEdgeShapePanel(controller: controller),
@@ -75,8 +75,11 @@ class CanvasEdgeShapePanel extends StatelessWidget {
         final CanvasEdge? edge = controller.selectedEdge;
         if (edge == null) return const SizedBox.shrink();
 
-        Widget row(String title, EdgeEndpointShape current,
-            void Function(EdgeEndpointShape) onPick) {
+        Widget row(
+          String title,
+          EdgeEndpointShape current,
+          void Function(EdgeEndpointShape) onPick,
+        ) {
           return Padding(
             padding: const EdgeInsets.only(bottom: Tokens.spaceSm),
             child: Column(
@@ -86,6 +89,7 @@ class CanvasEdgeShapePanel extends StatelessWidget {
                 Text(title, style: theme.textTheme.labelMedium),
                 const SizedBox(height: Tokens.spaceXs),
                 SegmentedButton<EdgeEndpointShape>(
+                  showSelectedIcon: false, // 只换填充，不加对勾（§5.1）
                   selected: <EdgeEndpointShape>{current},
                   onSelectionChanged: (Set<EdgeEndpointShape> s) =>
                       onPick(s.first),
@@ -110,14 +114,14 @@ class CanvasEdgeShapePanel extends StatelessWidget {
             children: <Widget>[
               Text('连线端点形状', style: theme.textTheme.labelLarge),
               const SizedBox(height: Tokens.spaceSm),
-              row('起点', edge.startShape,
-                  controller.setSelectedEdgeStartShape),
+              row('起点', edge.startShape, controller.setSelectedEdgeStartShape),
               row('终点', edge.endShape, controller.setSelectedEdgeEndShape),
               const SizedBox(height: Tokens.spaceXs),
               Text(
                 '默认"起点无、终点箭头"——与旧画布一致；圆点=无向关联，菱形=分类/汇聚。',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),

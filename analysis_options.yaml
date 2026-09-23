@@ -43,6 +43,20 @@ linter:
     # 注：`prefer_final_parameters` / `unnecessary_await_in_return` 在 Dart 3.13
     # 已**废弃**（启用会报 deprecated_lint），不要加回来。
     # ── 类型安全 ──
+    # ⚠️ 纪律（2026-09-21 全量收紧）：**边界处用 `Object?`，不要用 `dynamic`**。
+    #
+    # JSON 解码拿到的东西一律 `final Object? x = json['k']`，再 `is` / `as` 收窄。
+    # `Object?` 与 `dynamic` 只差一件事，而正是要的那件：**前者不允许未收窄就取
+    # 属性 / 下标（编译期拦），后者允许（运行期才炸）**。所以 `dynamic` 是"把静态
+    # 类型关掉"，`Object?` 才是"类型未知但仍受管"。
+    #
+    # 全仓 `dynamic` 声明与 `as dynamic` 已归零（44 → 0，analyze 零问题 —— 说明
+    # 这些值原本就都被 `is` 收窄过，收紧只是把"约定"变成"编译期保证"）。
+    # 刻意的例外只有两处，都属"拓扑上就是弱类型"，不要顺手改：
+    #   · `Map<String, dynamic>` —— JSON 对象的通行表示（改 `Object?` 会波及
+    #     `jsonEncode` 与所有 `toJson` 签名，收益为零）；
+    #   · quill Delta 的 `List<dynamic>` —— 它是**第三方线上格式**，且换掉 quill
+    #     后该字段整体删除（见 `data/note_content.dart` 的类注释）。
     - avoid_dynamic_calls # dynamic 上取属性/调方法：绕过类型检查
     - always_declare_return_types
     - collection_methods_unrelated_type

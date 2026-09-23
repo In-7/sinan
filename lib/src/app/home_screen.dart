@@ -1,37 +1,25 @@
 import 'dart:async';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
 
 import '../canvas/canvas_switch.dart';
+import 'app_menu.dart';
+import '../command/commands.dart';
 import '../domain/note.dart';
+import 'home_hub.dart';
+import 'hub_nav.dart';
 import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
+import 'ask_panel.dart';
 import 'providers.dart';
 import '../theme/app_theme.dart';
+import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
 import '../window/app_title_bar.dart';
 import '../window/window_service.dart';
-import 'settings_panel.dart';
 
 import '../domain/settings.dart';
-
-/// 右上角「菜单」下拉项的枚举（设置 / 关于 / 明暗切换 / 退出）。
-enum _AppMenuItem { settings, about, toggleBrightness, exit }
-
-/// 当前明暗模式的短标签，挂在「明暗切换」菜单项右侧做状态提示。
-String _brightnessLabel(ThemeBrightnessMode m) => switch (m) {
-      ThemeBrightnessMode.light => '浅色',
-      ThemeBrightnessMode.dark => '深色',
-    };
-
-/// 明暗互切：浅 ↔ 深（不再有「跟随系统」第三态）。
-ThemeBrightnessMode _nextBrightness(ThemeBrightnessMode cur) =>
-    switch (cur) {
-      ThemeBrightnessMode.light => ThemeBrightnessMode.dark,
-      ThemeBrightnessMode.dark => ThemeBrightnessMode.light,
-    };
 
 /// 主界面（兼桌面窗口外壳）。
 ///
@@ -61,9 +49,63 @@ class HomeScreen extends ConsumerWidget {
     final bool isWide =
         MediaQuery.of(context).size.width >= _wideBreakpoint;
 
+    // ★ §5.6 阶段 2：**未选中 = 主页**（全窗口 Mica + 卡片入口分区）；选中 = 笔记 /
+    // 画布页。同一个 `selectedNoteIdProvider` 驱动，不新增页面栈——切换，不是叠加。
+    if (WindowService.isSupported && selectedId == null) {
+      return Scaffold(
+        // 主页的底就是窗口 Mica ⇒ Flutter 侧不铺任何底（见 [HomeHub] 的说明）。
+        backgroundColor: Colors.transparent,
+        // 导航板**铺满左侧**：上 / 左 / 下**不与窗口留缝**（2026-09-22 用户定，
+        // 取代原先"三方各 6px"）⇒ 它是贴着窗口三边的**通高列**，不再是"浮在窗口里
+        // 的一块板"（因此不再是四方圆角，见 [HubNav]）。
+        // ⚠️ 顶条只管右半（拖拽 + 窗控），应用名不占主页顶条 ⇒ 板的上缘就是窗口顶。
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const HubNav(),
+            Expanded(
+              child: Column(
+                children: <Widget>[
+                  const WindowStrip(
+                    trailing: <Widget>[
+                      AppMenuButton(iconSize: 20, captionStyle: true),
+                    ],
+                  ),
+                  // 内容区**不铺任何层**（与导航一致：直接坐窗口底）。0 号分区是
+                  // 主页（[HomeHub]，Bento 卡片格）；其余分区给"还没建"的明示——
+                  // 否则点了像没反应。接新页面：按 `hubNavSelectionProvider` 的
+                  // index 在这里分发。
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Consumer(
+                        builder:
+                            (BuildContext context, WidgetRef ref, Widget? _) {
+                              final int section = ref.watch(
+                                hubNavSelectionProvider,
+                              );
+                              if (section == 0) {
+                                return const HomeHub();
+                              }
+                              return _SectionPlaceholder(
+                                label: hubNavItems[section].label,
+                              );
+                            },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final Widget listPane = NoteListView(
       selectedId: selectedId,
-      onPick: (id) => ref.read(selectedNoteIdProvider.notifier).select(id),
+      // 不带 focus：从列表点开一篇时若把焦点抢进编辑器，键盘上下选笔记就断了。
+      onPick: (id) => ref.read(locateProvider.notifier).locate(noteId: id),
     );
 
     // 切换笔记/页面时淡入淡出，避免内容瞬跳。
@@ -108,19 +150,15 @@ class HomeScreen extends ConsumerWidget {
     if (WindowService.isSupported) {
       final List<Widget> sidebarActions = _sidebarActions(context, ref);
       // 标题栏里的菜单图标尺寸对齐窗控，且点击区/悬停与窗控完全一致。
-      final Widget menu = _menuButton(
-        context,
-        ref,
-        iconSize: 20,
-        captionStyle: true,
-      );
+      const Widget menu = AppMenuButton(iconSize: 20, captionStyle: true);
 
       if (isWide) {
         return Scaffold(
-          // 窗口底 = 系统 Mica 材质本身，Flutter 不再铺任何蒙版。
-          // 与 Win11 系统应用同构：Mica 自身亮度即背景色
-          // （浅 ≈#F3F3F3 / 深 ≈#202020），可直接承载列表文字；
-          // 只有内容层（编辑区白卡）才是不透明的。
+          // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder`
+          // 统一铺一层纯色（`AppTheme.windowBackground`，亮 #F8F8F6 / 暗 #171715）
+          // ⇒ 这里保持透明让它透出来（2026-09-22 取消窗口材质后就是这么分工的）。
+          // 那层底可直接承载列表文字（对比度有测试钉着）；
+          // 只有内容层（编辑区纸面）才是不透明的。
           backgroundColor: Colors.transparent,
           body: Row(
             children: <Widget>[
@@ -149,27 +187,48 @@ class HomeScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: AppTheme.contentCanvas(Theme.of(context).brightness),
                   ),
-                  child: Column(
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: <Widget>[
-                      WindowStrip(trailing: <Widget>[menu]),
-                      // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
-                      // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段，
-                      // 与左侧竖分界线用同一个语义令牌（[AppTheme.divider]）。
-                      //
-                      // ⚠️ 必须是**独立 1px 盒子**，两个理由：
-                      // 1. 画成 border 会被铺底的子层盖住出断口——同左侧竖线；
-                      // 2. 更不能加在 [WindowStrip] 自己的 border 上：那 1px 会
-                      //    从 32px 的条里向内扣，而窗控按钮有 32 的 minHeight，
-                      //    会被顶出容器（见 [Tokens.titleBarHeight]）。
-                      Container(
-                        height: 1,
-                        color: AppTheme.divider(Theme.of(context).colorScheme),
-                      ),
-                      Expanded(
-                        child: _ContentPanel(
-                          partition: true,
-                          child: detailPane(),
-                        ),
+                      // 纸面噪点（暗 2% / 亮 0）：铺在**纸色之上、内容之下**，
+                      // 见 [_PaperNoise] 的三条理由。
+                      _PaperNoise(brightness: Theme.of(context).brightness),
+                      Column(
+                        children: <Widget>[
+                          WindowStrip(
+                            // 回主页：走 `locateProvider.goHome()`（写选中态的唯一通道）。
+                            leading: <Widget>[
+                              IconButton(
+                                icon: tabler.TextDirectionLtr(height: 24, width: 24, strokeWidth: 1.5),
+                                tooltip: '主页',
+                                onPressed: () =>
+                                    ref.read(locateProvider.notifier).goHome(),
+                              ),
+                            ],
+                            trailing: const <Widget>[menu],
+                          ),
+                          // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
+                          // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段，
+                          // 与左侧竖分界线用同一个语义令牌（[AppTheme.divider]）。
+                          //
+                          // ⚠️ 必须是**独立 1px 盒子**，两个理由：
+                          // 1. 画成 border 会被铺底的子层盖住出断口——同左侧竖线；
+                          // 2. 更不能加在 [WindowStrip] 自己的 border 上：那 1px 会
+                          //    从 32px 的条里向内扣，而窗控按钮有 32 的 minHeight，
+                          //    会被顶出容器（见 [Tokens.titleBarHeight]）。
+                          Container(
+                            height: 1,
+                            color: AppTheme.divider(
+                              Theme.of(context).colorScheme,
+                            ),
+                          ),
+                          Expanded(
+                            child: _ContentPanel(
+                              partition: true,
+                              child: detailPane(),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -187,8 +246,15 @@ class HomeScreen extends ConsumerWidget {
         body: Column(
           children: <Widget>[
             WindowStrip(
-              leading: sidebarActions,
-              trailing: <Widget>[menu],
+              leading: <Widget>[
+                IconButton(
+                  icon: tabler.TextDirectionLtr(height: 24, width: 24, strokeWidth: 1.5),
+                  tooltip: '主页',
+                  onPressed: () => ref.read(locateProvider.notifier).goHome(),
+                ),
+                ...sidebarActions,
+              ],
+              trailing: const <Widget>[menu],
               title: 'sinan',
             ),
             Expanded(
@@ -234,168 +300,50 @@ class HomeScreen extends ConsumerWidget {
 
   /// 侧栏头部 / 窄屏顶条左侧动作区：新建 + 搜索（不含主菜单——
   /// 主菜单在 [WindowStrip] 里紧贴「最小化」左侧成组）。
-  List<Widget> _sidebarActions(BuildContext context, WidgetRef ref) =>
-      <Widget>[
-        IconButton(
-          icon: const Icon(LucideIcons.plus300),
-          tooltip: '新建笔记',
-          onPressed: () async {
-            final Note n = await ref.read(notesProvider.notifier).createNote();
-            ref.read(selectedNoteIdProvider.notifier).select(n.id);
-          },
-        ),
-        IconButton(
-          icon: const Icon(LucideIcons.search300),
-          tooltip: '搜索（开发中）',
-          onPressed: () {},
-        ),
-        // 新建画布笔记（[NoteKind.canvas]）：建好即选中，右栏直接出画布。
-        // 不再是"全屏路由的实验页"——画布已与块编辑器同页共存。
-        IconButton(
-          icon: const Icon(LucideIcons.frame300),
-          tooltip: '新建画布',
-          onPressed: () async {
-            final Note n = await ref
-                .read(notesProvider.notifier)
-                .createNote(kind: NoteKind.canvas);
-            ref.read(selectedNoteIdProvider.notifier).select(n.id);
-          },
-        ),
-      ];
-
-  /// 复刻 window_manager 的 [WindowCaptionButton]（最小化/最大化这类非关闭
-  /// 按钮）外观：46×32、直角、中性色悬停/按下、无水波纹。供标题栏菜单按钮
-  /// 对齐窗控（关闭按钮是红色，菜单不套红色）。
-  ButtonStyle _captionButtonStyle(BuildContext context) {
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
-    final Color hover = dark
-        ? Colors.white.withValues(alpha: 0.0605)
-        : Colors.black.withValues(alpha: 0.0373);
-    final Color pressed = dark
-        ? Colors.white.withValues(alpha: 0.0419)
-        : Colors.black.withValues(alpha: 0.0241);
-    return ButtonStyle(
-      minimumSize: WidgetStateProperty.all(const Size(46, 32)),
-      maximumSize: WidgetStateProperty.all(const Size(46, 32)),
-      padding: WidgetStateProperty.all(EdgeInsets.zero),
-      shape: WidgetStateProperty.all(
-        const RoundedRectangleBorder(),
+  List<Widget> _sidebarActions(BuildContext context, WidgetRef ref) => <Widget>[
+    // 走命令层而不是就地调 notifier：按钮与 `Ctrl+N` 必须是**同一条路**
+    // （§3.2 命令是权威面）——各留一份实现迟早漂移成"按钮能建、快捷键不能"。
+    IconButton(
+      icon: tabler.Plus(height: 24, width: 24, strokeWidth: 1.5),
+      tooltip: '新建笔记',
+      onPressed: () => unawaited(runCommandById(ref, 'note.new')),
+    ),
+    IconButton(
+      icon: tabler.Search(height: 24, width: 24, strokeWidth: 1.5),
+      tooltip: '搜索（开发中）',
+      onPressed: () {},
+    ),
+    // 问笔记（AI 问答）：**没配就不露出入口**——点了只会得到一句报错，
+    // 与「设置 → AI」默认关闭是同一口径（见 AppSettings.aiEnabled 的说明）。
+    if (_aiReady(ref))
+      const IconButton(
+        icon: tabler.Sparkles(height: 24, width: 24, strokeWidth: 1.5),
+        tooltip: '问笔记',
+        onPressed: showAskPanel,
       ),
-      backgroundColor: WidgetStateProperty.resolveWith(
-        (Set<WidgetState> states) {
-          if (states.contains(WidgetState.pressed)) return pressed;
-          if (states.contains(WidgetState.hovered)) return hover;
-          return Colors.transparent;
-        },
-      ),
-      // 窗控按钮没有水波纹，用透明 overlay 抑制 IconButton 默认 ripple。
-      overlayColor: WidgetStateProperty.all(Colors.transparent),
-    );
-  }
+    // 新建画布笔记（[NoteKind.canvas]）：建好即选中，右栏直接出画布。
+    // 不再是"全屏路由的实验页"——画布已与块编辑器同页共存。
+    IconButton(
+      icon: tabler.Crop(height: 24, width: 24, strokeWidth: 1.5),
+      tooltip: '新建画布',
+      onPressed: () => unawaited(runCommandById(ref, 'canvas.new')),
+    ),
+  ];
 
-  /// 主菜单下拉（设置 / 关于 / 明暗切换 / 退出）。单独抽出，便于挂到
-  /// [WindowStrip] 的 [WindowStrip.trailing]，紧贴最小化按钮左侧。
+  /// 「问笔记」入口是否可用：AI 开关打开 **且** 对话模型名已填。
   ///
-  /// [iconSize]：标题栏里要与窗控图标对齐时传 16~18；移动端 AppBar 无窗控
-  /// 按钮，走默认 24。
-  /// [captionStyle]：true 时让按钮的点击区/悬停与窗控（46×32 直角、中性色
-  /// 悬停）完全一致；移动端保持默认 AppBar 样式。
-  Widget _menuButton(
-    BuildContext context,
-    WidgetRef ref, {
-    double iconSize = 24,
-    bool captionStyle = false,
-  }) {
-    // 窗控外观仅标题栏需要；移动端 AppBar 保持默认样式。
-    final ButtonStyle? style = captionStyle ? _captionButtonStyle(context) : null;
-    return PopupMenuButton<_AppMenuItem>(
-      tooltip: '菜单',
-      position: PopupMenuPosition.under,
-      // ⚠️ 这个 0 是**功能性**的，不是省事——别"顺手清理"掉：
-      // `PopupMenuPosition.under` 对"用 `icon`（而不是 `child`）"的按钮会自动
-      // 上移 `padding.vertical / 2`（官方注释原文："Remove the padding of the
-      // icon button"），默认 padding 各 8 ⇒ 菜单顶边落进**按钮内部**、压住按钮
-      // 下沿 8px（用户实测："列表遮住按钮"）。置零即让那项补偿为 0。
-      // 视觉无变化：[_captionButtonStyle] 的 46×32 已把盒子定死、图标照旧居中，
-      // 而那个 style 里的 padding 本来就是 0；移动端（style=null）盒子由全局
-      // `iconButtonTheme` 的 40×40 兜住，同样不影响观感。
-      padding: EdgeInsets.zero,
-      // 再补 4px 呼吸：菜单顶边落在顶条下沿（那条 1px 分隔线）之下一点，
-      // 既不压按钮、也不贴线。
-      offset: const Offset(0, Tokens.spaceXs),
-      style: style,
-      icon: Transform.translate(
-          // chevron-down 的视觉重心偏下（V 尖端在下），与对称的窗控图标
-          // 并列时看着偏低。向上平移 1px 补偿后视觉居中。
-          offset: const Offset(0, 0),
-          child: Icon(LucideIcons.chevronDown300, size: iconSize),
-        ),
-        itemBuilder: (BuildContext ctx) {
-          final ThemeBrightnessMode mode =
-              ref.read(settingsProvider).brightnessMode;
-          Widget row(IconData icon, String label, [String? trailing]) => Row(
-                children: <Widget>[
-                  Icon(icon, size: 20),
-                  const SizedBox(width: 12),
-                  Text(label),
-                  if (trailing != null) ...<Widget>[
-                    const Spacer(),
-                    Text(
-                      trailing,
-                      style: Theme.of(ctx).textTheme.bodySmall,
-                    ),
-                  ],
-                ],
-              );
-          return <PopupMenuEntry<_AppMenuItem>>[
-            PopupMenuItem<_AppMenuItem>(
-              value: _AppMenuItem.settings,
-              child: row(LucideIcons.settings300, '设置'),
-            ),
-            PopupMenuItem<_AppMenuItem>(
-              value: _AppMenuItem.about,
-              child: row(LucideIcons.info300, '关于'),
-            ),
-            PopupMenuItem<_AppMenuItem>(
-              value: _AppMenuItem.toggleBrightness,
-              // 图标表示「点此切换到的目标态」：浅色时点下去进深色 → 月亮；
-              // 深色时 → 太阳。右侧文字仍是当前态提示，二者互补更直觉。
-              child: row(
-                mode == ThemeBrightnessMode.light
-                    ? LucideIcons.moon300
-                    : LucideIcons.sun300,
-                '明暗切换',
-                _brightnessLabel(mode),
-              ),
-            ),
-            PopupMenuItem<_AppMenuItem>(
-              value: _AppMenuItem.exit,
-              child: row(LucideIcons.logOut300, '退出'),
-            ),
-          ];
-        },
-        onSelected: (item) async {
-          switch (item) {
-            case _AppMenuItem.settings:
-              unawaited(showSettingsPanel(context));
-            case _AppMenuItem.about:
-              showAboutPanel(context);
-            case _AppMenuItem.toggleBrightness:
-              final ThemeBrightnessMode cur =
-                  ref.read(settingsProvider).brightnessMode;
-              ref
-                  .read(settingsProvider.notifier)
-                  .setBrightnessMode(_nextBrightness(cur));
-            case _AppMenuItem.exit:
-              await WindowService.close();
-          }
-        },
-      );
+  /// 嵌入模型**不**作为门槛：没填它只是退化成纯关键词检索（6.4 的降级），
+  /// 问答照样可用。
+  bool _aiReady(WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return settings.aiEnabled && settings.aiModel.trim().isNotEmpty;
   }
 
   /// 移动端 AppBar 动作：新建 + 搜索 + 主菜单。
-  List<Widget> _chromeActions(BuildContext context, WidgetRef ref) =>
-      <Widget>[..._sidebarActions(context, ref), _menuButton(context, ref)];
+  List<Widget> _chromeActions(BuildContext context, WidgetRef ref) => <Widget>[
+    ..._sidebarActions(context, ref),
+    const AppMenuButton(),
+  ];
 }
 
 /// 内容分区面板：画布色 + 偏淡的细边框（对比阴影更克制）。
@@ -458,7 +406,18 @@ class _ContentPanel extends StatelessWidget {
             color: AppTheme.contentCanvas(theme.brightness),
             borderRadius: radius,
           ),
-          child: ClipRRect(borderRadius: innerRadius, child: child),
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              // 纸面噪点（暗 2% / 亮 0）：夹在**纸色与内容之间**，见 [_PaperNoise]。
+              // 圆角处必须一起裁，否则四个角会露出方形颗粒。
+              _PaperNoise(
+                brightness: theme.brightness,
+                clipRadius: innerRadius,
+              ),
+              ClipRRect(borderRadius: innerRadius, child: child),
+            ],
+          ),
         ),
         // ⚠️ 描边**必须画在子层之上**：`DecoratedBox` 的边框画在子层之下，
         // 而编辑器顶部工具栏铺的是**不透明**的画布色（与面板同色）⇒ 边框被
@@ -478,6 +437,42 @@ class _ContentPanel extends StatelessWidget {
   }
 }
 
+/// **纸面噪点**：一层极淡颗粒，铺在**纸色之上、内容之下**
+/// （强度见 [AppTheme.paperNoiseAlpha]：暗 `2%` / 亮 `0` ⇒ 亮的直接不挂）。
+///
+/// ## 为什么必须夹在"纸色与内容之间"（三条，缺一条就白挂）
+/// 1. **铺到内容之上** ⇒ 颗粒糊在字上，文字边缘被打散，比不铺更糟；
+/// 2. **铺到纸色之下**（例如挂在 `main.dart` 的 builder 那层底上）⇒ 纸面**不透明**，
+///    直接把噪点整块盖住，等于没挂；
+/// 3. **圆角面板要一起裁**（[clipRadius]）⇒ 否则四角露出方形颗粒，一眼是 bug。
+///
+/// ## ⚠️ 它是**纯审美**，不治任何东西
+/// 纸面是纯色 ⇒ **没有色带**（色带是渐变的产物；而独立噪点图层也治不了渐变的色带，
+/// 2026-09-22 实测过）。所以唯一的理由是"纸感"——暗色下更能破掉纯黑的死板。
+/// **代价**：纸面就是阅读面，颗粒直接铺在字下面（字本身不糊，但字周的局部对比被削
+/// 一档）⇒ 上限压到 2%，比窗口底那档（≤5%）更保守。
+class _PaperNoise extends StatelessWidget {
+  const _PaperNoise({required this.brightness, this.clipRadius});
+
+  final Brightness brightness;
+
+  /// 内层裁切半径（圆角面板传它；直角页面不传）。
+  final BorderRadius? clipRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final double intensity = AppTheme.paperNoiseAlpha(brightness);
+    if (intensity <= 0) return const SizedBox.shrink();
+    final Widget noise = NoiseTexture(
+      intensity: intensity,
+      grain: AppTheme.windowNoiseGrain(brightness),
+    );
+    return clipRadius == null
+        ? noise
+        : ClipRRect(borderRadius: clipRadius!, child: noise);
+  }
+}
+
 class _EmptyDetail extends StatelessWidget {
   const _EmptyDetail({super.key});
 
@@ -485,4 +480,33 @@ class _EmptyDetail extends StatelessWidget {
   Widget build(BuildContext context) => const Center(
         child: Text('选择左侧笔记，或新建一条'),
       );
+}
+
+/// 占位分区的内容：诚实地说明"还没建"，而不是让人以为点了没反应。
+///
+/// 接真实页面时删掉这个类，在 `Consumer` 的分发处直接建对应页面。
+class _SectionPlaceholder extends StatelessWidget {
+  const _SectionPlaceholder({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text('「$label」还没建', style: theme.textTheme.titleMedium),
+          const SizedBox(height: Tokens.spaceSm),
+          Text(
+            '占位页——页面实现接进来后本提示自动消失',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

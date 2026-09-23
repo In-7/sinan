@@ -1,10 +1,9 @@
 import 'dart:async';
-import 'dart:ui' as ui;
-
-import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:material_ui/material_ui.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+import 'dart:ui' as ui;import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_popover.dart';
+import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_item.dart';
@@ -41,13 +40,13 @@ class CanvasInsertButton extends StatelessWidget {
         panelWidth: panelWidth,
         anchorBuilder:
             (BuildContext context, VoidCallback toggle, bool isOpen) =>
-                IconButton(
+                FocusRingIconButton(
                   tooltip: '插入形状（按住拖拽定尺寸）/ 图片',
                   // 形状工具生效期间按钮保持"选中"：否则用户看不出自己现在是在画
                   // 形状、还是已经回到选择工具（这正是"矩形像框选"的知觉根源）。
                   isSelected: isOpen || controller.tool == CanvasTool.shape,
                   onPressed: toggle,
-                  icon: const Icon(LucideIcons.shapes300, size: Tokens.iconSm),
+                  icon: tabler.Shape(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
                 ),
         builder: (BuildContext context, VoidCallback close) => Padding(
           padding: const EdgeInsets.all(Tokens.spaceXs),
@@ -56,7 +55,7 @@ class CanvasInsertButton extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               _MenuItem(
-                icon: LucideIcons.square300,
+                icon: tabler.Square(height: 24, width: 24, strokeWidth: 1.5),
                 label: '矩形',
                 onTap: () {
                   controller.setShapeTool(CanvasShapeKind.rectangle);
@@ -64,7 +63,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: LucideIcons.circle300,
+                icon: tabler.Circle(height: 24, width: 24, strokeWidth: 1.5),
                 label: '椭圆',
                 onTap: () {
                   controller.setShapeTool(CanvasShapeKind.ellipse);
@@ -72,7 +71,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: LucideIcons.image300,
+                icon: tabler.Photo(height: 24, width: 24, strokeWidth: 1.5),
                 label: '图片…',
                 onTap: () {
                   close();
@@ -82,7 +81,7 @@ class CanvasInsertButton extends StatelessWidget {
                 },
               ),
               _MenuItem(
-                icon: LucideIcons.gitBranch300,
+                icon: tabler.Hierarchy(height: 24, width: 24, strokeWidth: 1.5),
                 label: '思维导图',
                 onTap: () {
                   insertMindMap(controller);
