@@ -11,7 +11,8 @@ const Set<String> _allowedSizes = <String>{
   'Tokens.iconXxs', // 10：行内装饰记号（下拉箭头）—— 30px 槽位的算术逼出来的
   'Tokens.iconXs', // 14：次级小图标（勾选 / 关闭 / 星标 / 外链）
   'Tokens.iconSm', // 18：**编辑器官方容器内**专用（SVGIconItemWidget / 斜杠菜单）
-  'Tokens.iconMd', // 20：应用侧常规交互图标（主力）
+  'Tokens.iconMdSm', // 20：应用侧顶条辅助按钮（折叠面板等 18/24 之间）
+  'Tokens.iconMd', // 24：应用侧常规交互图标（主力）
   'Tokens.iconXl', // 40：空状态大图标
 };
 

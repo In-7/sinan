@@ -11,13 +11,13 @@ import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 主页骨架的回归（`docs/ui_rewrite_plan.md` §5.6 阶段 2）。
+/// 主页骨架的回归（Things 3 式一页纸，2026-09-24 重写）。
 ///
 /// 钉的是"主页是什么"这四条结构性事实：
-/// ① 未选中 = 主页（不是空面板）；② 卡片**都接了焦点环**（§5.2：主页卡片是新出现的
-/// 自绘交互件，不能又变成只有鼠标能用）；③ 点卡片 = 走 `locateProvider`（§4 的唯一
-/// 跳转通道）；④ **Bento 的主次**（2026-09-22）：大卡跨两列、同行的中卡顶对齐。
-/// 内容细节（搜索 / 更多）属于下一步，不在本文件范围。
+/// ① 未选中 = 主页（不是空面板）；② **行都接了焦点环**（§5.2：主页行是新出现的
+/// 自绘交互件，不能又变成只有鼠标能用）；③ 点行 = 走 `locateProvider`（§4 的唯一
+/// 跳转通道）；④ **永远单列**：行全宽等宽、垂直堆叠——一旦出现并排/不等宽，
+/// 就是退回了 Bento 卡片格（2026-09-24 明确弃用）。
 void main() {
   late Database db;
   late NoteStore notes;
@@ -35,12 +35,12 @@ void main() {
   tearDown(() => db.close());
 
   ProviderContainer newContainer() => ProviderContainer(
-    overrides: [
-      noteStoreProvider.overrideWithValue(notes),
-      settingsStoreProvider.overrideWithValue(settings),
-      appDataDirProvider.overrideWithValue(kDataDir),
-    ],
-  );
+        overrides: [
+          noteStoreProvider.overrideWithValue(notes),
+          settingsStoreProvider.overrideWithValue(settings),
+          appDataDirProvider.overrideWithValue(kDataDir),
+        ],
+      );
 
   /// [noteCount] 条笔记先建好再挂主页（建笔记走 `notesProvider.notifier`，
   /// 与产品路径同源）。
@@ -65,43 +65,44 @@ void main() {
     return container;
   }
 
-  testWidgets('空库：不给空卡片，直接指路', (WidgetTester tester) async {
+  testWidgets('空库：不给空行，直接指路', (WidgetTester tester) async {
     await pumpHub(tester);
 
     expect(find.text('还没有笔记'), findsOneWidget);
     expect(find.text('新建第一条'), findsOneWidget);
-    // 没有笔记 ⇒ 不渲染笔记卡片；但**新建入口仍在**（此时它是唯一有意义的事）⇒ 2 张卡。
+    // 空库时主页只有指路文案 + 一个 FilledButton，没有自绘行 ⇒ 没有焦点环。
     expect(
       find.byType(FocusRing),
-      findsNWidgets(2),
-      reason: '空库时不该有笔记卡片，但两个新建入口必须还在',
+      findsNothing,
+      reason: '空库没有行可交互；新建入口走 FilledButton（Material 自带焦点）',
     );
   });
 
-  testWidgets('有笔记：上次编辑的大卡 + 最近列表，卡片都接了焦点环', (WidgetTester tester) async {
+  testWidgets('有笔记：继续 + 最近 + 新建三段，行都接了焦点环', (WidgetTester tester) async {
     await pumpHub(tester, noteCount: 3);
 
-    expect(find.text('上次编辑'), findsOneWidget);
-    expect(find.text('最近编辑'), findsOneWidget);
-    // 3 篇笔记（1 大卡 + 2 最近）+ 2 个新建入口 = 5 张卡，每张都要能键盘聚焦。
+    expect(find.text('继续'), findsOneWidget);
+    expect(find.text('最近'), findsOneWidget);
+    expect(find.text('新建'), findsOneWidget);
+    // 3 篇笔记 ⇒ 继续 1 行 + 最近折叠头 1 + 最近 2 行 + 新建 ghost 2 行 = 6。
     expect(
       find.byType(FocusRing),
-      findsNWidgets(5),
-      reason: '主页卡片是新出现的自绘交互件 ⇒ 必须全部接进 Focus 树（§5.2）',
+      findsNWidgets(6),
+      reason: '主页行与折叠头都是自绘交互件 ⇒ 必须全部接进 Focus 树（§5.2）',
     );
   });
 
-  testWidgets('点卡片进入该笔记：走 locateProvider（唯一跳转通道）', (WidgetTester tester) async {
+  testWidgets('点行进入该笔记：走 locateProvider（唯一跳转通道）', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(tester, noteCount: 3);
 
     expect(container.read(selectedNoteIdProvider), isNull, reason: '主页 = 未选中');
 
-    // 第 3 张卡（下标 2）= 最近列表里的一篇：0 是大卡，1..2 是最近，3/4 是新建。
+    // FocusRing 视觉顺序：0 = 继续行，1 = 最近折叠头，2..3 = 最近行，4..5 = 新建。
     await tester.tap(find.byType(FocusRing).at(2));
     await tester.pumpAndSettle();
 
     final String? selected = container.read(selectedNoteIdProvider);
-    expect(selected, isNotNull, reason: '点了卡片却没有选中笔记');
+    expect(selected, isNotNull, reason: '点了行却没有选中笔记');
     expect(
       notes.allNotes().map((Note n) => n.id).toList(),
       contains(selected),
@@ -109,37 +110,58 @@ void main() {
     );
   });
 
-  /// **Bento 的结构闸门**（2026-09-22）：尺寸有主次才是 Bento，等大小卡片堆不是。
+  /// **单列闸门**（2026-09-24）：Things 式一页纸的结构事实。
   ///
-  /// 钉两条，都是"布局一改就会立刻被抓到"的：
-  /// ① 大卡**跨两列**（比中卡宽、也比中卡高）；
-  /// ② 同一行的两张中卡**顶对齐**、第二张在**右列**——这条同时兜住"退回单列"
-  ///    （`Wrap` 换行规则或被改成 `Column`）与"列宽算错"（间距没扣掉）。
-  testWidgets('Bento：大卡跨两列，中卡两列同行顶对齐', (WidgetTester tester) async {
-    // 4 篇 ⇒ 大卡 1 + 最近 3 + 新建 2；FocusRing 顺序 = 视觉顺序。
+  /// 钉的都是"布局一改就会立刻被抓到"的：
+  /// ① 所有行**全宽等宽**（出现不等宽 = 退回 Bento 的跨列卡）；
+  /// ② 行**垂直堆叠**（second 在 first 正下方、left 相同——出现并排 = 退回多列）；
+  /// ③ 内容列有 [HomeHub.maxWidth] 上限（不写死：钳制后 ≤ 700）。
+  testWidgets('单列：行全宽等宽、垂直堆叠，内容列不超 maxWidth', (WidgetTester tester) async {
+    // 4 篇 ⇒ 继续 1 + 最近头 1 + 最近 3 + 新建 2；FocusRing 顺序 = 视觉顺序。
     await pumpHub(tester, noteCount: 4);
 
     final Rect hero = tester.getRect(find.byType(FocusRing).at(0));
-    final Rect first = tester.getRect(find.byType(FocusRing).at(1));
-    final Rect second = tester.getRect(find.byType(FocusRing).at(2));
+    final Rect first = tester.getRect(find.byType(FocusRing).at(2));
+    final Rect second = tester.getRect(find.byType(FocusRing).at(3));
 
     expect(
       hero.width,
-      greaterThan(first.width),
-      reason: '大卡没跨两列 ⇒ 退化成"等大小卡片堆"（2026-09-22 明确否决过那种观感）',
+      first.width,
+      reason: '继续行与普通行不等宽 ⇒ 退回了 Bento 的"大卡跨两列"',
     );
+    expect(first.width, second.width, reason: '同一列的行应当等宽');
     expect(
-      hero.height,
-      greaterThan(first.height),
-      reason: '大卡不比中卡高 ⇒ 主次只剩宽度一条，读起来还是"一排卡片"',
+      second.top,
+      greaterThan(first.top),
+      reason: '行出现并排 ⇒ 退回了多列网格',
     );
-    expect(first.top, second.top, reason: '同一行的两张卡顶没对齐');
+    expect(first.left, second.left, reason: '行没有落到同一列');
     expect(
-      second.left,
-      greaterThan(first.left),
-      reason: '第二张没落到右列 —— 退回单列了，或列宽把间距算漏了',
+      first.width,
+      lessThanOrEqualTo(HomeHub.maxWidth),
+      reason: '内容列超出了 maxWidth 上限',
     );
-    expect(first.width, second.width, reason: '同一行的卡应当等宽');
+  });
+
+  testWidgets('折叠「最近」：头可切换，折叠时计数可见、行收起', (WidgetTester tester) async {
+    await pumpHub(tester, noteCount: 3);
+
+    // 折叠头 = FocusRing.at(1)。
+    await tester.tap(find.byType(FocusRing).at(1));
+    await tester.pumpAndSettle();
+
+    // 3 篇 ⇒ 最近里有 2 篇；折叠后行收起、计数出现。
+    expect(find.text('2 篇'), findsOneWidget, reason: '折叠时分组头应交代收起了几篇');
+    expect(
+      find.byType(FocusRing),
+      findsNWidgets(4), // 继续行 1 + 折叠头 1 + 新建 2；最近 2 行已收起。
+      reason: '折叠后「最近」的行不该还挂在树上',
+    );
+
+    // 再点一次展开回来。
+    await tester.tap(find.byType(FocusRing).at(1));
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusRing), findsNWidgets(6));
   });
 
   test('回主页（`locateProvider.goHome`）：清空选中与待消费的跳转请求', () {
@@ -152,5 +174,31 @@ void main() {
     container.read(locateProvider.notifier).goHome();
     expect(container.read(selectedNoteIdProvider), isNull);
     expect(container.read(locateProvider), isNull);
+  });
+
+  /// **收藏分区闸门**（2026-09-25 A 方案）：promotedAt 非空的笔记进主页
+  /// 「收藏」段，且能在主页就地取消收藏（行尾星标），取消后该段消失。
+  testWidgets('收藏分区：promoted 笔记出现，可就地取消收藏', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(tester, noteCount: 2);
+
+    // 默认无收藏 ⇒ 主页三段、无「收藏」头。
+    expect(find.text('收藏'), findsNothing);
+
+    // 收藏第一篇（与产品路径同源的 togglePromoted）。
+    final Note first =
+        container.read(notesProvider).value!.first;
+    await container.read(notesProvider.notifier).togglePromoted(first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('收藏'), findsOneWidget,
+        reason: '有收藏后主页应出现「收藏」分区头');
+    expect(find.byTooltip('取消收藏'), findsOneWidget,
+        reason: '收藏行的行尾星标应可就地取消收藏');
+
+    // 点星标取消收藏 ⇒ 分区消失（无收藏不出空分组头）。
+    await tester.tap(find.byTooltip('取消收藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('收藏'), findsNothing,
+        reason: '取消最后一枚收藏后「收藏」分区应整体消失');
   });
 }

@@ -126,6 +126,21 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
   SelectedNoteNotifier.new,
 );
 
+/// 左侧 [HubNav] 导航面板的折叠态（桌面双栏布局）。
+///
+/// 折叠后 [HomeScreen] 不再渲染 [HubNav]，整窗只留主区；顶条里的
+/// 折叠/展开按钮（[NavCollapseButton]）切换它。默认展开。
+class NavCollapsedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
+final navCollapsedProvider = NotifierProvider<NavCollapsedNotifier, bool>(
+  NavCollapsedNotifier.new,
+);
+
 /// 笔记列表（含增删改后自动刷新）。
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,
@@ -334,7 +349,13 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
       content,
       plainText: plainText,
     );
-    if (changed) state = AsyncData(_store.allNotes());
+    if (changed) {
+      state = AsyncData(_store.allNotes());
+      // **保存即索引**（关键词路）：blocks 双写刚落定 ⇒ 立刻同步 FTS 行，
+      // 保证"刚写完就能搜到"（全局搜索的底线，2026-09-25 用户定）。
+      // 关键词路是纯 SQL、毫秒级；语义路仍走设置面板的手动索引（要模型）。
+      ref.read(indexJobProvider).indexNoteKeywordPath(id);
+    }
   }
 
   /// 保存标题并刷新列表（标题显示在列表条目上）。
@@ -381,6 +402,9 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   Future<void> restoreNote(Note note) async {
     await _store.restore(note);
     state = AsyncData(_store.allNotes());
+    // 删除时清过它的 FTS 行 ⇒ 恢复后补回关键词索引（否则撤销回来的笔记
+    // 内容搜不到）。
+    ref.read(indexJobProvider).indexNoteKeywordPath(note.id);
     // 不带 focus：撤销的入口在列表的 toast 上，用户的手还在列表那边。
     ref.read(locateProvider.notifier).locate(noteId: note.id);
   }

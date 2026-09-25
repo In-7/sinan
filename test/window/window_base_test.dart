@@ -47,7 +47,7 @@ void main() {
 
   /// 搭一棵**微缩的真实树**：`WindowBase`（窗口底 + 顶边手柄）包住应用内容，内容
   /// 顶部是一条 [DragToMoveArea]——真实场景里那是自绘标题栏的拖拽区
-  /// （`app_title_bar.dart` 的 `SidebarHeader` / `WindowStrip`）。
+  /// （`app_title_bar.dart` 的 `WindowStrip`）。
   Future<void> pump(
     WidgetTester tester, {
     required Brightness brightness,
@@ -63,7 +63,7 @@ void main() {
               DragToMoveArea(
                 child: SizedBox(
                   width: double.infinity,
-                  height: Tokens.titleBarHeight,
+                  height: Tokens.titleBarHeightMain,
                 ),
               ),
               Expanded(child: SizedBox.expand()),
@@ -198,7 +198,7 @@ void main() {
     final Size size = tester.getSize(find.byType(DragToResizeArea));
     final double band = bandOf(tester);
 
-    // 带**之下**、仍在标题栏拖拽区里（`Tokens.titleBarHeight` 有 32px 富余）⇒
+    // 带**之下**、仍在标题栏拖拽区里（`Tokens.titleBarHeightMain` 有 36px 富余）⇒
     // 该是"移动窗口"。
     await dragAt(tester, Offset(size.width / 2, band + 12));
     expect(methods(), contains('startDragging'), reason: '标题栏拖不动窗口了');

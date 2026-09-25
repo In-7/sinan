@@ -224,11 +224,16 @@ class AppTheme {
   /// ⚠️ 两端必须**同色（都是白）只改 alpha**：写成 `Colors.transparent`
   /// （= 透明**黑**）会在渐变中段插出灰带，近黑面板上就是一道脏印。
   /// 闸门：`test/theme/glass_test.dart`（钉住"另一端是**白**的透明"）。
-  static LinearGradient glassSheen(Brightness brightness) => LinearGradient(
+  ///
+  /// [alphaScale]：面积很小的"玻璃片"（导航选中项）可以整体加力——默认 1
+  /// 不动全局标定值；越大越亮（>2 会读成塑料）。只有要加力的调用方传。
+  static LinearGradient glassSheen(Brightness brightness,
+      {double alphaScale = 1}) => LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
     colors: <Color>[
-      const Color(0xFFFFFFFF).withValues(alpha: glassSheenAlpha),
+      const Color(0xFFFFFFFF)
+          .withValues(alpha: (glassSheenAlpha * alphaScale).clamp(0.0, 1.0)),
       const Color(0xFFFFFFFF).withValues(alpha: 0),
     ],
     stops: const <double>[0, 0.45],
@@ -238,15 +243,45 @@ class AppTheme {
   /// 中间一条亮线。
   ///
   /// 两端淡出有两个好处：① 圆角处不会突然断头；② 不与两侧的描边抢边界。
-  static LinearGradient glassRim(Brightness brightness) {
+  /// [alphaScale] 同 [glassSheen]。
+  static LinearGradient glassRim(Brightness brightness,
+      {double alphaScale = 1}) {
     final Color rim = const Color(0xFFFFFFFF)
-        .withValues(alpha: glassRimAlpha(brightness));
+        .withValues(alpha: (glassRimAlpha(brightness) * alphaScale).clamp(0.0, 1.0));
     final Color clear = const Color(0xFFFFFFFF).withValues(alpha: 0);
     return LinearGradient(
       colors: <Color>[clear, rim, rim, clear],
       stops: const <double>[0, 0.08, 0.92, 1],
     );
   }
+
+  /// **玻璃底沿厚度边**（"玻璃片"的下缘）的黑度：按明暗分档。
+  ///
+  /// 玻璃片读出"厚度"要靠一对边：顶沿吃光（[glassRimAlpha]）+ 底沿投影（本值）。
+  /// ⚠️ 亮色只有 **8%**：近白板上一根黑线再重就成"描边"（本仓对常驻描边一贯
+  /// 否决）；暗色给到 **20%**——近黑底上黑线天然弱，靠更高 alpha 才与底分离。
+  static double glassBaseAlpha(Brightness brightness) =>
+      brightness == Brightness.light ? 0.08 : 0.20;
+
+  /// **玻璃底沿厚度边**：横向渐变，两端淡出（理由同 [glassRim]）。
+  ///
+  /// ⚠️ 两端必须用**透明黑**（不是透明白）：这层是"影"，渐变中段插白会发灰。
+  /// [alphaScale] 同 [glassSheen]。
+  static LinearGradient glassBaseEdge(Brightness brightness,
+      {double alphaScale = 1}) {
+    final Color base = const Color(0xFF000000)
+        .withValues(alpha: (glassBaseAlpha(brightness) * alphaScale).clamp(0.0, 1.0));
+    final Color clear = const Color(0xFF000000).withValues(alpha: 0);
+    return LinearGradient(
+      colors: <Color>[clear, base, base, clear],
+      stops: const <double>[0, 0.08, 0.92, 1],
+    );
+  }
+
+  /// **导航玻璃片的加力系数**：36px 的小面积上，全局玻璃档的标定亮度（为
+  /// 大面板调的）会"显不出来"——光要跟**面积**一起缩放。1.5 = sheen 5%→7.5%、
+  /// rim 亮 50%→75%、底沿 8%→12%。调手感就动这一个数（2 已是塑料临界）。
+  static const double glassSheetBoost = 1.5;
 
   /// ⚠️ 主菜单**曾经**靠覆写 `popupMenuTheme` 来取这层底色；2026-09-22 它换成自家
   /// 锚定浮层（`AppPopover(blur: true)`）之后就不需要了——那支覆写函数随之删除。

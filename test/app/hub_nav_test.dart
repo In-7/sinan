@@ -1,37 +1,180 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'dart:ui' show PointerDeviceKind;
 import 'package:sinan/src/app/hub_nav.dart';
+import 'package:sinan/src/app/providers.dart'
+    show NotesNotifier, notesProvider, selectedNoteIdProvider;
+import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sinan/src/theme/tokens.dart';
 
+/// 覆写用的假 Notifier：直接吐固定列表，不碰真库（[NotesNotifier.build] 原本
+/// 读 `_store.allNotes()`，本类绕开它 —— 测试只要确定的几条笔记）。
+class _FakeNotes extends NotesNotifier {
+  _FakeNotes(this._notes);
+
+  final List<Note> _notes;
+
+  @override
+  Future<List<Note>> build() async => _notes;
+}
+
 /// 导航板骨架的回归（`docs/ui_rewrite_plan.md` §5.6 阶段 2）。
 ///
-/// 钉三件结构性事实：四项都在且都接了焦点环（§5.2）、未选中项的底必须透明
-/// （`Material(color: null)` 的坑）、以及**点占位项之后主页能点回去**
-/// （2026-09-22 用户实报的死角：主页的 `onTap` 曾被设成 null）。
+/// 2026-09-24 用户定后的新结构：**顶行图标**（设置 / 搜索 / 主页）→ 分隔线 →
+/// **空间切换器**（笔记 / 画布，滑块滑动）→ **该空间的内联列表**（按
+/// [NoteKind] 过滤 [notesProvider]）。本文件钉住这个新结构的行为。
+///
+/// ⚠️ 一律用 [`scope`] 把 [notesProvider] **覆成固定两条**（一条普通笔记 + 一条
+/// 画布笔记）：列表现在读真实数据，不覆写就会撞真库、结果不确定。
 void main() {
+  Note note(String id, NoteKind kind, String title) => Note(
+    id: id,
+    kind: kind,
+    title: title,
+    content: '',
+    plainText: '',
+    contentHash: '',
+    createdAt: DateTime(2026, 9, 20),
+    revisedAt: DateTime(2026, 9, 23),
+  );
+
+  /// 两条：普通笔记「灵感碎片」+ 画布笔记「架构草图」——正好能被两个空间
+  /// 分别滤出，用来钉"切换器真的在过滤"。
+  final List<Note> fakeNotes = <Note>[
+    note('n1', NoteKind.spark, '灵感碎片'),
+    note('c1', NoteKind.canvas, '架构草图'),
+  ];
+
   Widget host({Widget? body}) => MaterialApp(
     theme: AppTheme.light(),
     home: Scaffold(body: body ?? const HubNav()),
   );
 
-  testWidgets('渲染全部导航项与分区标题，且每项都可键盘聚焦', (WidgetTester tester) async {
-    await tester.pumpWidget(ProviderScope(child: host()));
+  /// 把 [notesProvider] 覆成 [fakeNotes] 的 ProviderScope。
+  ProviderScope scope({Widget? body}) => ProviderScope(
+    overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
+    child: host(body: body),
+  );
 
-    // 顶部主操作（Craft 的 New Doc 同位）+ 分区项 + 底部设置。
-    expect(find.text('新建笔记'), findsOneWidget);
-    expect(find.text('主页'), findsOneWidget);
-    expect(find.text('全部笔记'), findsOneWidget);
+  testWidgets('渲染顶行图标 + 切换器分段 + 该空间的列表', (WidgetTester tester) async {
+    await tester.pumpWidget(scope());
+    // notesProvider 是异步的（AsyncNotifier.build）⇒ 必须等它落地，否则列表是空的。
+    await tester.pumpAndSettle();
+
+    // 顶行三枚是图标（Tooltip），不落成文本项。
+    expect(find.text('设置'), findsNothing,
+        reason: '设置是顶行图标（Tooltip），不是文本项');
+    expect(find.text('主页'), findsNothing,
+        reason: '主页是顶行图标（Tooltip），不是文本项');
+    expect(find.byTooltip('设置'), findsOneWidget);
+    // 搜索图标已接线（2026-09-25）：不再是"开发中"占位，tooltip 是真动作。
+    expect(find.byTooltip('搜索'), findsOneWidget);
+    expect(find.byTooltip('主页'), findsOneWidget);
+    // 「新建」按钮已撤（2026-09-24 后续定）。
+    expect(find.text('新建'), findsNothing);
+
+    // 切换器的两段标签都在（滑块在其下滑动，标签不动）。
+    expect(find.text('笔记'), findsOneWidget);
     expect(find.text('画布'), findsOneWidget);
-    expect(find.text('设置'), findsOneWidget);
-    // 分组结构（Craft 的侧栏留白主要花在这里）：没有组标题就是"一串按钮"。
-    expect(find.text('工作区'), findsOneWidget);
+
+    // 默认空间 = 笔记 ⇒ 只滤出非画布的那条。
+    expect(find.text('灵感碎片'), findsOneWidget);
+    expect(find.text('架构草图'), findsNothing,
+        reason: '画布笔记不该出现在笔记空间里',
+    );
+  });
+
+  /// **右键菜单闸门**（2026-09-25）：导航内联列表的条目与左侧 [NoteListView]
+  /// 同款——右键弹出 重命名 / 收藏 / 删除 三件事。
+  testWidgets('行右键 ⇒ 菜单含 重命名 / 收藏 / 删除', (WidgetTester tester) async {
+    await tester.pumpWidget(scope());
+    await tester.pumpAndSettle();
+
+    // 右键条目（buttons = 次键 ⇒ onSecondaryTapDown）。
+    await tester.tap(find.text('灵感碎片'), buttons: 2);
+    await tester.pumpAndSettle();
+
+    expect(find.text('重命名'), findsOneWidget,
+        reason: '菜单应含就地重命名');
+    // 未收藏 ⇒ 菜单项是「收藏」（不是「取消收藏」）。
+    expect(find.text('收藏'), findsOneWidget, reason: '菜单应含收藏切换');
+    expect(find.text('删除笔记'), findsOneWidget, reason: '菜单应含删除');
+  });
+
+  /// **hover 背景闸门**（2026-09-25 回归）：行 hover 必须真的把底色从透明换成
+  /// [AppTheme.boardFillHover]——否则"悬浮背景没有了"的回归就抓不到。
+  /// 此 Flutter 版本无 `tester.hover`，手动派发一个鼠标 hover 事件。
+  testWidgets('行 hover ⇒ 底色变 boardFillHover（非透明）', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(scope());
+    await tester.pumpAndSettle();
+
+    final Finder rowMaterial = find.ancestor(
+      of: find.text('灵感碎片'),
+      matching: find.byType(Material),
+    );
+    expect(tester.widget<Material>(rowMaterial.first).color, Colors.transparent,
+        reason: '未 hover 时底色必须透明');
+
+    // 手动派发鼠标移动事件（驱动 MouseTracker 触发 MouseRegion.onEnter）。
+    // 必须先 addPointer 把鼠标指针登记进 tracker，否则 move 事件不触发 hover。
+    final Offset at = tester.getCenter(find.text('灵感碎片'));
+    final TestPointer pointer = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(pointer.addPointer(location: at));
+    await tester.sendEventToBinding(pointer.hover(at));
+    await tester.pump();
+
     expect(
-      find.byType(FocusRing),
-      findsNWidgets(5),
-      reason: '导航项必须接进 Focus 树（Tab 可达 + 焦点环）',
+      tester.widget<Material>(rowMaterial.first).color,
+      isNot(equals(Colors.transparent)),
+      reason: 'hover 后底色应变成 boardFillHover，不能还是透明',
+    );
+  });
+
+  /// **滑动闸门**（2026-09-24 用户定的核心交互）：滑块必须真的从左半边
+  /// 滑到右半边，不能只是换色。
+  testWidgets('点「画布」⇒ 滑块滑到右半边', (WidgetTester tester) async {
+    await tester.pumpWidget(scope());
+
+    final Rect atNotes = tester.getRect(find.byKey(const Key('spaceThumb')));
+    await tester.tap(find.text('画布'));
+    await tester.pumpAndSettle();
+    final Rect atCanvas = tester.getRect(find.byKey(const Key('spaceThumb')));
+
+    expect(
+      atCanvas.left,
+      greaterThan(atNotes.left),
+      reason: '滑块应向右滑（画布段在右），实际 ${atCanvas.left} vs ${atNotes.left}',
+    );
+  });
+
+  /// **过滤闸门**：切空间 = 换下面列表的内容，且不碰主区选中。
+  testWidgets('切空间只换列表、不切主区', (WidgetTester tester) async {
+    final ProviderContainer container = ProviderContainer(
+      overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: host()),
+    );
+
+    await tester.tap(find.text('画布'));
+    await tester.pumpAndSettle();
+
+    // 列表换成画布笔记。
+    expect(container.read(navSpaceProvider), isTrue);
+    expect(find.text('架构草图'), findsOneWidget);
+    expect(find.text('灵感碎片'), findsNothing);
+
+    // 主区选中（0 = 主页）不受影响——否则一切空间主页就没了。
+    expect(
+      container.read(hubNavSelectionProvider),
+      0,
+      reason: '空间切换器不得写 hubNavSelectionProvider',
     );
   });
 
@@ -41,30 +184,26 @@ void main() {
   /// 若它不自己锁宽，内部的 `Row + Expanded` 会撞 "unbounded width constraints"。
   /// 挂在 `Scaffold body`（有界）里**测不出这个炸**——所以必须有这条按产品真实
   /// 挂载方式写的用例。
-  /// ⚠️ 2026-09-22 起宿主**不再给 Padding**（导航板铺满左侧、三方不留缝）⇒ 这里
-  /// 也跟着改成裸挂载，否则这条"真实宿主"用例会反过来保护一个已经不存在的写去。
   testWidgets('真实宿主（Row 的非 flex 子项）里布局不炸', (WidgetTester tester) async {
     await tester.pumpWidget(
-      ProviderScope(
-        child: host(
-          body: const Row(
-            children: <Widget>[
-              HubNav(),
-              Expanded(child: ColoredBox(color: Colors.red)),
-            ],
-          ),
+      scope(
+        body: const Row(
+          children: <Widget>[
+            HubNav(),
+            Expanded(child: ColoredBox(color: Colors.red)),
+          ],
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text('主页'), findsOneWidget);
+    expect(find.text('笔记'), findsOneWidget);
   });
 
-  /// 2026-09-22 用户定：导航板**铺满左侧**（主机不再给上/左/下 6px 缝）。
-  /// ⇒ 它现在是通高列，贴窗的两角**必须是方角**，否则窗口角会露出月牙。
-  testWidgets('铺满左侧 ⇒ 只圆右边两角', (WidgetTester tester) async {
-    await tester.pumpWidget(ProviderScope(child: host()));
+  /// 2026-09-24 用户定：撤掉新拟态浮雕，恢复贴窗三边 + 同色平铺。
+  /// 切换器滑块的阴影是**唯一**允许的例外，且只挂在滑块上（见 [_SpaceSwitch]）。
+  testWidgets('铺满左侧 ⇒ 只圆右边两角 + 同色底', (WidgetTester tester) async {
+    await tester.pumpWidget(scope());
 
     final DecoratedBox box = tester.widget<DecoratedBox>(
       find
@@ -75,16 +214,26 @@ void main() {
           .first,
     );
     final BoxDecoration decoration = box.decoration as BoxDecoration;
-    expect(decoration.color, AppTheme.boardFill(Brightness.light));
+    // 整个页面同色：列底 = 窗口底（撤掉浮雕后的平铺）。
+    expect(
+      decoration.color,
+      AppTheme.windowBackground(Brightness.light),
+      reason: '恢复同色平铺，不靠色差也不靠阴影分层',
+    );
     expect(
       decoration.borderRadius,
       const BorderRadius.horizontal(right: Radius.circular(Tokens.radiusLg)),
       reason: '贴窗的那两角若留圆角 ⇒ 窗口角露出两块窗口底的月牙，看着就不像一整列',
     );
+    expect(decoration.boxShadow, isNull, reason: '板底不允许阴影（浮雕已撤）');
   });
 
-  testWidgets('未选中的导航项底色是透明的（不能落到 surface 的近黑）', (tester) async {
-    await tester.pumpWidget(ProviderScope(child: host()));
+  testWidgets('未选中行的底色是透明的（不能落到 surface 的近黑）', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(scope());
+    // 等列表落地（否则只有顶行 3 个 Material）。
+    await tester.pumpAndSettle();
 
     final List<Material> materials = tester
         .widgetList<Material>(
@@ -94,35 +243,122 @@ void main() {
           ),
         )
         .toList();
-    expect(materials.length, 5, reason: '每个导航项一个 Material');
+    // 顶行 3 个图标 + 笔记空间的 1 条列表行 + 该行「···」按钮（Visibility 用
+    // maintainSize/maintainState，即便 hover 前不可见也仍驻树，自带一个透明
+    // Material）。切换器用 DecoratedBox，无 Material。
+    expect(materials.length, 5);
 
     final int transparent = materials
         .where((Material m) => m.color == Colors.transparent)
         .length;
     expect(
       transparent,
-      4,
+      5,
       reason:
-          '只有「主页」有选中 pill；其余四项（新建/全部笔记/画布/设置）必须透明，'
-          '让板底透出来——落到 surface 就是黑块',
+          '顶行**无选中态**（2026-09-24 用户定：主页只是动作）⇒ 5 个'
+          '（设置/搜索/主页图标 + 列表行 + 列表行的「···」按钮）必须全部透明'
+          '——落到 surface 就是黑块',
     );
   });
 
-  testWidgets('点占位项之后，主页必须还能点回去（2026-09-22 用户实报的死角）', (
+  /// **玻璃片选中态闸门**（2026-09-24 用户定）：选中项 = tint 底 + 三层纯绘制的光
+  /// （内光泽 / 顶沿光边 / 底沿厚度边）。钉两条：
+  /// ① 三层光**只在选中处**出现；② 光的三条渐变必须与 [AppTheme] 令牌同一实例。
+  testWidgets('选中 = 玻璃片：三层光只挂在选中处', (WidgetTester tester) async {
+    await tester.pumpWidget(scope());
+
+    bool hasGradient(Gradient? g) => g != null;
+
+    final List<DecoratedBox> lit = tester
+        .widgetList<DecoratedBox>(
+          find.descendant(
+            of: find.byType(HubNav),
+            matching: find.byType(DecoratedBox),
+          ),
+        )
+        .where((DecoratedBox box) =>
+            box.decoration is BoxDecoration &&
+            hasGradient((box.decoration as BoxDecoration).gradient))
+        .toList();
+
+    // 一层「玻璃片」= 一个 sheen（内光泽）+ rim + baseEdge ⇒ 数 sheen 的个数
+    // 就是数玻璃片的个数。当前恰好**一片**：切换器滑块（滑块本身就是抬起
+    // 的那块玻璃）。顶行主页图标已无选中态（2026-09-24 用户定：主页只是动作）。
+    // ⚠️ 切换器轨道的那条内渐变（凹井用）不是玻璃令牌，不会混进来。
+    final Gradient sheen =
+        AppTheme.glassSheen(Brightness.light, alphaScale: AppTheme.glassSheetBoost);
+    final int sheets = lit
+        .where((DecoratedBox box) =>
+            (box.decoration as BoxDecoration).gradient == sheen)
+        .length;
+    expect(
+      sheets,
+      1,
+      reason: '玻璃片应恰好一片（切换器滑块）；多 ⇒ 有非选中处也挂了光',
+    );
+    final Set<Gradient> gradients = lit
+        .map((DecoratedBox box) => (box.decoration as BoxDecoration).gradient!)
+        .toSet();
+    expect(gradients, containsAll(<Gradient>[
+      AppTheme.glassSheen(Brightness.light,
+          alphaScale: AppTheme.glassSheetBoost),
+      AppTheme.glassRim(Brightness.light, alphaScale: AppTheme.glassSheetBoost),
+      AppTheme.glassBaseEdge(Brightness.light,
+          alphaScale: AppTheme.glassSheetBoost),
+    ]), reason: '三层光必须直接取 AppTheme 令牌（含玻璃片加力），不许就地手搓');
+  });
+
+  /// **玻璃片与文字对齐闸门**（2026-09-24 实机截图抓到的错位）：
+  /// Row 进了 Stack 之后，Stack 默认 `topStart` 会把文字钉在上沿。
+  /// 现在列表行也带玻璃片（打开的那篇）⇒ 在列表行上验证同一条事实。
+  testWidgets('玻璃片与文字垂直居中（Stack 不得把行顶到上沿）', (WidgetTester tester) async {
+    final ProviderContainer container = ProviderContainer(
+      overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: host()),
+    );
+    await tester.pumpAndSettle();
+
+    // 点开那篇 ⇒ 该行披玻璃片，且主区选中被置为它。
+    await tester.tap(find.text('灵感碎片'));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), 'n1');
+
+    final Rect text = tester.getRect(find.text('灵感碎片'));
+    final Rect pill = tester.getRect(
+      find.ancestor(
+        of: find.text('灵感碎片'),
+        matching: find.byType(FocusRing),
+      ),
+    );
+
+    expect(
+      (text.center.dy - pill.center.dy).abs(),
+      lessThan(0.5),
+      reason: '文字中心与玻璃片中心差了 ${text.center.dy - pill.center.dy}px —— '
+          'Stack 对齐丢了，行又被钉到上沿了',
+    );
+  });
+
+  /// 主页入口的回归（2026-09-22 用户实报的死角：主页的 `onTap` 曾被设成 null）。
+  /// 主页只剩顶行图标这一个入口 ⇒ 钉住它点得动、且不炸。
+  testWidgets('顶行主页图标点得动（onTap 非 null 的回归）', (
     WidgetTester tester,
   ) async {
-    final ProviderContainer container = ProviderContainer();
+    final ProviderContainer container = ProviderContainer(
+      overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
+    );
+    addTearDown(container.dispose);
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: host()),
     );
 
-    await tester.tap(find.text('全部笔记'));
-    await tester.pump();
-    expect(container.read(hubNavSelectionProvider), 1);
+    await tester.tap(find.byTooltip('主页'));
+    await tester.pumpAndSettle();
 
-    // 修复前：主页的 onTap 是 null ⇒ 高亮被占位项拿走后就"回不去"。
-    await tester.tap(find.text('主页'));
-    await tester.pump();
+    expect(tester.takeException(), isNull);
     expect(container.read(hubNavSelectionProvider), 0);
   });
 }

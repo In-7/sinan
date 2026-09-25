@@ -1,36 +1,78 @@
-import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
+import 'dart:ui' as ui;
+
+// 键盘事件类型（切换器的 ← / →）：KeyDownEvent / LogicalKeyboardKey 在
+// `services.dart`，不由 material 转出。
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../command/commands.dart';
+import '../domain/note.dart';
+import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
-import '../theme/nav_ink.dart';
 import '../theme/tokens.dart';
+import '../app/undo_toast.dart';
+import 'providers.dart'
+    show NotesNotifier, locateProvider, notesProvider, selectedNoteIdProvider;
 import 'settings_panel.dart' show showSettingsPanel;
-
 /// 主页导航的分区（index 与 [hubNavSelectionProvider] 对应）。
 ///
-/// ⚠️ 除 0（主页）外都是**占位**——对应页面还没建。接新页面时：往这里加一项、挂进
-/// [hubNavGroups] 的某个组，再在 `home_screen.dart` 的主页分支按 index 分发。
-const List<({Widget icon, String label})> hubNavItems =
+/// ⚠️ 除 0（主页）与 [kSearchNavIndex]（搜索）外都是**占位**——对应页面还没建。
+/// 接新页面时：往这里加一项、挂进 [hubNavGroups] 的某个组，再在
+/// `home_screen.dart` 的主页分支按 index 分发。
+///
+/// 全局搜索的分区号（顶行搜索图标与主区分发共用这一个常量，别写死字面量）。
+const int kSearchNavIndex = 3;
+// ⚠️ 非 const：列表里混了外引彩色插画（CustomIcons.book/canvas 是方法调用，
+// 不能进 const 表达式）。其余项仍是 const 构造，无性能影响。
+List<({Widget icon, String label})> hubNavItems =
     <({Widget icon, String label})>[
-      (icon: tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '主页'),
-      (icon: tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '全部笔记'),
-      (icon: tabler.Crop(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), label: '画布'),
+      (
+        icon: const tabler.LayoutDashboard(
+          height: Tokens.iconMd,
+          width: Tokens.iconMd,
+          strokeWidth: 1.5,
+        ),
+        label: '主页',
+      ),
+      (
+        // 彩色插画图标（2026-09-25 用户定：书籍.svg，原色渲染，不走单色线形语言）。
+        icon: CustomIcons.book(),
+        label: '笔记',
+      ),
+      (
+        // 彩色插画图标（2026-09-24 用户定：阳光.svg，原色渲染）。
+        icon: CustomIcons.canvas(),
+        label: '画布',
+      ),
+      (
+        // 全局搜索（2026-09-25）：入口是顶行搜索图标，这里只是主区分发的 label。
+        // 单色线形——搜索是"工具"不是"空间"，不与笔记/画布的彩色插画混排。
+        icon: const tabler.Search(
+          height: Tokens.iconMd,
+          width: Tokens.iconMd,
+          strokeWidth: 1.5,
+        ),
+        label: '搜索',
+      ),
     ];
 
-/// 导航板的**分组**（显示用）：组标题（null = 不显示标题）+ 组内分区 index。
+/// **切换器选中的"空间"**：`false` = 笔记空间（除画布外的笔记），
+/// `true` = 画布空间（[NoteKind.canvas]）。
 ///
-/// Craft 的侧栏留白主要花在这里：分区标题 + 组间距，让"一串按钮"变成"有组织的
-/// 导航"（2026-09-22 对照实机截图的结论）。
-const List<({String? title, List<int> indices})> hubNavGroups =
-    <({String? title, List<int> indices})>[
-      (title: null, indices: <int>[0]),
-      (title: '工作区', indices: <int>[1, 2]),
-    ];
+/// ⚠️ 与 [hubNavSelectionProvider] **刻意解耦**（2026-09-24 用户定）：后者驱动
+/// 主区（0 = 主页），本值只驱动切换器滑动 + 下面内联列表的**过滤**，**不切主区**
+/// ——否则切一次空间，主区就被换成"_SectionPlaceholder"，主页没了。
+final navSpaceProvider = NotifierProvider<NavSpace, bool>(NavSpace.new);
+
+class NavSpace extends Notifier<bool> {
+  @override
+  bool build() => false; // 默认笔记空间
+
+  void select(bool isCanvas) => state = isCanvas;
+}
 
 /// 主页导航当前选中的分区（0 = 主页）。
 ///
@@ -47,26 +89,31 @@ class HubNavSelection extends Notifier<int> {
   void select(int index) => state = index;
 }
 
-/// 导航板里一行的左缩进：外层 6 + 行内 10 ⇒ 图标起于 16，**标签起于 44**
-/// （[HubNav] 的分区标题按 44 对齐，改这里要同步改 [_GroupTitle] 的 left）。
-const double _kLabelInset = 44;
-
 /// 主页左侧的**导航板**（`docs/ui_rewrite_plan.md` §5.6，2026-09-22 对齐 Craft）。
 ///
-/// 结构照 Craft 的侧栏抄：**顶部主操作**（新建）→ 分隔线 → 分组（组标题 + 组内项）
-/// → 底部固定项（设置）。底 = [AppTheme.boardFill]（**近实中性色**，见其说明——
-/// "通透感 ≠ 低不透明度"）。
+/// 结构（2026-09-24 用户定）：**顶部图标行**（设置 / 搜索 / 主页，横向均布）
+/// → 分隔线 → **空间切换器**（[_SpaceSwitch]，笔记 / 画布滑动切换）→
+/// **该空间的内联列表**（[_SpaceItemList]，按 [NoteKind] 过滤 [notesProvider]）。
+/// 底 = [AppTheme.windowBackground]（与窗口同色平铺，见下）。
 ///
-/// ## ⚠️ 它是**贴着窗口三边的通高列**（2026-09-22 用户定）
-/// 宿主（`home_screen.dart`）不给它任何边距 ⇒ **上 / 左 / 下三条边都贴在窗口边上**。
-/// 由此派生两条：
-/// 1. **只圆右侧两角**（`BorderRadius.horizontal`）——贴窗的那两个角必须是
-///    方角：留圆角会在 window 角上留下两块"窗口底色的月牙"（你能看到"它不是一整列"）。
-///    🔧 想要四角全方（Notion / VS Code 那种）就改成 `BorderRadius.zero`。
-/// 2. 它不再是"浮在窗口底上的一块板" ⇒ **分界只靠明度差**（`boardFill` vs
-///    [AppTheme.windowBackground]），别再指望靠留白与圆角去承担层次。
+/// ## 切换器只换"看哪个空间"，不切主区（2026-09-24 用户定）
+/// 原先「笔记 / 画布」是两行导航项（= 主区的目的地）。现在它们降级为**空间
+/// 过滤器**：切换器写 [navSpaceProvider]（不碰 [hubNavSelectionProvider]，后者
+/// 仍驱动主区 0 = 主页），下面列表随之过滤；点列表项才真的打开那篇笔记
+/// （走 `locateProvider`）。
+///
+/// ## 主页不在列表里（2026-09-24 用户定）
+/// 列表里的「主页」行撤掉，功能并入顶行主页图标：它既是入口（`select(0)`）
+/// 也是"我在主页"的指示——`selected == 0` 时它披玻璃片（[_GlassSheet]），
+/// 与列表项的选中语言完全同款。
+///
+/// ## 同色平铺（2026-09-24 用户定）：贴窗三边、无阴影无边距
+/// 新拟态浮雕试了三轮后整体撤掉；列底与窗口底**同色**
+/// （[AppTheme.windowBackground]），不靠色差也不靠阴影分层——整页恢复同色后，
+/// 这一列在视觉上就是窗口的一部分。圆角回到"只圆右侧两角"：贴窗的两角必须是
+/// 方角，否则窗口角露出两块窗口底的月牙。
 class HubNav extends ConsumerWidget {
-  const HubNav({super.key, this.width = 220});
+  const HubNav({super.key, this.width = 275});
 
   /// 板宽。**它就是这一列的全部宽度**（此前"不含窗口左缘 6px 间距"那句已作废：
   /// 间距取消了，宿主不再留缝）。
@@ -75,82 +122,100 @@ class HubNav extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
-    final int selected = ref.watch(hubNavSelectionProvider);
+    // 当前空间（false = 笔记，true = 画布）：只驱动切换器 + 下面列表的过滤。
+    final bool isCanvasSpace = ref.watch(navSpaceProvider);
 
-    // 圆角：**只圆右边两角**（见类注释）——上 / 左 / 下三条边贴在窗口边上。
+    // 圆角：**只圆右边两角**——上 / 左 / 下贴窗（2026-09-24 用户定：恢复贴边），
+    // 贴窗的两角若留圆角，窗口角会露出两块窗口底的月牙。
     const BorderRadius radius = BorderRadius.horizontal(
       right: Radius.circular(Tokens.radiusLg),
     );
+
     return SizedBox(
       width: width,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          // ⚠️ 这层现在是**回退底**：shader 未就绪（老 GPU / 测试环境）时看到的就是它；
-          // 就绪后 mesh 铺在它上面（不透明 ⇒ 把它整块盖住）。
-          // 🔧 要四角全方（Notion / VS Code 那种）就改成 `BorderRadius.zero`。
-          color: AppTheme.boardFill(theme.brightness),
+          // 整个页面**同色**（2026-09-24 用户定：撤掉浮雕后恢复平铺）——
+          // 列底 = 窗口底，不靠色差也不靠阴影分层。
+          color: AppTheme.windowBackground(theme.brightness),
           borderRadius: radius,
         ),
-        // ⚠️ **必须裁切**：mesh 画的是满矩形 ⇒ 不裁的话右边两角会露出方角
-        // （压在圆角底上，看着像 bug）。
+        // **必须裁切**：底色是满矩形，右边两角的圆角靠它收口。
         child: ClipRRect(
           borderRadius: radius,
-          // 🎨 青瓷釉底（纵向渐变 + 极淡颗粒 + 同 pass 抖动 ⇒ 无 8-bit 色带）。
-          // `painter` 画在 child **之下**；shader 未就绪时它是 null ⇒ 只剩回退底。
-          //
-          // ⚠️ **订阅 [NavInk.readyNotifier]**：preload 在 `runApp` 之后才异步完成，
-          // 若不在这里接信号，首帧之后的釉面就绪不会触发重绘（要用户点一下才出来）。
-          // `child` 是整列导航、只建一次，翻信号时只重建外层 CustomPaint。
-          child: ValueListenableBuilder<bool>(
-            valueListenable: NavInk.readyNotifier,
-            builder: (BuildContext context, bool _, Widget? child) => CustomPaint(
-              painter: NavInk.painter(theme.brightness),
-              child: child,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const SizedBox(height: Tokens.spaceSm),
-                // 顶部主操作：Craft 的 "New Doc" 同位——最常用的动作不该埋在内容区里。
-                _NavItem(
-                  icon: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                  label: '新建笔记',
-                  selected: false,
-                  onTap: () => unawaited(runCommandById(ref, 'note.new')),
-                ),
-                const SizedBox(height: Tokens.spaceSm),
-                // 分隔线**内缩**（Craft 的线不顶到板边）；用极淡描边色，不另造令牌。
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Tokens.spaceMd,
-                  ),
-                  child: Container(
-                    height: 1,
-                    color: AppTheme.cardStroke(theme.brightness),
-                  ),
-                ),
-                for (final ({String? title, List<int> indices}) group
-                    in hubNavGroups) ...<Widget>[
-                  if (group.title != null) _GroupTitle(title: group.title!),
-                  for (final int i in group.indices)
-                    _NavItem(
-                      icon: hubNavItems[i].icon,
-                      label: hubNavItems[i].label,
-                      selected: i == selected,
-                      onTap: () =>
-                          ref.read(hubNavSelectionProvider.notifier).select(i),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // 图标行上呼吸 = 行下呼吸（2026-09-24 用户定：上下等距 8，
+              // 此前上 16 / 下 8，图标行看着偏沉）。
+              const SizedBox(height: Tokens.spaceSm),
+              // 顶部图标行：主页 / 搜索 / 设置（2026-09-24 用户定，原顶部
+              // 「新建」挪到列表中段）。均布横向铺开——参考图的语言：
+              // 一排安静的工具图标，而不是一列按钮。
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: <Widget>[
+                  _TopAction(
+                    icon: CustomIcons.settings(
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
+                    tooltip: '设置',
+                    onTap: showSettingsPanel,
+                  ),
+                  _TopAction(
+                    icon: CustomIcons.search(
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: '搜索',
+                    onTap: () {
+                      // 正开着笔记时先回主页再切搜索分区——否则 select 只改
+                      // 主区分发依据、右栏仍停在编辑器，"点了没反应"。
+                      ref.read(locateProvider.notifier).goHome();
+                      ref
+                          .read(hubNavSelectionProvider.notifier)
+                          .select(kSearchNavIndex);
+                    },
+                  ),
+                  _TopAction(
+                    // 顶行三枚全用外引 Remix（2026-09-24 用户定：home-4 /
+                    // search-ai / settings-2，主页在右）。裸 SVG 无主题桥接 ⇒
+                    // 显式给主题灰，且必须与旁边 tabler 列表图标的着色
+                    // （AppIconTheme 桥接的 onSurfaceVariant）一致。
+                    // 主页**无选中态**（2026-09-24 用户定）：侧栏一切换就"不在
+                    // 主页"了，常亮一块玻璃片反而撒谎；它只是个"回主页"的
+                    // 动作，悬浮反馈足够。
+                    icon: CustomIcons.home(
+                      size: 20,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    tooltip: '主页',
+                    onTap: () {
+                      // 2026-09-25：主页图标**同时**清选中态 + 回主页——
+                      // 否则在「已打开某篇」时它只切导航板分区、右栏仍停在编辑器，
+                      // 看着像"点了没反应"。
+                      ref.read(hubNavSelectionProvider.notifier).select(0);
+                      ref.read(locateProvider.notifier).goHome();
+                    },
+                  ),
                 ],
-                const Spacer(),
-                const _NavItem(
-                  icon: tabler.Settings(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                  label: '设置',
-                  selected: false,
-                  onTap: showSettingsPanel,
-                ),
-                const SizedBox(height: Tokens.spaceSm),
-              ],
-            ),
+              ),
+              // 顶行与切换器之间**不再有分隔线**（2026-09-24 用户定：淡线也撤，
+              // 靠留白分节）。2026-09-25 用户定：间距收到 4px，更紧凑。
+              const SizedBox(height: 4),
+              // **空间切换器**（滑动）：选中哪半边，下面列表就过滤成哪类笔记。
+              // 2026-09-24 用户定：取代原先两行「笔记 / 画布」导航项——那两行
+              // 是"目的地"，现在是"空间过滤"，点列表项才真的打开笔记。
+              _SpaceSwitch(
+                selected: isCanvasSpace,
+                onChanged: (bool v) =>
+                    ref.read(navSpaceProvider.notifier).select(v),
+              ),
+              const SizedBox(height: Tokens.spaceMd),
+              // 该空间的**内联列表**（真实笔记，按 kind 过滤）。
+              const Expanded(child: _SpaceItemList()),
+            ],
           ),
         ),
       ),
@@ -158,61 +223,31 @@ class HubNav extends ConsumerWidget {
   }
 }
 
-/// 分区标题（Craft 的 "Starred" / "Folders" 同位）：小号灰字，**与项标签左对齐**。
-class _GroupTitle extends StatelessWidget {
-  const _GroupTitle({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(
-        left: _kLabelInset,
-        right: Tokens.spaceMd,
-        top: Tokens.spaceLg,
-        bottom: Tokens.spaceXs,
-      ),
-      child: Text(
-        title,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-/// 导航板里的一行：图标 + 标签，高 36，圆角 8。
+/// 顶部图标行里的一个**工具图标**（设置 / 搜索 / 主页）：36×36 方形热区、
+/// 圆角 8、hover 叠一档淡底、Tooltip 交代身份。
 ///
-/// 状态（2026-09-22 对齐 Craft）：
-/// - **选中 = 中性 pill**（[AppTheme.navSelectedTint]，onSurface 10%）——Craft 的选中
-///   没有 accent 也没有指示条，`accent` 省给真正需要它的地方；文字升到 onSurface + w600。
-/// - 悬停 = [AppTheme.boardFillHover]（叠在板底上的量，刻意轻）。
+/// **无选中态**（2026-09-24 用户定）：顶行是"动作"不是"位置"——主页图标
+/// 只是"回主页"，侧栏一切换就"不在主页"了，常亮一块玻璃片反而撒谎。
+/// 反馈全靠 hover（[AppTheme.boardFillHover]）。
 ///
-/// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
-/// 会落到 canvasColor（= `surface` = 近黑的窗口底色）⇒ 每个未选中项都自己画一块
-/// 黑方块，把板底盖住（2026-09-22 用户实报"还是黑色显示"）。
-class _NavItem extends StatefulWidget {
-  const _NavItem({
+/// ⚠️ 静止态必须显式 `Colors.transparent`（`Material(color: null)` 会落到
+/// canvasColor = 近黑的窗口底色 ⇒ 黑方块，2026-09-22 用户实报）。
+class _TopAction extends StatefulWidget {
+  const _TopAction({
     required this.icon,
-    required this.label,
-    required this.selected,
+    required this.tooltip,
     required this.onTap,
   });
 
   final Widget icon;
-  final String label;
-  final bool selected;
+  final String tooltip;
   final VoidCallback onTap;
 
   @override
-  State<_NavItem> createState() => _NavItemState();
+  State<_TopAction> createState() => _TopActionState();
 }
 
-class _NavItemState extends State<_NavItem> {
+class _TopActionState extends State<_TopAction> {
   final FocusNode _focus = FocusNode();
   bool _hover = false;
 
@@ -224,18 +259,16 @@ class _NavItemState extends State<_NavItem> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color fill = widget.selected
-        ? AppTheme.navSelectedTint(theme.colorScheme.onSurface)
-        : _hover
-        ? AppTheme.boardFillHover(theme.brightness)
+    final Brightness brightness = Theme.of(context).brightness;
+    final Color fill = _hover
+        ? AppTheme.boardFillHover(brightness)
         : Colors.transparent;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: FocusRing(
-        focusNode: _focus,
-        borderRadius: BorderRadius.circular(8),
+    return FocusRing(
+      focusNode: _focus,
+      borderRadius: BorderRadius.circular(8),
+      child: Tooltip(
+        message: widget.tooltip,
         child: Material(
           color: fill,
           borderRadius: BorderRadius.circular(8),
@@ -249,27 +282,705 @@ class _NavItemState extends State<_NavItem> {
             onHover: (bool v) => setState(() => _hover = v),
             onTap: widget.onTap,
             child: SizedBox(
+              width: 36,
               height: 36,
-              child: Row(
-                children: <Widget>[
-                  const SizedBox(width: 10),
-                  widget.icon,
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      widget.label,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.selected
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurfaceVariant,
-                        fontWeight: widget.selected ? FontWeight.w600 : null,
+              child: Center(child: widget.icon),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// **玻璃片的三层光**（选中态共用）：内光泽 + 顶沿光边 + 底沿厚度边——
+/// 顶沿吃光、底沿投影，一对方位边读出"一块薄玻璃片躺在板上"。
+///
+/// 全部**纯绘制**（三条渐变），无 saveLayer、不随重绘付费（Liquid Glass 的
+/// 低配釉面版；透光/折射那件只有模糊能给，见 [AppTheme] 玻璃档说明）。
+/// 全部 `IgnorePointer` 且画在内容之下——光改的是"材质"，不给内容加滤镜。
+/// 宿主的 `Material(clipBehavior: Clip.antiAlias)` 负责把光收进圆角。
+///
+/// ⚠️ 必须放在 `Positioned.fill` 里用（本类是**铺满宿主**的光层）。
+/// 加力系数走 [AppTheme.glassSheetBoost]（小面积玻璃片的专用档）。
+class _GlassSheet extends StatelessWidget {
+  const _GlassSheet({required this.brightness});
+
+  final Brightness brightness;
+
+  @override
+  Widget build(BuildContext context) {
+    const double boost = AppTheme.glassSheetBoost;
+    return Stack(
+      children: <Widget>[
+        // ① 内光泽：竖向，上沿最亮 → 45% 归零。
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: AppTheme.glassSheen(
+                  brightness,
+                  alphaScale: boost,
+                ),
+              ),
+            ),
+          ),
+        ),
+        // ② 顶沿光边：一条亮线、两端淡出。
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: AppTheme.glassRim(brightness, alphaScale: boost),
+              ),
+              child: const SizedBox(height: 1),
+            ),
+          ),
+        ),
+        // ③ 底沿厚度边：一条影线、两端淡出——与 ② 成对读出厚度。
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: AppTheme.glassBaseEdge(brightness, alphaScale: boost),
+              ),
+              child: const SizedBox(height: 1),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// **空间切换器**：「笔记 / 画布」两段，玻璃滑块在轨道里**滑动**（220ms）。
+///
+/// 混血方案（2026-09-24 用户定，要"互动性和触发感"）：
+/// - **轨道 = 凹陷的井**：[AppTheme.boardFill]（比列底深一档）+ 内渐变
+///   （顶沿暗、底沿亮 ⇒ 读作"凹进去"）；
+/// - **滑块 = 抬起的玻璃片**：底取 [AppTheme.windowBackground]（= 列底，比井亮
+///   一档）+ [_GlassSheet] 三层光 + **极淡凸阴影**（下黑上白，blur 5 / 偏移 2）
+///   ⇒ 既有新拟态的实体按压感，又是全列同一套玻璃光语言；
+/// - 两段标签**静止不动**（iOS 分段控件语言），滑块在其下滑动 ⇒ 文字不会跟着
+///   位移、也不会被不透明滑块盖住（滑块画在标签**之下**）。
+///
+/// ⚠️ 阴影只挂在这一枚小滑块上——整板浮雕是 2026-09-24 撤掉的方案，不许回潮。
+/// 全部纯绘制（渐变 + boxShadow），无 saveLayer。
+class _SpaceSwitch extends StatefulWidget {
+  const _SpaceSwitch({required this.selected, required this.onChanged});
+
+  /// `true` = 画布空间（滑块在右半边）。
+  final bool selected;
+
+  /// 切到哪个空间（`true` = 画布）。
+  final ValueChanged<bool> onChanged;
+
+  @override
+  State<_SpaceSwitch> createState() => _SpaceSwitchState();
+}
+
+class _SpaceSwitchState extends State<_SpaceSwitch> {
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness brightness = theme.brightness;
+    // 井的内壁厚度 = 滑块与轨道之间露出的那条边。
+    const double trackPad = 3;
+    const double height = 36;
+    // 新拟态的"凹凸"全部来自这一对色差：井（深）vs 滑块（= 列底，浅）。
+    final Color trackFill = AppTheme.boardFill(brightness);
+    final Color thumbFill = AppTheme.windowBackground(brightness);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: FocusRing(
+        focusNode: _focus,
+        borderRadius: BorderRadius.circular(Tokens.radiusLg),
+        child: Focus(
+          focusNode: _focus,
+          // ← / → 切空间（桌面端键盘流：整个切换器是一个 Tab 停靠点）。
+          onKeyEvent: (FocusNode _, KeyEvent event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                widget.onChanged(false);
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                widget.onChanged(true);
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
+          },
+          child: LayoutBuilder(
+            builder: (BuildContext _, BoxConstraints c) {
+              final double seg = (c.maxWidth - 2 * trackPad) / 2;
+              return SizedBox(
+                height: height,
+                child: Stack(
+                  children: <Widget>[
+                    // ① 轨道（凹陷的井）。
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: trackFill,
+                          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+                        ),
+                        // 内渐变：顶暗底亮 ⇒ 读作"凹"（反过来就是"凸"）。
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(Tokens.radiusLg),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: <Color>[
+                                  Colors.black.withValues(alpha: 0.05),
+                                  Colors.transparent,
+                                  Colors.transparent,
+                                  Colors.white.withValues(alpha: 0.03),
+                                ],
+                                stops: const <double>[0, 0.18, 0.82, 1],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  const SizedBox(width: Tokens.spaceSm),
-                ],
+                    // ② 滑块（抬起的玻璃片）：left 在 0 ↔ seg 之间动画。
+                    AnimatedPositioned(
+                      key: const Key('spaceThumb'),
+                      left: trackPad + (widget.selected ? seg : 0),
+                      top: trackPad,
+                      width: seg,
+                      height: height - 2 * trackPad,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: thumbFill,
+                          borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
+                          boxShadow: <BoxShadow>[
+                            // 下缘投影（暗）。
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.10),
+                              blurRadius: 5,
+                              offset: const Offset(0, 2),
+                            ),
+                            // 上缘受光（白）——与下缘成对，才读作"抬起"。
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              blurRadius: 3,
+                              offset: const Offset(0, -1),
+                            ),
+                          ],
+                        ),
+                        // 圆角收口：把三层光裁进滑块（同 Material 的 Clip.antiAlias）。
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
+                          child: _GlassSheet(brightness: brightness),
+                        ),
+                      ),
+                    ),
+                    // ③ 两段（画在滑块**之上** ⇒ 文字不会被不透明滑块盖住）。
+                    Row(
+                      children: <Widget>[
+                        _Segment(
+                          icon: CustomIcons.book(size: 16),
+                          label: '笔记',
+                          active: !widget.selected,
+                          onTap: () => widget.onChanged(false),
+                        ),
+                        _Segment(
+                          icon: CustomIcons.canvas(size: 16),
+                          label: '画布',
+                          active: widget.selected,
+                          onTap: () => widget.onChanged(true),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 切换器里的**一段**（左 = 笔记 / 右 = 画布）：彩色插画图标 + 标签，**静止不动**，
+/// 由底下滑动的玻璃滑块指示"哪段是活的"。
+///
+/// 用 [GestureDetector] 而不是 `InkWell`：命中区要完全透明（滑块的凸阴影就是
+/// 唯一的反馈），且不需要 `Material` 祖先去画水波纹。
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final Widget icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              icon,
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: active
+                      ? theme.colorScheme.onSurface
+                      : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: active ? FontWeight.w600 : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 导航板里的一行：图标 + 标签，高 36，圆角 8。
+///
+/// 状态：
+/// - **选中 = 玻璃片**（2026-09-24 用户定，取代裸 tint pill）：底仍是
+///   [AppTheme.navSelectedTint]（onSurface 10%，"我在哪"的中性读法不变），
+///   之上叠三层**纯绘制的光**——内光泽 + 顶沿光边 + **底沿厚度边**
+///   （[AppTheme.glassBaseEdge]）：顶沿吃光、底沿投影，一对方位边读出
+///   "一块薄玻璃片躺在板上"。无 saveLayer、不随重绘付费（Liquid Glass 的
+///   低配釉面版；透光/折射那件只有模糊能给，见 [AppTheme] 玻璃档说明）。
+/// - 悬停 = [AppTheme.boardFillHover]（刻意轻，与全应用"再叠一档"同语言）。
+///
+/// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
+/// 会落到 canvasColor（= `surface` = 近黑的窗口底色）⇒ 每个未选中项都自己画一块
+/// 黑方块，把板底盖住（2026-09-22 用户实报"还是黑色显示"）。
+/// 切换器下面的**内联列表**：读 [notesProvider]，按当前空间（[navSpaceProvider]）
+/// 过滤——笔记空间 = 除画布外的笔记，画布空间 = [NoteKind.canvas]。
+///
+/// 点行 = 打开那篇笔记，走 `locateProvider`（§4 的唯一跳转通道），**不改变
+/// 当前空间**（空间是"看哪一类"，打开是"看哪一篇"，两件事）。
+class _SpaceItemList extends ConsumerWidget {
+  const _SpaceItemList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final bool isCanvasSpace = ref.watch(navSpaceProvider);
+    final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
+    final String? openId = ref.watch(selectedNoteIdProvider);
+
+    final List<Note> items = all
+        .where(
+          (Note n) => isCanvasSpace
+              ? n.kind == NoteKind.canvas
+              : n.kind != NoteKind.canvas,
+        )
+        .toList();
+
+    if (items.isEmpty) {
+      return Center(
+        child: Text(
+          isCanvasSpace ? '还没有画布' : '还没有笔记',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+
+    // 删除 + 可撤销提示（与 [NoteListView] 同一个 [showUndoToast] 通道）。
+    // ⚠️ 必须是 build 内的局部函数：ConsumerWidget 的 `ref` 只在 build 作用域
+    // 可见，子方法读不到（2026-09-25 修）。
+    Future<void> deleteNote(Note note) async {
+      final NotesNotifier notifier = ref.read(notesProvider.notifier);
+      final Note? removed = await notifier.deleteNote(note.id);
+      if (removed == null || !context.mounted) return;
+      final String title = removed.title.isNotEmpty ? removed.title : '无标题';
+      showUndoToast(
+        context,
+        message: '已删除「$title」',
+        onUndo: () => notifier.restoreNote(removed),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: items.length,
+      itemBuilder: (BuildContext _, int i) => _SpaceItemRow(
+        note: items[i],
+        open: items[i].id == openId,
+        onTap: () =>
+            ref.read(locateProvider.notifier).locate(noteId: items[i].id),
+        // 右键 / 「···」菜单三件事，与左侧 [NoteListView] 的条目同源：
+        // 重命名（就地）/ 收藏（togglePromoted）/ 删除（带撤销提示）。
+        onRename: (String title) =>
+            ref.read(notesProvider.notifier).saveTitle(items[i].id, title),
+        onTogglePromoted: () =>
+            ref.read(notesProvider.notifier).togglePromoted(items[i]),
+        onDelete: () => deleteNote(items[i]),
+      ),
+    );
+  }
+}
+
+/// 内联列表里的一行：标题 + 行尾相对时间，高 34（比导航项略紧，因为它是
+/// "一页纸"里的文本行，不是按钮）。
+///
+/// 状态（与全列同语言）：
+/// - **正在打开的那篇 = 玻璃片**（[AppTheme.navSelectedTint] + [_GlassSheet]
+///   三层光）——与顶行主页图标的选中态完全同款；
+/// - 悬停 = [AppTheme.boardFillHover]（"再叠一档"）。
+///
+/// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
+/// 会落到 canvasColor（= 近黑的窗口底色）⇒ 每行自己画一块黑方块盖住板底
+/// （2026-09-22 用户实报"还是黑色显示"）。
+/// 内联列表里的一行：标题 + 行尾相对时间，高 34（比导航项略紧，因为它是
+/// "一页纸"里的文本行，不是按钮）。
+///
+/// 状态（与全列同语言）：
+/// - **正在打开的那篇 = 玻璃片**（[AppTheme.navSelectedTint] + [_GlassSheet]
+///   三层光）——与顶行主页图标的选中态完全同款；
+/// - 悬停 = [AppTheme.boardFillHover]（"再叠一档"）。
+///
+/// ## 操作入口（与 [NoteListView] 的条目同款）
+/// 两条入口、同一个菜单：**右键条目** 与 **悬停时右侧浮出的「···」**。
+/// 菜单三件事：重命名（就地改标题）/ 收藏（togglePromoted）/ 删除（带撤销）。
+/// 收藏项标题前还钉一枚星标（与左侧列表一致）。
+///
+/// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
+/// 会落到 canvasColor（= 近黑的窗口底色）⇒ 每行自己画一块黑方块盖住板底
+/// （2026-09-22 用户实报"还是黑色显示"）。
+class _SpaceItemRow extends StatefulWidget {
+  const _SpaceItemRow({
+    required this.note,
+    required this.open,
+    required this.onTap,
+    required this.onRename,
+    required this.onTogglePromoted,
+    required this.onDelete,
+  });
+
+  final Note note;
+
+  /// 这篇就是主区当前打开的那篇。
+  final bool open;
+
+  final VoidCallback onTap;
+
+  /// 就地改名后的回调（父层落库）。
+  final ValueChanged<String> onRename;
+
+  /// 收藏切换（togglePromoted）。
+  final VoidCallback onTogglePromoted;
+
+  /// 删除（带撤销提示）。
+  final VoidCallback onDelete;
+
+  @override
+  State<_SpaceItemRow> createState() => _SpaceItemRowState();
+}
+
+class _SpaceItemRowState extends State<_SpaceItemRow> {
+  final FocusNode _focus = FocusNode();
+  bool _hover = false;
+
+  /// 本条目的菜单是否正开着（同 [NoteListView]）：菜单是模态路由，指针落到
+  /// 菜单上 ⇒ `hovered` 变 false，行高亮与「···」会一起消失，断了"菜单对着
+  /// 哪篇"的视觉联系。用 setState（低频一次性事件）即可。
+  bool _menuOpen = false;
+
+  /// 「···」按钮的锚点（菜单贴按钮右下角弹出）。
+  final GlobalKey _moreKey = GlobalKey();
+
+  /// 就地重命名的编辑态与控制器（同 [NoteListView]）。
+  bool _renaming = false;
+  final TextEditingController _renameController = TextEditingController();
+  final FocusNode _renameFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _renameFocus.addListener(_onRenameFocusChanged);
+  }
+
+  void _onRenameFocusChanged() {
+    if (!_renameFocus.hasFocus && _renaming) _commitRename();
+  }
+
+  @override
+  void dispose() {
+    _renameFocus.removeListener(_onRenameFocusChanged);
+    _renameFocus.dispose();
+    _renameController.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _startRename() {
+    final String title = widget.note.title;
+    _renameController
+      ..text = title
+      ..selection = TextSelection(baseOffset: 0, extentOffset: title.length);
+    setState(() => _renaming = true);
+    // 菜单刚 pop、焦点还在路由上：延到帧末再抢焦点，否则会被弹层收走。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _renameFocus.requestFocus();
+    });
+  }
+
+  void _commitRename() {
+    final String value = _renameController.text.trim();
+    if (mounted) setState(() => _renaming = false);
+    if (value != widget.note.title.trim()) widget.onRename(value);
+  }
+
+  /// 弹出条目菜单。[globalPosition] 为空时贴「···」按钮右下角。
+  Future<void> _openMenu([Offset? globalPosition]) async {
+    Offset position = globalPosition ?? Offset.zero;
+    if (globalPosition == null) {
+      final RenderBox? box =
+          _moreKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null) {
+        position = box.localToGlobal(Offset(box.size.width, box.size.height));
+      }
+    }
+
+    setState(() => _menuOpen = true);
+
+    final bool promoted = widget.note.promotedAt != null;
+    await showMenu<void>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: <PopupMenuEntry<void>>[
+        _menuItem(
+          icon: const tabler.Edit(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+          ),
+          label: '重命名',
+          onTap: _startRename,
+        ),
+        _menuItem(
+          icon: promoted
+              ? const tabler.StarFilled(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                )
+              : const tabler.Star(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                ),
+          label: promoted ? '取消收藏' : '收藏',
+          onTap: widget.onTogglePromoted,
+        ),
+        const PopupMenuDivider(),
+        _menuItem(
+          icon: const tabler.Trash(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+          ),
+          label: '删除笔记',
+          // 危险动作：图标与文字都用 error 色（M3 的 destructive 口径）。
+          danger: true,
+          onTap: widget.onDelete,
+        ),
+      ],
+    );
+    if (mounted) setState(() => _menuOpen = false);
+  }
+
+  PopupMenuItem<void> _menuItem({
+    required Widget icon,
+    required String label,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color color = danger ? scheme.error : scheme.onSurface;
+    return PopupMenuItem<void>(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          icon,
+          const SizedBox(width: Tokens.spaceSm),
+          Text(label, style: TextStyle(color: color)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness brightness = theme.brightness;
+    final ColorScheme scheme = theme.colorScheme;
+    // "本条正被交互"：指针在行上，**或**本条的菜单开着。
+    final bool active = _hover || _menuOpen;
+    final Color fill = widget.open
+        ? AppTheme.navSelectedTint(scheme.onSurface)
+        : active
+        ? AppTheme.boardFillHover(brightness)
+        : Colors.transparent;
+
+    // 悬浮跟踪用**外层 MouseRegion**（与左侧 [NoteListView] 的条目同款）：
+    // InkWell 的 onHover 在这套 GestureDetector 嵌套里拿不到 hover，故显式跟踪
+    // _hover，再由上面的 fill 决定底色（黑/白 5% 叠加档）。
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        // 改名期间禁用整条点击：否则点击输入框会连带"切换笔记"。
+        onTap: _renaming ? null : widget.onTap,
+        // 右键（与左侧列表同款入口）：在指针处弹出条目菜单。
+        onSecondaryTapDown: _renaming
+            ? null
+            : (TapDownDetails details) => _openMenu(details.globalPosition),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: FocusRing(
+            focusNode: _focus,
+            borderRadius: BorderRadius.circular(8),
+            child: Material(
+              color: fill,
+              borderRadius: BorderRadius.circular(8),
+              clipBehavior: Clip.antiAlias,
+              // 命中区透明：整行可点，背景填色全靠上面的 fill。
+              child: SizedBox(
+                height: 34,
+                width: double.infinity,
+                child: Stack(
+                  // ⚠️ 必须显式居中（同 [HubNav] 那个已修过的坑：Stack 默认
+                  // topStart 会把非定位的 Row 钉在上沿）。
+                  alignment: AlignmentDirectional.center,
+                  children: <Widget>[
+                    if (widget.open)
+                      Positioned.fill(child: _GlassSheet(brightness: brightness)),
+                    Row(
+                      children: <Widget>[
+                        const SizedBox(width: 10),
+                        // 收藏标记：星标紧贴标题（无收藏时不显示）。
+                        if (widget.note.promotedAt != null) ...<Widget>[
+                          tabler.StarFilled(
+                            height: Tokens.iconXs,
+                            width: Tokens.iconXs,
+                            strokeWidth: 1.5,
+                            colorFilter: ui.ColorFilter.mode(
+                              scheme.onSurfaceVariant,
+                              ui.BlendMode.srcIn,
+                            ),
+                          ),
+                          const SizedBox(width: Tokens.spaceXs),
+                        ],
+                        Expanded(
+                          child: _renaming
+                              // 就地改名：同样的字号/字色，去掉装饰，读起来还是"标题"。
+                              ? TextField(
+                                  controller: _renameController,
+                                  focusNode: _renameFocus,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: scheme.onSurface,
+                                  ),
+                                  cursorColor: scheme.onSurface,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                  onSubmitted: (_) => _commitRename(),
+                                )
+                              : Text(
+                                  // 笔记标题可能是空串（新建未命名）⇒ 给可读兜底。
+                                  widget.note.title.isEmpty
+                                      ? '无标题'
+                                      : widget.note.title,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: widget.open
+                                        ? scheme.onSurface
+                                        : scheme.onSurfaceVariant,
+                                    fontWeight:
+                                        widget.open ? FontWeight.w600 : null,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _relativeTime(widget.note.revisedAt),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: Tokens.spaceSm),
+                        // 「···」入口：hover/选中/菜单开着时显形（同左侧列表），
+                        // 但**位置始终占位**——否则显隐会让标题宽度跳动。改名期间
+                        // 让位给输入框（同时避免误点）。
+                        SizedBox(
+                          width: Tokens.formatButtonHeight,
+                          child: Visibility(
+                            visible: !_renaming && (widget.open || active),
+                            maintainSize: true,
+                            maintainAnimation: true,
+                            maintainState: true,
+                            child: IconButton(
+                              key: _moreKey,
+                              tooltip: '更多',
+                              padding: EdgeInsets.zero,
+                              iconSize: Tokens.iconMd,
+                              icon: const tabler.DotsVertical(
+                                height: Tokens.iconMd,
+                                width: Tokens.iconMd,
+                                strokeWidth: 1.5,
+                              ),
+                              onPressed: _openMenu,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -277,4 +988,14 @@ class _NavItemState extends State<_NavItem> {
       ),
     );
   }
+}
+
+/// 相对时间（列表行尾的小灰字）。口径与 `home_hub.dart` 里的同名私有函数一致。
+String _relativeTime(DateTime at) {
+  final Duration d = DateTime.now().difference(at);
+  if (d.inMinutes < 1) return '刚刚';
+  if (d.inMinutes < 60) return '${d.inMinutes} 分钟前';
+  if (d.inHours < 24) return '${d.inHours} 小时前';
+  if (d.inDays < 7) return '${d.inDays} 天前';
+  return '${at.month}/${at.day}';
 }

@@ -14,6 +14,7 @@ import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
+import 'search_section.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
@@ -24,84 +25,42 @@ import '../domain/settings.dart';
 
 /// 主界面（兼桌面窗口外壳）。
 ///
-/// 桌面端为**左右分栏**布局（原生标题栏已隐藏）：
+/// 桌面端为**导航板 + 主区**布局（原生标题栏已隐藏）：
 ///
 /// ```
-/// ┌── 侧栏（通高列）─────┬──── 主区 ──────────────┐
-/// │ [+] [🔍] [⚙]  sinan   │  拖拽区         [─][□][×] │
+/// ┌── 导航板（[HubNav]）──┬──── 主区 ──────────────┐
+/// │ [⚙] [🔍] [🏠]         │  拖拽区         [─][□][×] │
 /// │ ┌──────────────────┐  ├────────────────────────┤
-/// │ │ 笔记列表           │  │       编辑区            │
+/// │ │ 笔记 / 画布 列表    │  │  主页（[HomeHub]）/ 编辑区  │
 /// ```
 ///
-/// - 侧栏头部（[SidebarHeader]）：功能按钮归属侧栏本体 + 拖拽移动窗口；
-/// - 主区顶条（[WindowStrip]）：拖拽移动 + 双击最大化 + 窗控按钮。
+/// 左栏恒为 [HubNav]（顶行图标 + 空间切换器 + 内联列表）；右栏随
+/// [selectedNoteIdProvider] 在主页与编辑器之间切换——点导航列表直接在右栏打开，
+/// 不进新路由、不重建左侧列表。
 ///
-/// 宽屏（>=720）：双栏；窄屏：列表 / 编辑器二选一，由
-/// [selectedNoteIdProvider] 驱动（窗口最小宽度即 720，此分支为防御）。
-/// 移动端：标准 [AppBar]。两份布局共用同一个 `selectedNoteId` 状态。
+/// - 导航板（[HubNav]）：列表项的重命名/收藏/删除入口；
+/// - 主区顶条（[WindowStrip]）：拖拽移动 + 双击最大化 + 窗控按钮（编辑态额外带
+///   「主页」返回）。
+///
+/// 移动端：标准 [AppBar] + 列表 / 编辑器二选一（由 [selectedNoteIdProvider]
+/// 驱动，[NoteListView] 兜底）。桌面最小窗宽即 720，故不分宽窄两版。
+/// 左栏 [HubNav] 的板宽，与 `HubNav.width` 默认值保持一致（275）。
+/// 折叠动画的「展开宽度」就取它，避免 ClipRect 裁切错位。
+const double _navWidth = 275;
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
-
-  static const double _wideBreakpoint = 720;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final String? selectedId = ref.watch(selectedNoteIdProvider);
-    final bool isWide =
-        MediaQuery.of(context).size.width >= _wideBreakpoint;
 
     // ★ §5.6 阶段 2：**未选中 = 主页**（全窗口 Mica + 卡片入口分区）；选中 = 笔记 /
     // 画布页。同一个 `selectedNoteIdProvider` 驱动，不新增页面栈——切换，不是叠加。
-    if (WindowService.isSupported && selectedId == null) {
-      return Scaffold(
-        // 主页的底就是窗口 Mica ⇒ Flutter 侧不铺任何底（见 [HomeHub] 的说明）。
-        backgroundColor: Colors.transparent,
-        // 导航板**铺满左侧**：上 / 左 / 下**不与窗口留缝**（2026-09-22 用户定，
-        // 取代原先"三方各 6px"）⇒ 它是贴着窗口三边的**通高列**，不再是"浮在窗口里
-        // 的一块板"（因此不再是四方圆角，见 [HubNav]）。
-        // ⚠️ 顶条只管右半（拖拽 + 窗控），应用名不占主页顶条 ⇒ 板的上缘就是窗口顶。
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const HubNav(),
-            Expanded(
-              child: Column(
-                children: <Widget>[
-                  const WindowStrip(
-                    trailing: <Widget>[
-                      AppMenuButton(captionStyle: true),
-                    ],
-                  ),
-                  // 内容区**不铺任何层**（与导航一致：直接坐窗口底）。0 号分区是
-                  // 主页（[HomeHub]，Bento 卡片格）；其余分区给"还没建"的明示——
-                  // 否则点了像没反应。接新页面：按 `hubNavSelectionProvider` 的
-                  // index 在这里分发。
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(6),
-                      child: Consumer(
-                        builder:
-                            (BuildContext context, WidgetRef ref, Widget? _) {
-                              final int section = ref.watch(
-                                hubNavSelectionProvider,
-                              );
-                              if (section == 0) {
-                                return const HomeHub();
-                              }
-                              return _SectionPlaceholder(
-                                label: hubNavItems[section].label,
-                              );
-                            },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    //
+    // 2026-09-25 统一桌面布局：左恒为 [HubNav]，右栏随 `selectedId` 在主页 / 编辑器
+    // 之间切换——**不进新路由**、不重建左侧列表（旧的 [NoteListView] 侧栏已删，点
+    // 导航列表直接在右栏打开文档）。具体分支见下方 `WindowService.isSupported`。
 
     final Widget listPane = NoteListView(
       selectedId: selectedId,
@@ -149,124 +108,129 @@ class HomeScreen extends ConsumerWidget {
         );
 
     if (WindowService.isSupported) {
-      final List<Widget> sidebarActions = _sidebarActions(context, ref);
-      // 标题栏里的菜单图标尺寸对齐窗控，且点击区/悬停与窗控完全一致。
-      const Widget menu = AppMenuButton(captionStyle: true);
-
-      if (isWide) {
-        return Scaffold(
-          // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder`
-          // 统一铺一层纯色（`AppTheme.windowBackground`，亮 #F8F8F6 / 暗 #171715）
-          // ⇒ 这里保持透明让它透出来（2026-09-22 取消窗口材质后就是这么分工的）。
-          // 那层底可直接承载列表文字（对比度有测试钉着）；
-          // 只有内容层（编辑区纸面）才是不透明的。
-          backgroundColor: Colors.transparent,
-          body: Row(
-            children: <Widget>[
-              // 侧栏：通高列——头部（按钮 + 应用名 + 拖拽）+ 列表。
-              SizedBox(
-                width: 300,
-                child: Column(
-                  children: <Widget>[
-                    SidebarHeader(title: 'sinan', actions: sidebarActions),
-                    Expanded(child: listPane),
-                  ],
+      // 桌面统一布局（2026-09-25）：左恒为 [HubNav]，右栏随 `selectedId` 切换——
+      // 主页（[HomeHub]）/ 笔记·画布编辑器。点导航列表直接在右栏打开，不进新路由，
+      // 也不重建左侧列表（旧的 [NoteListView] 侧栏已删，那个分支看着像"跳新页面"）。
+      //
+      // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder` 统一铺一层
+      // 纯色（`AppTheme.windowBackground`）⇒ 这里保持透明让它透出来。
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 左侧 [HubNav]：折叠态（`navCollapsedProvider`）下宽度动画收为 0，整窗
+            // 只剩主区；展开时动画回 275。用 [AnimatedContainer] 做布局级宽度插值，
+            // [ClipRect] 裁掉过渡期溢出的内容——纯 layout 动画，不触发 saveLayer
+            // （符合 Impeller 性能规范）。右侧 Expanded 随之自动补满。
+            // 折叠 / 展开由主区顶条的 [NavCollapseButton] 控制。
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: ref.watch(navCollapsedProvider) ? 0 : _navWidth,
+              // 折叠动画期间容器宽度会小于板宽，若直接约束子节点，[HubNav] 内部
+              // 的 Row（图标 + 标题 + 时间 + 「···」）会因空间不足而溢出报 layout
+              // 错误。用 [OverflowBox] 让 [HubNav] 始终按完整板宽（[_navWidth]）布局，
+              // 再由外层 [ClipRect] 裁掉可见区以外的部分——既平滑又不再溢出。
+              child: const ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  maxWidth: _navWidth,
+                  child: HubNav(),
                 ),
               ),
-              // 左右之间**不画线**（2026-09-18 用户定）：分界改由底色档差表达
-              // ——左栏是系统 Mica（透出窗口底），右栏是铺满的纸面色，两者本就
-              // 不同档。
-              //
-              // 这里原是**一条独立 1px 竖线**。若将来要加回来，注意不能用
-              // "右栏 DecoratedBox 的 border"：border 画在子层之下，编辑器工具栏
-              // /正文铺的不透明画布色会把它盖出断口（旧 `_ContentPanel` 踩过），
-              // 当年的独立盒子正是为了谁也盖不住。
-              // 右栏：整列铺编辑器画布底，与左栏 Mica 形成硬分区。
-              // 顶条与内容面板都透出这层底色。
-              Expanded(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: AppTheme.contentCanvas(Theme.of(context).brightness),
-                  ),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      // 纸面噪点（暗 2% / 亮 0）：铺在**纸色之上、内容之下**，
-                      // 见 [_PaperNoise] 的三条理由。
-                      _PaperNoise(brightness: Theme.of(context).brightness),
-                      Column(
+            ),
+            // 右栏：选中态时整列铺编辑器画布底，与左栏 Mica 形成硬分区；顶条与
+            // 内容面板都透出这层底色。主页时底色仍是同一窗口底（[HomeHub] 直接坐
+            // 窗口底），不铺纸面。
+            Expanded(
+              child: selectedId == null
+                  ? Column(
+                      children: <Widget>[
+                        // 主页顶条只剩窗控：设置走导航板顶行，退出即关窗。
+                        // 左起第一枚是折叠面板按钮（展开态也要能再折叠）。
+                        const WindowStrip(
+                          leading: <Widget>[NavCollapseButton()],
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Consumer(
+                              builder:
+                                  (BuildContext context, WidgetRef ref, Widget? _) {
+                                final int section =
+                                    ref.watch(hubNavSelectionProvider);
+                                if (section == 0) return const HomeHub();
+                                if (section == kSearchNavIndex) {
+                                  return const SearchSection();
+                                }
+                                return _SectionPlaceholder(
+                                  label: hubNavItems[section].label,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.contentCanvas(
+                          Theme.of(context).brightness,
+                        ),
+                      ),
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: <Widget>[
-                          WindowStrip(
-                            // 回主页：走 `locateProvider.goHome()`（写选中态的唯一通道）。
-                            leading: <Widget>[
-                              IconButton(
-                                icon: const tabler.TextDirectionLtr(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                                tooltip: '主页',
-                                onPressed: () =>
-                                    ref.read(locateProvider.notifier).goHome(),
+                          // 纸面噪点（暗 2% / 亮 0）：铺在**纸色之上、内容之下**。
+                          _PaperNoise(
+                            brightness: Theme.of(context).brightness,
+                          ),
+                          Column(
+                            children: <Widget>[
+                              WindowStrip(
+                                // 左起第一枚是折叠面板按钮（2026-09-25 用户定）：
+                                // 放在原先"上一步"的位置，原按钮移到右侧紧贴窗控前。
+                                leading: const <Widget>[NavCollapseButton()],
+                                // 上一步（回主页）：走 `locateProvider.goHome()`。
+                                // 2026-09-25 用户定：图标从段落图标准改成返回箭头，文字改成"上一步"，并挪到右侧。
+                                trailing: <Widget>[
+                                  IconButton(
+                                    icon: const tabler.ArrowLeft(
+                                      height: Tokens.iconMd,
+                                      width: Tokens.iconMd,
+                                      strokeWidth: 1.5,
+                                    ),
+                                    tooltip: '上一步',
+                                    onPressed: () => ref
+                                        .read(locateProvider.notifier)
+                                        .goHome(),
+                                  ),
+                                ],
+                              ),
+                              // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
+                              // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段。
+                              //
+                              // ⚠️ 必须是**独立 1px 盒子**（见旧实现的两条理由：
+                              // border 会被铺底子层盖出断口；加在 [WindowStrip] 自己
+                              // 的 border 上会被 32 高窗控按钮顶出容器）。
+                              Container(
+                                height: 1,
+                                color: AppTheme.divider(
+                                  Theme.of(context).colorScheme,
+                                ),
+                              ),
+                              Expanded(
+                                child: _ContentPanel(
+                                  partition: true,
+                                  child: detailPane(),
+                                ),
                               ),
                             ],
-                            trailing: const <Widget>[menu],
-                          ),
-                          // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
-                          // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段，
-                          // 与左侧竖分界线用同一个语义令牌（[AppTheme.divider]）。
-                          //
-                          // ⚠️ 必须是**独立 1px 盒子**，两个理由：
-                          // 1. 画成 border 会被铺底的子层盖住出断口——同左侧竖线；
-                          // 2. 更不能加在 [WindowStrip] 自己的 border 上：那 1px 会
-                          //    从 32px 的条里向内扣，而窗控按钮有 32 的 minHeight，
-                          //    会被顶出容器（见 [Tokens.titleBarHeight]）。
-                          Container(
-                            height: 1,
-                            color: AppTheme.divider(
-                              Theme.of(context).colorScheme,
-                            ),
-                          ),
-                          Expanded(
-                            child: _ContentPanel(
-                              partition: true,
-                              child: detailPane(),
-                            ),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }
-
-      // 窄桌面兜底（最小窗宽即 720，正常不可达）：整宽一条
-      // （动作 + 应用名 + 拖拽 + 窗控）+ 列表/编辑二选一。
-      return Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Column(
-          children: <Widget>[
-            WindowStrip(
-              leading: <Widget>[
-                IconButton(
-                  icon: const tabler.TextDirectionLtr(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                  tooltip: '主页',
-                  onPressed: () => ref.read(locateProvider.notifier).goHome(),
-                ),
-                ...sidebarActions,
-              ],
-              trailing: const <Widget>[menu],
-              title: 'sinan',
-            ),
-            Expanded(
-              child: withFade(
-                selectedId == null
-                    ? KeyedSubtree(
-                        key: const ValueKey<String>('list'),
-                        child: listPane,
-                      )
-                    : _ContentPanel(child: detailPane()),
-              ),
+                    ),
             ),
           ],
         ),
@@ -508,6 +472,35 @@ class _SectionPlaceholder extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 折叠 / 展开左侧 [HubNav] 导航面板（[navCollapsedProvider]）。
+///
+/// 放在主区顶条最左：展开态可随时折叠，折叠态（此时 [HubNav] 不渲染）
+/// 靠它重新展开。图标随状态切换：展开→`LayoutSidebarLeftCollapse`（提示可收起），
+/// 折叠→`LayoutSidebarLeftExpand`（提示可展开）。
+class NavCollapseButton extends ConsumerWidget {
+  const NavCollapseButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool collapsed = ref.watch(navCollapsedProvider);
+    return IconButton(
+      icon: collapsed
+          ? const tabler.LayoutSidebarLeftExpand(
+              height: Tokens.iconMdSm,
+              width: Tokens.iconMdSm,
+              strokeWidth: 1.5,
+            )
+          : const tabler.LayoutSidebarLeftCollapse(
+              height: Tokens.iconMdSm,
+              width: Tokens.iconMdSm,
+              strokeWidth: 1.5,
+            ),
+      tooltip: collapsed ? '展开面板' : '折叠面板',
+      onPressed: () => ref.read(navCollapsedProvider.notifier).toggle(),
     );
   }
 }

@@ -182,6 +182,10 @@ class NoteStore {
   }
 
   Future<void> delete(String noteId) async {
+    // chunks_fts 是 FTS5 虚拟表、**无外键**（见 database.dart 建表注释）——
+    // blocks 靠 CASCADE 清，它的行没人替 ⇒ 必须在这里手工清，否则已删笔记
+    // 的块永远留在检索索引里（"幽灵命中"）。
+    db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[noteId]);
     db.execute('DELETE FROM notes WHERE id = ?', <Object?>[noteId]);
   }
 

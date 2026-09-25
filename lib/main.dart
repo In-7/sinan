@@ -23,7 +23,6 @@ import 'src/editor/core/editor_icons.dart';
 import 'src/app/providers.dart';
 import 'src/theme/app_icon_theme.dart';
 import 'src/theme/app_theme.dart';
-import 'src/theme/nav_ink.dart';
 import 'src/window/window_base.dart';
 import 'src/window/window_service.dart';
 
@@ -47,9 +46,6 @@ Future<void> main() async {
   };
   // 移动端 / Web 上会自动跳过，不会崩。
   await WindowService.init();
-  // 导航列的釉面 shader：**预装载**（异步）。失败也无所谓 —— `NavInk.painter`
-  // 会返回 null ⇒ 导航列退回 `AppTheme.boardFill` 的实色底，不会白屏。
-  unawaited(NavInk.preload());
 
   final AppDatabase db = await AppDatabase.open();
 

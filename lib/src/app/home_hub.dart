@@ -1,186 +1,218 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../command/commands.dart';
 import '../domain/note.dart';
-import '../theme/app_float_surface.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'providers.dart';
 
-/// **主页**（`docs/ui_rewrite_plan.md` §5.6）：**Bento 卡片格**。
+/// **主页**：Things 3 式「呼吸极简」的一页纸（2026-09-24 重写，取代 Bento 卡片格）。
 ///
-/// ## 卡片走"卡片档"底，且**没有描边、没有投影**
-/// 底 = [AppTheme.cardFill]（叠在板底之上的量）+ [AppGlass] 的**玻璃光泽**
-/// （内光泽 + 顶沿光边，纯绘制、零 `saveLayer`），hover 叠 [AppTheme.cardFillHover]。
-/// **不加 1px 描边**（2026-09-22 用户反馈："卡片不要边框线"）；**不加投影**——投影是
-/// "短暂浮层"的语言，常驻卡一多就是噪音（同一批结论）。
+/// ## 为什么放弃 Bento
+/// 2026-09-22 的 Bento（hero 大卡 + 两列中卡 + 小卡）是**控件语言**：底色块、
+/// 圆角、玻璃光泽、hover 抬档。它的信息密度适合"仪表盘"，但主页要回答的只有一个
+/// 问题——「我上次在写哪篇」。Bento 里这个问题被图标、摘要、卡片边距稀释了。
+/// Things 3 证明桌面端更好的答案是**排版语言**：大标题 + 全宽行 + 字重分层，
+/// 一行 = 一条笔记，没有容器。
 ///
-/// ⚠️ 试过并否决：**半透明 Mica Layer**（`floatSurface` × 0.7 压在 Mica 上）。
-/// 深色下 `#222` × 0.7 盖在近黑背景上是一种"脏灰"，不如干脆的第二档灰干净。
+/// ## 四条结构事实（改动前先读）
+/// 1. **行就是单元**：无底、无框、无图标框；hover 才给一档淡底
+///    （[AppTheme.boardFillHover]，与导航行同一套"再叠一档"语言）。
+/// 2. **层级交给排版**：页标题 `headlineMedium` 轻字重；「继续」行 `titleMedium`
+///    加粗；普通行 `bodyMedium`；时间 `labelSmall` 灰字右对齐。**摘要砍掉**——
+///    主页回答"在写哪篇"，不回答"写了什么"。
+/// 3. **永远单列**（[maxWidth] 700）：两列 Bento 整个退场。列窄 + 页首 [Tokens.spaceXxl]
+///    大留白 = 呼吸感的两个来源。
+/// 4. **每行都接 [FocusRing]**（§5.2）：自绘交互件必须能键盘用——这是桌面特权，
+///    与视觉极简同等重要。
 ///
-/// ## Bento 是什么、以及它与"小方卡"的区别
-/// 2026-09-22 曾否决过 **260px 等大小方卡**，理由是"把每行压成两三行、图标和字都缩，
-/// 密度翻倍看起来就廉价"。**Bento 不是那种东西**，三条区别（缺一条就会退化成它）：
-/// 1. **尺寸有主次**：一块大（跨两列）+ 若干中 + 两个小，不是等大小重复；
-/// 2. **每列够宽**：[maxWidth] 之下两列各 ≈420px，**卡内不缩字**（标题仍 `titleSmall`、
-///    摘要仍 `bodySmall`）——上一版的问题出在"字被缩小"，不是"有两列"；
-/// 3. **卡高够**（中卡 104、不是 80）：压扁行高才是"廉价感"的直接来源。
+/// ## 分组的时间叙事
+/// 「继续」（最近一篇，加粗）→「最近」（可折叠，`▸` 头）→「新建」（ghost 行，
+/// 灰字加号）。等价于 Things 的 Today / Earlier 节奏感。
 ///
-/// ## 页面模型：**切换，不是叠加**
+/// ## 页面模型（不变）
 /// 未选中笔记 = 主页；选中 = 笔记 / 画布页。同一个 `selectedNoteIdProvider` 驱动。
-class HomeHub extends ConsumerWidget {
+class HomeHub extends ConsumerStatefulWidget {
   const HomeHub({super.key});
 
-  /// 最近列表条数（骨架值，手感待调）。
+  /// 最近列表条数。
   static const int recentCount = 6;
 
-  /// 内容列宽：与"读"的宽度一致，不给 2000px 的超宽行。
-  static const double maxWidth = 880;
-
-  /// 两列的**最低可用宽度**：比它窄就退回单列（窗口最小 720，故正常不触发）。
-  static const double twoColumnMinWidth = 620;
-
-  /// 格缝（Bento 的"缝"）：与导航板的 6px 缝同量级，但卡片之间要更松一点。
-  static const double gap = Tokens.spaceSm;
+  /// 内容列宽：Things 的"一页纸"宽度。比 Bento 时代的 880 窄——
+  /// 单列下 880 会让一行文字横跨过宽，700 是 13px 正文的舒适阅读宽。
+  static const double maxWidth = 700;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeHub> createState() => _HomeHubState();
+}
+
+class _HomeHubState extends ConsumerState<HomeHub> {
+  /// 「最近」分组的展开态。只放本地 State：折叠是纯视图节奏，
+  /// 不进 provider 也不落盘（重启回展开 = Things 的默认行为）。
+  bool _recentOpen = true;
+
+  @override
+  Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
     final List<Note> notes = ref.watch(notesProvider).value ?? const <Note>[];
     // 排序依据 `revisedAt`（不是 `createdAt`）：主页要回答的是"我上次在写哪篇"。
     final List<Note> byRecent = <Note>[...notes]
       ..sort((Note a, Note b) => b.revisedAt.compareTo(a.revisedAt));
+    final Note? latest = byRecent.isEmpty ? null : byRecent.first;
+
+    // **收藏**：`promotedAt` 非空的笔记，按收藏时间倒序（最新置顶）。
+    // 2026-09-25 A 方案：收藏进主页分区，取代把它塞进侧栏切换器（那样得 4 段）。
+    final List<Note> favorites = <Note>[
+      ...notes.where((Note n) => n.promotedAt != null),
+    ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!));
 
     return Align(
       alignment: Alignment.topCenter,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(Tokens.spaceLg),
+        // 页首呼吸是 [Tokens.spaceXxl]（48）——比普通页面留白大一档，
+        // 这是"一页纸"开头的空气感；左右与底部 [Tokens.spaceXl]。
+        padding: const EdgeInsets.fromLTRB(
+          Tokens.spaceXl,
+          Tokens.spaceXxl,
+          Tokens.spaceXl,
+          Tokens.spaceXl,
+        ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: maxWidth),
-          // LayoutBuilder 拿的是**钳制后**的可用宽度 ⇒ 列宽由它算，不写死 880。
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints c) {
-              final double full = c.maxWidth;
-              final bool two = full >= twoColumnMinWidth;
-              // 列数交给网格：窄屏时"跨 1 列"就是**满宽**（不出现半宽残格）。
-              final int columns = two ? 2 : 1;
-              final Note? latest = byRecent.isEmpty ? null : byRecent.first;
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  // 页面大标题：卡片已经够"控件"了，标题要把它拉回"一页纸"。
-                  Text('主页', style: theme.textTheme.headlineSmall),
-                  const SizedBox(height: Tokens.spaceLg),
-                  if (latest == null)
-                    const _EmptyHub()
-                  else ...<Widget>[
-                    _Section(
-                      label: '上次编辑',
-                      child: _BentoGrid(
-                        availableWidth: full,
-                        columns: columns,
-                        tiles: <({int span, Widget child})>[
-                          (
-                            span: 2,
-                            child: _HubCard(
-                              size: _CardSize.hero,
-                              icon: _iconOf(latest),
-                              title: _titleOf(latest),
-                              subtitle: _summaryOf(latest),
-                              trailing: _TimeLabel(at: latest.revisedAt),
-                              onTap: () => ref
-                                  .read(locateProvider.notifier)
-                                  .locate(noteId: latest.id, focus: true),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: Tokens.spaceLg),
-                    _Section(
-                      label: '最近编辑',
-                      child: _BentoGrid(
-                        availableWidth: full,
-                        columns: columns,
-                        tiles: <({int span, Widget child})>[
-                          // 大卡已经是第一篇 ⇒ 最近列表从第二篇起。
-                          for (final Note n
-                              in byRecent.skip(1).take(recentCount))
-                            (
-                              span: 1,
-                              child: _HubCard(
-                                icon: _iconOf(n),
-                                title: _titleOf(n),
-                                subtitle: _summaryOf(n),
-                                trailing: _TimeLabel(at: n.revisedAt),
-                                onTap: () => ref
-                                    .read(locateProvider.notifier)
-                                    .locate(noteId: n.id),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: Tokens.spaceLg),
+          constraints: const BoxConstraints(maxWidth: HomeHub.maxWidth),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // 页面大标题：轻字重——层级靠它"大而轻"与下面"小而实"拉开，
+              // 不靠颜色不靠盒子。
+              Text(
+                '主页',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w300,
+                ),
+              ),
+              const SizedBox(height: Tokens.spaceXxl),
+              if (latest == null)
+                const _EmptyHub()
+              else ...<Widget>[
+                if (favorites.isNotEmpty) ...<Widget>[
+                  // 收藏分区（2026-09-25 A 方案）：promotedAt 非空的笔记，
+                  // 按收藏时间倒序。只在有收藏时渲染——不出空分组头。
                   _Section(
-                    label: '新建',
-                    child: _BentoGrid(
-                      availableWidth: full,
-                      columns: columns,
-                      tiles: <({int span, Widget child})>[
-                        (
-                          span: 1,
-                          child: _HubCard(
-                            size: _CardSize.small,
-                            icon: const tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                            title: '笔记',
-                            subtitle: '块编辑器，支持 Markdown 输入',
-                            trailing: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                            onTap: () =>
-                                unawaited(runCommandById(ref, 'note.new')),
+                    label: '收藏',
+                    child: Column(
+                      children: <Widget>[
+                        for (final Note n in favorites)
+                          _HubRow(
+                            title: _titleOf(n),
+                            kindTag: _kindTagOf(n),
+                            trailing: _TimeLabel(at: n.revisedAt),
+                            promoted: true,
+                            onTogglePromoted: () => ref
+                                .read(notesProvider.notifier)
+                                .togglePromoted(n),
+                            onTap: () => ref
+                                .read(locateProvider.notifier)
+                                .locate(noteId: n.id),
                           ),
-                        ),
-                        (
-                          span: 1,
-                          child: _HubCard(
-                            size: _CardSize.small,
-                            icon: const tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                            title: '画布',
-                            subtitle: '手写笔迹、卡片与连线',
-                            trailing: const tabler.Plus(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-                            onTap: () =>
-                                unawaited(runCommandById(ref, 'canvas.new')),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: Tokens.spaceXl),
+                ],
+                _Section(
+                  label: '继续',
+                  child: _HubRow(
+                    title: _titleOf(latest),
+                    emphasized: true,
+                    kindTag: _kindTagOf(latest),
+                    trailing: _TimeLabel(at: latest.revisedAt),
+                    onTap: () => ref
+                        .read(locateProvider.notifier)
+                        .locate(noteId: latest.id, focus: true),
+                  ),
+                ),
+                // 只有 1 篇时「最近」没有内容 ⇒ 整组不渲染（不出空分组头）。
+                if (byRecent.length > 1) ...<Widget>[
+                  const SizedBox(height: Tokens.spaceXl),
+                  _Section(
+                    label: '最近',
+                    open: _recentOpen,
+                    onToggle: () =>
+                        setState(() => _recentOpen = !_recentOpen),
+                    collapsedHint: '${byRecent.length - 1} 篇',
+                    child: Column(
+                      children: <Widget>[
+                        for (final Note n
+                            in byRecent.skip(1).take(HomeHub.recentCount))
+                          _HubRow(
+                            title: _titleOf(n),
+                            kindTag: _kindTagOf(n),
+                            trailing: _TimeLabel(at: n.revisedAt),
+                            onTap: () => ref
+                                .read(locateProvider.notifier)
+                                .locate(noteId: n.id),
                           ),
-                        ),
                       ],
                     ),
                   ),
                 ],
-              );
-            },
+                const SizedBox(height: Tokens.spaceXl),
+                _Section(
+                  label: '新建',
+                  child: Column(
+                    children: <Widget>[
+                      _HubRow(
+                        leading: _ghostPlus(scheme),
+                        title: '新建笔记',
+                        ghost: true,
+                        onTap: () =>
+                            unawaited(runCommandById(ref, 'note.new')),
+                      ),
+                      _HubRow(
+                        leading: _ghostPlus(scheme),
+                        title: '新建画布',
+                        ghost: true,
+                        onTap: () =>
+                            unawaited(runCommandById(ref, 'canvas.new')),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
     );
   }
-}
 
-Widget _iconOf(Note note) => note.kind == NoteKind.canvas
-    ? const tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5)
-    : const tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5);
+  /// ghost 行的加号：次级小图标（[Tokens.iconXs]）+ 灰——
+  /// 「新建」是次级动作，视觉重量必须低于任何一条笔记行。
+  static Widget _ghostPlus(ColorScheme scheme) => tabler.Plus(
+        height: Tokens.iconXs,
+        width: Tokens.iconXs,
+        strokeWidth: Tokens.iconStroke,
+        colorFilter: ui.ColorFilter.mode(
+          scheme.onSurfaceVariant,
+          ui.BlendMode.srcIn,
+        ),
+      );
+}
 
 String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
 
-String _summaryOf(Note note) {
-  final String text = note.plainText.trim();
-  return text.isEmpty ? '还没有内容' : text;
-}
+/// 画布笔记的形态标签（文档是默认形态 ⇒ 不标）。
+/// 相当于 Things 行尾的项目 tag：只有"不是默认"的才说。
+String? _kindTagOf(Note note) =>
+    note.kind == NoteKind.canvas ? '画布' : null;
 
 /// 相对时间：主页关心的是"多久没碰了"，不是精确时刻。
 String _relativeTime(DateTime at) {
@@ -192,7 +224,7 @@ String _relativeTime(DateTime at) {
   return '${at.month}-${at.day.toString().padLeft(2, '0')}';
 }
 
-/// 时间小字（卡片右上/右下角那格）。
+/// 时间小字（行尾那格）：灰、右对齐、永远只有一格宽。
 class _TimeLabel extends StatelessWidget {
   const _TimeLabel({required this.at});
 
@@ -200,144 +232,101 @@ class _TimeLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(
-    _relativeTime(at),
-    style: Theme.of(context).textTheme.labelSmall
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-  );
+        _relativeTime(at),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+      );
 }
 
-/// 分区：小灰字标题 + 其下的 Bento 格。
+/// 分组：小灰字标题 + 其下的行。
 ///
-/// 📌 标题**保留**（它是"这些卡片是什么"的读法，也是 §5.6 的分区语言）；Bento 的
-/// 特征落在**卡片尺寸档**上。要做"完全无标题的纯 Bento"，删掉这里的 `Text` 即可。
+/// [open]/[onToggle] 非 null 时是**可折叠分组**（`▸` 头 + 计数），
+/// 折叠是 Things 的节奏工具——"最近"一长，收起来让"继续"独占视线。
 class _Section extends StatelessWidget {
-  const _Section({required this.label, required this.child});
+  const _Section({
+    required this.label,
+    required this.child,
+    this.open,
+    this.onToggle,
+    this.collapsedHint,
+  });
 
   final String label;
   final Widget child;
 
+  /// 展开/折叠态。`null` = 该分组不可折叠（无箭头、永远展开）。
+  final bool? open;
+
+  /// 折叠开关（[open] 非 null 时必有）。
+  final VoidCallback? onToggle;
+
+  /// 折叠时标题右侧的提示（如「3 篇」）——收起来的内容要有交代。
+  final String? collapsedHint;
+
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final bool expanded = open ?? true;
+    final Widget header = onToggle == null
+        ? _plainHeader(context)
+        : _FoldHeader(
+            label: label,
+            open: expanded,
+            onToggle: onToggle!,
+            collapsedHint: collapsedHint,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          label,
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
+        header,
+        if (expanded) ...<Widget>[
+          const SizedBox(height: Tokens.spaceXs),
+          child,
+        ],
+      ],
+    );
+  }
+
+  /// 不可折叠的分组头：左缘与行内文字对齐（行内 padding [Tokens.spaceMd]）。
+  Widget _plainHeader(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Tokens.spaceMd,
+        vertical: Tokens.spaceXs,
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
-        const SizedBox(height: Tokens.spaceSm),
-        child,
-      ],
+      ),
     );
   }
 }
 
-/// **Bento 网格**：把卡片按"跨几列"铺进 2 列网格（窄屏自动是 1 列 × 全宽）。
+/// 可折叠分组头：`▸` 箭头（展开旋 90°）+ 小灰字标题；折叠时右侧出计数。
 ///
-/// 用 [Wrap] 而不是 `GridView`：卡高由**尺寸档**决定（不是按比例），`Wrap` 直接按
-/// 显式宽度换行，行与行之间自然对齐；`GridView` 的 `childAspectRatio` 表达不了
-/// "同一行里 2 跨与 1 跨混排"。
-class _BentoGrid extends StatelessWidget {
-  const _BentoGrid({
-    required this.availableWidth,
-    required this.columns,
-    required this.tiles,
+/// 高 28（比行矮 6）——分组头是"节奏标记"不是目标，比行更轻。
+class _FoldHeader extends StatefulWidget {
+  const _FoldHeader({
+    required this.label,
+    required this.open,
+    required this.onToggle,
+    this.collapsedHint,
   });
 
-  final double availableWidth;
-
-  /// 列数（1 = 窄屏单列；2 = 正常）。
-  final int columns;
-
-  /// 每一项 = 跨列数（≥ [columns] 时占满整行）+ 卡片。
-  final List<({int span, Widget child})> tiles;
+  final String label;
+  final bool open;
+  final VoidCallback onToggle;
+  final String? collapsedHint;
 
   @override
-  Widget build(BuildContext context) {
-    // 单列宽 = 总宽扣掉列间缝再对分；`span` 占满整行时直接给总宽。
-    final double one = (availableWidth - HomeHub.gap * (columns - 1)) / columns;
-    return Wrap(
-      spacing: HomeHub.gap,
-      runSpacing: HomeHub.gap,
-      children: <Widget>[
-        for (final ({int span, Widget child}) t in tiles)
-          SizedBox(
-            width: t.span >= columns ? availableWidth : one,
-            child: t.child,
-          ),
-      ],
-    );
-  }
+  State<_FoldHeader> createState() => _FoldHeaderState();
 }
 
-/// 卡片尺寸档：**Bento 的"主次"就是它**（高度、内边距、摘要行数三件一起变）。
-enum _CardSize {
-  /// 大卡：跨两列。竖向排版（顶部"这是什么 + 多久没碰"，下面大标题 + 两行摘要）。
-  hero,
-
-  /// 中卡：一列。图标 + 标题 / 一行摘要 / 底部时间。
-  medium,
-
-  /// 小卡：一列。横排（图标 + 标题 + 一行说明 + 右侧动作），给"新建"这类入口。
-  small;
-
-  double get height => switch (this) {
-    hero => 148,
-    medium => 104,
-    small => 76,
-  };
-
-  EdgeInsets get padding => switch (this) {
-    hero => const EdgeInsets.all(20),
-    medium => const EdgeInsets.all(16),
-    small => const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-  };
-
-  int get summaryLines => switch (this) {
-    hero => 2,
-    medium => 1,
-    small => 1,
-  };
-}
-
-/// 一张 Bento 卡。
-///
-/// 状态：
-/// - **悬停**：把底色抬一档（用统一的 [AppTheme.cardFillHover]，不自己挑比例）；
-/// - **聚焦**：[FocusRing] 画环（§5.2：自绘交互件必须能键盘用）。`InkWell` 自己的
-///   叠层**关掉**——否则同一件事被表达两遍。
-///
-/// ⚠️ 高度是**档位**（不是随内容）：Bento 的"行对齐"靠它。因此文案一律
-/// `maxLines + ellipsis`，任何长度都不会把卡片撑破。
-/// ⚠️ 高度会乘 `TextScaler`：用户放大字号时卡片一起长高，否则文字会溢出。
-class _HubCard extends StatefulWidget {
-  const _HubCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-    this.trailing,
-    this.size = _CardSize.medium,
-  });
-
-  final Widget icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  /// 右侧补信息（笔记卡 = 相对时间；新建卡 = 加号）。
-  final Widget? trailing;
-
-  final _CardSize size;
-
-  @override
-  State<_HubCard> createState() => _HubCardState();
-}
-
-class _HubCardState extends State<_HubCard> {
+class _FoldHeaderState extends State<_FoldHeader> {
   final FocusNode _focus = FocusNode();
   bool _hover = false;
 
@@ -350,46 +339,63 @@ class _HubCardState extends State<_HubCard> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final BorderRadius radius = BorderRadius.circular(Tokens.radiusLg);
-    // Craft 式卡片（2026-09-22 用户定）：**无描边、无投影**——浮起靠**档差**
-    // 不靠影子；填充用卡片档（cardFill，叠在板底之上的 Layer）。
-    final Color color = _hover
-        ? AppTheme.cardFillHover(theme.brightness)
-        : AppTheme.cardFill(theme.brightness);
-    final double height =
-        widget.size.height * MediaQuery.textScalerOf(context).scale(1);
+    final ColorScheme scheme = theme.colorScheme;
+    final Color fill = _hover
+        ? AppTheme.boardFillHover(theme.brightness)
+        : Colors.transparent;
 
     return FocusRing(
       focusNode: _focus,
-      borderRadius: radius,
-      child: DecoratedBox(
-        decoration: BoxDecoration(color: color, borderRadius: radius),
-        child: Material(
-          color: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: radius),
-          clipBehavior: Clip.antiAlias,
-          // 玻璃光泽（内光泽 + 顶沿光边）：与设置 / 关于面板同一套令牌。
-          // 它不自己裁圆角 ⇒ 借上面这层 `Clip.antiAlias`（省一次图层切换）。
-          child: AppGlass(
-            child: InkWell(
-              focusNode: _focus,
-              borderRadius: radius,
-              hoverColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              onHover: (bool v) => setState(() => _hover = v),
-              onTap: widget.onTap,
-              child: SizedBox(
-                height: height,
-                width: double.infinity,
-                child: Padding(
-                  padding: widget.size.padding,
-                  child: switch (widget.size) {
-                    _CardSize.hero => _heroBody(theme),
-                    _CardSize.medium => _mediumBody(theme),
-                    _CardSize.small => _smallBody(theme),
-                  },
-                ),
+      borderRadius: BorderRadius.circular(Tokens.radiusSm),
+      child: Material(
+        color: fill,
+        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          focusNode: _focus,
+          borderRadius: BorderRadius.circular(Tokens.radiusSm),
+          hoverColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          onHover: (bool v) => setState(() => _hover = v),
+          onTap: widget.onToggle,
+          child: SizedBox(
+            height: 28,
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
+              child: Row(
+                children: <Widget>[
+                  AnimatedRotation(
+                    turns: widget.open ? 0.25 : 0,
+                    duration: Tokens.durationFast,
+                    child: tabler.ChevronRight(
+                      height: Tokens.iconXs,
+                      width: Tokens.iconXs,
+                      strokeWidth: Tokens.iconStroke,
+                      colorFilter: ui.ColorFilter.mode(
+                        scheme.onSurfaceVariant,
+                        ui.BlendMode.srcIn,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: Tokens.spaceXs),
+                  Text(
+                    widget.label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (!widget.open && widget.collapsedHint != null)
+                    Text(
+                      widget.collapsedHint!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -397,107 +403,186 @@ class _HubCardState extends State<_HubCard> {
       ),
     );
   }
-
-  /// 大卡：竖向。顶部一行是"这是什么（caption）+ 多久没碰（trailing）"，
-  /// 下面才是标题与摘要 —— 主次靠**字号**拉开，不靠颜色。
-  Widget _heroBody(ThemeData theme) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: <Widget>[
-      Row(
-        children: <Widget>[
-          widget.icon,
-          const Spacer(),
-          if (widget.trailing != null) widget.trailing!,
-        ],
-      ),
-      const Spacer(),
-      Text(
-        widget.title,
-        style: theme.textTheme.titleLarge,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      const SizedBox(height: 4),
-      Text(
-        widget.subtitle,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        maxLines: widget.size.summaryLines,
-        overflow: TextOverflow.ellipsis,
-      ),
-    ],
-  );
-
-  /// 中卡：图标 + 标题一行、摘要一行、**时间贴在底部**（与相邻卡对齐）。
-  Widget _mediumBody(ThemeData theme) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: <Widget>[
-      Row(
-        children: <Widget>[
-          widget.icon,
-          const SizedBox(width: Tokens.spaceSm),
-          Expanded(
-            child: Text(
-              widget.title,
-              style: theme.textTheme.titleSmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 6),
-      Text(
-        widget.subtitle,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-        maxLines: widget.size.summaryLines,
-        overflow: TextOverflow.ellipsis,
-      ),
-      const Spacer(),
-      if (widget.trailing != null) widget.trailing!,
-    ],
-  );
-
-  /// 小卡：横排（图标 + 标题 + 说明 + 右侧动作）。
-  Widget _smallBody(ThemeData theme) => Row(
-    children: <Widget>[
-      widget.icon,
-      const SizedBox(width: Tokens.spaceMd),
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Text(
-              widget.title,
-              style: theme.textTheme.titleSmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              widget.subtitle,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              maxLines: widget.size.summaryLines,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-      if (widget.trailing != null) ...<Widget>[
-        const SizedBox(width: Tokens.spaceMd),
-        widget.trailing!,
-      ],
-    ],
-  );
 }
 
-/// 空库：不给空卡片，直接指路（新建是此时唯一有意义的事）。
+/// **一页纸里的一行**：标题 + 右侧灰信息（形态 tag + 时间），没有容器。
+///
+/// 状态：
+/// - **悬停**：整行叠一档淡底（[AppTheme.boardFillHover]，与导航行同语言）；
+/// - **聚焦**：[FocusRing] 画环（§5.2）。
+///
+/// ⚠️ 高度 34 是**档位**（Things 的行高），标题一律 `maxLines + ellipsis`。
+/// 「继续」行 [emphasized] 用 `titleMedium` 加粗——主次靠字重，不靠盒子。
+/// 「新建」行 [ghost] 灰字 + 加号 leading——次级动作的视觉重量低于笔记行。
+class _HubRow extends StatefulWidget {
+  const _HubRow({
+    required this.title,
+    required this.onTap,
+    this.trailing,
+    this.leading,
+    this.kindTag,
+    this.emphasized = false,
+    this.ghost = false,
+    this.promoted = false,
+    this.onTogglePromoted,
+  });
+
+  final String title;
+  final VoidCallback onTap;
+
+  /// 行尾信息（笔记行 = 相对时间）。
+  final Widget? trailing;
+
+  /// 行首小图标（新建行的加号）。笔记行没有——图标是导航的语言，不是这里的。
+  final Widget? leading;
+
+  /// 形态标签（「画布」）。文档是默认 ⇒ 不标。
+  final String? kindTag;
+
+  final bool emphasized;
+  final bool ghost;
+
+  /// 收藏态（决定星标实/空）。非收藏行传 `false`。
+  final bool promoted;
+
+  /// **就地切换收藏**（2026-09-25 A 方案）。非 null 时行尾恒显一枚星标按钮，
+  /// 收藏区用它在主页直接取消收藏；普通行不传 ⇒ 不显星标（标记入口在左侧
+  /// 列表的 `···` 菜单，见 [NoteListView]）。
+  final VoidCallback? onTogglePromoted;
+
+  @override
+  State<_HubRow> createState() => _HubRowState();
+}
+
+class _HubRowState extends State<_HubRow> {
+  final FocusNode _focus = FocusNode();
+  bool _hover = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
+    final Color fill = _hover
+        ? AppTheme.boardFillHover(theme.brightness)
+        : Colors.transparent;
+
+    // ghost 行平时灰；hover/聚焦抬成 onSurface（"次级但活着"）。
+    final Color titleColor = widget.ghost && !_hover && !_focus.hasFocus
+        ? scheme.onSurfaceVariant
+        : scheme.onSurface;
+
+    return FocusRing(
+      focusNode: _focus,
+      borderRadius: radius,
+      child: Material(
+        // ⚠️ 静止态必须显式 transparent（与导航行同款的坑：
+        // null 会落到 canvasColor，把窗口底盖成黑方块）。
+        color: fill,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          focusNode: _focus,
+          borderRadius: radius,
+          hoverColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          onHover: (bool v) => setState(() => _hover = v),
+          onTap: widget.onTap,
+          child: SizedBox(
+            height: 34,
+            width: double.infinity,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
+              child: Row(
+                children: <Widget>[
+                  if (widget.leading != null) ...<Widget>[
+                    widget.leading!,
+                    const SizedBox(width: Tokens.spaceSm),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: (widget.emphasized
+                              ? theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                )
+                              : theme.textTheme.bodyMedium)
+                          ?.copyWith(color: titleColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (widget.kindTag != null) ...<Widget>[
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text(
+                      widget.kindTag!,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  if (widget.trailing != null) ...<Widget>[
+                    const SizedBox(width: Tokens.spaceMd),
+                    DefaultTextStyle.merge(
+                      // 时间与形态 tag 同灰——行尾是"次要信息列"，不抢标题。
+                      style: theme.textTheme.labelSmall!.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      child: widget.trailing!,
+                    ),
+                  ],
+                  // 就地收藏切换（仅收藏区行传了 onTogglePromoted）：恒显星标，
+                  // 实/空随 promoted。与左侧列表 `···` 菜单里的「收藏」同一条
+                  // 通道（togglePromoted），主页就能直接取消收藏。
+                  if (widget.onTogglePromoted != null) ...<Widget>[
+                    const SizedBox(width: Tokens.spaceSm),
+                    SizedBox(
+                      width: Tokens.formatButtonHeight,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        tooltip: widget.promoted ? '取消收藏' : '收藏',
+                        icon: widget.promoted
+                            ? tabler.StarFilled(
+                                height: Tokens.iconMd,
+                                width: Tokens.iconMd,
+                                strokeWidth: Tokens.iconStroke,
+                                colorFilter: ui.ColorFilter.mode(
+                                  scheme.onSurfaceVariant,
+                                  ui.BlendMode.srcIn,
+                                ),
+                              )
+                            : tabler.Star(
+                                height: Tokens.iconMd,
+                                width: Tokens.iconMd,
+                                strokeWidth: Tokens.iconStroke,
+                                colorFilter: ui.ColorFilter.mode(
+                                  scheme.onSurfaceVariant,
+                                  ui.BlendMode.srcIn,
+                                ),
+                              ),
+                        onPressed: widget.onTogglePromoted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 空库：不给空行，直接指路（新建是此时唯一有意义的事）。
 class _EmptyHub extends ConsumerWidget {
   const _EmptyHub();
 

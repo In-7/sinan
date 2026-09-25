@@ -45,6 +45,9 @@ dependencies:
     path: third_party/appflowy_editor
   material_symbols_icons: ^4.2960.0
   tabler_icons_next: 3.47.0
+  # 外引单枚图标用：官方 tabler 包里个别字形不好看时，从其他图标集
+  # （Lucide 等，SVG 资产放 assets/icons/custom/）引进。见 app_custom_icons.dart。
+  flutter_svg: ^2.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -67,11 +70,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # 导航列的**水墨底**（fBm + 域扭曲 + 阈值晕染，**含同 pass 有序抖动** ⇒ 晕染边缘
-  # 不出 8-bit 色带）。形状常数与 lib/src/theme/nav_ink.dart 的镜像由
-  # test/theme/nav_ink_test.dart 逐个数比对（改一边忘另一边会被抓）。
-  shaders:
-    - assets/shaders/nav_ink.frag
+  # 外引单枚图标（不走 tabler_icons_next 包）：SVG 放本目录，
+  # 见 lib/src/theme/app_custom_icons.dart。
+  assets:
+    - assets/icons/custom/
   # 打包字体：霞鹜新晰黑·屏幕阅读版（轻微加粗、调整度量；SIL OFL 开源可
   # 商用）。作为编辑器正文字体（AppTheme.editorFont）：自带中英全套字形 ⇒
   # 中英混排同源、基线恒定；全平台同一份文件，观感一致（11MB）。

@@ -128,9 +128,8 @@ void main() {
         // `IconButton(tooltip:)`（**不要**在外层包 Tooltip，见 a11y 文档）。
         child: Column(
           children: <Widget>[
-            SidebarHeader(
-              title: 'sinan',
-              actions: <Widget>[
+            WindowStrip(
+              leading: <Widget>[
                 IconButton(
                   icon: const Icon(Icons.add),
                   tooltip: '新建笔记',
@@ -147,8 +146,6 @@ void main() {
                   onPressed: () {},
                 ),
               ],
-            ),
-            WindowStrip(
               trailing: <Widget>[
                 IconButton(
                   icon: const Icon(Icons.menu),

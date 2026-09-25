@@ -13,6 +13,10 @@ class Tokens {
   static const double spaceLg = 16;
   static const double spaceXl = 24;
 
+  /// Things 式页首呼吸（§5.6 2026-09-24）：页大标题上方的留白档。
+  /// 与 [spaceXl] 的区别：它是"一页纸"的段落呼吸，不是控件间距。
+  static const double spaceXxl = 48;
+
   // 圆角
   // Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：三档跨度收敛为 **6 / 8 / 12**。
   // 控件档（6）本就与 macOS 同档、未动；改的是"大档过圆"——原 14 让菜单与面板
@@ -24,7 +28,7 @@ class Tokens {
   static const double radiusLg = 12;
 
   // 控件尺寸
-  // 标题栏高度 == 窗口按钮高度，二者始终相等（按钮永远铺满，无留白）。
+  // 主区顶条高度 == 窗控按钮高度，二者始终相等（按钮永远铺满，无留白）。
   //
   // window_manager 的 WindowCaptionButton 内部是
   // Container(constraints: minWidth 46 / minHeight 32) + Center：
@@ -32,11 +36,10 @@ class Tokens {
   // crossAxisAlignment.center）的松约束下会 expand 到父容器最大高度，
   // 所以按钮跟着标题栏一起伸缩，悬浮背景始终与标题栏等高。
   //
-  // 因此本值即按钮高度与点击热区：
-  //   - 32：与 Win11 原生标题栏一致，最紧凑（当前选择）
-  //   - 36：更宽松，热区更大
-  // 不宜低于 32：低于时按钮被 minHeight 顶到 32，会溢出容器。
-  static const double titleBarHeight = 32;
+  // 因此 [titleBarHeightMain] 即按钮高度与点击热区：取 36（用户 2026-09-25
+  // 要求比导航板顶行更宽松）。窗控按钮自身 minHeight 下限 32，36 时居中留
+  // 2px 上下余量，不溢出；[chromeActionButton] 的按钮尺寸也以它为准。
+  static const double titleBarHeightMain = 36;
 
   // ── 图标 ────────────────────────────────────────────────────────
   // ⚠️ 先记住一条：Tabler 的尺寸是**画板框**，不是视觉大小。它的图形画在
@@ -53,6 +56,9 @@ class Tokens {
   // —— 这正是"照抄 24"那版的观感。2026-09-23 用户实机比过 18 / 20 / 24 三档后
   // 定的就是它。描边配套见 [iconStroke]（24 框下恰好给出 1.5px）。
   static const double iconMd = 24;
+  // **应用侧顶条辅助按钮**：框 20，介于 18/24 之间——顶条空间紧凑但又不想用
+  // 18 那档时（如折叠面板按钮）。描边按比例 1.5 × 20/24 ≈ 1.25。
+  static const double iconMdSm = 20;
   // **编辑器官方容器内专用**（工具栏 `SVGIconItemWidget` 的 `iconSize`、斜杠菜单
   // `SelectionMenuIconWidget` 的 `SizedBox(18)`）—— 这是**别人的契约**，
   // 不是我们的选择：跟着应用侧一起调会立刻与官方条目混排、甚至撑破 30px 槽位。

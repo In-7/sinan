@@ -118,7 +118,14 @@ class IndexJob {
       );
 
       // ① 关键词路：本地、不需要模型，先写（语义路失败也不影响它生效）。
-      _writeKeyword(batch);
+      db.execute('BEGIN');
+      try {
+        _writeKeywordRows(batch);
+        db.execute('COMMIT');
+      } on Object {
+        db.execute('ROLLBACK');
+        rethrow;
+      }
 
       // ② 语义路：需要模型。失败按类分流（见 run 的文档）。
       if (backend != null) {
@@ -185,25 +192,59 @@ class IndexJob {
 
   /// 写关键词路：**先清后写**（FTS5 虚拟表不支持外键，删块时没人替它清，见 6.3；
   /// 这里顺带承担"块文本变短/变空"的收缩）。
-  void _writeKeyword(List<_WorkBlock> batch) {
+  /// **保存即索引**（关键词路）：对一篇笔记整篇"先清后写"。
+  ///
+  /// 为什么**按 note_id 整篇清**而不是按块清：编辑常删块——`blocks` 行没了之后
+  /// 它的 FTS 行没人替它清（虚拟表无外键，见 6.3），按块清会漏掉孤儿 ⇒ 搜索里
+  /// 出现"幽灵命中"。整篇清一遍再重写现存块，增/删/改一并覆盖。
+  ///
+  /// ⚠️ **刻意不写 `index_state`**：语义路（向量）仍由手动「建立索引」按钮负责，
+  /// 待处理计数与语义路判断保持同一口径。本方法只保证**关键词路实时**——
+  /// 「刚写完就能搜到」是全局搜索的底线；向量最终一致即可（代价：下次手动
+  /// 跑索引时这些块会被重算一次关键词路，幂等，开销可忽略）。
+  void indexNoteKeywordPath(String noteId) {
+    final List<_WorkBlock> work = <_WorkBlock>[
+      for (final Row r in db.select(
+        'SELECT id, note_id, props_json, fingerprint FROM blocks '
+        'WHERE note_id = ?',
+        <Object?>[noteId],
+      ))
+        // 空文本块（分隔线 / 图片）不参与索引——与 [pendingCount] 同口径。
+        if (_textOf(r['props_json'] as String?) != '')
+          (
+            id: r['id'] as String,
+            noteId: r['note_id'] as String,
+            text: _textOf(r['props_json'] as String?),
+            fingerprint: r['fingerprint'] as String,
+          ),
+    ];
+
     db.execute('BEGIN');
     try {
-      for (final _WorkBlock b in batch) {
-        db.execute('DELETE FROM chunks_fts WHERE block_id = ?', <Object?>[
-          b.id,
-        ]);
-        for (final Chunk c in chunkBlock(b.text)) {
-          db.execute(
-            'INSERT INTO chunks_fts (search_text, block_id, note_id, chunk_text) '
-            'VALUES (?, ?, ?, ?)',
-            <Object?>[c.searchText, b.id, b.noteId, c.text],
-          );
-        }
-      }
+      db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[
+        noteId,
+      ]);
+      _writeKeywordRows(work);
       db.execute('COMMIT');
     } on Object {
       db.execute('ROLLBACK');
       rethrow;
+    }
+  }
+
+  /// 写关键词路（**不含事务**，事务由调用点包——批量跑与整篇重跑共用同一写法）。
+  void _writeKeywordRows(List<_WorkBlock> batch) {
+    for (final _WorkBlock b in batch) {
+      db.execute('DELETE FROM chunks_fts WHERE block_id = ?', <Object?>[
+        b.id,
+      ]);
+      for (final Chunk c in chunkBlock(b.text)) {
+        db.execute(
+          'INSERT INTO chunks_fts (search_text, block_id, note_id, chunk_text) '
+          'VALUES (?, ?, ?, ?)',
+          <Object?>[c.searchText, b.id, b.noteId, c.text],
+        );
+      }
     }
   }
 
