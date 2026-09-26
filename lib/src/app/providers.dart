@@ -335,6 +335,23 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     return n;
   }
 
+  /// **保存即索引**（关键词路）的**容错**外壳。
+  ///
+  /// ⚠️ 索引失败**绝不能连累落盘**：检索是**附属能力**（FTS 一时写不动、
+  /// `databaseProvider` 未注入——测试与某些冷启动边缘都会这样），而"正文没存上"
+  /// 是灾难。所以一律吞掉——索引缺席的后果只是"这篇暂时搜不到"，下次保存或
+  /// 启动期的 `ensureKeywordIndex` 会补上。
+  ///
+  /// 与 `main.dart` 启动期回填、`Retriever.search` 的检索降级**同一条原则**：
+  /// 检索侧的任何失败都不许影响主流程。
+  void _indexKeywordPath(String id) {
+    try {
+      ref.read(indexJobProvider).indexNoteKeywordPath(id);
+    } on Object catch (_) {
+      // 静默：主流程（保存 / 恢复）已经落定，这里只是"少建了一份索引"。
+    }
+  }
+
   /// 保存正文（格式随当前编辑器，见 NoteDocumentAdapter）+ 纯文本，刷新列表。
   ///
   /// 哈希判变没写库时**直接跳过刷新**——连快照都不换，所有监听者零重建。
@@ -354,7 +371,8 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
       // **保存即索引**（关键词路）：blocks 双写刚落定 ⇒ 立刻同步 FTS 行，
       // 保证"刚写完就能搜到"（全局搜索的底线，2026-09-25 用户定）。
       // 关键词路是纯 SQL、毫秒级；语义路仍走设置面板的手动索引（要模型）。
-      ref.read(indexJobProvider).indexNoteKeywordPath(id);
+      // 走 [_indexKeywordPath]：索引失败不许连累这次保存。
+      _indexKeywordPath(id);
     }
   }
 
@@ -403,8 +421,8 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     await _store.restore(note);
     state = AsyncData(_store.allNotes());
     // 删除时清过它的 FTS 行 ⇒ 恢复后补回关键词索引（否则撤销回来的笔记
-    // 内容搜不到）。
-    ref.read(indexJobProvider).indexNoteKeywordPath(note.id);
+    // 内容搜不到）。同样走 [_indexKeywordPath]：不许连累这次恢复。
+    _indexKeywordPath(note.id);
     // 不带 focus：撤销的入口在列表的 toast 上，用户的手还在列表那边。
     ref.read(locateProvider.notifier).locate(noteId: note.id);
   }
@@ -413,6 +431,14 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   Future<void> togglePromoted(Note note) async {
     await _settled();
     await _store.setPromoted(note.id, note.promotedAt == null);
+    state = AsyncData(_store.allNotes());
+  }
+
+  /// 保存标签并刷新列表。标签是整理元数据：不动 revised_at
+  /// （见 [NoteStore.updateTags]），归一化也在 store 层做，这里透传。
+  Future<void> saveTags(String id, List<String> tags) async {
+    await _settled();
+    await _store.updateTags(id, tags);
     state = AsyncData(_store.allNotes());
   }
 }

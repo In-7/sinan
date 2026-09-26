@@ -341,6 +341,24 @@ class AppDatabase {
       db.userVersion = 11;
     }
 
+    // v12：笔记标签（方案 A：`notes` 单列 JSON 字符串数组，见 [Note.tags]）。
+    //
+    // 为什么不建 `tags` / `note_tags` 关联表：真多对多留给"按标签组织列表 /
+    // 统计"需求出现的那天——关联表后补迁移并不痛苦（v6 的整表重建都走过来了），
+    // 反倒是它起步会把 MVP 拖成一周。个人笔记量级下"按标签聚合"扫全列可接受。
+    //
+    // 标签**跨 kind 一套池子**：kind 已是类型维度，标签是正交的另一层。
+    //
+    // 幂等走 [_hasColumn]（存量库门闩回拨 / 测试夹具都安全，同 v10 的口径）。
+    if (db.userVersion < 12) {
+      if (!_hasColumn(db, 'notes', 'tags')) {
+        db.execute(
+          "ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';",
+        );
+      }
+      db.userVersion = 12;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。

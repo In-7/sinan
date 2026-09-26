@@ -45,6 +45,17 @@ class CustomIcons {
   static Widget settings({double size = Tokens.iconMd, Color? color}) =>
       _asset('settings', size: size, color: color);
 
+  /// 新建（Remix `add-line`，2026-09-26 定）。顶行工具图标在用。
+  ///
+  /// 新建（Remix `add-circle-line`，2026-09-26 回到这个）。顶行工具图标在用。
+  ///
+  /// 顶行四枚**同源**（Remix）才能"一排安静的工具图标"：早先这枚用过 `tabler.Plus`
+  /// （stroke 制，不在 Remix 体系），又试过 `add-line`（纯描边加号）与 `add-large-fill`
+  /// （实心填充、比另三枚显重）。最终用户定回 `add-circle-line`——闭合圆环 + 圈内
+  /// 加号，是"新建"语义最直白的那种图标。
+  static Widget add({double size = Tokens.iconMd, Color? color}) =>
+      _asset('add-circle-line', size: size, color: color);
+
   /// **彩色插画图标**（注意：与上面 Remix 单色线形不同族）。
   ///
   /// 来源是 iconfont 式多色 SVG（`阳光` / `星球`，画板 1024×1024，`fill` 写死

@@ -90,4 +90,53 @@ void main() {
 
     expect(ftsCount(n.id), 0, reason: '删笔记必须连带清检索索引，否则幽灵命中');
   });
+
+  test('AppFlowy 块树格式（文本在 data.delta，无顶层 text）也能索引并搜到', () async {
+    final Note n = notes.create();
+    // 真实 AppFlowy 段落块：文本在 data.delta，没有顶层 `text` 键——之前直接读
+    // `text` 会抽成空串，正文索引全空（「搜不到内容」的根因，2026-09-25 修）。
+    db.execute(
+      'INSERT INTO blocks (id, note_id, type, props_json, ord, parent_id, '
+      'created_at, updated_at, fingerprint) '
+      'VALUES (?, ?, \'paragraph\', ?, 1024, NULL, 0, 0, \'fp-test\')',
+      <Object?>[
+        'b1',
+        n.id,
+        jsonEncode(<String, Object>{
+          'delta': <Object>[<String, Object>{'insert': '番茄工作法的核心是专注二十五个分钟'}],
+        }),
+      ],
+    );
+
+    IndexJob(db: db).indexNoteKeywordPath(n.id);
+
+    expect(ftsCount(n.id), 1, reason: 'delta 里的文本必须进 chunks_fts');
+    final RetrievalResult r = await Retriever(db: db).search('番茄工作法');
+    expect(r.hits, isNotEmpty, reason: 'AppFlowy 格式的块必须可搜到');
+    expect(r.hits.first.noteId, n.id);
+  });
+
+  test('ensureKeywordIndex 补建缺失的笔记（存量 AppFlowy 笔记无需手动索引）', () async {
+    final Note n = notes.create();
+    db.execute(
+      'INSERT INTO blocks (id, note_id, type, props_json, ord, parent_id, '
+      'created_at, updated_at, fingerprint) '
+      'VALUES (?, ?, \'paragraph\', ?, 1024, NULL, 0, 0, \'fp-test\')',
+      <Object?>[
+        'b1',
+        n.id,
+        jsonEncode(<String, Object>{
+          'delta': <Object>[<String, Object>{'insert': '存量笔记里也能被搜到的正文'}],
+        }),
+      ],
+    );
+    expect(ftsCount(n.id), 0, reason: '还没索引过 ⇒ chunks_fts 为空');
+
+    IndexJob(db: db).ensureKeywordIndex();
+
+    expect(ftsCount(n.id), 1, reason: 'ensureKeywordIndex 必须补齐缺失笔记');
+    final RetrievalResult r = await Retriever(db: db).search('存量笔记');
+    expect(r.hits, isNotEmpty);
+    expect(r.hits.first.noteId, n.id);
+  });
 }

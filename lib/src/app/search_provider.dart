@@ -33,6 +33,7 @@ class SearchState {
     this.hits = const <SearchHit>[],
     this.searching = false,
     this.vectorFallbackReason,
+    this.activeTag,
   });
 
   final String query;
@@ -44,6 +45,10 @@ class SearchState {
   /// 语义路降级原因（6.4：**提示而非错误**）——没配嵌入模型 / 扩展缺席时，
   /// 关键词路照常工作，UI 只需要一句话说明"本次只有关键词检索"。
   final String? vectorFallbackReason;
+
+  /// 当前选中的**标签筛选**（null = 不过滤）。与查询词正交：
+  /// 有词时对命中做内存过滤；无词时单独当"标签视图"用（见 [SearchNotifier.selectTag]）。
+  final String? activeTag;
 }
 
 /// 输入去抖窗口。FTS5 查询本身 <10ms，去抖主要防每个键一次 rebuild +
@@ -72,21 +77,112 @@ class SearchNotifier extends Notifier<SearchState> {
   @override
   SearchState build() {
     ref.onDispose(() => _timer?.cancel());
+    // **列表一变，结果跟着重算**（为什么必须 listen，见 [_onNotesChanged]）。
+    ref.listen(
+      notesProvider,
+      (AsyncValue<List<Note>>? _, AsyncValue<List<Note>> next) {
+        if (next.value != null) _onNotesChanged();
+      },
+    );
     return const SearchState();
   }
 
+  /// notesProvider 变化（打/删标签、删除/恢复笔记）后重算结果。
+  ///
+  /// 为什么必须 listen 而不是把 hits 里的 Note 当活的：[SearchState.hits] 是
+  /// `selectTag` / `_search` 算出来的**静态快照**，里面抱的 Note 也是旧对象
+  /// （tags 字段是打快照那一刻的）。chips 行 watch 着新列表、结果列表停在
+  /// 快照上，两边必然打架——"标签取消了，chips 没了，带标签的文章还挂着"
+  /// （2026-09-26 实机）。有查询词时重跑一次检索（FTS 便宜；语义路重打一次
+  /// HTTP，但只在列表真变了时发生，打/删标签不是高频操作，可接受）。
+  void _onNotesChanged() {
+    final SearchState s = state;
+    final List<Note> notes = ref.read(notesProvider).value ?? const <Note>[];
+    final String? tag = s.activeTag;
+    // 选中的标签从池子里**彻底消失**（最后一篇的标签被摘掉）⇒ 连筛选一起撤：
+    // 否则用户盯着一个已不存在的 chip 对应的空列表，Esc 都得多按一层。
+    final bool tagAlive = tag == null
+        ? true
+        : notes.any((Note n) => n.tags.contains(tag));
+
+    if (s.query.isEmpty) {
+      // 空查询：标签视图 / 空态是纯内存推导，直接用新列表算。
+      state = tagAlive ? _tagView(s.activeTag) : const SearchState();
+      return;
+    }
+    // 有查询词：重跑检索（落地时按 activeTag 过滤的那套不变）。
+    if (!tagAlive) {
+      state = SearchState(
+        query: s.query,
+        searching: s.searching,
+        vectorFallbackReason: s.vectorFallbackReason,
+      );
+    }
+    unawaited(_search(s.query));
+  }
+
   /// 输入入口：立即回显查询词，[kSearchDebounce] 后执行检索。
+  ///
+  /// 清词**不丢标签筛选**：activeTag 还在时就落进"标签视图"（标签本身就是
+  /// 一条查询），Esc 清词后 chips 的选中态与结果保持一致。
   void submit(String raw) {
     _timer?.cancel();
     final String q = raw.trim();
     if (q.isEmpty) {
       _seq++; // 使在途检索作废
-      state = const SearchState();
+      state = _tagView(state.activeTag);
       return;
     }
-    state = SearchState(query: raw, searching: true);
+    state = SearchState(query: raw, activeTag: state.activeTag, searching: true);
     _timer = Timer(kSearchDebounce, () => _search(q));
   }
+
+  /// 选中 / 取消一个标签筛选（点已选中的 = 取消，传 null）。
+  ///
+  /// 三种情形：
+  /// - **无查询词**：标签本身就是查询 ⇒ 落进"标签视图"（该标签的全部笔记，
+  ///   最近修改倒序，与列表口径一致）——chips 单独就能当按标签逛的入口；
+  /// - **有查询词且空闲**：对当前命中做**内存过滤**，不重跑检索——FTS 便宜，
+  ///   但语义路是 HTTP，为点一个 chip 重打一遍 Ollama 不值得；
+  /// - **有查询词且在途**：只改 state，[_search] 落地时统一按 activeTag 过滤。
+  void selectTag(String? tag) {
+    if (state.activeTag == tag) return;
+    final String q = state.query.trim();
+    if (q.isEmpty) {
+      _seq++; // 作废在途检索
+      state = _tagView(tag);
+      return;
+    }
+    state = SearchState(
+      query: state.query,
+      activeTag: tag,
+      searching: state.searching,
+      vectorFallbackReason: state.vectorFallbackReason,
+      hits: _filterByTag(state.hits, tag),
+    );
+  }
+
+  /// 空查询的"标签视图"。查 null = 回到初始空态。
+  SearchState _tagView(String? tag) {
+    if (tag == null) return const SearchState();
+    final List<Note> notes = ref.read(notesProvider).value ?? const <Note>[];
+    final List<SearchHit> hits = <SearchHit>[
+      for (final Note n in notes)
+        if (n.tags.contains(tag))
+          (note: n, titleMatch: false, snippet: null, score: null),
+    ]..sort(
+        (SearchHit a, SearchHit b) => b.note.revisedAt.compareTo(a.note.revisedAt),
+      );
+    return SearchState(activeTag: tag, hits: hits);
+  }
+
+  /// 标签筛选（纯内存；标签**跨 kind 一套池子**，画布笔记同样命中）。
+  static List<SearchHit> _filterByTag(List<SearchHit> hits, String? tag) =>
+      tag == null
+          ? hits
+          : hits
+              .where((SearchHit h) => h.note.tags.contains(tag))
+              .toList(growable: false);
 
   Future<void> _search(String q) async {
     final int seq = ++_seq;
@@ -128,7 +224,7 @@ class SearchNotifier extends Notifier<SearchState> {
 
     if (seq != _seq) return; // 过期结果：用户已经又输入了
 
-    final List<SearchHit> hits = merged.values.toList()
+    final List<SearchHit> sorted = merged.values.toList()
       ..sort((SearchHit a, SearchHit b) {
         // 标题命中置顶（最强信号），组内按 RRF 分，最后按修改时间兜底。
         final int byTitle = (a.titleMatch ? 0 : 1).compareTo(b.titleMatch ? 0 : 1);
@@ -141,9 +237,12 @@ class SearchNotifier extends Notifier<SearchState> {
         return b.note.revisedAt.compareTo(a.note.revisedAt);
       });
 
+    // 标签筛选在**落地时**统一套（读此刻的 state.activeTag）：覆盖"筛选选中
+    // 期间输入新词 / 在途检索"两种时序，筛选逻辑只有 [_filterByTag] 一份。
     state = SearchState(
       query: q,
-      hits: hits,
+      activeTag: state.activeTag,
+      hits: _filterByTag(sorted, state.activeTag),
       vectorFallbackReason: fallback,
     );
   }
@@ -151,3 +250,25 @@ class SearchNotifier extends Notifier<SearchState> {
 
 final searchNotifierProvider =
     NotifierProvider<SearchNotifier, SearchState>(SearchNotifier.new);
+
+/// 全库**标签池**（跨 kind 一套）：按出现篇数倒序、同数按名称排。
+///
+/// 搜索页标签 chips 的数据源。[notesProvider] 本来就装着全部笔记的元数据，
+/// 这里纯内存聚合，零额外查询；标签一变（打/删）列表刷新时自动跟着重算。
+final allTagsProvider = Provider<List<(String, int)>>((ref) {
+  final List<Note> notes = ref.watch(notesProvider).value ?? const <Note>[];
+  final Map<String, int> counts = <String, int>{};
+  for (final Note n in notes) {
+    for (final String t in n.tags) {
+      counts[t] = (counts[t] ?? 0) + 1;
+    }
+  }
+  final List<(String, int)> out = <(String, int)>[
+    for (final MapEntry<String, int> e in counts.entries) (e.key, e.value),
+  ]..sort(((String, int) a, (String, int) b) {
+      final int byCount = b.$2.compareTo(a.$2);
+      if (byCount != 0) return byCount;
+      return a.$1.compareTo(b.$1);
+    });
+  return out;
+});

@@ -184,10 +184,15 @@ class IndexJob {
       'OR ? IS NULL OR s.model <> ?';
 
   /// 待处理的 FROM/WHERE 片段（计数与取数共用，避免两处判据漂移）。
+  ///
+  /// ⚠️ 文本判据必须同时认 `delta` 与 `text`：AppFlowy 块文本在 `data.delta`
+  /// 里、没有顶层 `text` 键，只认 `text` 会把所有 AppFlowy 块排除在待索引集外
+  /// （2026-09-25 修，与 [_textOf] 同一口径）。
   static const String _pendingFrom =
       'FROM blocks b LEFT JOIN index_state s ON s.block_id = b.id '
       'WHERE b.note_id IN (SELECT id FROM notes WHERE deleted_at IS NULL) '
-      "  AND COALESCE(json_extract(b.props_json, '$_textPath'), '') <> '' "
+      "  AND (json_extract(b.props_json, '\$.delta') IS NOT NULL "
+      "       OR COALESCE(json_extract(b.props_json, '$_textPath'), '') <> '') "
       '  AND ($_pendingCondition)';
 
   /// 写关键词路：**先清后写**（FTS5 虚拟表不支持外键，删块时没人替它清，见 6.3；
@@ -221,16 +226,32 @@ class IndexJob {
 
     db.execute('BEGIN');
     try {
-      db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[
-        noteId,
-      ]);
-      _writeKeywordRows(work);
-      db.execute('COMMIT');
+    db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[
+      noteId,
+    ]);
+    _writeKeywordRows(work);
+    db.execute('COMMIT');
     } on Object {
-      db.execute('ROLLBACK');
-      rethrow;
+    db.execute('ROLLBACK');
+    rethrow;
     }
-  }
+    }
+
+    /// 启动期一次性补建**关键词路**：把所有「还没有 `chunks_fts` 行」的笔记整篇索引。
+    ///
+    /// 幂等、纯 SQL、毫秒级。覆盖存量 AppFlowy 笔记——它们之前因块 `data` 内文本在
+    /// `delta` 里（没有顶层 `text`）而被漏索引，全局搜索正文搜不到（2026-09-25 修）。
+    /// 只补缺的：已索引的笔记不动，故每次启动多为空操作（与 `backfillBlocks` 同节奏）。
+    void ensureKeywordIndex() {
+    final ResultSet rs = db.select(
+    'SELECT DISTINCT n.id AS id FROM notes n '
+    "WHERE n.deleted_at IS NULL AND n.kind != 'canvas' "
+    'AND NOT EXISTS (SELECT 1 FROM chunks_fts c WHERE c.note_id = n.id)',
+    );
+    for (final Row row in rs) {
+    indexNoteKeywordPath(row['id'] as String);
+    }
+    }
 
   /// 写关键词路（**不含事务**，事务由调用点包——批量跑与整篇重跑共用同一写法）。
   void _writeKeywordRows(List<_WorkBlock> batch) {
@@ -250,12 +271,30 @@ class IndexJob {
 
   /// `props_json` → 文本（与 `NoteStore.textOfProps` 同口径：容错解析，坏 JSON
   /// 视为空文本而不是崩掉整轮索引）。
+  ///
+  /// ⚠️ 块 `data` 是 AppFlowy v2 格式：文本在 `data.delta`
+  /// （`[{insert: "..."}]`），**没有顶层 `text` 键**——直接读 `text` 会把所有
+  /// AppFlowy 笔记抽成空串，正文索引全空 ⇒ 全局搜索「搜不到内容」（2026-09-25 修）。
+  /// 故先抽 `delta`，再回退 `text`（合成 / 旧格式兼容，测试也用这个）。
   static String _textOf(String? propsJson) {
     if (propsJson == null || propsJson.isEmpty) return '';
     final Object? decoded = _tryDecode(propsJson);
     if (decoded is! Map) return '';
+    final String fromDelta = _deltaText(decoded['delta']);
+    if (fromDelta.isNotEmpty) return fromDelta;
     final Object? text = decoded['text'];
     return text is String ? text : '';
+  }
+
+  /// 从 AppFlowy 的 `delta`（`[{insert: "..."}, {insert: {…嵌入}}]`）拼纯文本：
+  /// 只取 `insert` 为字符串的片段，嵌入对象（图片 / 公式 / 附件）跳过。
+  static String _deltaText(Object? delta) {
+    if (delta is! List) return '';
+    final StringBuffer out = StringBuffer();
+    for (final Object? op in delta) {
+      if (op is Map && op['insert'] is String) out.write(op['insert']);
+    }
+    return out.toString();
   }
 
   static Object? _tryDecode(String json) {

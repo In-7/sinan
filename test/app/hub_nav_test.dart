@@ -4,11 +4,23 @@ import 'package:material_ui/material_ui.dart';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:sinan/src/app/hub_nav.dart';
 import 'package:sinan/src/app/providers.dart'
-    show NotesNotifier, notesProvider, selectedNoteIdProvider;
+    show
+        NotesNotifier,
+        appDataDirProvider,
+        databaseProvider,
+        noteStoreProvider,
+        notesProvider,
+        selectedNoteIdProvider,
+        settingsStoreProvider;
+import 'package:sinan/src/data/database.dart';
+import 'package:sinan/src/data/note_store.dart';
+import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sinan/src/theme/tokens.dart';
+// 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
+import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
 /// 覆写用的假 Notifier：直接吐固定列表，不碰真库（[NotesNotifier.build] 原本
 /// 读 `_store.allNotes()`，本类绕开它 —— 测试只要确定的几条笔记）。
@@ -73,7 +85,8 @@ void main() {
     // 搜索图标已接线（2026-09-25）：不再是"开发中"占位，tooltip 是真动作。
     expect(find.byTooltip('搜索'), findsOneWidget);
     expect(find.byTooltip('主页'), findsOneWidget);
-    // 「新建」按钮已撤（2026-09-24 后续定）。
+    // 新建（2026-09-26 定：挪进切换器，作为第三个同款单元格）同样是图标（Tooltip）。
+    expect(find.byTooltip('新建'), findsOneWidget);
     expect(find.text('新建'), findsNothing);
 
     // 切换器的两段标签都在（滑块在其下滑动，标签不动）。
@@ -243,9 +256,10 @@ void main() {
           ),
         )
         .toList();
-    // 顶行 3 个图标 + 笔记空间的 1 条列表行 + 该行「···」按钮（Visibility 用
-    // maintainSize/maintainState，即便 hover 前不可见也仍驻树，自带一个透明
-    // Material）。切换器用 DecoratedBox，无 Material。
+    // 顶行 3 个图标（设置 / 搜索 / 主页）+ 笔记空间的 1 条列表行 + 该行
+    // 「···」按钮（Visibility 用 maintainSize/maintainState，即便 hover 前不可见
+    // 也仍驻树，自带一个透明 Material）。切换器用 DecoratedBox，无 Material；
+    // 「新建」在切换器井内最右，是同款新拟态正方格（DecoratedBox，无 Material）。
     expect(materials.length, 5);
 
     final int transparent = materials
@@ -269,10 +283,14 @@ void main() {
 
     bool hasGradient(Gradient? g) => g != null;
 
+    // ⚠️ 只数**切换器滑块**（Key `spaceThumb`）子树里的玻璃片，故意**排除**
+    // 切换器井内最右那枚「+」正方格——它按设计也是同款凸玻璃（永远抬起），
+    // 自带一层玻璃光；若算进 HubNav 全树就会多一片。本用例只钉"切换器本身的玻璃
+    // 片只在选中处出现"这一条，+ 格的玻璃不在此断言范围。
     final List<DecoratedBox> lit = tester
         .widgetList<DecoratedBox>(
           find.descendant(
-            of: find.byType(HubNav),
+            of: find.byKey(const Key('spaceThumb')),
             matching: find.byType(DecoratedBox),
           ),
         )
@@ -339,6 +357,97 @@ void main() {
       lessThan(0.5),
       reason: '文字中心与玻璃片中心差了 ${text.center.dy - pill.center.dy}px —— '
           'Stack 对齐丢了，行又被钉到上沿了',
+    );
+  });
+
+  /// **切换器内「新建」**（2026-09-26 定：井内最右的正方格）：点它弹出
+  /// 「新建笔记 / 新建画布」两行菜单，
+  /// 且菜单里标出快捷键（§3.5：键位的发现入口）。
+  testWidgets('切换器「新建」⇒ 菜单含 新建笔记 / 新建画布 + 快捷键，锚在按钮右下', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(scope());
+    await tester.pumpAndSettle();
+
+    final Rect anchor = tester.getRect(find.byTooltip('新建'));
+    await tester.tap(find.byTooltip('新建'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('新建笔记'), findsOneWidget);
+    expect(find.text('新建画布'), findsOneWidget);
+    // 快捷键写在行尾（发现入口）。
+    expect(find.text('Ctrl+N'), findsOneWidget);
+    expect(find.text('Ctrl+Shift+N'), findsOneWidget);
+
+    // **锚点闸门**（2026-09-26 实机抓到）：菜单必须贴按钮右下角弹出。曾有
+    // GlobalKey 没挂到按钮树上 ⇒ currentContext 为 null ⇒ position 落在
+    // Offset.zero ⇒ 菜单弹到屏幕左上角。钉死：菜单首行要在按钮**下方**、
+    // 且横向不早于按钮左缘。
+    final Offset firstItem = tester.getTopLeft(find.text('新建笔记'));
+    expect(
+      firstItem.dy,
+      greaterThanOrEqualTo(anchor.bottom - 4),
+      reason: '菜单应从按钮下缘往下弹，而不是跑到屏幕顶部',
+    );
+    expect(
+      firstItem.dx,
+      greaterThanOrEqualTo(anchor.left),
+      reason: '菜单应锚在按钮右下角，而不是跑到屏幕左上角',
+    );
+  });
+
+  /// 菜单选「新建画布」⇒ 真的建出画布，**并把空间切到画布**。
+  ///
+  /// 钉的是那条最容易漏的：命令层只 create + locate，**不切空间** ⇒ 在笔记空间
+  /// 建画布，主区开了、侧栏列表却把新画布筛掉 ⇒ "点了没反应"。
+  testWidgets('菜单「新建画布」⇒ 建出画布并把空间切过去', (
+    WidgetTester tester,
+  ) async {
+    // 真库（内存）：新建要走真实 [NoteStore]，不是假列表。
+    final Database db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+
+    const String dataDir = r'C:\Users\test\AppData\Roaming\sinan';
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        noteStoreProvider.overrideWithValue(NoteStore(db)),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(dataDir),
+        databaseProvider.overrideWithValue(db),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const Scaffold(body: HubNav()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(navSpaceProvider), isFalse, reason: '默认笔记空间');
+
+    await tester.tap(find.byTooltip('新建'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建画布'));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(navSpaceProvider),
+      isTrue,
+      reason: '建画布必须把空间切到画布，否则侧栏列表里看不见它（"点了没反应"）',
+    );
+    final List<Note> notes = container.read(notesProvider).value ?? <Note>[];
+    expect(
+      notes.any((Note n) => n.kind == NoteKind.canvas),
+      isTrue,
+      reason: '菜单的「新建画布」必须真的建出一条画布笔记',
     );
   });
 

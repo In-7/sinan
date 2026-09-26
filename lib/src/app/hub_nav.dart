@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'dart:ui' as ui;
@@ -14,6 +16,7 @@ import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import '../app/undo_toast.dart';
+import '../command/commands.dart' show runCommandById;
 import 'providers.dart'
     show NotesNotifier, locateProvider, notesProvider, selectedNoteIdProvider;
 import 'settings_panel.dart' show showSettingsPanel;
@@ -72,6 +75,18 @@ class NavSpace extends Notifier<bool> {
   bool build() => false; // 默认笔记空间
 
   void select(bool isCanvas) => state = isCanvas;
+}
+
+/// 从导航板顶行的「新建」新建一篇（菜单选了哪种就建哪种）。
+///
+/// 走 [runCommandById]（§3.2 命令是权威面：与 `Ctrl+N` / `Ctrl+Shift+N` **同一条
+/// 路**，不就地调 notifier，否则迟早漂移成"按钮能建、快捷键不能"）。
+///
+/// ⚠️ **切空间这一步命令不做**（`runCreateNote` 只 create + locate）：不切的话，
+/// 在笔记空间建画布 ⇒ 主区开了、侧栏列表却把新画布筛掉，正是"点了没反应"。
+void createFromNav(WidgetRef ref, {required bool canvas}) {
+  unawaited(runCommandById(ref, canvas ? 'canvas.new' : 'note.new'));
+  ref.read(navSpaceProvider.notifier).select(canvas);
 }
 
 /// 主页导航当前选中的分区（0 = 主页）。
@@ -149,9 +164,9 @@ class HubNav extends ConsumerWidget {
               // 图标行上呼吸 = 行下呼吸（2026-09-24 用户定：上下等距 8，
               // 此前上 16 / 下 8，图标行看着偏沉）。
               const SizedBox(height: Tokens.spaceSm),
-              // 顶部图标行：主页 / 搜索 / 设置（2026-09-24 用户定，原顶部
-              // 「新建」挪到列表中段）。均布横向铺开——参考图的语言：
-              // 一排安静的工具图标，而不是一列按钮。
+              // 顶部图标行：设置 / 搜索 / 主页（2026-09-26 定：**新建已收进切换器**，
+              // 是井内最右的正方格，见下方那行——顶行只留全局工具）。
+              // 均布横向铺开——参考图的语言：一排安静的工具图标，而不是一列按钮。
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: <Widget>[
@@ -204,13 +219,17 @@ class HubNav extends ConsumerWidget {
               // 顶行与切换器之间**不再有分隔线**（2026-09-24 用户定：淡线也撤，
               // 靠留白分节）。2026-09-25 用户定：间距收到 4px，更紧凑。
               const SizedBox(height: 4),
-              // **空间切换器**（滑动）：选中哪半边，下面列表就过滤成哪类笔记。
-              // 2026-09-24 用户定：取代原先两行「笔记 / 画布」导航项——那两行
-              // 是"目的地"，现在是"空间过滤"，点列表项才真的打开笔记。
+              // **空间切换器**：井内三格——笔记 / 画布（平分、滑块在其间滑）+
+              // 最右一枚正方「+」格（和滑块同款凸玻璃，点它弹「新建笔记 / 新建画布」
+              // 菜单）。三格共用一个胶囊控件，"切空间 + 给那个空间加一篇"在同一
+              // 控件里，语义直给、分区明确（2026-09-26 定，第二版：+ 收进井里）。
+              // 「+」格的回调见 [_SpaceSwitch] 的 onNewNote / onNewCanvas。
               _SpaceSwitch(
                 selected: isCanvasSpace,
                 onChanged: (bool v) =>
                     ref.read(navSpaceProvider.notifier).select(v),
+                onNewNote: () => createFromNav(ref, canvas: false),
+                onNewCanvas: () => createFromNav(ref, canvas: true),
               ),
               const SizedBox(height: Tokens.spaceMd),
               // 该空间的**内联列表**（真实笔记，按 kind 过滤）。
@@ -370,16 +389,60 @@ class _GlassSheet extends StatelessWidget {
 /// - 两段标签**静止不动**（iOS 分段控件语言），滑块在其下滑动 ⇒ 文字不会跟着
 ///   位移、也不会被不透明滑块盖住（滑块画在标签**之下**）。
 ///
+/// 凸起件的阴影对（滑块 / 「+」格共用）：下缘投影（暗）+ 上缘受光（白），
+/// 成对才读作"抬起"。
+///
+/// ⚠️ **暗色必须分档**：暗色里黑影落在深井上几乎不可见，"浮起"主要靠**白缘光**
+/// ⇒ 暗色白侧加强（0.12 → 0.16）、黑侧加深（0.10 → 0.28）；亮色维持原值
+/// （2026-09-26：暗色切换器没有层次，见 [AppTheme.raisedFill] 注释）。
+List<BoxShadow> _raisedShadows(Brightness b) =>
+    b == Brightness.dark
+    ? <BoxShadow>[
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.28),
+          blurRadius: 6,
+          offset: const Offset(0, 2),
+        ),
+        BoxShadow(
+          color: Colors.white.withValues(alpha: 0.16),
+          blurRadius: 3,
+          offset: const Offset(0, -1),
+        ),
+      ]
+    : <BoxShadow>[
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.10),
+          blurRadius: 5,
+          offset: const Offset(0, 2),
+        ),
+        BoxShadow(
+          color: Colors.white.withValues(alpha: 0.12),
+          blurRadius: 3,
+          offset: const Offset(0, -1),
+        ),
+      ];
+
 /// ⚠️ 阴影只挂在这一枚小滑块上——整板浮雕是 2026-09-24 撤掉的方案，不许回潮。
 /// 全部纯绘制（渐变 + boxShadow），无 saveLayer。
 class _SpaceSwitch extends StatefulWidget {
-  const _SpaceSwitch({required this.selected, required this.onChanged});
+  const _SpaceSwitch({
+    required this.selected,
+    required this.onChanged,
+    required this.onNewNote,
+    required this.onNewCanvas,
+  });
 
   /// `true` = 画布空间（滑块在右半边）。
   final bool selected;
 
   /// 切到哪个空间（`true` = 画布）。
   final ValueChanged<bool> onChanged;
+
+  /// 点切换器最右那枚「+」方格 ⇒ 弹「新建笔记 / 新建画布」菜单。
+  final VoidCallback onNewNote;
+
+  /// 菜单里选了「新建画布」。
+  final VoidCallback onNewCanvas;
 
   @override
   State<_SpaceSwitch> createState() => _SpaceSwitchState();
@@ -401,9 +464,10 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
     // 井的内壁厚度 = 滑块与轨道之间露出的那条边。
     const double trackPad = 3;
     const double height = 36;
-    // 新拟态的"凹凸"全部来自这一对色差：井（深）vs 滑块（= 列底，浅）。
+    // 新拟态的"凹凸"来自色差 + 阴影对：井 vs 滑块。滑块必须**比井亮一档**
+    // （凸面令牌 [AppTheme.raisedFill]——暗色下不能跟列底同色，否则糊成一团）。
     final Color trackFill = AppTheme.boardFill(brightness);
-    final Color thumbFill = AppTheme.windowBackground(brightness);
+    final Color thumbFill = AppTheme.raisedFill(brightness);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -428,7 +492,15 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
           },
           child: LayoutBuilder(
             builder: (BuildContext _, BoxConstraints c) {
-              final double seg = (c.maxWidth - 2 * trackPad) / 2;
+              // 布局：[笔记][画布] 平分剩余空间，最右一枚**正方「+」格**
+              // （宽 = 高 = 滑块高，见下）。横向账（都用 trackPad 这一个厚度）：
+              //   滑块左缩进 trackPad ｜ 笔记+画布（Expanded×2）｜ 缝 trackPad
+              //   ｜「+」格 action ｜ 右侧井厚 trackPad
+              // 滑块只盖笔记 / 画布（+ 是动作，不吃滑块），seg 比 Expanded 窄
+              // 一个 trackPad——保证滑块左缘在"画布"起点、右缘距井右壁 trackPad，
+              // 与两格版同样的对称几何。
+              const double action = height - 2 * trackPad;
+              final double seg = (c.maxWidth - 4 * trackPad - action) / 2;
               return SizedBox(
                 height: height,
                 child: Stack(
@@ -474,20 +546,7 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                         decoration: BoxDecoration(
                           color: thumbFill,
                           borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
-                          boxShadow: <BoxShadow>[
-                            // 下缘投影（暗）。
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.10),
-                              blurRadius: 5,
-                              offset: const Offset(0, 2),
-                            ),
-                            // 上缘受光（白）——与下缘成对，才读作"抬起"。
-                            BoxShadow(
-                              color: Colors.white.withValues(alpha: 0.12),
-                              blurRadius: 3,
-                              offset: const Offset(0, -1),
-                            ),
-                          ],
+                          boxShadow: _raisedShadows(brightness),
                         ),
                         // 圆角收口：把三层光裁进滑块（同 Material 的 Clip.antiAlias）。
                         child: ClipRRect(
@@ -496,7 +555,10 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                         ),
                       ),
                     ),
-                    // ③ 两段（画在滑块**之上** ⇒ 文字不会被不透明滑块盖住）。
+                    // ③ 三格（画在滑块**之上** ⇒ 文字不会被不透明滑块盖住）。
+                    // 前两格是空间切换（active 随选中态，Expanded 平分）；最右是
+                    // 「+」正方格——和滑块同一枚凸玻璃材料，点它弹新建菜单
+                    // （见 [_NewButton]）。
                     Row(
                       children: <Widget>[
                         _Segment(
@@ -511,6 +573,18 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                           active: widget.selected,
                           onTap: () => widget.onChanged(true),
                         ),
+                        // 井缝：把「+」格与滑块活动区分开（厚度与井壁一致）。
+                        const SizedBox(width: trackPad),
+                        SizedBox(
+                          width: action,
+                          height: action,
+                          child: _NewButton(
+                            onNewNote: widget.onNewNote,
+                            onNewCanvas: widget.onNewCanvas,
+                          ),
+                        ),
+                        // 右侧井厚：让「+」格与滑块同样缩进 trackPad。
+                        const SizedBox(width: trackPad),
                       ],
                     ),
                   ],
@@ -562,6 +636,167 @@ class _Segment extends StatelessWidget {
                       ? theme.colorScheme.onSurface
                       : theme.colorScheme.onSurfaceVariant,
                   fontWeight: active ? FontWeight.w600 : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 切换器**井里最右**那枚「新建」正方格（2026-09-26 定）：和滑块同一枚新拟态
+/// 材料——底色取 [AppTheme.windowBackground]（= 列底，比井亮一档）+ 极淡凸阴影
+/// （下黑上白）+ [_GlassSheet] 三层玻璃光，所以读作"同一个控件里一块凸起"，
+/// 不像早先那版浮在外面、风格打架。
+///
+/// 尺寸由父级给（切换器里 = 滑块高的正方）；它**不吃滑块**——滑块只管
+/// 笔记 / 画布两空间，「+」是动作，永远凸起、永远可点。点它弹
+/// 「新建笔记 / 新建画布」菜单（用户定：保留菜单，不改成"直接建当前空间"），
+/// 锚点贴它右下角。
+///
+/// ⚠️ 同切换器：不用 `Material`（拖进 InkWell 会撞"静止态落到 canvasColor 变黑块"
+/// 那个坑）。凸起感全靠 boxShadow + 玻璃光纯绘制，无 saveLayer。
+class _NewButton extends StatefulWidget {
+  const _NewButton({required this.onNewNote, required this.onNewCanvas});
+
+  /// 菜单里选了「新建笔记」。
+  final VoidCallback onNewNote;
+
+  /// 菜单里选了「新建画布」。
+  final VoidCallback onNewCanvas;
+
+  @override
+  State<_NewButton> createState() => _NewButtonState();
+}
+
+class _NewButtonState extends State<_NewButton> {
+  /// 菜单锚点：贴按钮**右下角**弹出（与条目「···」菜单同款做法）。
+  final GlobalKey _key = GlobalKey();
+  bool _hover = false;
+
+  Future<void> _openMenu() async {
+    Offset position = Offset.zero;
+    final RenderBox? box =
+        _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null) {
+      position = box.localToGlobal(Offset(box.size.width, box.size.height));
+    }
+    await showMenu<void>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: <PopupMenuEntry<void>>[
+        _item(
+          icon: CustomIcons.book(size: 16),
+          label: '新建笔记',
+          shortcut: 'Ctrl+N',
+          onTap: widget.onNewNote,
+        ),
+        _item(
+          icon: CustomIcons.canvas(size: 16),
+          label: '新建画布',
+          shortcut: 'Ctrl+Shift+N',
+          onTap: widget.onNewCanvas,
+        ),
+      ],
+    );
+  }
+
+  PopupMenuItem<void> _item({
+    required Widget icon,
+    required String label,
+    required String shortcut,
+    required VoidCallback onTap,
+  }) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return PopupMenuItem<void>(
+      onTap: onTap,
+      child: Row(
+        children: <Widget>[
+          icon,
+          const SizedBox(width: Tokens.spaceSm),
+          Text(label, style: TextStyle(color: scheme.onSurface)),
+          const SizedBox(width: Tokens.spaceMd),
+          // 快捷键是**发现入口**（§3.5）：写在行尾，不抢标题。
+          Text(
+            shortcut,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness brightness = theme.brightness;
+    // 与切换器滑块同一枚材料（凸面令牌，见 [AppTheme.raisedFill]）。尺寸**由父级给**
+    // （切换器里 = 滑块高的正方，见 [_SpaceSwitchState]），这里只铺"凸玻璃 + 图标"。
+    final Color thumbFill = AppTheme.raisedFill(brightness);
+    // 挂菜单锚点（GlobalKey）：不挂的话 `_key.currentContext` 恒为 null，
+    // position 落在 Offset.zero ⇒ 菜单弹到屏幕左上角（2026-09-26 实机抓到）。
+    return GestureDetector(
+      // 菜单锚点。曾因漏挂这里菜单弹到屏幕左上（回归闸门：hub_nav_test 锚点断言）。
+      key: _key,
+      behavior: HitTestBehavior.opaque,
+      onTap: _openMenu,
+      child: MouseRegion(
+        // MouseRegion 在 hover 中被卸载也会派发 onExit（列表被过滤/重建时
+        // 就会发生），直接 setState 会撞 "setState after dispose"。
+        onEnter: (_) {
+          if (mounted) setState(() => _hover = true);
+        },
+        onExit: (_) {
+          if (mounted) setState(() => _hover = false);
+        },
+        child: Tooltip(
+          message: '新建',
+          child: Stack(
+            children: <Widget>[
+              // ① 凸起玻璃底（同切换器滑块）。
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: thumbFill,
+                    borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
+                    boxShadow: _raisedShadows(brightness),
+                  ),
+                ),
+              ),
+              // ② 玻璃光层（裁进圆角，同切换器滑块）。
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
+                  child: _GlassSheet(brightness: brightness),
+                ),
+              ),
+              // ③ hover 高光（在玻璃光之上、图标之下，仅反馈可点）。
+              if (_hover)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
+                    ),
+                  ),
+                ),
+              // ④ 「+」图标居中（中性灰，与空闲段文字同色）。
+              Positioned.fill(
+                child: Center(
+                  child: CustomIcons.add(
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -867,8 +1102,13 @@ class _SpaceItemRowState extends State<_SpaceItemRow> {
     // InkWell 的 onHover 在这套 GestureDetector 嵌套里拿不到 hover，故显式跟踪
     // _hover，再由上面的 fill 决定底色（黑/白 5% 叠加档）。
     return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
+      // 同 [_NewButton]：卸载中派发的 onExit 不许 setState。
+      onEnter: (_) {
+        if (mounted) setState(() => _hover = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hover = false);
+      },
       child: GestureDetector(
         // 改名期间禁用整条点击：否则点击输入框会连带"切换笔记"。
         onTap: _renaming ? null : widget.onTap,

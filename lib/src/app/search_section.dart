@@ -9,6 +9,10 @@ import '../theme/tokens.dart';
 import 'providers.dart' show locateProvider;
 import 'search_provider.dart';
 
+/// 搜索分区内容最大宽度：过宽窗口下把搜索框 / 标签 / 结果收在中间，
+/// 整体居中而非靠左（2026-09-26 用户定）。窄窗时该上限不生效，照常铺满。
+const double _searchContentMaxWidth = 860;
+
 /// 全局搜索分区（主区 3 号 = [kSearchNavIndex]，从导航板顶行搜索图标进入）。
 ///
 /// 交互契约（2026-09-25 方案定稿）：
@@ -47,12 +51,16 @@ class _SearchSectionState extends ConsumerState<SearchSection> {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final SearchState s = ref.read(searchNotifierProvider);
     if (event.logicalKey == LogicalKeyboardKey.escape) {
-      if (s.query.isEmpty) {
-        ref.read(locateProvider.notifier).goHome();
-      } else {
+      // 逐层退出：清词（保留标签筛选，落进标签视图）→ 清标签 → 回主页。
+      if (s.query.isNotEmpty) {
         _controller.clear();
         ref.read(searchNotifierProvider.notifier).submit('');
         _focus.requestFocus();
+      } else if (s.activeTag != null) {
+        ref.read(searchNotifierProvider.notifier).selectTag(null);
+        _focus.requestFocus();
+      } else {
+        ref.read(locateProvider.notifier).goHome();
       }
       return KeyEventResult.handled;
     }
@@ -74,78 +82,98 @@ class _SearchSectionState extends ConsumerState<SearchSection> {
     final ColorScheme scheme = theme.colorScheme;
     final SearchState s = ref.watch(searchNotifierProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            Tokens.spaceXl,
-            Tokens.spaceLg,
-            Tokens.spaceXl,
-            0,
-          ),
-          child: TextField(
-            controller: _controller,
-            focusNode: _focus,
-            autofocus: true,
-            onChanged: (String v) =>
-                ref.read(searchNotifierProvider.notifier).submit(v),
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: '搜索标题与内容',
-              // tabler 图标是**自绘 widget** 不是 IconData ⇒ 直接放（同导航板顶行）。
-              prefixIcon: const Center(
-                widthFactor: 1,
-                child: tabler.Search(
-                  height: Tokens.iconMd,
-                  width: Tokens.iconMd,
-                  strokeWidth: Tokens.iconStroke,
-                ),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _searchContentMaxWidth),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Tokens.spaceXl,
+                Tokens.spaceLg,
+                Tokens.spaceXl,
+                0,
               ),
-              suffixIcon: s.query.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const tabler.CircleX(
-                        height: Tokens.iconSm,
-                        width: Tokens.iconSm,
+              // 搜索框占内容区可用宽的 **2/3**（2026-09-26 用户定：整宽太旷，
+              // 收 1/3；整体居中而非靠左）。比例式而非定宽，窗口缩放时保持同一观感。
+              child: FractionallySizedBox(
+                widthFactor: 2 / 3,
+                alignment: Alignment.center,
+                child: TextField(
+                  controller: _controller,
+                  focusNode: _focus,
+                  autofocus: true,
+                  onChanged: (String v) =>
+                      ref.read(searchNotifierProvider.notifier).submit(v),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: '搜索标题与内容',
+                    // tabler 图标是**自绘 widget** 不是 IconData ⇒ 直接放（同导航板顶行）。
+                    prefixIcon: const Center(
+                      widthFactor: 1,
+                      child: tabler.Search(
+                        height: Tokens.iconMd,
+                        width: Tokens.iconMd,
                         strokeWidth: Tokens.iconStroke,
                       ),
-                      tooltip: '清空（Esc）',
-                      onPressed: () {
-                        _controller.clear();
-                        ref.read(searchNotifierProvider.notifier).submit('');
-                        _focus.requestFocus();
-                      },
                     ),
-            ),
-          ),
-        ),
-        // 检索进行中：一条细进度线（FTS 本地查询几乎不可见，配了语义路时才有体感）。
-        AnimatedSwitcher(
-          duration: Tokens.durationFast,
-          child: s.searching
-              ? const LinearProgressIndicator(minHeight: 2)
-              : const SizedBox(height: 2),
-        ),
-        if (s.vectorFallbackReason != null && s.query.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              Tokens.spaceXl,
-              Tokens.spaceSm,
-              Tokens.spaceXl,
-              0,
-            ),
-            child: Text(
-              s.vectorFallbackReason!,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+                    suffixIcon: s.query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const tabler.CircleX(
+                              height: Tokens.iconSm,
+                              width: Tokens.iconSm,
+                              strokeWidth: Tokens.iconStroke,
+                            ),
+                            tooltip: '清空（Esc）',
+                            onPressed: () {
+                              _controller.clear();
+                              ref
+                                  .read(searchNotifierProvider.notifier)
+                                  .submit('');
+                              _focus.requestFocus();
+                            },
+                          ),
+                  ),
+                ),
               ),
             ),
-          ),
-        Expanded(
-          child: s.query.isEmpty ? const _Idle() : _Results(state: s),
+            // 标签筛选行：全库标签池（跨 kind 一套），点选 = 过滤、再点 = 取消。
+            // 空池（还没打过标签）不占位。数据全在内存（[allTagsProvider]），零 SQL。
+            const _TagChips(),
+            // 检索进行中：一条细进度线（FTS 本地查询几乎不可见，配了语义路时才有体感）。
+            AnimatedSwitcher(
+              duration: Tokens.durationFast,
+              child: s.searching
+                  ? const LinearProgressIndicator(minHeight: 2)
+                  : const SizedBox(height: 2),
+            ),
+            if (s.vectorFallbackReason != null && s.query.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  Tokens.spaceXl,
+                  Tokens.spaceSm,
+                  Tokens.spaceXl,
+                  0,
+                ),
+                child: Text(
+                  s.vectorFallbackReason!,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            Expanded(
+              // 空查询但有标签筛选 ⇒ 不给 _Idle，给"标签视图"的结果列表。
+              child: (s.query.isEmpty && s.activeTag == null)
+                  ? const _Idle()
+                  : _Results(state: s),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -183,6 +211,105 @@ class _Idle extends StatelessWidget {
   }
 }
 
+/// 标签筛选行：全库标签池（[allTagsProvider]，按出现篇数倒序）。
+///
+/// 用 `select` 只订阅 [SearchState.activeTag]——chips 行不该因为结果列表
+/// 变化而重建（打字时每 250ms 重建一排 chip，纯浪费）。
+class _TagChips extends ConsumerWidget {
+  const _TagChips();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<(String, int)> tags = ref.watch(allTagsProvider);
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final String? active = ref.watch(
+      searchNotifierProvider.select((SearchState s) => s.activeTag),
+    );
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceXl,
+          vertical: Tokens.spaceSm,
+        ),
+        scrollDirection: Axis.horizontal,
+        itemCount: tags.length,
+        separatorBuilder: (BuildContext _, int _) =>
+            const SizedBox(width: Tokens.spaceSm),
+        itemBuilder: (BuildContext context, int i) {
+          final (String tag, int count) = tags[i];
+          final bool selected = tag == active;
+          return _TagChip(
+            tag: tag,
+            count: count,
+            selected: selected,
+            onTap: () => ref
+                .read(searchNotifierProvider.notifier)
+                .selectTag(selected ? null : tag),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 一枚标签 chip：标签名 + 篇数小字。选中 = 导航项同款选中底（"这是个筛选
+/// 开关，且它开着"），未选中 = 极淡描边（[AppTheme.cardStroke]，卡片同款语言）。
+class _TagChip extends StatelessWidget {
+  const _TagChip({
+    required this.tag,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String tag;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Tokens.radiusLg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceSm + 2,
+          vertical: 4,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+          border: Border.fromBorderSide(
+            BorderSide(color: AppTheme.cardStroke(theme.brightness)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              tag,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: Tokens.spaceXs),
+            Text(
+              '$count',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 结果列表。
 class _Results extends StatelessWidget {
   const _Results({required this.state});
@@ -195,7 +322,10 @@ class _Results extends StatelessWidget {
       final ThemeData theme = Theme.of(context);
       return Center(
         child: Text(
-          '没有与「${state.query}」匹配的结果',
+          // 标签视图（无查询词）与关键词查询的空态各说各的。
+          state.query.isEmpty
+              ? '「${state.activeTag}」标签下还没有笔记'
+              : '没有与「${state.query}」匹配的结果',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

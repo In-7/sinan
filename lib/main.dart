@@ -87,6 +87,11 @@ Future<void> main() async {
       // 与块回填同一节奏：同步 SQLite、**只写不读**（画布仍从 notes.content 读）、
       // 50 篇/次可续跑；失败也不影响使用——写路径的双写会把这幅补齐。
       store.backfillCanvas();
+      // 补关键词索引：把还没进 `chunks_fts` 的笔记整篇索引进去（幂等、纯 SQL）。
+      // 覆盖存量 AppFlowy 笔记——它们之前因块 data 内文本在 `delta` 里（非顶层
+      // `text`）而漏索引，全局搜索正文搜不到（2026-09-25 修）。只补缺的，已索引
+      // 的笔记不动；失败也不影响使用。
+      store.ensureKeywordIndex();
     } on Object catch (_) {
       // 回填失败不影响使用：写路径的双写会在下次编辑时把这篇补齐。
     }

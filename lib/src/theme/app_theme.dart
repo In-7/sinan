@@ -317,6 +317,29 @@ class AppTheme {
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.black.withValues(alpha: 0.05);
 
+  /// **凸面填充**（新拟态里"抬起来的那块"：切换器滑块 / 「+」方格）。
+  ///
+  /// 两种亮度的"抬起"**语言本来就不同**——这是全应用既定的，不是切换器私有的：
+  /// - **亮色**："同色挖空"。凸块 = [windowBackground]（列底那档浅），井
+  ///   （[boardFill]）比它深一档 ⇒ 滑块读作"从页面上切下来的一块"。
+  /// - **暗色**："叠档浮起"。全家抬起都靠**在下一层上叠一档白**（[cardFill]
+  ///   白 5%、[boardFillHover] 白 6%、[cardFillHover] 白 8%），没有"比底深的
+  ///   井"可挖——暗色 [boardFill] 本身就是比底亮的浮起 sheet。⇒ 凸块 =
+  ///   **井上再叠一档白**（8%，与 [cardFillHover] 同档）。
+  ///
+  /// ⚠️ 用 `Color.lerp` 烤成**不透明色**而不是半透明填充："发脏"教训针对的是
+  /// alpha 直铺在 Mica 上混进壁纸色相；这里是叠在近实中性井上再烤实，不透底。
+  /// 且向中性白 lerp 会保住板底 (R, R+1, R+5) 的冷灰形状（#2A2B2F → #3B3C40）。
+  ///
+  /// ⚠️ 不能无脑用 [windowBackground]：暗色窗口底 `#171715` 比井**还暗**，
+  /// 滑块跟列底同色就成了"井里一个更深的洞"（2026-09-26 实机截图）。
+  /// 也别用绝对色硬编码（曾试 `#333438`）——那是发明全应用没有的新颜色，
+  /// 破坏暗色的叠档语言（2026-09-26 用户指出）。
+  static Color raisedFill(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Color.lerp(boardFill(brightness), Colors.white, 0.08)!
+      : windowBackground(brightness);
+
   /// **卡片/导航项的填充**（WinUI `CardBackgroundFillColorDefault` 同款）：
   /// 直接坐在 Mica 上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
   ///

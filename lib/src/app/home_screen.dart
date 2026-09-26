@@ -189,12 +189,11 @@ class HomeScreen extends ConsumerWidget {
                           Column(
                             children: <Widget>[
                               WindowStrip(
-                                // 左起第一枚是折叠面板按钮（2026-09-25 用户定）：
-                                // 放在原先"上一步"的位置，原按钮移到右侧紧贴窗控前。
-                                leading: const <Widget>[NavCollapseButton()],
-                                // 上一步（回主页）：走 `locateProvider.goHome()`。
-                                // 2026-09-25 用户定：图标从段落图标准改成返回箭头，文字改成"上一步"，并挪到右侧。
-                                trailing: <Widget>[
+                                // 左起：上一步（回主页）+ 折叠面板按钮。2026-09-25 曾把
+                                // 上一步挪到右侧、折叠按钮占其左侧空位；用户随后要求上一步
+                                // 仍回左侧，故两者同列左侧（上一步最左、折叠按钮次之）。
+                                leading: <Widget>[
+                                  const NavCollapseButton(),
                                   IconButton(
                                     icon: const tabler.ArrowLeft(
                                       height: Tokens.iconMd,

@@ -11,6 +11,7 @@ import 'block_props.dart';
 import 'block_store.dart';
 import 'canvas_store.dart';
 import 'fingerprint.dart';
+import 'index_job.dart';
 
 /// 笔记的读写入口：CRUD。
 ///
@@ -120,7 +121,7 @@ class NoteStore {
   /// 与"最近修改倒序"的直觉一致）→ `id ASC`（id 唯一 ⇒ 全序，一定稳定）。
   List<Note> allNotes() {
     final ResultSet rs = db.select(
-      'SELECT id, kind, title, plain_text, content_hash, '
+      'SELECT id, kind, title, plain_text, content_hash, tags, '
       'created_at, revised_at, promoted_at FROM notes '
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
@@ -181,6 +182,18 @@ class NoteStore {
     );
   }
 
+  /// 保存标签。与 [setPromoted] 同一性质：**整理元数据**，不动 revised_at
+  /// ——贴标签不该把笔记顶到"最近修改"最前，否则列表会跳。
+  ///
+  /// 归一化（trim / 丢空 / 去重）在这里做（[Note.sanitizeTags]），UI 传原始
+  /// 列表即可。存储形态：JSON 字符串数组（v12，见 database.dart 迁移注释）。
+  Future<void> updateTags(String noteId, List<String> tags) async {
+    db.execute(
+      'UPDATE notes SET tags = ? WHERE id = ?',
+      <Object?>[jsonEncode(Note.sanitizeTags(tags)), noteId],
+    );
+  }
+
   Future<void> delete(String noteId) async {
     // chunks_fts 是 FTS5 虚拟表、**无外键**（见 database.dart 建表注释）——
     // blocks 靠 CASCADE 清，它的行没人替 ⇒ 必须在这里手工清，否则已删笔记
@@ -197,8 +210,8 @@ class NoteStore {
   Future<void> restore(Note note) async {
     db.execute(
       'INSERT OR REPLACE INTO notes '
-      '(id, kind, title, content, plain_text, content_hash, created_at, revised_at, promoted_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      '(id, kind, title, content, plain_text, content_hash, created_at, revised_at, promoted_at, tags) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
         note.id,
         note.kind.name,
@@ -209,6 +222,9 @@ class NoteStore {
         note.createdAt.millisecondsSinceEpoch,
         note.revisedAt.millisecondsSinceEpoch,
         note.promotedAt?.millisecondsSinceEpoch,
+        // ⚠️ tags 必须带上：漏了它，`INSERT OR REPLACE` 会用列默认 '[]'
+        // 覆盖——撤销一次删除，标签就静默清空了。
+        jsonEncode(note.tags),
       ],
     );
     _blocks.replaceNoteBlocks(note.id, note.content);
@@ -220,6 +236,13 @@ class NoteStore {
   ///
   /// 返回本次处理的篇数。
   int backfillBlocks({int limit = 50}) => _blocks.backfill(limit: limit);
+
+  /// 启动期补关键词索引：把「还没进 `chunks_fts`」的笔记整篇索引进去（幂等、纯 SQL）。
+  ///
+  /// 覆盖存量 AppFlowy 笔记——它们之前因块 `data` 内文本在 `delta` 里（非顶层
+  /// `text`）而漏索引，导致全局搜索正文搜不到（2026-09-25 修）。只补缺的，已索引
+  /// 的笔记不动；建议在 `backfillBlocks` 之后调用（先有 blocks 行才能索引）。
+  void ensureKeywordIndex() => IndexJob(db: db).ensureKeywordIndex();
 
   // ───────────────────── 块可迁移（#5，2026-09-18） ─────────────────────
   //
@@ -729,5 +752,6 @@ class NoteStore {
         promotedAt: row['promoted_at'] == null
             ? null
             : DateTime.fromMillisecondsSinceEpoch(row['promoted_at'] as int),
+        tags: Note.parseTags(row['tags'] as String?),
       );
 }

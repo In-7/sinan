@@ -43,6 +43,7 @@ import '../editor/toolbar/fixed_toolbar.dart';
 import '../editor/toolbar/link_toolbar_item.dart';
 import '../editor/toolbar/slash_menu_items.dart';
 import '../editor/panels/backlink_panel.dart';
+import '../editor/panels/tags_panel.dart';
 import '../editor/panels/toc_panel.dart';
 import '../editor/widgets/editor_context_menu.dart';
 import '../editor/widgets/link_hover_tooltip.dart';
@@ -200,6 +201,19 @@ class _NoteEditorViewAppFlowyState
 
   /// 反链按钮的 key：气泡用它取屏幕坐标来定位。
   final GlobalKey _backlinkButtonKey = GlobalKey();
+
+  /// 标签面板开关（**第四只耳**，2026-09-26）：打标签是"专门去整理"的动作，
+  /// 与反链同一交互——点击开合、点外部收起，不做悬停触发（同上理由）。
+  bool _tagsVisible = false;
+
+  /// 标签气泡的显示控制器（`OverlayPortal`），理由同 [_tocController]。
+  final OverlayPortalController _tagsController = OverlayPortalController();
+
+  /// 标签按钮的 key：气泡用它取屏幕坐标来定位。
+  final GlobalKey _tagsButtonKey = GlobalKey();
+
+  /// 「按钮 + 标签气泡」共用的 TapRegion 组（理由同 [_backlinkTapGroupId]）。
+  final Object _tagsTapGroupId = Object();
 
   /// 「按钮 + 气泡」共用的 TapRegion 组（理由同 [_tocTapGroupId]）。
   final Object _backlinkTapGroupId = Object();
@@ -506,7 +520,8 @@ class _NoteEditorViewAppFlowyState
   /// 开面板本体：位置用标题行的 GlobalKey 实测底部（随字号/文本缩放
   /// 联动），再留 8px 间距传给补丁 7a 的可配置偏移，避免面板压住标题。
   void _openFindPanel() {
-    double topOffset = 84; // 兜底：标题栏 32 + 标题行 ~52（实测失败时用）。
+    // 兜底：标题栏 32 + 按钮带 + 标题行 ~52（实测失败时用）。
+    double topOffset = 84 + _kHeaderBandHeight;
     final RenderBox? titleBox =
         _titleRowKey.currentContext?.findRenderObject() as RenderBox?;
     if (titleBox != null && titleBox.hasSize) {
@@ -862,6 +877,62 @@ class _NoteEditorViewAppFlowyState
               noteId: widget.noteId,
               onOpenNote: _openBacklink,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // == 标签气泡 ==============================================================
+  // 第四只耳：**点击开关**（理由同 [_tagsVisible]）。面板本体是 `TagsPanel`
+  // （自己 watch 列表、自己经 saveTags 写），这里只管浮层的定位 / 开关 /
+  // 点外部收起 —— 与反链气泡同一套浮层三件套，一行新逻辑都不该有。
+
+  void _toggleTags() {
+    final bool next = !_tagsVisible;
+    setState(() => _tagsVisible = next);
+    if (next) {
+      if (!_tagsController.isShowing) _tagsController.show();
+    } else {
+      _closeTags();
+    }
+  }
+
+  void _closeTags() {
+    if (_tagsVisible) setState(() => _tagsVisible = false);
+    if (_tagsController.isShowing) _tagsController.hide();
+  }
+
+  /// 标签气泡：与反链气泡同一套定位（右对齐、与按钮底边无缝相接）。
+  Widget _tagsPopover(BuildContext context, OverlayChildLayoutInfo info) {
+    final Size screen = info.overlaySize;
+    final RenderBox? box =
+        _tagsButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final Offset origin = box == null
+        ? const Offset(0, 48)
+        : box.localToGlobal(Offset.zero);
+    final double top = box == null ? 56 : origin.dy + box.size.height;
+    final double right = box == null
+        ? 16
+        : screen.width - (origin.dx + box.size.width);
+    final double available = screen.height - top - 16;
+    return Positioned(
+      top: top,
+      right: right,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          // 标签面板内容少（不像反链可能一长串），下限给小一点贴内容收。
+          maxHeight: available.clamp(120, double.infinity),
+          maxWidth: TagsPanel.width,
+        ),
+        child: TapRegion(
+          // 按钮与气泡同组（同反链）：点按钮自己不算"点外部"。
+          groupId: _tagsTapGroupId,
+          onTapOutside: (_) => _closeTags(),
+          child: AppFloatSurface(
+            width: TagsPanel.width,
+            padding: EdgeInsets.zero,
+            child: TagsPanel(noteId: widget.noteId),
           ),
         ),
       ),
@@ -1257,10 +1328,16 @@ class _NoteEditorViewAppFlowyState
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: settings.titleWidth),
-                child: NoteTitleField(
-                  controller: _titleController,
-                  onChanged: _onTitleChanged,
-                  typography: typography,
+                // 标题**下移一条带的高度**（2026-09-26 定）：头部因此分成两条带——
+                // 上带 = 撤销 / 重做 + 双耳，下带 = 标题。理由见下面按钮带的注释
+                // （与浮栏**竖直错开**）。
+                child: Padding(
+                  padding: const EdgeInsets.only(top: _kHeaderBandHeight),
+                  child: NoteTitleField(
+                    controller: _titleController,
+                    onChanged: _onTitleChanged,
+                    typography: typography,
+                  ),
                 ),
               ),
             ),
@@ -1272,38 +1349,48 @@ class _NoteEditorViewAppFlowyState
             // 它们是**文档级、无选区也要能用**的操作，故常驻（Word / VS Code 同款），
             // 并与右端双耳左右对称。
             //
-            // ## 校准（图标字形顶落在 **10**：略高于标题首行）
-            //   图标字形顶 = 上内边距 +（热区 − 图标）/ 2
-            //   标题字形顶 ≈ 行盒顶 12 + 行盒余量 ~1.5 ≈ 13.5
-            //   现取「[_kHeaderActionTopPadding] +（30 − 24）/ 2 = **10**」
-            //   ⇒ 比标题首行高约 3.5px。
-            //   图标档位几经调整（2026-09-23 一天内走了 24 → 18 → 20 → 24），
-            //   上内边距每次都跟着反算（4 → 5 → 7）—— 落点始终钉在 **10**，
-            //   所以这几次调档位**没有**让图标与标题错位。
-            //   （更早还取过 8 得 14，那档是"与标题字形顶齐平"；用户实机比过后取 4。）
-            // ⚠️ 改热区 / 图标尺寸要连 [_kHeaderActionTopPadding] 一起重算——两端
-            //   共用 [Tokens.headerActionSize]，一端改了两端一起偏。
+            // ## 为什么按钮独占**上面一条带**、标题下移一条（2026-09-26 定）
+            // 拖选时浮出的格式栏（FloatingToolbar，跑在 Overlay 层）悬在**正文首行
+            // 正上方**，水平范围与首行重合。按钮若与标题同带，就与浮栏落在**同一条
+            // 竖直带**上——右移到正文左缘等于钻到浮栏底下（2026-09-25 实测：撤销后
+            // 重做点不到，因为撤销会恢复选区 ⇒ 浮栏再现）。标题下移成独立一条后，
+            // 正文整体下移 ⇒ 浮栏跟着下移到**标题带**，按钮这条带就空出来了——
+            // 水平仍重合，但**竖直错开**，点得到。
+            //
+            // ⚠️ 由此 [_kHeaderActionTopPadding] 那条"图标字形顶略高于标题首行"的
+            // 竖向校准**已失效**（按钮不再与标题同行），它现在只是按钮带的上留白。
             //
             // ## 两条硬约束（别换成别的写法）
             // - **Stack 定位 ⇒ 不占布局流**：标题的居中轴完全不受两端按钮影响
             //   （换成 Row 包标题会把标题挤偏，那是我们放弃的写法）；覆盖层内部
-            //   的 Row 用 `CrossAxisAlignment.start` 让两端都贴顶——默认的居中会
-            //   把它们压到标题下方 ~9.5px（头部高度里含标题的下留白）。
+            //   的 Row 用 `CrossAxisAlignment.start` 让两端都贴顶。
             // - 空白区不吸点击（`Row` 不实现 `hitTestSelf`）⇒ 标题照常可点。
             Positioned.fill(
               child: ListenableBuilder(
                 listenable: _historyAvailability,
-                builder: (BuildContext context, Widget? _) => Padding(
-                  padding: const EdgeInsets.only(
-                    top: _kHeaderActionTopPadding,
-                    left: Tokens.spaceMd,
-                    right: Tokens.spaceMd,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      // 左：常驻撤销 / 重做（灰显表达"现在按不了"）。
-                      _HistoryButton(
+                builder: (BuildContext context, Widget? _) => LayoutBuilder(
+                  // 左缘**动态**对齐正文首行：正文块由
+                  // `EditorStyle.desktop(maxWidth: settings.contentWidth)` **按块居中**，
+                  // 块内还有 `EditorTypography.blockPadding`（左右各 16）⇒
+                  //   正文左缘 =（列宽 − contentWidth）/ 2 + blockPadding.left
+                  // 列宽随窗口 / 宽度模式变，故在这里按约束算（Positioned.fill 拿到的
+                  // 正是正文列的宽度）。窄窗口时差为负 ⇒ 兜到 0。
+                  builder: (BuildContext _, BoxConstraints c) {
+                    final double gutter = math.max(
+                      0.0,
+                      (c.maxWidth - settings.contentWidth) / 2,
+                    );
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        top: _kHeaderActionTopPadding,
+                        left: gutter + EditorTypography.blockPadding.left,
+                        right: Tokens.spaceMd,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          // 左：常驻撤销 / 重做（灰显表达"现在按不了"）。
+                          _HistoryButton(
                         itemKey: 'editor.undo',
                         icon: const tabler.ArrowBackUp(strokeWidth: 1.5),
                         tooltip: kEditorTooltips['sinan.undo']!,
@@ -1320,9 +1407,10 @@ class _NoteEditorViewAppFlowyState
                       ),
                       // 中间留给标题（标题自己居中，这里只是把两端分开）。
                       const Spacer(),
-                      // 顺序：搜索在左，**目录最右**（面板开关靠边的惯例），
-                      // 反链夹在两者之间。2026-09-18 由"搜索·目录·反链"改为
-                      // "搜索·反链·目录"——目录是最常用的那个，靠边更好按。
+                      // 顺序：搜索在左，**目录最右**（面板开关靠边的惯例）。
+                      // 2026-09-18 由"搜索·目录·反链"改为"搜索·反链·目录"
+                      // ——目录是最常用的那个，靠边更好按。2026-09-26 再加
+                      // 第四只耳「标签」（夹在反链与目录之间），目录仍最右。
                       _EarButton(
                         itemKey: 'editor.ear.find',
                         // 「列表 + 放大镜」= 在本篇里找。刻意与顶栏那个**全局**搜索
@@ -1357,6 +1445,24 @@ class _NoteEditorViewAppFlowyState
                           ),
                         ),
                       ),
+                      const SizedBox(width: Tokens.spaceXs),
+                      // 标签（第四只耳）。与反链同款：纯浮层不占布局、点击开合。
+                      OverlayPortal.overlayChildLayoutBuilder(
+                        controller: _tagsController,
+                        overlayChildBuilder: _tagsPopover,
+                        child: TapRegion(
+                          groupId: _tagsTapGroupId,
+                          child: _EarButton(
+                            // 定位命根子（同反链耳的教训）：漏挂 ⇒ 气泡飞左上角。
+                            key: _tagsButtonKey,
+                            itemKey: 'editor.ear.tags',
+                            icon: const tabler.Tag(strokeWidth: 1.5),
+                            tooltip: '标签',
+                            active: _tagsVisible,
+                            onPressed: _toggleTags,
+                          ),
+                        ),
+                      ),
                       if (wideEnough) ...<Widget>[
                         const SizedBox(width: Tokens.spaceXs),
                         // 官方 3.47 推荐写法：OverlayPortal 直接在按钮处挂浮层，
@@ -1387,7 +1493,9 @@ class _NoteEditorViewAppFlowyState
                       ],
                     ],
                   ),
-                ),
+                );
+                },
+              ),
               ),
             ),
           ],
@@ -1705,12 +1813,22 @@ const double _kHeaderActionDisabledAlpha = 0.28;
 ///
 /// 它不是"随手一个间距"，而是从目标位置反推出来的：
 ///
-///   图标字形顶 = 本值 +（[Tokens.headerActionSize] − [Tokens.iconMd]）/ 2 = **10**
+///   图标字形顶 = 本值 +（[Tokens.headerActionSize] − [Tokens.iconMdSm]）/ 2 = **10**
 ///
 /// 10 是用户实机比过、让图标略高于标题首行（约 3.5px）的落点。
 /// 图标 18 → 20 → 24 时本值 4 → 5 → 7，每次都是为了把这个落点**钉住**
-/// （见标题行的校准注释）。
-const double _kHeaderActionTopPadding = 7;
+/// （见标题行的校准注释）。2026-09-25 图标改回 [Tokens.iconMdSm]=20，本值随之
+/// 由 7 反推回 5（`5 + (30 − 20) / 2 = 10`），竖向校准不变。
+///
+/// ⚠️ 2026-09-26：按钮已从标题行**分出去独占上面一条带**（标题下移），那条
+/// "略高于标题首行"的竖向校准随之**失效**——本值现在只是按钮带的上留白。
+const double _kHeaderActionTopPadding = 5;
+
+/// 头部**按钮带**的高度（2026-09-26 定）：撤销 / 重做 + 双耳独占最上面这一条，
+/// 标题从它**下面**开始 ⇒ 头部分成两条带（理由见 build 里按钮带的注释）。
+///
+/// = 按钮带上留白 + 按钮热区 + 与标题的留白。
+const double _kHeaderBandHeight = _kHeaderActionTopPadding + Tokens.headerActionSize + 4;
 
 /// 标题行**左侧**的常驻历史按钮（撤销 / 重做）。
 ///
@@ -1758,7 +1876,7 @@ class _HistoryButton extends StatelessWidget {
           minimumSize: const Size.square(Tokens.headerActionSize),
           maximumSize: const Size.square(Tokens.headerActionSize),
           padding: EdgeInsets.zero,
-          iconSize: Tokens.iconMd,
+          iconSize: Tokens.iconMdSm,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
@@ -1781,8 +1899,9 @@ class _HistoryButton extends StatelessWidget {
 /// 标题行**右侧**的「文档工具耳」：搜索 / 目录这类**文档级**操作的小入口。
 ///
 /// 设计要点（位置 2026-09-14 由左上角移到右侧；规格同日定为 18 / 30，
-/// 2026-09-23 图标改为**应用侧主力档** [Tokens.iconMd]）：
-/// - 常驻但不抢戏：图标 24px + 热区 [Tokens.headerActionSize]（30，够到最小可点目标）；
+/// 2026-09-23 图标取**应用侧主力档** [Tokens.iconMd]，2026-09-25 改回
+/// 顶条辅助档 [Tokens.iconMdSm]）：
+/// - 常驻但不抢戏：图标 20px + 热区 [Tokens.headerActionSize]（30，够到最小可点目标）；
 /// - 配色走 [_headerActionColor]（2026-09-23 用户定案）：编辑页**极简留白**
 ///   —— 常驻淡、鼠标悬停/键盘聚焦才明确、"开着"（目录展开）转 primary；
 /// - 挂在 Stack 的**右上**（`Positioned.fill` + `Align.topRight`），
@@ -1822,7 +1941,7 @@ class _EarButton extends StatelessWidget {
         // ⚠️ 图标尺寸**只有这一条路**：`icon` 里刻意不写 height/width，
         // 由 `AppIconTheme` 把这个 `iconSize` 转发给 tabler（写死 24 会顶掉它，
         // 那正是 2026-09-23 这三个耳"偏大偏亮"的一半原因）。
-        iconSize: Tokens.iconMd,
+        iconSize: Tokens.iconMdSm,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
