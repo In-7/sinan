@@ -122,7 +122,9 @@ AiApplyResult applyAiActions(
             height: before.height,
           );
           // 走既有的变换命令通道（与拖拽落账同一条路），撤销栈才能认得。
-          doc.setItemTransforms(<(CanvasItem, Rect, double)>[(item, before, angle)]);
+          doc.setItemTransforms(<(CanvasItem, Rect, double)>[
+            (item, before, angle),
+          ]);
           applied++;
 
         case final SetTextAction a:

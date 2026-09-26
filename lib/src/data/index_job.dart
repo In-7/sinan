@@ -226,39 +226,35 @@ class IndexJob {
 
     db.execute('BEGIN');
     try {
-    db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[
-      noteId,
-    ]);
-    _writeKeywordRows(work);
-    db.execute('COMMIT');
+      db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[noteId]);
+      _writeKeywordRows(work);
+      db.execute('COMMIT');
     } on Object {
-    db.execute('ROLLBACK');
-    rethrow;
+      db.execute('ROLLBACK');
+      rethrow;
     }
-    }
+  }
 
-    /// 启动期一次性补建**关键词路**：把所有「还没有 `chunks_fts` 行」的笔记整篇索引。
-    ///
-    /// 幂等、纯 SQL、毫秒级。覆盖存量 AppFlowy 笔记——它们之前因块 `data` 内文本在
-    /// `delta` 里（没有顶层 `text`）而被漏索引，全局搜索正文搜不到（2026-09-25 修）。
-    /// 只补缺的：已索引的笔记不动，故每次启动多为空操作（与 `backfillBlocks` 同节奏）。
-    void ensureKeywordIndex() {
+  /// 启动期一次性补建**关键词路**：把所有「还没有 `chunks_fts` 行」的笔记整篇索引。
+  ///
+  /// 幂等、纯 SQL、毫秒级。覆盖存量 AppFlowy 笔记——它们之前因块 `data` 内文本在
+  /// `delta` 里（没有顶层 `text`）而被漏索引，全局搜索正文搜不到（2026-09-25 修）。
+  /// 只补缺的：已索引的笔记不动，故每次启动多为空操作（与 `backfillBlocks` 同节奏）。
+  void ensureKeywordIndex() {
     final ResultSet rs = db.select(
-    'SELECT DISTINCT n.id AS id FROM notes n '
-    "WHERE n.deleted_at IS NULL AND n.kind != 'canvas' "
-    'AND NOT EXISTS (SELECT 1 FROM chunks_fts c WHERE c.note_id = n.id)',
+      'SELECT DISTINCT n.id AS id FROM notes n '
+      "WHERE n.deleted_at IS NULL AND n.kind != 'canvas' "
+      'AND NOT EXISTS (SELECT 1 FROM chunks_fts c WHERE c.note_id = n.id)',
     );
     for (final Row row in rs) {
-    indexNoteKeywordPath(row['id'] as String);
+      indexNoteKeywordPath(row['id'] as String);
     }
-    }
+  }
 
   /// 写关键词路（**不含事务**，事务由调用点包——批量跑与整篇重跑共用同一写法）。
   void _writeKeywordRows(List<_WorkBlock> batch) {
     for (final _WorkBlock b in batch) {
-      db.execute('DELETE FROM chunks_fts WHERE block_id = ?', <Object?>[
-        b.id,
-      ]);
+      db.execute('DELETE FROM chunks_fts WHERE block_id = ?', <Object?>[b.id]);
       for (final Chunk c in chunkBlock(b.text)) {
         db.execute(
           'INSERT INTO chunks_fts (search_text, block_id, note_id, chunk_text) '

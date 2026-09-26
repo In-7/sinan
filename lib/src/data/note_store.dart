@@ -35,14 +35,26 @@ class NoteStore {
   CanvasStore get _canvas => CanvasStore(db);
 
   /// 新建一条笔记（默认灵感卡片）。标题/正文可为空。
-  Note create({NoteKind kind = NoteKind.spark, String title = '', String content = ''}) {
+  Note create({
+    NoteKind kind = NoteKind.spark,
+    String title = '',
+    String content = '',
+  }) {
     final String id = _uuid.v4();
     final DateTime now = DateTime.now();
     final String hash = contentFingerprint(content);
     db.execute(
       'INSERT INTO notes (id, kind, title, content, content_hash, created_at, revised_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      <Object?>[id, kind.name, title, content, hash, now.millisecondsSinceEpoch, now.millisecondsSinceEpoch],
+      <Object?>[
+        id,
+        kind.name,
+        title,
+        content,
+        hash,
+        now.millisecondsSinceEpoch,
+        now.millisecondsSinceEpoch,
+      ],
     );
     _blocks.replaceNoteBlocks(id, content);
     _canvas.replaceCanvasRows(id, content);
@@ -167,7 +179,8 @@ class NoteStore {
 
     final Row row = rs.first;
     final String legacy = row['content'] as String? ?? '';
-    final String? rebuilt = _blocks.readVerifiedDocument(id, legacy) ??
+    final String? rebuilt =
+        _blocks.readVerifiedDocument(id, legacy) ??
         _canvas.readVerifiedCanvas(id, legacy);
     return _noteFrom(row, content: rebuilt ?? legacy);
   }
@@ -176,10 +189,10 @@ class NoteStore {
   ///
   /// 不动 revised_at：收藏是整理动作，不是内容修改，不该影响"最近修改"。
   Future<void> setPromoted(String noteId, bool promoted) async {
-    db.execute(
-      'UPDATE notes SET promoted_at = ? WHERE id = ?',
-      <Object?>[promoted ? DateTime.now().millisecondsSinceEpoch : null, noteId],
-    );
+    db.execute('UPDATE notes SET promoted_at = ? WHERE id = ?', <Object?>[
+      promoted ? DateTime.now().millisecondsSinceEpoch : null,
+      noteId,
+    ]);
   }
 
   /// 保存标签。与 [setPromoted] 同一性质：**整理元数据**，不动 revised_at
@@ -188,10 +201,10 @@ class NoteStore {
   /// 归一化（trim / 丢空 / 去重）在这里做（[Note.sanitizeTags]），UI 传原始
   /// 列表即可。存储形态：JSON 字符串数组（v12，见 database.dart 迁移注释）。
   Future<void> updateTags(String noteId, List<String> tags) async {
-    db.execute(
-      'UPDATE notes SET tags = ? WHERE id = ?',
-      <Object?>[jsonEncode(Note.sanitizeTags(tags)), noteId],
-    );
+    db.execute('UPDATE notes SET tags = ? WHERE id = ?', <Object?>[
+      jsonEncode(Note.sanitizeTags(tags)),
+      noteId,
+    ]);
   }
 
   Future<void> delete(String noteId) async {
@@ -275,7 +288,8 @@ class NoteStore {
     final Map<String, Object?> doc =
         jsonDecode(content) as Map<String, Object?>;
     final List<Object?> children =
-        (doc['document']! as Map<String, Object?>)['children']! as List<Object?>;
+        (doc['document']! as Map<String, Object?>)['children']!
+            as List<Object?>;
     if (_findNode(children, blockId) != null) return false;
     children.add(node);
     _persistContentSync(noteId, jsonEncode(doc));
@@ -294,7 +308,8 @@ class NoteStore {
     final Map<String, Object?> doc =
         jsonDecode(content) as Map<String, Object?>;
     final List<Object?> children =
-        (doc['document']! as Map<String, Object?>)['children']! as List<Object?>;
+        (doc['document']! as Map<String, Object?>)['children']!
+            as List<Object?>;
     if (_removeNode(children, blockId)) {
       _persistContentSync(noteId, jsonEncode(doc));
       return true;
@@ -389,8 +404,9 @@ class NoteStore {
       'meta': <String, Object?>{},
     };
     final Object? rawOrder = document['itemOrder'];
-    final List<Object?> order =
-        rawOrder is List ? rawOrder.toList() : <Object?>[];
+    final List<Object?> order = rawOrder is List
+        ? rawOrder.toList()
+        : <Object?>[];
     order.add(id);
     document['itemOrder'] = order;
 
@@ -488,8 +504,14 @@ class NoteStore {
       'ORDER BY n.revised_at DESC',
       <Object?>[
         _refType,
-        r'$.ref_type', _refTargetNote, r'$.ref_id', noteId,
-        r'$.ref_type', _refTargetBlock, r'$.ref_id', noteId,
+        r'$.ref_type',
+        _refTargetNote,
+        r'$.ref_id',
+        noteId,
+        r'$.ref_type',
+        _refTargetBlock,
+        r'$.ref_id',
+        noteId,
       ],
     );
     final ResultSet cards = db.select(
@@ -550,11 +572,7 @@ class NoteStore {
   /// ⇒ "A 嵌 B、B 又嵌 A" 不会无限展开。
   ///
   /// [limit] 只在 `refType='note'` 时生效（整篇可能很长，不能全展开）。
-  List<EmbedLine> embedPreview(
-    String refType,
-    String refId, {
-    int limit = 30,
-  }) {
+  List<EmbedLine> embedPreview(String refType, String refId, {int limit = 30}) {
     final ResultSet rs = refType == _refTargetBlock
         ? db.select(
             "SELECT type, props_json FROM blocks WHERE id = ? "
@@ -739,19 +757,19 @@ class NoteStore {
   /// [content] 由调用方给定：默认是行里的旧列，[noteById] 会在校验通过后
   /// 传入从 `blocks` 还原出来的正文（见那里的说明）。
   Note _noteFrom(Map<String, Object?> row, {String? content}) => Note(
-        id: row['id'] as String,
-        kind: NoteKind.fromName(row['kind'] as String),
-        title: row['title'] as String,
-        // 列表查询不带 content 列（大字段）→ 这里是 null；只有 [noteById]
-        // 的完整行查询才有值。列表侧一律空串，正文永远走单行查询。
-        content: content ?? (row['content'] as String?) ?? '',
-        plainText: row['plain_text'] as String? ?? '',
-        contentHash: row['content_hash'] as String,
-        createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
-        revisedAt: DateTime.fromMillisecondsSinceEpoch(row['revised_at'] as int),
-        promotedAt: row['promoted_at'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(row['promoted_at'] as int),
-        tags: Note.parseTags(row['tags'] as String?),
-      );
+    id: row['id'] as String,
+    kind: NoteKind.fromName(row['kind'] as String),
+    title: row['title'] as String,
+    // 列表查询不带 content 列（大字段）→ 这里是 null；只有 [noteById]
+    // 的完整行查询才有值。列表侧一律空串，正文永远走单行查询。
+    content: content ?? (row['content'] as String?) ?? '',
+    plainText: row['plain_text'] as String? ?? '',
+    contentHash: row['content_hash'] as String,
+    createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
+    revisedAt: DateTime.fromMillisecondsSinceEpoch(row['revised_at'] as int),
+    promotedAt: row['promoted_at'] == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(row['promoted_at'] as int),
+    tags: Note.parseTags(row['tags'] as String?),
+  );
 }

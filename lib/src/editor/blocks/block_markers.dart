@@ -30,11 +30,7 @@ const double cjkInkCompensation = -0.04;
 /// 霞鹜度量盒只有 1.0em，点/数字/勾选框全部"浮"在首行上部（2026-09-11 实测
 /// 截图），故改为动态取值。折叠标题这类**首行更高**的块传 [lineBox] 覆盖。
 /// （标记自身字形盒若高于容器，`Center` 照样居中，不裁切。）
-Widget markerBox(
-  BuildContext context,
-  Widget child, {
-  double? lineBox,
-}) {
+Widget markerBox(BuildContext context, Widget child, {double? lineBox}) {
   final EditorState editorState = context.read<EditorState>();
   final double tsf = editorState.editorStyle.textScaleFactor;
   final TextStyle base = editorState.editorStyle.textStyleConfiguration.text;

@@ -14,8 +14,10 @@ Future<void> referenceBlockToCanvas({
   required BuildContext context,
   required String blockId,
 }) async {
-  final ProviderContainer container =
-      ProviderScope.containerOf(context, listen: false);
+  final ProviderContainer container = ProviderScope.containerOf(
+    context,
+    listen: false,
+  );
   // 类型由 provider 推断（本层不 import `data/`，见架构闸门）。
   final store = container.read(noteStoreProvider);
   // 列表优先取 provider 的快照；它还没装载完时**直接查库兜底** —— 否则会误报
@@ -37,7 +39,8 @@ Future<void> referenceBlockToCanvas({
       ? canvases.first.id
       : await showDialog<String>(
           context: context,
-          builder: (BuildContext ctx) => _CanvasPickerDialog(canvases: canvases),
+          builder: (BuildContext ctx) =>
+              _CanvasPickerDialog(canvases: canvases),
         );
   if (target == null || !context.mounted) return;
 

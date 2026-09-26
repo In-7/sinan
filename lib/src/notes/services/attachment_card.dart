@@ -7,21 +7,21 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'attachment_meta.dart';
 
-// 附件卡片与"打开附件"：quill 的 EmbedBuilder 与 appflowy 的块组件共用
+// 附件卡片�?打开附件"：quill �?EmbedBuilder �?appflowy 的块组件共用
 // （同 AttachmentMeta、formula_render.dart 的抽取动机——迁移期两份实现
-// 必然漂移）。
+// 必然漂移）�?
 
-/// 用系统默认程序打开附件（Windows explorer；其他平台后续补）。
+/// 用系统默认程序打开附件（Windows explorer；其他平台后续补）�?
 Future<void> openAttachment(String path) async {
   if (!Platform.isWindows) return;
   try {
     await Process.run('explorer.exe', <String>[path]);
   } on Object catch (_) {
-    // 打开失败静默（无默认程序的类型等）。
+    // 打开失败静默（无默认程序的类型等）�?
   }
 }
 
-/// 附件卡片：图标 + 文件名 + 大小，整体可点打开。
+/// 附件卡片：图�?+ 文件�?+ 大小，整体可点打开�?
 class AttachmentCard extends StatelessWidget {
   const AttachmentCard({
     super.key,
@@ -64,13 +64,13 @@ class AttachmentCard extends StatelessWidget {
                 const SizedBox(width: Tokens.spaceMd),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: .start,
+                    mainAxisSize: .min,
                     children: <Widget>[
                       Text(
                         meta.name,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        overflow: .ellipsis,
                         style: TextStyle(
                           fontSize: 13,
                           color: scheme.onSurface,

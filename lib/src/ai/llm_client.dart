@@ -81,7 +81,11 @@ class OllamaLlmClient implements LlmClient {
     final HttpClient client = HttpClient()..connectionTimeout = timeout;
     try {
       final HttpClientRequest req = await client.postUrl(uri);
-      req.headers.contentType = ContentType('application', 'json', charset: 'utf-8');
+      req.headers.contentType = ContentType(
+        'application',
+        'json',
+        charset: 'utf-8',
+      );
       req.write(jsonEncode(body));
       final HttpClientResponse res = await req.close();
 

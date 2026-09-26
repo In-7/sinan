@@ -33,12 +33,18 @@ void main() {
     return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
   }
 
-  for (final ThemeData theme in <ThemeData>[AppTheme.light(), AppTheme.dark()]) {
+  for (final ThemeData theme in <ThemeData>[
+    AppTheme.light(),
+    AppTheme.dark(),
+  ]) {
     final Brightness brightness = theme.brightness;
 
     test('$brightness：onSurface 对画布色保持正文级对比（≥ 4.5）', () {
       expect(
-        contrast(theme.colorScheme.onSurface, AppTheme.contentCanvas(brightness)),
+        contrast(
+          theme.colorScheme.onSurface,
+          AppTheme.contentCanvas(brightness),
+        ),
         greaterThanOrEqualTo(4.5),
         reason: '画布是主题外基色；界面文字（onSurface）必须与它可读',
       );
@@ -133,10 +139,7 @@ void main() {
     });
 
     test('$brightness：surface 与窗口底色同源（Mica 回退不跳色）', () {
-      expect(
-        theme.colorScheme.surface,
-        AppTheme.windowBackground(brightness),
-      );
+      expect(theme.colorScheme.surface, AppTheme.windowBackground(brightness));
     });
 
     // ── §5.6 底色契约：纸面 = 窗口底（2026-09-22 用户定） ────────────────
@@ -207,21 +210,22 @@ void main() {
       );
     });
 
-    // §5.6（2026-09-22 用户定）：**纸面噪点**——先只做暗色一版看对比。
+    // §5.6（2026-09-26 提亮）：**纸面噪点**——暗 `2%` 白粒 / 亮 `2%` 黑粒。
     // ⚠️ 上限压到 **2%**（比窗口底那档更保守）：它离正文更近，颗粒削的是字周对比。
-    // 这条同时钉住"亮色必须是 0"——那是用户明确的选择，不是漏做。
-    test('$brightness：纸面噪点 0 ~ 2%（亮色明确为 0 = 不挂）', () {
+    // 两档都钉在「> 0 且 ≤ 2%」：亮色此前为 0 导致完全看不见颗粒（用户反馈
+    // "看不出颗粒感"），已提到 2% 与暗色一致。
+    test('$brightness：纸面噪点 0 < α ≤ 2%（两档都挂颗粒）', () {
       final double alpha = AppTheme.paperNoiseAlpha(brightness);
       expect(
         alpha,
         lessThanOrEqualTo(0.02),
         reason: '$brightness：纸面噪点超过 2% ⇒ 字周对比被削掉一档（它比窗口底那档更危险）',
       );
-      if (brightness == Brightness.light) {
-        expect(alpha, 0, reason: '亮色纸面明确不加噪点（黑粒在近白底上最显脏）');
-      } else {
-        expect(alpha, greaterThan(0), reason: '暗色纸面要能看到颗粒，否则这版白做了');
-      }
+      expect(
+        alpha,
+        greaterThan(0),
+        reason: '$brightness：纸面噪点必须 > 0，否则颗粒看不见、这一版白做',
+      );
     });
 
     // §5.6：窗口渐变底的**极淡铁律**——两端每通道差 ≤ 10/255（≈4% 明度）。

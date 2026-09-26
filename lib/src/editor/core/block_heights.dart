@@ -200,5 +200,8 @@ int blockIndexAtOffset(List<double> heights, double offset) {
   if (heights.isEmpty) return (0, -1);
   // 视口底部减 1：正好落在块边界上时，下一块只是"贴着底边"，不算可见。
   final double bottom = offset + (viewport > 1 ? viewport - 1 : 0);
-  return (blockIndexAtOffset(heights, offset), blockIndexAtOffset(heights, bottom));
+  return (
+    blockIndexAtOffset(heights, offset),
+    blockIndexAtOffset(heights, bottom),
+  );
 }

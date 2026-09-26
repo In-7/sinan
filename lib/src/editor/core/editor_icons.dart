@@ -135,8 +135,9 @@ final Map<String, EditorIconBuilder> kEditorIcons = <String, EditorIconBuilder>{
 /// 钩子是 `EditorSvg` 的静态字段，注册后**所有**经官方渲染的图标都会先问它：
 /// 命中用 Tabler 控件，未命中原样走包内 SVG。
 void installEditorIcons() {
-  EditorSvg.iconOverride = (String name, {double height = 24, double width = 24, Color? color}) {
-    final EditorIconBuilder? b = kEditorIcons[name];
-    return b?.call(height: height, width: width, color: color);
-  };
+  EditorSvg.iconOverride =
+      (String name, {double height = 24, double width = 24, Color? color}) {
+        final EditorIconBuilder? b = kEditorIcons[name];
+        return b?.call(height: height, width: width, color: color);
+      };
 }

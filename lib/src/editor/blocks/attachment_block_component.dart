@@ -46,7 +46,8 @@ class AttachmentBlockComponentBuilder extends BlockComponentBuilder {
 
   /// 非文本块：不接受子块（与官方 divider 的判定一致）。
   @override
-  BlockComponentValidate get validate => (node) => node.children.isEmpty;
+  BlockComponentValidate get validate =>
+      (node) => node.children.isEmpty;
 }
 
 class AttachmentBlockComponentWidget extends BlockComponentStatefulWidget {

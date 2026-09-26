@@ -150,7 +150,9 @@ class CanvasController extends ChangeNotifier {
 
   /// 是否有任何选区（页面据此显示删除按钮）。连线选中（[selectedEdge]）也算。
   bool get hasSelection =>
-      _selection.isNotEmpty || _selectedItems.isNotEmpty || _selectedEdge != null;
+      _selection.isNotEmpty ||
+      _selectedItems.isNotEmpty ||
+      _selectedEdge != null;
 
   /// 当前唯一选中的**卡片**（块可迁移 #5 用：把这张卡片发回它的文档）。
   /// 不是恰好一张卡片选中、或选中的不是卡片则返回 null。
@@ -305,8 +307,10 @@ class CanvasController extends ChangeNotifier {
     final CanvasItem? from = document.itemByBlockId(edge.fromId);
     final CanvasItem? to = document.itemByBlockId(edge.toId);
     if (from == null || to == null) return null;
-    final (CanvasSide, CanvasSide) auto =
-        CanvasEdges.autoSides(from.rect, to.rect);
+    final (CanvasSide, CanvasSide) auto = CanvasEdges.autoSides(
+      from.rect,
+      to.rect,
+    );
     if (_edgeGripIsFrom) {
       final CanvasSide ts = edge.toSide ?? auto.$2;
       return EdgeGeometry(

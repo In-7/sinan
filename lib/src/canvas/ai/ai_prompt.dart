@@ -82,9 +82,7 @@ String buildCanvasContext(
   }
 
   if (doc.strokes.isNotEmpty) {
-    out.writeln(
-      '手绘笔迹：${doc.strokes.length} 条（没有文本；"这里画过东西"这个信息够用了）',
-    );
+    out.writeln('手绘笔迹：${doc.strokes.length} 条（没有文本；"这里画过东西"这个信息够用了）');
   }
 
   out.writeln();

@@ -19,7 +19,10 @@ enum EdgeEndpointShape {
   diamond;
 
   /// 名称 → 枚举；未知名/未知值返回 [default]，脏存档不该让整张画布打不开。
-  static EdgeEndpointShape parse(Object? raw, {required EdgeEndpointShape defaultShape}) {
+  static EdgeEndpointShape parse(
+    Object? raw, {
+    required EdgeEndpointShape defaultShape,
+  }) {
     if (raw is! String) return defaultShape;
     for (final EdgeEndpointShape s in EdgeEndpointShape.values) {
       if (s.name == raw) return s;
@@ -76,8 +79,8 @@ class CanvasEdge {
     this.startShape = _defaultStartShape,
     this.endShape = _defaultEndShape,
     Map<String, dynamic>? props,
-  })  : id = id ?? '$_edgeIdPrefix${_nextEdgeId++}',
-        props = props ?? const <String, dynamic>{};
+  }) : id = id ?? '$_edgeIdPrefix${_nextEdgeId++}',
+       props = props ?? const <String, dynamic>{};
 
   final String id;
 
@@ -127,10 +130,17 @@ class CanvasEdge {
     toId: j['toId'] as String? ?? '',
     fromSide: _sideOf(j['fromSide']),
     toSide: _sideOf(j['toSide']),
-    startShape:
-        EdgeEndpointShape.parse(j['startShape'], defaultShape: _defaultStartShape),
-    endShape: EdgeEndpointShape.parse(j['endShape'], defaultShape: _defaultEndShape),
-    props: (j['props'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{},
+    startShape: EdgeEndpointShape.parse(
+      j['startShape'],
+      defaultShape: _defaultStartShape,
+    ),
+    endShape: EdgeEndpointShape.parse(
+      j['endShape'],
+      defaultShape: _defaultEndShape,
+    ),
+    props:
+        (j['props'] as Map?)?.cast<String, dynamic>() ??
+        const <String, dynamic>{},
   );
 
   /// 端口名 → 枚举；未知名返回 null（**不抛**，脏存档不该让整张画布打不开）。
@@ -240,8 +250,9 @@ class EdgeGeometry {
   ui.Path path({double curvature = 0.4}) {
     final double d = (to - from).distance * curvature;
     final Offset c1 = from + CanvasEdges.directionOf(fromSide) * d;
-    final Offset? c2 =
-        toSide == null ? null : to + CanvasEdges.directionOf(toSide!) * d;
+    final Offset? c2 = toSide == null
+        ? null
+        : to + CanvasEdges.directionOf(toSide!) * d;
     final ui.Path p = ui.Path()..moveTo(from.dx, from.dy);
     if (c2 != null) {
       p.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, to.dx, to.dy);
@@ -263,11 +274,11 @@ class EdgeGeometry {
   /// 尖端/中心在 [to]。[toSide] 非空时朝外方向恰是端口朝外；预览（[toSide] 空）
   /// 退化为"背离起点"，标记指向光标。
   ui.Path endMarkerPath({double size = 10}) => _markerPath(
-        to,
-        toSide != null ? CanvasEdges.directionOf(toSide!) : _outFromStart(),
-        endShape,
-        size,
-      );
+    to,
+    toSide != null ? CanvasEdges.directionOf(toSide!) : _outFromStart(),
+    endShape,
+    size,
+  );
 
   /// 在 [tip] 处、朝 [out] 方向画一个端点标记（见 [EdgeEndpointShape]）。
   static ui.Path _markerPath(

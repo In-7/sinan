@@ -109,8 +109,12 @@ class NormRect {
   double get width => right - left;
   double get height => bottom - top;
 
-  static NormRect ofLTRB(double left, double top, double right, double bottom) =>
-      NormRect(left, top, right, bottom);
+  static NormRect ofLTRB(
+    double left,
+    double top,
+    double right,
+    double bottom,
+  ) => NormRect(left, top, right, bottom);
 
   Rect toWorld(Rect viewportWorld) => Rect.fromLTRB(
     viewportWorld.left + left * viewportWorld.width,

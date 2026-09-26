@@ -116,7 +116,11 @@ class _ConnectHandler extends CanvasToolHandler {
 class _PanHandler extends CanvasToolHandler {
   const _PanHandler();
   @override
-  void onPointerDown(CanvasController c, PointerDownEvent event, Offset world) {}
+  void onPointerDown(
+    CanvasController c,
+    PointerDownEvent event,
+    Offset world,
+  ) {}
 }
 
 /// 工具 → 处理器 的注册表（状态机的「状态集合」）。
@@ -127,13 +131,13 @@ class CanvasToolHandlers {
 
   static const Map<CanvasTool, CanvasToolHandler> _map =
       <CanvasTool, CanvasToolHandler>{
-    CanvasTool.select: _SelectHandler(),
-    CanvasTool.pen: _PenHandler(),
-    CanvasTool.eraser: _EraserHandler(),
-    CanvasTool.shape: _ShapeHandler(),
-    CanvasTool.connect: _ConnectHandler(),
-    CanvasTool.pan: _PanHandler(),
-  };
+        CanvasTool.select: _SelectHandler(),
+        CanvasTool.pen: _PenHandler(),
+        CanvasTool.eraser: _EraserHandler(),
+        CanvasTool.shape: _ShapeHandler(),
+        CanvasTool.connect: _ConnectHandler(),
+        CanvasTool.pan: _PanHandler(),
+      };
 
   static CanvasToolHandler of(CanvasTool tool) =>
       _map[tool] ?? _map[CanvasTool.select]!;

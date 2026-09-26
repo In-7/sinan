@@ -49,17 +49,16 @@ class PendingSaves {
   Future<void> flushAll({Duration timeout = kExitFlushTimeout}) async {
     if (_flushers.isEmpty) return;
     // 先快照再遍历：落盘过程中可能有视图卸载并注销，边遍历边改会抛并发修改。
-    final List<Future<void> Function()> snapshot =
-        <Future<void> Function()>[..._flushers];
+    final List<Future<void> Function()> snapshot = <Future<void> Function()>[
+      ..._flushers,
+    ];
     final List<Future<void>> pending = <Future<void>>[
       for (final Future<void> Function() flush in snapshot) _guarded(flush),
     ];
     try {
       await Future.wait(pending).timeout(timeout);
     } on TimeoutException {
-      debugPrint(
-        '退出前落盘超时（${timeout.inMilliseconds}ms）：仍有写入未完成，照常退出',
-      );
+      debugPrint('退出前落盘超时（${timeout.inMilliseconds}ms）：仍有写入未完成，照常退出');
     }
   }
 

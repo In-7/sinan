@@ -18,14 +18,15 @@ enum NoteKind {
   canvas;
 
   String get name => switch (this) {
-        NoteKind.spark => 'spark',
-        NoteKind.note => 'note',
-        NoteKind.canvas => 'canvas',
-      };
+    NoteKind.spark => 'spark',
+    NoteKind.note => 'note',
+    NoteKind.canvas => 'canvas',
+  };
 
-  static NoteKind fromName(String value) =>
-      NoteKind.values.firstWhere((NoteKind k) => k.name == value,
-          orElse: () => NoteKind.spark);
+  static NoteKind fromName(String value) => NoteKind.values.firstWhere(
+    (NoteKind k) => k.name == value,
+    orElse: () => NoteKind.spark,
+  );
 }
 
 /// 一条笔记。
@@ -46,6 +47,7 @@ class Note {
   final String id;
   final NoteKind kind;
   final String title;
+
   /// 正文。**格式由当前编辑器决定**（写出方见 NoteDocumentAdapter）：
   /// - quill 仍是编辑器 → Quill Delta JSON（`[...]` 裸数组）；
   /// - 换成 appflowy 后 → v2 块树（`{"v":2,"format":"blocks",...}`，块节点带稳定 id）。
@@ -53,14 +55,18 @@ class Note {
   /// 历史数据还可能有纯文本或 `{"ops":[...]}` 包装形态。读取一律走
   /// `NoteContent.decode`（三形态通吃，不依赖编辑器库）。
   final String content;
+
   /// 从正文提取的纯文本（列表预览 / Tooltip / 搜索用）。
   final String plainText;
+
   /// 内容 SHA-256。用于判定「是否真的改了」，没改就不落盘。
   final String contentHash;
   final DateTime createdAt;
   final DateTime revisedAt;
+
   /// 预留字段（当前 UI 未使用）。
   final DateTime? promotedAt;
+
   /// 标签（分类）。**跨 kind 一套池子**——kind 已是"类型"维度（spark/note/canvas），
   /// 标签别按形态分家（两层正交：搜索里可同时叠 kind 与标签过滤）。
   ///

@@ -146,8 +146,10 @@ abstract final class NoteDocumentAdapter {
     // （用户展开了就能看到），所以一律计入。
     void walk(Iterable<Node> nodes) {
       for (final Node node in nodes) {
-        final String text = (node.delta?.toPlainText() ?? '')
-            .replaceAll(RegExp(r'\n+$'), '');
+        final String text = (node.delta?.toPlainText() ?? '').replaceAll(
+          RegExp(r'\n+$'),
+          '',
+        );
         if (text.isNotEmpty) lines.add(text);
         walk(node.children);
       }
@@ -180,8 +182,9 @@ abstract final class NoteDocumentAdapter {
     final Map<String, Object> json = node.toJson();
     json[_kIdKey] = node.id;
     if (node.children.isNotEmpty) {
-      json[_kChildrenKey] =
-          node.children.map(_nodeToJson).toList(growable: false);
+      json[_kChildrenKey] = node.children
+          .map(_nodeToJson)
+          .toList(growable: false);
     }
     return json;
   }
@@ -296,7 +299,10 @@ abstract final class NoteDocumentAdapter {
         codeIndent = _indentOf(lineAttributes);
       } else {
         flushCodeBlock();
-        addNode(_buildNode(lineDelta, lineAttributes), _indentOf(lineAttributes));
+        addNode(
+          _buildNode(lineDelta, lineAttributes),
+          _indentOf(lineAttributes),
+        );
       }
       lineDelta = Delta();
       lineAttributes = <String, dynamic>{};
@@ -305,8 +311,8 @@ abstract final class NoteDocumentAdapter {
     for (final Object? rawOp in ops) {
       if (rawOp is! Map) continue;
       final Object? insert = rawOp['insert'];
-      final Map<String, dynamic>? attributes =
-          (rawOp['attributes'] as Map?)?.cast<String, dynamic>();
+      final Map<String, dynamic>? attributes = (rawOp['attributes'] as Map?)
+          ?.cast<String, dynamic>();
 
       // ① 嵌入对象（图片 / 分隔线 / 公式 / 附件）。
       if (insert is Map) {

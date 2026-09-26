@@ -6,10 +6,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
 
-/// 颜色工具栏条目：把"字体颜色"和"背景颜色"合并到一个面板里。
+/// 颜色工具栏条目：�?字体颜色"�?背景颜色"合并到一个面板里�?
 ///
-/// 官方 [buildTextColorItem] / [buildHighlightColorItem] 是两个独立按钮、
-/// 各自弹一个浮层。这里改成单按钮 → 双区色板，与参考图的交互一致。
+/// 官方 [buildTextColorItem] / [buildHighlightColorItem] 是两个独立按钮�?
+/// 各自弹一个浮层。这里改成单按钮 �?双区色板，与参考图的交互一致�?
 final ToolbarItem sinanColorItem = ToolbarItem(
   id: 'sinan.color',
   group: 4,
@@ -123,7 +123,7 @@ class _ColorOverlay extends StatelessWidget {
       children: <Widget>[
         Positioned.fill(
           child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
+            behavior: .translucent,
             onTap: onDismiss,
             child: const SizedBox.expand(),
           ),
@@ -168,15 +168,15 @@ class _SinanColorPanel extends StatelessWidget {
     );
 
     return AppFloatSurface(
-      // 浮层令牌（2026-09-14）：色板是弹出浮层，底色/描边/投影走三件套
-      // （此前是 `Card.filled` + 画布色 ⇒ 与纸面同色、且无描边无投影）。
+      // 浮层令牌�?026-09-14）：色板是弹出浮层，底色/描边/投影走三件套
+      // （此前是 `Card.filled` + 画布�?�?与纸面同色、且无描边无投影）�?
       child: Padding(
         padding: const EdgeInsets.all(Tokens.spaceMd),
         child: SizedBox(
           width: 240,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: .min,
+            crossAxisAlignment: .start,
             children: <Widget>[
               _buildSection(
                 context,
@@ -267,7 +267,7 @@ class _SinanColorPanel extends StatelessWidget {
     required ValueChanged<String?> onSelected,
   }) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: .start,
       children: <Widget>[
         Text(label, style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: Tokens.spaceXs),
@@ -317,7 +317,7 @@ class _ColorSwatch extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           color: color ?? scheme.onSurfaceVariant,
-          shape: BoxShape.circle,
+          shape: .circle,
           border: Border.all(
             color: isSelected ? scheme.onSurface : scheme.outlineVariant,
             width: isSelected ? 2 : 1,

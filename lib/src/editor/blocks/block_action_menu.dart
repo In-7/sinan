@@ -30,21 +30,17 @@ List<Widget> sinanBlockActionMenuItems({
   // 手柄点击已把选区切成本块 ⇒ 这里以块的起点为准（不依赖调用顺序）。
   final Selection selection = Selection.collapsed(Position(path: node.path));
 
-  Widget action({
-    required String label,
-    required VoidCallback onPressed,
-  }) =>
+  Widget action({required String label, required VoidCallback onPressed}) =>
       MenuItemButton(onPressed: onPressed, child: Text(label));
 
   /// 换块类型：一律走官方 `formatNode`（只改 `type` 与该类型必需的属性）。
-  Widget typeItem(String label, Node Function(Node node) transform) =>
-      action(
-        label: label,
-        onPressed: () {
-          unawaited(editorState.formatNode(selection, transform));
-          onClose();
-        },
-      );
+  Widget typeItem(String label, Node Function(Node node) transform) => action(
+    label: label,
+    onPressed: () {
+      unawaited(editorState.formatNode(selection, transform));
+      onClose();
+    },
+  );
 
   return <Widget>[
     SubmenuButton(
@@ -61,32 +57,36 @@ List<Widget> sinanBlockActionMenuItems({
               onClose();
             },
           ),
-        typeItem('无序列表', (Node n) => n.copyWith(
-              type: BulletedListBlockKeys.type,
-            )),
-        typeItem('有序列表', (Node n) => n.copyWith(
-              type: NumberedListBlockKeys.type,
-            )),
-        typeItem('待办列表', (Node n) => n.copyWith(
-              type: TodoListBlockKeys.type,
-              attributes: <String, dynamic>{
-                ...n.attributes,
-                TodoListBlockKeys.checked: false,
-              },
-            )),
-        typeItem('引用', (Node n) => n.copyWith(
-              type: QuoteBlockKeys.type,
-            )),
-        typeItem('折叠块', (Node n) => n.copyWith(
-              type: ToggleListBlockKeys.type,
-              attributes: <String, dynamic>{
-                ...n.attributes,
-                ToggleListBlockKeys.collapsed: false,
-              },
-            )),
-        typeItem('高亮块', (Node n) => n.copyWith(
-              type: CalloutBlockKeys.type,
-            )),
+        typeItem(
+          '无序列表',
+          (Node n) => n.copyWith(type: BulletedListBlockKeys.type),
+        ),
+        typeItem(
+          '有序列表',
+          (Node n) => n.copyWith(type: NumberedListBlockKeys.type),
+        ),
+        typeItem(
+          '待办列表',
+          (Node n) => n.copyWith(
+            type: TodoListBlockKeys.type,
+            attributes: <String, dynamic>{
+              ...n.attributes,
+              TodoListBlockKeys.checked: false,
+            },
+          ),
+        ),
+        typeItem('引用', (Node n) => n.copyWith(type: QuoteBlockKeys.type)),
+        typeItem(
+          '折叠块',
+          (Node n) => n.copyWith(
+            type: ToggleListBlockKeys.type,
+            attributes: <String, dynamic>{
+              ...n.attributes,
+              ToggleListBlockKeys.collapsed: false,
+            },
+          ),
+        ),
+        typeItem('高亮块', (Node n) => n.copyWith(type: CalloutBlockKeys.type)),
         // 代码块有整块级的特殊语义（行盒/占位/回车行为），走它自己的实现。
         action(
           label: '代码块',

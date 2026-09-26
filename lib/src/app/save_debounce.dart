@@ -32,10 +32,7 @@ class SaveDebounce {
     required this.window,
     required this.maxWait,
     required this.onFlush,
-  }) : assert(
-         maxWait >= window,
-         'maxWait 不该短于防抖窗口：否则上限总在停顿之前触发，防抖本身就没意义了',
-       );
+  }) : assert(maxWait >= window, 'maxWait 不该短于防抖窗口：否则上限总在停顿之前触发，防抖本身就没意义了');
 
   /// 停顿多久落盘（每次变更重置）。
   final Duration window;

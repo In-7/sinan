@@ -64,6 +64,10 @@ linter:
     - avoid_type_to_string
     # ── 现代语法 / 简洁 ──
     - use_super_parameters
+    # 注：**dot shorthands**（`.dark` 代替 `Brightness.dark`，Dart 3.10+）语法
+    # 在 3.13 已可用，2026-09-26 已全量应用到 `lib`（51 个文件）。⚠️ 对应的
+    # `use_dot_shorthands` lint 在 **3.13.3 实测不触发**（特意写回冗长形式也
+    # 不报）⇒ 不列入规则——别误以为这里有护栏，回潮靠评审兜。
     - implicit_call_tearoffs
     - unnecessary_lambdas # (x) => f(x) → f
     - unnecessary_parenthesis

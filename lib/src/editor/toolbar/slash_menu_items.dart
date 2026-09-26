@@ -1,11 +1,14 @@
 import 'dart:async';
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+
 import 'dart:convert';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 // 只用到 BuildContext（句柄签名要求）；widgets 层是两套 Material 共用的，
 // 这里不需要也不该牵进任何一方的 Material。
 import 'package:flutter/widgets.dart';
+
 import '../../notes/services/attachment_meta.dart';
 import '../../notes/services/formula_render.dart';
 import '../../notes/services/note_media_service.dart';
@@ -108,11 +111,7 @@ final List<SelectionMenuItem> toggleSlashMenuItems = <SelectionMenuItem>[
   for (int level = 1; level <= 3; level++)
     _toggleSlashMenuItem(
       name: '折叠标题 $level',
-      keywords: <String>[
-        'toggle heading $level',
-        '折叠标题 $level',
-        '折叠标题$level',
-      ],
+      keywords: <String>['toggle heading $level', '折叠标题 $level', '折叠标题$level'],
       nodeBuilder: () => toggleHeadingNode(level: level),
     ),
 ];
@@ -125,7 +124,11 @@ SelectionMenuItem _toggleSlashMenuItem({
   required Node Function() nodeBuilder,
 }) => SelectionMenuItem.node(
   getName: () => name,
-  iconData: const tabler.ChevronRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+  iconData: const tabler.ChevronRight(
+    height: Tokens.iconSm,
+    width: Tokens.iconSm,
+    strokeWidth: 1.5,
+  ),
   keywords: keywords,
   nodeBuilder: (editorState, context) => nodeBuilder(),
   replace: (editorState, node) => node.delta?.isEmpty ?? false,
@@ -140,7 +143,11 @@ SelectionMenuItem _toggleSlashMenuItem({
 /// `['callout']`，中文用户会直接打"高亮块"）。
 final SelectionMenuItem calloutSlashMenuItem = SelectionMenuItem.node(
   getName: () => '高亮块',
-  iconData: const tabler.InfoCircle(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+  iconData: const tabler.InfoCircle(
+    height: Tokens.iconSm,
+    width: Tokens.iconSm,
+    strokeWidth: 1.5,
+  ),
   keywords: const <String>['callout', '高亮块', '提示', '强调'],
   nodeBuilder: (editorState, context) => calloutNode(),
   // 空块 → 原地替换（与官方 callout / table 同一判据），不留多余空段落。
@@ -165,7 +172,11 @@ bool _isNotMaterialIconItem(SelectionMenuItem item) =>
 final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.table,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Table(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Table(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
@@ -209,7 +220,11 @@ final SelectionMenuItem tableSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem dividerSlashMenuItem = SelectionMenuItem(
   getName: () => AppFlowyEditorL10n.current.divider,
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Minus(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Minus(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
@@ -318,7 +333,11 @@ bool _containsCjk(String value) => RegExp(r'[\u4e00-\u9fa5]').hasMatch(value);
 /// 我们只回答三个问题：造什么节点、要不要替换、光标放哪。
 final SelectionMenuItem codeSlashMenuItem = SelectionMenuItem.node(
   getName: () => '代码块',
-  iconData: const tabler.Terminal(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+  iconData: const tabler.Terminal(
+    height: Tokens.iconSm,
+    width: Tokens.iconSm,
+    strokeWidth: 1.5,
+  ),
   keywords: const <String>['code', 'code block', '代码', '代码块'],
   nodeBuilder: (editorState, context) => codeBlockNode(delta: Delta()),
   // 空块 → 原地替换（与官方 tableMenuItem 同一判据），不留多余空段落。
@@ -356,7 +375,11 @@ final SelectionMenuItem formulaSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
   getName: () => '附件',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Paperclip(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Paperclip(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
@@ -364,7 +387,8 @@ final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
   handler: (editorState, _, _) async {
     final _InsertionPoint? point = _InsertionPoint.capture(editorState);
     if (point == null) return;
-    final AttachmentMeta? meta = await NoteMediaService.pickAndStoreAttachment();
+    final AttachmentMeta? meta =
+        await NoteMediaService.pickAndStoreAttachment();
     if (meta == null) return;
     await _insertBlockAt(
       editorState,
@@ -382,7 +406,11 @@ final SelectionMenuItem attachmentSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
   getName: () => '引用笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Link(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Link(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
@@ -406,10 +434,7 @@ final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
     await _insertBlockAt(
       editorState,
       point,
-      node: refBlockNode(
-        refType: RefBlockKeys.refNote,
-        refId: noteId,
-      ),
+      node: refBlockNode(refType: RefBlockKeys.refNote, refId: noteId),
       canHoldCursor: false,
     );
   },
@@ -429,18 +454,15 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '引用块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
     // 与「引用笔记」的 link 图标区分：这里强调的是"引用一段正文"。
-    icon: const tabler.FileText(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.FileText(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
-  keywords: const <String>[
-    'block',
-    'blockref',
-    '引用块',
-    '块引用',
-    '块',
-    '段落',
-  ],
+  keywords: const <String>['block', 'blockref', '引用块', '块引用', '块', '段落'],
   handler: (editorState, _, BuildContext context) async {
     // 落点必须在弹对话框**之前**取好（见 _InsertionPoint 的说明）。
     final _InsertionPoint? point = _InsertionPoint.capture(editorState);
@@ -450,10 +472,7 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
     await _insertBlockAt(
       editorState,
       point,
-      node: refBlockNode(
-        refType: RefBlockKeys.refBlock,
-        refId: blockId,
-      ),
+      node: refBlockNode(refType: RefBlockKeys.refBlock, refId: blockId),
       canHoldCursor: false,
     );
   },
@@ -467,16 +486,15 @@ final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入块',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Quote(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Quote(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
-  keywords: const <String>[
-    'embed',
-    '嵌入块',
-    '块嵌入',
-    '展开块',
-  ],
+  keywords: const <String>['embed', '嵌入块', '块嵌入', '展开块'],
   handler: (editorState, _, BuildContext context) async {
     final _InsertionPoint? point = _InsertionPoint.capture(editorState);
     if (point == null) return;
@@ -502,16 +520,15 @@ final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
 final SelectionMenuItem embedNoteSlashMenuItem = SelectionMenuItem(
   getName: () => '嵌入笔记',
   icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Quote(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    icon: const tabler.Quote(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
     isSelected: isSelected,
     style: style,
   ),
-  keywords: const <String>[
-    'embed',
-    '嵌入笔记',
-    '笔记嵌入',
-    '展开笔记',
-  ],
+  keywords: const <String>['embed', '嵌入笔记', '笔记嵌入', '展开笔记'],
   handler: (editorState, _, BuildContext context) async {
     final _InsertionPoint? point = _InsertionPoint.capture(editorState);
     if (point == null) return;
@@ -590,9 +607,7 @@ Future<void> _insertBlockAt(
   }
 
   if (canHoldCursor) {
-    transaction.afterSelection = Selection.collapsed(
-      Position(path: blockPath),
-    );
+    transaction.afterSelection = Selection.collapsed(Position(path: blockPath));
   } else {
     final Path after = blockPath.next;
     transaction

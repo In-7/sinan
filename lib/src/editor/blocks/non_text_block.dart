@@ -110,8 +110,8 @@ mixin NonTextBlockGeometry<W extends BlockComponentStatefulWidget>
   }) {
     if (_renderBox == null) return <Rect>[];
     final RenderObject? parentBox = context.findRenderObject();
-    final RenderObject? contentBox =
-        contentKey.currentContext?.findRenderObject();
+    final RenderObject? contentBox = contentKey.currentContext
+        ?.findRenderObject();
     if (parentBox is RenderBox && contentBox is RenderBox) {
       return <Rect>[
         (shiftWithBaseOffset

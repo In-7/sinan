@@ -78,12 +78,12 @@ class SearchNotifier extends Notifier<SearchState> {
   SearchState build() {
     ref.onDispose(() => _timer?.cancel());
     // **列表一变，结果跟着重算**（为什么必须 listen，见 [_onNotesChanged]）。
-    ref.listen(
-      notesProvider,
-      (AsyncValue<List<Note>>? _, AsyncValue<List<Note>> next) {
-        if (next.value != null) _onNotesChanged();
-      },
-    );
+    ref.listen(notesProvider, (
+      AsyncValue<List<Note>>? _,
+      AsyncValue<List<Note>> next,
+    ) {
+      if (next.value != null) _onNotesChanged();
+    });
     return const SearchState();
   }
 
@@ -133,7 +133,11 @@ class SearchNotifier extends Notifier<SearchState> {
       state = _tagView(state.activeTag);
       return;
     }
-    state = SearchState(query: raw, activeTag: state.activeTag, searching: true);
+    state = SearchState(
+      query: raw,
+      activeTag: state.activeTag,
+      searching: true,
+    );
     _timer = Timer(kSearchDebounce, () => _search(q));
   }
 
@@ -166,23 +170,25 @@ class SearchNotifier extends Notifier<SearchState> {
   SearchState _tagView(String? tag) {
     if (tag == null) return const SearchState();
     final List<Note> notes = ref.read(notesProvider).value ?? const <Note>[];
-    final List<SearchHit> hits = <SearchHit>[
-      for (final Note n in notes)
-        if (n.tags.contains(tag))
-          (note: n, titleMatch: false, snippet: null, score: null),
-    ]..sort(
-        (SearchHit a, SearchHit b) => b.note.revisedAt.compareTo(a.note.revisedAt),
-      );
+    final List<SearchHit> hits =
+        <SearchHit>[
+          for (final Note n in notes)
+            if (n.tags.contains(tag))
+              (note: n, titleMatch: false, snippet: null, score: null),
+        ]..sort(
+          (SearchHit a, SearchHit b) =>
+              b.note.revisedAt.compareTo(a.note.revisedAt),
+        );
     return SearchState(activeTag: tag, hits: hits);
   }
 
   /// 标签筛选（纯内存；标签**跨 kind 一套池子**，画布笔记同样命中）。
   static List<SearchHit> _filterByTag(List<SearchHit> hits, String? tag) =>
       tag == null
-          ? hits
-          : hits
-              .where((SearchHit h) => h.note.tags.contains(tag))
-              .toList(growable: false);
+      ? hits
+      : hits
+            .where((SearchHit h) => h.note.tags.contains(tag))
+            .toList(growable: false);
 
   Future<void> _search(String q) async {
     final int seq = ++_seq;
@@ -202,10 +208,9 @@ class SearchNotifier extends Notifier<SearchState> {
     // 内容路。检索的任何失败都不能让搜索整体失败（与 Retriever 同一原则）。
     String? fallback;
     try {
-      final result = await ref.read(retrieverProvider).search(
-            q,
-            limit: _contentLimit,
-          );
+      final result = await ref
+          .read(retrieverProvider)
+          .search(q, limit: _contentLimit);
       for (final hit in result.hits) {
         final Note? n = byId[hit.noteId];
         if (n == null) continue; // 已删除 / 尚未装载
@@ -227,7 +232,9 @@ class SearchNotifier extends Notifier<SearchState> {
     final List<SearchHit> sorted = merged.values.toList()
       ..sort((SearchHit a, SearchHit b) {
         // 标题命中置顶（最强信号），组内按 RRF 分，最后按修改时间兜底。
-        final int byTitle = (a.titleMatch ? 0 : 1).compareTo(b.titleMatch ? 0 : 1);
+        final int byTitle = (a.titleMatch ? 0 : 1).compareTo(
+          b.titleMatch ? 0 : 1,
+        );
         if (byTitle != 0) return byTitle;
         if (a.score != null && b.score != null) {
           return b.score!.compareTo(a.score!);
@@ -248,8 +255,9 @@ class SearchNotifier extends Notifier<SearchState> {
   }
 }
 
-final searchNotifierProvider =
-    NotifierProvider<SearchNotifier, SearchState>(SearchNotifier.new);
+final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
+  SearchNotifier.new,
+);
 
 /// 全库**标签池**（跨 kind 一套）：按出现篇数倒序、同数按名称排。
 ///
@@ -263,12 +271,13 @@ final allTagsProvider = Provider<List<(String, int)>>((ref) {
       counts[t] = (counts[t] ?? 0) + 1;
     }
   }
-  final List<(String, int)> out = <(String, int)>[
-    for (final MapEntry<String, int> e in counts.entries) (e.key, e.value),
-  ]..sort(((String, int) a, (String, int) b) {
-      final int byCount = b.$2.compareTo(a.$2);
-      if (byCount != 0) return byCount;
-      return a.$1.compareTo(b.$1);
-    });
+  final List<(String, int)> out =
+      <(String, int)>[
+        for (final MapEntry<String, int> e in counts.entries) (e.key, e.value),
+      ]..sort(((String, int) a, (String, int) b) {
+        final int byCount = b.$2.compareTo(a.$2);
+        if (byCount != 0) return byCount;
+        return a.$1.compareTo(b.$1);
+      });
   return out;
 });

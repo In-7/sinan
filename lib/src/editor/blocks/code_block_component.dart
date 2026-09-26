@@ -138,7 +138,8 @@ class CodeBlockComponentBuilder extends BlockComponentBuilder {
   }
 
   @override
-  BlockComponentValidate get validate => (node) => node.delta != null;
+  BlockComponentValidate get validate =>
+      (node) => node.delta != null;
 }
 
 class CodeBlockComponentWidget extends BlockComponentStatefulWidget {
@@ -241,11 +242,12 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
                 cursorWidth: editorState.editorStyle.cursorWidth,
                 // 高亮：整块文本按行交给 highlight 解析（与 quill 侧同一实现）。
                 // 注意：块内的行内标记（粗体等）不参与着色——与 quill 侧同样折衷。
-                textSpanDecorator: (TextSpan textSpan) => buildHighlightedCodeSpan(
-                  context,
-                  textSpan.toPlainText(),
-                  codeStyle,
-                ),
+                textSpanDecorator: (TextSpan textSpan) =>
+                    buildHighlightedCodeSpan(
+                      context,
+                      textSpan.toPlainText(),
+                      codeStyle,
+                    ),
                 placeholderTextSpanDecorator: (TextSpan textSpan) =>
                     textSpan.updateTextStyle(
                       codeStyle.copyWith(
@@ -274,11 +276,7 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
       ),
     );
 
-    child = Container(
-      key: blockComponentKey,
-      padding: padding,
-      child: child,
-    );
+    child = Container(key: blockComponentKey, padding: padding, child: child);
 
     child = BlockSelectionContainer(
       node: node,
@@ -286,9 +284,7 @@ class _CodeBlockComponentWidgetState extends State<CodeBlockComponentWidget>
       listenable: editorState.selectionNotifier,
       remoteSelection: editorState.remoteSelections,
       blockColor: editorState.editorStyle.selectionColor,
-      supportTypes: const <BlockSelectionType>[
-        BlockSelectionType.block,
-      ],
+      supportTypes: const <BlockSelectionType>[BlockSelectionType.block],
       child: child,
     );
 

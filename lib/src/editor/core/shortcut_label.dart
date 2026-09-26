@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 /// Material 的对应物是 `MenuItemButton.shortcut`。Windows 写 `Ctrl`，
 /// macOS 写 `⌘`（Shift 两平台一致）。
 String shortcutLabel(String shortcut) {
-  final bool apple = defaultTargetPlatform == TargetPlatform.macOS ||
+  final bool apple =
+      defaultTargetPlatform == TargetPlatform.macOS ||
       defaultTargetPlatform == TargetPlatform.iOS;
   if (!apple) return shortcut;
   return shortcut

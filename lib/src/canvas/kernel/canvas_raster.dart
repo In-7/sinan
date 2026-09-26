@@ -69,7 +69,11 @@ Future<Uint8List> rasterizeWithCamera(
   if (includeGrid && gridColor != null) {
     GridPainter(camera: camera, color: gridColor).paint(canvas, pixelSize);
   }
-  ItemPainter(camera: camera, items: items, edges: edges).paint(canvas, pixelSize);
+  ItemPainter(
+    camera: camera,
+    items: items,
+    edges: edges,
+  ).paint(canvas, pixelSize);
   InkPainter(camera: camera, picture: inkPicture).paint(canvas, pixelSize);
 
   final ui.Image image = await recorder.endRecording().toImage(pxW, pxH);

@@ -40,9 +40,7 @@ abstract final class NoteMediaService {
   /// 元数据；取消返回 null。附件**复制进库**保持自包含（源文件移动
   /// 或删除不影响），代价是大文件落盘耗时（选入时一次性）。
   static Future<AttachmentMeta?> pickAndStoreAttachment() async {
-    final List<PlatformFile> files = await FilePicker.pickFiles(
-      
-    );
+    final List<PlatformFile> files = await FilePicker.pickFiles();
     final PlatformFile? file = files.isEmpty ? null : files.first;
     final String? sourcePath = file?.path;
     if (sourcePath == null) return null;
@@ -57,11 +55,7 @@ abstract final class NoteMediaService {
     // file_picker 12.x：PlatformFile 变为抽象接口（无 size 字段），
     // 大小取自复制后的文件本体（最可靠）。
     final int size = File(storedPath).lengthSync();
-    return AttachmentMeta(
-      path: storedPath,
-      name: file!.name,
-      size: size,
-    );
+    return AttachmentMeta(path: storedPath, name: file!.name, size: size);
   }
 
   /// 剪贴板截图/复制图片直存：图片字节写入数据目录，返回长期路径。

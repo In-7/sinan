@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -120,10 +121,7 @@ ToolbarItem _withKeepEditorFocusItem(ToolbarItem item) => ToolbarItem(
           tooltipBuilder,
         );
         return withKeepEditorFocus(
-          HoverStateLayer(
-            base: iconColor ?? highlightColor,
-            child: child,
-          ),
+          HoverStateLayer(base: iconColor ?? highlightColor, child: child),
         );
       },
 );
@@ -143,10 +141,9 @@ void _releaseEditorFocus() {
 /// 由 `fixed_toolbar_test.dart` 兜住，而不是悄悄少一个按钮）。
 ToolbarItem _formatItem(String name) => markdownFormatItems.firstWhere(
   (ToolbarItem item) => item.id == 'editor.$name',
-  orElse:
-      () => throw StateError(
-        'appflowy 官方行内格式条目 "$name" 不存在——上游条目表变了，请同步 fixed_toolbar.dart',
-      ),
+  orElse: () => throw StateError(
+    'appflowy 官方行内格式条目 "$name" 不存在——上游条目表变了，请同步 fixed_toolbar.dart',
+  ),
 );
 
 // 撤销 / 重做的 [ToolbarItem] 定义**已删除**（2026-09-14，见文件头条目表的说明）：
@@ -168,28 +165,31 @@ final ToolbarItem todoListItem = ToolbarItem(
     final bool isHighlight = node.type == TodoListBlockKeys.type;
     final Widget child = _iconItem(
       context: context,
-      icon: const tabler.ListCheck(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+      icon: const tabler.ListCheck(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+      ),
       iconColor: iconColor,
       highlightColor: highlightColor,
       isHighlight: isHighlight,
-      onPressed:
-          () => editorState.formatNode(selection, (Node target) {
-            final Map<String, dynamic> attributes = <String, dynamic>{
-              ...target.attributes,
-            };
-            if (isHighlight) {
-              // 离开待办态时摘掉 checked，别把它留给段落（脏属性会跟着落库）。
-              attributes.remove(TodoListBlockKeys.checked);
-            } else {
-              attributes[TodoListBlockKeys.checked] = false;
-            }
-            // 官方条目同款：块类型转换时把文本 delta 显式带走。
-            attributes[blockComponentDelta] = (target.delta ?? Delta()).toJson();
-            return target.copyWith(
-              type: isHighlight ? ParagraphBlockKeys.type : TodoListBlockKeys.type,
-              attributes: attributes,
-            );
-          }),
+      onPressed: () => editorState.formatNode(selection, (Node target) {
+        final Map<String, dynamic> attributes = <String, dynamic>{
+          ...target.attributes,
+        };
+        if (isHighlight) {
+          // 离开待办态时摘掉 checked，别把它留给段落（脏属性会跟着落库）。
+          attributes.remove(TodoListBlockKeys.checked);
+        } else {
+          attributes[TodoListBlockKeys.checked] = false;
+        }
+        // 官方条目同款：块类型转换时把文本 delta 显式带走。
+        attributes[blockComponentDelta] = (target.delta ?? Delta()).toJson();
+        return target.copyWith(
+          type: isHighlight ? ParagraphBlockKeys.type : TodoListBlockKeys.type,
+          attributes: attributes,
+        );
+      }),
     );
     return _withTooltip(context, tooltipBuilder, 'sinan.todo_list', child);
   },
@@ -209,7 +209,11 @@ final ToolbarItem codeBlockItem = ToolbarItem(
     final bool isHighlight = node.type == CodeBlockKeys.type;
     final Widget child = _iconItem(
       context: context,
-      icon: const tabler.Terminal(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+      icon: const tabler.Terminal(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+      ),
       iconColor: iconColor,
       highlightColor: highlightColor,
       isHighlight: isHighlight,
@@ -393,11 +397,11 @@ Widget _iconItem({
   // ⚠️ `Opacity` 会触发 `saveLayer`（离屏合成），是官方性能文档点名的昂贵
   // 操作；工具栏条目多，且禁用态是常态（无选区时一片条目都是禁用）。改色是
   // 纯绘制、零合成开销，视觉与 0.35 透明度等价（同样按原 alpha 相乘）。
-  final Color color =
-      onPressed == null ? base.withValues(alpha: base.a * 0.35) : base;
+  final Color color = onPressed == null
+      ? base.withValues(alpha: base.a * 0.35)
+      : base;
   return SVGIconItemWidget(
-    iconBuilder: (BuildContext context) =>
-        icon,
+    iconBuilder: (BuildContext context) => icon,
     isHighlight: isHighlight,
     highlightColor: highlightColor,
     iconColor: color,
@@ -449,7 +453,7 @@ const Map<String, String> kEditorTooltips = <String, String>{
   // 菜单里每项右侧也各自标注（见 heading_toolbar_item.dart）。
   'sinan.heading':
       '段落样式（正文 Ctrl+Shift+B / 标题 1 Ctrl+Shift+T / '
-          '标题 2 Ctrl+Shift+G / 标题 3 Ctrl+Shift+J）',
+      '标题 2 Ctrl+Shift+G / 标题 3 Ctrl+Shift+J）',
   // 官方行内格式（⚠️ 它们传给 tooltipBuilder 的 id 是**不带 editor. 前缀**的
   // 'bold'/'italic'/…，与段落/标题/列表不同，所以这里用短 id）。
   'bold': '加粗（Ctrl+B）',

@@ -4,18 +4,18 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 
-// 公式的**渲染 + 编辑对话框**：quill 的 EmbedBuilder 与 appflowy 的块组件
-// 共用（同 AttachmentMeta 的抽取动机——迁移期两份实现必然漂移）。
+// 公式�?*渲染 + 编辑对话�?*：quill �?EmbedBuilder �?appflowy 的块组件
+// 共用（同 AttachmentMeta 的抽取动机——迁移期两份实现必然漂移）�?
 //
-// 本文件不依赖任何编辑器库：调用方负责"改文档"（quill 用
-// controller.replaceText，appflowy 用 editorState.transaction）。
+// 本文件不依赖任何编辑器库：调用方负责"改文�?（quill �?
+// controller.replaceText，appflowy �?editorState.transaction）�?
 
-/// 渲染 LaTeX：`textStyle` 决定字号与颜色（调用方传入正文/块样式）。
+/// 渲染 LaTeX：`textStyle` 决定字号与颜色（调用方传入正�?块样式）�?
 ///
 /// **双重兜底**：flutter_math_fork 声明的错误类型是 FlutterMathException
-/// （onErrorFallback 可拦），但其解析器遇到残缺输入（孤立的 `^`、`=` 等）
-/// 会抛**原生 FormatException**——不是 FlutterMathException 的子类，直接
-/// 逃逸会崩渲染。外层再包 try/catch 兜住一切异常，回退为等宽错误色源码。
+/// （onErrorFallback 可拦），但其解析器遇到残缺输入（孤立�?`^`、`=` 等）
+/// 会抛**原生 FormatException**——不�?FlutterMathException 的子类，直接
+/// 逃逸会崩渲染。外层再�?try/catch 兜住一切异常，回退为等宽错误色源码�?
 Widget renderFormula(BuildContext context, String latex, TextStyle? textStyle) {
   Widget onErrorFallback(math.FlutterMathException error) => Text(
     latex,
@@ -37,7 +37,7 @@ Widget renderFormula(BuildContext context, String latex, TextStyle? textStyle) {
   }
 }
 
-/// 打开公式编辑对话框；确定返回 LaTeX 源，取消返回 null。
+/// 打开公式编辑对话框；确定返回 LaTeX 源，取消返回 null�?
 Future<String?> showFormulaDialog(
   BuildContext context, {
   String initial = '',
@@ -46,7 +46,7 @@ Future<String?> showFormulaDialog(
   builder: (BuildContext dialogContext) => _FormulaDialog(initial: initial),
 );
 
-/// 渲染兜底用的解析异常占位（FlutterMathException 是抽象类，需最小实现）。
+/// 渲染兜底用的解析异常占位（FlutterMathException 是抽象类，需最小实现）�?
 class _FormulaParseError implements math.FlutterMathException {
   const _FormulaParseError();
 
@@ -57,7 +57,7 @@ class _FormulaParseError implements math.FlutterMathException {
   String get messageWithType => 'FormatException: $message';
 }
 
-/// 公式输入对话框：LaTeX 源码多行输入 + 下方实时预览。
+/// 公式输入对话框：LaTeX 源码多行输入 + 下方实时预览�?
 class _FormulaDialog extends StatefulWidget {
   const _FormulaDialog({required this.initial});
 
@@ -88,8 +88,8 @@ class _FormulaDialogState extends State<_FormulaDialog> {
       content: SizedBox(
         width: 480,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: .min,
+          crossAxisAlignment: .stretch,
           children: <Widget>[
             TextField(
               controller: _controller,
@@ -108,7 +108,7 @@ class _FormulaDialogState extends State<_FormulaDialog> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: Tokens.spaceMd),
-            // 实时预览：输入即渲染；预览区固定高度避免拖动时抖动。
+            // 实时预览：输入即渲染；预览区固定高度避免拖动时抖动�?
             Container(
               height: 72,
               padding: const EdgeInsets.all(Tokens.spaceMd),

@@ -44,8 +44,8 @@ class _HoverStateLayerState extends State<HoverStateLayer> {
     final Color? color = _pressed
         ? AppTheme.stateLayerPressed(widget.base)
         : _hovered
-            ? AppTheme.stateLayer(widget.base)
-            : null;
+        ? AppTheme.stateLayer(widget.base)
+        : null;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() {

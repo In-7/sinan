@@ -199,8 +199,10 @@ class ItemPainter extends CustomPainter {
     // 两组各自仍保持原 z 序（itemOrder 已保证内部顺序）。否则框会被自己的
     // 成员盖住、看不出"框住了一组"。
     final List<CanvasItem> ordered = <CanvasItem>[
-      for (final CanvasItem item in items) if (item is CanvasGroupItem) item,
-      for (final CanvasItem item in items) if (item is! CanvasGroupItem) item,
+      for (final CanvasItem item in items)
+        if (item is CanvasGroupItem) item,
+      for (final CanvasItem item in items)
+        if (item is! CanvasGroupItem) item,
     ];
     for (final CanvasItem item in ordered) {
       // LOD：小到看不清的 item 只画身份色块，**先于** onImageMissing 返回 ⇒
@@ -260,8 +262,7 @@ class ItemPainter extends CustomPainter {
   /// - 形状排除在外：它本来就是单次 `drawRect` / `drawOval`，代理不掉成本，
   ///   而且空心形状画成实心色块会**改变语义**（看起来像填充了）。
   static bool isTooSmallForDetail(CanvasItem item, double scale) =>
-      item is! ShapeItem &&
-      item.rect.shortestSide * scale < lodProxyScreenSize;
+      item is! ShapeItem && item.rect.shortestSide * scale < lodProxyScreenSize;
 
   /// 代理绘制：一个身份色圆角块，跳过文本排版 / 图片采样 / 旋转。
   ///
