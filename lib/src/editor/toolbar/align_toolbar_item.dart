@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -9,22 +10,16 @@ import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
 import '../core/shortcut_label.dart';
 
-/// 对齐工具栏条目：把官方的「左 / �?/ 右」三个独立按钮合并成**一个下拉按�?*�?
-/// 按钮显示当前对齐方式，点开列出三选一（与 Word / Google Docs 同款）�?
+/// 对齐工具栏条目：把官方的「左 / �?/ 右」三个独立按钮合并成**一个下拉按�?*�?
+/// 按钮显示当前对齐方式，点开列出三选一（与 Word / Google Docs 同款）�?
 ///
-/// 应用逻辑完全复用官方 [alignmentItems]（`editor.updateNode` �?
-/// [blockComponentAlign]），不另立一套语义；只把"三按�?换成"一按钮 + 弹层"�?
+/// 应用逻辑完全复用官方 [alignmentItems]（`editor.updateNode` �?
+/// [blockComponentAlign]），不另立一套语义；只把"三按�"?换成"一按钮 + 弹层"�"?
 final ToolbarItem sinanAlignItem = ToolbarItem(
   id: 'sinan.align',
   group: 6,
   isActive: onlyShowInTextType,
-  builder: (
-    context,
-    editorState,
-    highlightColor,
-    iconColor,
-    tooltipBuilder,
-  ) {
+  builder: (context, editorState, highlightColor, iconColor, tooltipBuilder) {
     final Selection selection = editorState.selection!;
     final String align = _currentAlign(editorState, selection);
     final Widget child = _SinanAlignButton(
@@ -41,7 +36,7 @@ final ToolbarItem sinanAlignItem = ToolbarItem(
   },
 );
 
-/// 取当前选区的一致对齐：三块都相同时返回该值，否则回落默认「左对齐」�?
+/// 取当前选区的一致对齐：三块都相同时返回该值，否则回落默认「左对齐」�?
 String _currentAlign(EditorState editorState, Selection selection) {
   final List<Node> nodes = editorState.getNodesInSelection(selection);
   if (nodes.isEmpty) return 'left';
@@ -111,19 +106,39 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
   @override
   Widget build(BuildContext context) {
     final Widget icon = switch (widget.align) {
-      'center' => const tabler.AlignCenter(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
-      'right' => const tabler.AlignRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
-      _ => const tabler.AlignLeft(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+      'center' => const tabler.AlignCenter(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+      ),
+      'right' => const tabler.AlignRight(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+      ),
+      _ => const tabler.AlignLeft(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+      ),
     };
     final Color color =
         widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return SVGIconItemWidget(
-      // 当前对齐图标 + 小箭头（"这是下拉"的可供性，与块样式按钮一致）�?
+      // 当前对齐图标 + 小箭头（"这是下拉"的可供性，与块样式按钮一致）�?
       iconBuilder: (BuildContext context) => Row(
         mainAxisSize: .min,
         children: <Widget>[
           icon,
-          tabler.ChevronDown(height: Tokens.iconXxs, width: Tokens.iconXxs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7), ui.BlendMode.srcIn)),
+          tabler.ChevronDown(
+            height: Tokens.iconXxs,
+            width: Tokens.iconXxs,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              color.withValues(alpha: 0.7),
+              ui.BlendMode.srcIn,
+            ),
+          ),
         ],
       ),
       isHighlight: false,
@@ -160,17 +175,44 @@ class _AlignOverlay extends StatelessWidget {
   final Size anchorSize;
   final VoidCallback onDismiss;
 
-  // 248：容得下「图�?+ 名称 + 勾�?+ 右对齐快捷键」一整行并留余量�?
-  // �?60 时快捷键标注会被挤出面板、点不到——实测；216 仍差 0.8px 溢出。）
+  // 248：容得下「图�?+ 名称 + 勾�?+ 右对齐快捷键」一整行并留余量�?
+  // �?60 时快捷键标注会被挤出面板、点不到——实测；216 仍差 0.8px 溢出。）
   static const double _panelWidth = 248;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     const List<_AlignOption> options = <_AlignOption>[
-      _AlignOption('left', '左对�?, tabler.AlignLeft(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+L'),
-      _AlignOption('center', '居中', tabler.AlignCenter(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+E'),
-      _AlignOption('right', '右对�?, tabler.AlignRight(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+R'),
+      _AlignOption(
+        'left',
+        '左对齐',
+        tabler.AlignLeft(
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
+          strokeWidth: 1.5,
+        ),
+        'Ctrl+Shift+L',
+      ),
+      _AlignOption(
+        'center',
+        '居中',
+        tabler.AlignCenter(
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
+          strokeWidth: 1.5,
+        ),
+        'Ctrl+Shift+E',
+      ),
+      _AlignOption(
+        'right',
+        '右对齐',
+        tabler.AlignRight(
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
+          strokeWidth: 1.5,
+        ),
+        'Ctrl+Shift+R',
+      ),
     ];
 
     return Stack(
@@ -211,9 +253,7 @@ class _AlignOverlay extends StatelessWidget {
                             o.label,
                             maxLines: 1,
                             overflow: .ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
                                   color: active
                                       ? scheme.onSurface
@@ -222,16 +262,22 @@ class _AlignOverlay extends StatelessWidget {
                           ),
                         ),
                         if (active) ...<Widget>[
-                          tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
+                          tabler.Check(
+                            height: Tokens.iconXs,
+                            width: Tokens.iconXs,
+                            strokeWidth: 1.5,
+                            colorFilter: ui.ColorFilter.mode(
+                              scheme.onSurface,
+                              ui.BlendMode.srcIn,
+                            ),
+                          ),
                           const SizedBox(width: Tokens.spaceXs),
                         ],
-                        // 快捷键右对齐标注（与块样式菜单同一惯例）�?
+                        // 快捷键右对齐标注（与块样式菜单同一惯例）�?
                         Text(
                           shortcutLabel(o.shortcut),
                           maxLines: 1,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(
                                 color: scheme.onSurfaceVariant.withValues(
                                   alpha: 0.85,

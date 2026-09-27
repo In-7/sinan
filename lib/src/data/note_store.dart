@@ -120,8 +120,14 @@ class NoteStore {
   /// 倒序），其余按最近修改倒序。
   ///
   /// ⚠️ 查询刻意**不带 `content` 列**：正文是块树 JSON，单篇可达几百 KB，
-  /// 全表读入是保存热路径最贵的一步。列表只需要元数据（标题/时间/纯文本
-  /// 摘要）；正文按 id 单行另取，见 [noteById]。
+  /// 全表读入是保存热路径最贵的一步。列表只需要元数据（标题/时间）；
+  /// 正文按 id 单行另取，见 [noteById]。
+  ///
+  /// ⚠️ **也不带 `plain_text`**（2026-09-27 量完摘掉）：它是这条查询里唯一
+  /// 随语料**线性增长**的字段——200 篇时把列表查询从 0.17ms 抬到 0.99ms
+  /// （≈6 倍）。而快照侧**没有消费方读它**（`Note.plainText` 全仓只在
+  /// [restore] 的写回里用到，那条走 [noteById] 的 `SELECT *`，不受影响）
+  /// ⇒ 真要用时按 id 单行取，见 [plainTextOf]。
   ///
   /// 用 `promoted_at IS NULL` 做分组键（SQLite 里 false=0 排在 true=1 前）。
   /// 收藏项内部不跟着 revised_at 走：否则编辑一条收藏会把它的位置也抖一下。
@@ -133,12 +139,28 @@ class NoteStore {
   /// 与"最近修改倒序"的直觉一致）→ `id ASC`（id 唯一 ⇒ 全序，一定稳定）。
   List<Note> allNotes() {
     final ResultSet rs = db.select(
-      'SELECT id, kind, title, plain_text, content_hash, tags, '
+      'SELECT id, kind, title, content_hash, tags, '
       'created_at, revised_at, promoted_at FROM notes '
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
     );
     return <Note>[for (final Map<String, Object?> row in rs) _noteFrom(row)];
+  }
+
+  /// 按 id 取**纯文本**（懒取）：列表快照不背 `plain_text`，需要时单行取。
+  ///
+  /// 为什么值得单开一个窄查询：`plain_text` 是启动列表查询里唯一随语料线性
+  /// 增长的大字段（200 篇 ≈ 0.82ms，见 [allNotes] 的注释），而单行主键查询
+  /// 是 0.01ms 级——**按需取一次，比每条快照都背着它便宜两个数量级**。
+  ///
+  /// 不存在 / 该列为空时返回空串（与 [_noteFrom] 的口径一致）。
+  String plainTextOf(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT plain_text FROM notes WHERE id = ?',
+      <Object?>[noteId],
+    );
+    if (rs.isEmpty) return '';
+    return rs.first['plain_text'] as String? ?? '';
   }
 
   /// 所有**画布**笔记的正文（画布 JSON 原文）。
@@ -763,6 +785,8 @@ class NoteStore {
     // 列表查询不带 content 列（大字段）→ 这里是 null；只有 [noteById]
     // 的完整行查询才有值。列表侧一律空串，正文永远走单行查询。
     content: content ?? (row['content'] as String?) ?? '',
+    // 同理：列表查询也不带 plain_text（2026-09-27，见 [allNotes]）→ null ⇒
+    // 空串。需要纯文本时用 [plainTextOf] 按 id 单行取。
     plainText: row['plain_text'] as String? ?? '',
     contentHash: row['content_hash'] as String,
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),

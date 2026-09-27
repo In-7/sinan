@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
+
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../app/providers.dart';
 import '../../domain/backlink.dart';
 import '../../theme/tokens.dart';
 
-/// 反链面板�?*谁引用了�?*（双链的读侧）�?
+/// 反链面板�?*谁引用了�?*（双链的读侧）�?
 ///
 /// 数据来自 [NoteStore.backlinks]，它把指向本笔记的两类边合起来：
-/// 别的笔记里的 `ref` 块、画布上的卡片（�?`domain/backlink.dart`）�?
+/// 别的笔记里的 `ref` 块、画布上的卡片（�?`domain/backlink.dart`）�?
 ///
-/// ## 为什么是 ConsumerWidget 而不是宿主把数据传进�?
-/// 面板**只在打开时挂�?*，所以它可以放心 `watch(notesProvider)`：任何笔记内�?
-/// 变化�? 可能新增/删除引用）都会让它重算。宿主若为了同样效果�?watch 列表�?
-/// 整个编辑器都会被重建 —�?那正是本仓库明确避开的做法（见编辑器�?
-/// `ref.listen` 而非 `watch` 的那条注释）�?
+/// ## 为什么是 ConsumerWidget 而不是宿主把数据传进�?
+/// 面板**只在打开时挂�?*，所以它可以放心 `watch(notesProvider)`：任何笔记内�?
+/// 变化�? 可能新增/删除引用）都会让它重算。宿主若为了同样效果�?watch 列表�?
+/// 整个编辑器都会被重建 —�?那正是本仓库明确避开的做法（见编辑器�?
+/// `ref.listen` 而非 `watch` 的那条注释）�?
 class BacklinkPanel extends ConsumerWidget {
   const BacklinkPanel({
     super.key,
@@ -23,20 +26,20 @@ class BacklinkPanel extends ConsumerWidget {
     required this.onOpenNote,
   });
 
-  /// 面板宽度（浮层用；与目录气泡同档）�?
+  /// 面板宽度（浮层用；与目录气泡同档）�?
   static const double width = 240;
 
-  /// 查谁的引文�?
+  /// 查谁的引文�?
   final String noteId;
 
-  /// 点条�?�?打开来源笔记�?
+  /// 点条�?�?打开来源笔记�?
   final ValueChanged<String> onOpenNote;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 内容保存后列表快照会换一�?�?重建本面板（只在打开期间，成本可控）�?
+    // 内容保存后列表快照会换一�?�?重建本面板（只在打开期间，成本可控）�?
     ref.watch(notesProvider);
-    // 类型�?provider 推断（本层不 import `data/`，见架构闸门）�?
+    // 类型�?provider 推断（本层不 import `data/`，见架构闸门）�?
     final store = ref.read(noteStoreProvider);
     final List<Backlink> links = store.backlinks(noteId);
 
@@ -47,8 +50,8 @@ class BacklinkPanel extends ConsumerWidget {
       width: width,
       child: Column(
         // 高度自适应内容（气泡用法）：条目少就贴着内容收短，多了才在给定的
-        // maxHeight 内滚动。列表用 Flexible（松 fit）—�?Expanded 是紧 fit�?
-        // 会把面板撑满约束上限，气泡底部留一大截白�?
+        // maxHeight 内滚动。列表用 Flexible（松 fit）—�?Expanded 是紧 fit�?
+        // 会把面板撑满约束上限，气泡底部留一大截白�?
         mainAxisSize: .min,
         crossAxisAlignment: .stretch,
         children: <Widget>[
@@ -77,7 +80,7 @@ class BacklinkPanel extends ConsumerWidget {
                       Tokens.spaceMd,
                     ),
                     child: Text(
-                      '还没有笔记引用这里。\n在别处输入�?引用笔记」就能建立链接�?,
+                      '还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接',
                       style: TextStyle(
                         fontSize: 12,
                         height: 1.5,
@@ -112,7 +115,15 @@ class BacklinkPanel extends ConsumerWidget {
         ),
         child: Row(
           children: <Widget>[
-            tabler.LayoutDashboard(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+            tabler.LayoutDashboard(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              strokeWidth: 1.5,
+              colorFilter: ui.ColorFilter.mode(
+                scheme.onSurfaceVariant,
+                ui.BlendMode.srcIn,
+              ),
+            ),
             const SizedBox(width: Tokens.spaceSm),
             Expanded(
               child: Column(
@@ -120,22 +131,22 @@ class BacklinkPanel extends ConsumerWidget {
                 mainAxisSize: .min,
                 children: <Widget>[
                   Text(
-                    b.sourceTitle.trim().isEmpty ? '未命名笔�? : b.sourceTitle,
+                    b.sourceTitle.trim().isEmpty ? '未命名笔记' : b.sourceTitle,
                     maxLines: 1,
                     overflow: .ellipsis,
                     style: const TextStyle(fontSize: 14),
                   ),
-                  // 说清"怎么引用�?：画布卡�?/ 文档里的引用�?—�?两者的后续
-                  // 操作完全不同（前者去画布上找卡片，后者去正文里找那一行）�?
+                  // 说清"怎么引用�"?：画布卡�?/ 文档里的引用�?—�"?两者的后续
+                  // 操作完全不同（前者去画布上找卡片，后者去正文里找那一行）�?
                   Text(
-                    b.viaCanvasCard ? '画布卡片' : '引用�?,
+                    b.viaCanvasCard ? '画布卡片' : '引用',
                     style: TextStyle(
                       fontSize: 11,
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                  // 上下文：光有来源标题看不�?它为什么引用我"，这一句是判断
-                  // 要不要点进去的唯一依据（Roam / Logseq 的反链都带它）�?
+                  // 上下文：光有来源标题看不�"?它为什么引用我"，这一句是判断
+                  // 要不要点进去的唯一依据（Roam / Logseq 的反链都带它）�?
                   if (b.context.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),

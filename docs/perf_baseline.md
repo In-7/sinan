@@ -132,6 +132,58 @@ flutter run --profile          # 库里要有夹具（生成器见本节上文�
 另：`main()` 里的"块表回填"走 **postFrame**，所以**不计入**冷启动——它影响的是首帧之后的
 卡顿，不是启动速度。
 
+#### 冷启动**分段**探针（2026-09-28 新增：`main()` 内部打点）
+
+`--trace-startup` 只给"引擎段 / 首帧段"两截，看不出首帧段**内部**谁在花钱。补一个
+应用内探针 `lib/src/dev/startup_probe.dart`：
+
+- 只在 **profile** 构建里存在（`kProfileMode` 是编译期常量，release 下整块裁掉）；
+- 归档 `build/perf/cold_start.json`——**这是必需通道，不是备份**：Windows runner 是
+  GUI 子系统，独立跑 exe 时 `print` 的 stdout 会丢，数字留不下来；
+- 起算点是 `main()` 第一行 ⇒ **不覆盖** `main()` 之前那 878 ms 引擎段（那截只能靠
+  `--trace-startup`）。两个工具是**互补**的，别互相替代。
+
+```powershell
+flutter build windows --profile
+$p = Start-Process build\windows\x64\runner\Profile\sinan.exe -WorkingDirectory . `
+       -RedirectStandardOutput build\perf\stdout.txt -PassThru
+Start-Sleep 28; Stop-Process -Id $p.Id -Force     # 首帧后探针即归档
+Get-Content build\perf\cold_start.json
+```
+
+**2026-09-28 读数（profile，单次；可比性见 §0）**
+
+| 段 | 优化前 | 优化后 |
+|---|---|---|
+| `WidgetsFlutterBinding.ensureInitialized` | 0.18 | 0.33 |
+| 图标注册 + 帧探针 | 0.00 | 0.01 |
+| **`WindowService.init()`**（建原生窗口） | **228.56** | **221.42** |
+| `AppDatabase.open()`（开库 + 迁移） | 39.93 | **0.00** |
+| `getApplicationSupportDirectory()` | 0.14 | 0.24 |
+| `runApp(...)` 入队 | 0.05 | 0.04 |
+| 首帧（runApp → 上屏） | 45.92 | 37.99 |
+| **合计 `main()` → 首帧 (ms)** | **314.77** | **260.03** |
+
+**这截里谁压得动（杠杆边界）**
+
+- **221 ms 建窗口压不动**：`windowManager.ensureInitialized()` +
+  `waitUntilReadyToShow(show + focus)` 是 Win32/DWM 的固有成本。
+- **40 ms 开库已拿掉**（2026-09-28）：建窗口与开库**互不依赖**，原先是串行
+  （先 `await WindowService.init()` 再 `await AppDatabase.open()`）；改成**先挂起开库**、
+  让它在建窗口那 221 ms 里顺路跑完 ⇒ `main()→runApp` 268.86 → 222.04 ms，
+  合计 **−54.7 ms（−17.4%）**。
+  📌 探针里 `dbOpen` 段**归零**就是生效标志（开库被折叠进了 `windowService` 那段），
+  不是漏记。
+- ⚠️ 顺序不能反：仍然**先等窗口就绪**、之后才收开库的结果。窗口没就绪就 `runApp`
+  会先按默认尺寸渲染一帧、再跳到目标尺寸（可见抖动）。开库只是"顺路做完"，
+  它何时完成都不改变窗口那一步的时序。
+
+顺带（同一轮实测，回答"要不要为加载上 isolate"）：**万字笔记**打开全程
+`SQLite 取正文 ~1 ms + jsonDecode 0.27 ms + 建 Document 0.26 ms ≈ 1.7 ms`；
+200 篇列表查询 **0.99 ms**（其中 `plain_text` 占 0.82 ms，已按需懒取，见
+`NoteStore.plainTextOf`）。⇒ **加载路径没有任何瓶颈，isolate 是负收益**
+（光新建 isolate 就比它要优化的活还贵）。复现：`flutter test test/perf/note_load_benchmark_test.dart`。
+
 ### 2.2 harness 的实现要点与限制（读数字前必读）
 
 **实现**：设备侧用引擎的 `SchedulerBinding.addTimingsCallback` 收 `FrameTiming`，

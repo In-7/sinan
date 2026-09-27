@@ -1,41 +1,43 @@
 import 'dart:async';
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/gestures.dart' show PointerHoverEvent;import 'package:material_ui/material_ui.dart';
+import 'package:flutter/gestures.dart' show PointerHoverEvent;
+import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 
-/// **链接悬浮提示**（自研）——指针停在链接上，浮出一枚小面板：完�?URL +
-/// 「打开」「复制」�?
+/// **链接悬浮提示**（自研）——指针停在链接上，浮出一枚小面板：完「?URL +
+/// 「打开」「复制」/?
 ///
-/// ## 官方为什么不够（2026-09-15�?
-/// 官方�?href �?*点击**行为是：`default_text_span_decorator_for_attribute.dart`
-/// 里挂一�?tap recognizer——单�?= 选中该链接并弹它的编辑菜单，Ctrl/Cmd+单击
-/// 或双击才打开�?*没有任何悬浮提示**，于�?这段蓝字点下去会去哪"只能靠肉�?
-/// 认短链接；长链接（带 query 的那种）更是完全看不出�?
+/// ## 官方为什么不够（2026-09-15是?
+/// 官方里?href t?*点击**行为是：`default_text_span_decorator_for_attribute.dart`
+/// 里挂一或?tap recognizer——单*?= 选中该链接并弹它的编辑菜单，Ctrl/Cmd+单击
+/// 或双击才打开出?*没有任何悬浮提示**，于出?这段蓝字点下去会去哪"只能靠肉认?
+/// 认短链接；长链接（带 query 的那种）更是完全看不出/?
 ///
-/// ## 命中怎么�?
+/// ## 命中怎么问?
 /// **不自己算文本排版**（行内换行、混合样式、与图片相邻都会被算错）——一律问
-/// 官方选区服务�?
-/// - `getNodeInOffset` / `getPositionInOffset`（都�?*全局坐标**入参）；
-/// - `Selectable.getRectsInSelection(..., shiftWithBaseOffset: true)` 拿到该链�?
+/// 官方选区服务-?
+/// - `getNodeInOffset` / `getPositionInOffset`（都拿?*全局坐标**入参）；
+/// - `Selectable.getRectsInSelection(..., shiftWithBaseOffset: true)` 拿到该链层?
 ///   段的**屏幕矩形**（`shiftWithBaseOffset` 正是加编辑器原点，官方选区浮层
-///   也用它）�?
+///   也用它）/?
 ///
-/// ## 开关节�?
-/// 悬停 [showDelay] 才浮出（扫过不闪）；离开�?[hideGrace] 才收起——这段宽�?
-/// 正是"从链接移到面板上"要用的时间。另外：滚轮滚动、按下鼠标、组件卸载都�?
-/// 立刻收起（滚动后矩形就失效了，必须收）�?
+/// ## 开关节[?
+/// 悬停 [showDelay] 才浮出（扫过不闪）；离开都?[hideGrace] 才收起——这段宽正?
+/// 正是"从链接移到面板上"要用的时间。另外：滚轮滚动、按下鼠标、组件卸载都后?
+/// 立刻收起（滚动后矩形就失效了，必须收）/?
 ///
-/// ⚠️ **两条"必须"，缺一条就"点不到按�?**�?026-09-15 用户实机反馈�?
+/// ⚠️ **两条"必须"，缺一条就"点不到按：?**：?026-09-15 用户实机反馈：?
 /// "悬浮菜单无法点击，鼠标离开内容就消失了"）：
-/// 1. 面板命中区要**含它到链接之间那段空�?*（下�?`Listener(opaque)` �?
-///    padding）——指针穿空隙时页面层�?overlay 挡着收不�?hover�?
-/// 2. 页面层的 `onExit` 要走**宽限**而不是立即收——指针一进面板，编辑器那�?
-///    必然先收�?`onExit`，立即收 = 面板自己把自己关掉，`onEnter` 来不及生效�?
+///    padding）——指针穿空隙时页面层�?overlay 挡着收不�?hover�?
+/// 2. 页面层的 `onExit` 要走**宽限**而不是立即收——指针一进面板，编辑器那�?
+/// 2. 页面层的 `onExit` 要走**宽限**而不是立即收——指针一进面板，编辑器那`?
+///    必然先收e?`onExit`，立即收 = 面板自己把自己关掉，`onEnter` 来不及生效{?
 class LinkHoverTooltip extends StatefulWidget {
   const LinkHoverTooltip({
     super.key,
@@ -46,15 +48,15 @@ class LinkHoverTooltip extends StatefulWidget {
   final EditorState editorState;
   final Widget child;
 
-  /// 悬停多久才浮出。取 220ms：慢�?鼠标扫过"（扫过通常 <150ms，不会误弹）�?
-  /// 又快于浏览器�?title tooltip（~500ms）——链接预览属�?想立刻看�?的那类�?
+  /// 悬停多久才浮出。取 220ms：慢）?鼠标扫过"（扫过通常 <150ms，不会误弹）想?
+  /// 又快于浏览器a?title tooltip（~500ms）——链接预览属;?想立刻看;?的那类;?
   static const Duration showDelay = Duration(milliseconds: 220);
 
-  /// 离开后的宽限：够指针从链接移到下方面板上（面板命中区已含那段空隙�?
-  /// 这里再留足余量给"手慢"的用户）�?
+  /// 离开后的宽限：够指针从链接移到下方面板上（面板命中区已含那段空隙用?
+  /// 这里再留足余量给"手慢"的用户）;?
   static const Duration hideGrace = Duration(milliseconds: 220);
 
-  /// 面板宽度（URL 单行省略，超出部分靠「复制」拿走）�?
+  /// 面板宽度（URL 单行省略，超出部分靠「复制」拿走）;?
   static const double panelWidth = 320;
 
   @override
@@ -67,10 +69,10 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
   OverlayEntry? _entry;
   _HoveredLink? _link;
 
-  /// 指针是否落在面板上（落在面板上时不收起，否则"想点打开"会先把面板弄没）�?
+  /// 指针是否落在面板上（落在面板上时不收起，否则"想点打开"会先把面板弄没）;?
   bool _onPanel = false;
 
-  /// 指针**当前**是否落在某条链接上（待弹出计时器到点时复查它）�?
+  /// 指针**当前**是否落在某条链接上（待弹出计时器到点时复查它）;?
   bool _overLink = false;
 
   @override
@@ -93,10 +95,10 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     final _HoveredLink? link = _resolve(event.position);
     if (link == null) {
       _overLink = false;
-      // ⚠️ 只是"这一帧不在链接上"—�?*不动**待弹出的计时器。指针沿着文字�?
+      // ⚠️ 只是"这一帧不在链接上"—抖?*不动**待弹出的计时器。指针沿着文字数?
       // 时会有一帧帧的判空（字形边界抖动、跨字符、手抖），一判空就取消倒数
-      // 等于要求"一动不动盯�?showDelay"（旧写法就是这样：用户实机反�?
-      // "不太灵敏，有时候没�?）。计时器到点时再�?`_overLink` 决定弹不弹�?
+      // 等于要求"一动不动盯太?showDelay"（旧写法就是这样：用户实机反r?
+      // "不太灵敏，有时候没!?）。计时器到点时再!?`_overLink` 决定弹不弹;?
       if (!_onPanel) _dismissLater();
       return;
     }
@@ -104,7 +106,7 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     _overLink = true;
     _hideTimer?.cancel();
 
-    // 已浮出：同一链接内移动只更新锚点（面板跟着走），不重开�?
+    // 已浮出：同一链接内移动只更新锚点（面板跟着走），不重开{?
     if (_entry != null) {
       if (_link?.href != link.href || _link?.anchor != link.anchor) {
         _link = link;
@@ -113,7 +115,7 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
       return;
     }
 
-    // 同一链接上继续悬停（还没到点）：不重置计时器，否则手一抖就永远不弹�?
+    // 同一链接上继续悬停（还没到点）：不重置计时器，否则手一抖就永远不弹k?
     if (_link?.href == link.href && _showTimer != null) {
       _link = link;
       return;
@@ -123,13 +125,13 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     _showTimer?.cancel();
     _showTimer = Timer(LinkHoverTooltip.showDelay, () {
       _showTimer = null;
-      // ⚠️ 到点时指针必�?*还在**链接上：中间真的移开了就不弹（这一条替�?
-      // �?一判空就取消计时器"的作用，既不误弹也不怕抖动）�?
+      // ⚠️ 到点时指针必�?*还在**链接上：中间真的移开了就不弹（这一条替�?
+      // ;?一判空就取消计时器"的作用，既不误弹也不怕抖动）;?
       if (mounted && _overLink) _show();
     });
   }
 
-  /// 安排收起（宽限内指针又回到链�?面板上会被取消）�?
+  /// 安排收起（宽限内指针又回到链{?面板上会被取消）{?
   void _dismissLater() {
     _hideTimer?.cancel();
     _hideTimer = Timer(LinkHoverTooltip.hideGrace, () {
@@ -158,10 +160,10 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
 
   Widget _buildPanel(BuildContext context, _HoveredLink link) {
     final Size window = MediaQuery.sizeOf(context);
-    // 高度是估算值：仅供"下方放不下就翻到上方"与出屏钳制用，不做测量回调�?
+    // 高度是估算值：仅供"下方放不下就翻到上方"与出屏钳制用，不做测量回调;?
     const double height = 84;
     const double gap = 6;
-    // 下方放不�?�?翻到链接上方（命中区的空隙跟着换到另一侧）�?
+    // 下方放不;?;?翻到链接上方（命中区的空隙跟着换到另一侧）;?
     final bool below = link.anchor.bottom + gap + height <= window.height - 8;
     double left = link.anchor.left;
     if (left + LinkHoverTooltip.panelWidth > window.width - 8) {
@@ -184,12 +186,12 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
           _dismissLater();
         },
         child: Listener(
-          // ⚠️ **opaque 是必需�?*：面板与链接之间�?[gap] 的空隙必须落在命�?
+          // ⚠️ **opaque 是必需l?*：面板与链接之间l?[gap] 的空隙必须落在命y?
           // 区里。指针穿过空隙时，页面层（编辑器那棵子树）因为被这层 overlay
-          // 挡住而收不到 hover �?判不到链�?�?会提前收起面板，手稍慢就永远
-          // 点不到按钮（用户实机反馈�?无法点击，离开内容就消�?）�?
+          // 挡住而收不到 hover 按?判不到链无?）?会提前收起面板，手稍慢就永远
+          // 点不到按钮（用户实机反馈,?无法点击，离开内容就消,?）,?
           behavior: .opaque,
-          // 面板上滚轮：先收起——否则面板压着正文，滚轮感觉像卡住�?
+          // 面板上滚轮：先收起——否则面板压着正文，滚轮感觉像卡住,?
           onPointerSignal: (_) => _dismissNow(),
           child: Padding(
             padding: below
@@ -212,7 +214,7 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     );
   }
 
-  /// 指针位置命中的链接（含该链接段的屏幕矩形）。没有则 null�?
+  /// 指针位置命中的链接（含该链接段的屏幕矩形）。没有则 null{?
   _HoveredLink? _resolve(Offset global) {
     final AppFlowySelectionService service =
         widget.editorState.service.selectionService;
@@ -224,16 +226,16 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     final Position? position = service.getPositionInOffset(global);
     if (position == null) return null;
 
-    // 指针落在字符**右半�?*�?`getPositionInOffset` 指向下一个字符，�?
-    // `index` �?`index - 1` 都要试——不试的话链接末尾那半字判不中�?
+    // 指针落在字符**右半 ?*`?`getPositionInOffset` 指向下一个字符，判?
+    // `index` u?`index - 1` 都要试——不试的话链接末尾那半字判不中=?
     final _HrefRun? run =
         _runAt(delta, position.offset) ?? _runAt(delta, position.offset - 1);
     if (run == null) return null;
 
-    // ⚠️ 两步都要：`getRectsInSelection(+base)` 给的�?*容器�?*坐标，还�?
+    // ⚠️ 两步都要：`getRectsInSelection(+base)` 给的的?*容器的?*坐标，还的?
     // `transformRectToGlobal(+base)` 才落到全局——官方选区浮层就是这么拼的
-    // （`editor_state.dart` �?`selectionRects`、移动端选区服务同款）�?
-    // 只做第一步的话，点在链接上永远判不中（矩形差了一个编辑器原点的距离）�?
+    // （`editor_state.dart` 离?`selectionRects`、移动端选区服务同款）只?
+    // 只做第一步的话，点在链接上永远判不中（矩形差了一个编辑器原点的距离）[?
     final List<Rect> rects = <Rect>[
       for (final Rect rect in selectable.getRectsInSelection(
         Selection.single(
@@ -247,9 +249,9 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     ];
     if (rects.isEmpty) return null;
     // 必须真的落在该链接的**字形矩形**内才算悬停：`getPositionInOffset` 会把
-    // 行尾空白也算�?最近的位置"，不校验的话停在链接右侧的空白上也会弹面板�?
-    // 容差 2px：字形行盒两侧的"手感边界"比墨迹略宽一点，太严会让人觉�?
-    // "明明指着链接了却不弹"（行盒本身已含行距，纵向本来就宽）�?
+    // 行尾空白也算侧?最近的位置"，不校验的话停在链接右侧的空白上也会弹面板让?
+    // 容差 2px：字形行盒两侧的"手感边界"比墨迹略宽一点，太严会让人觉）?
+    // "明明指着链接了却不弹"（行盒本身已含行距，纵向本来就宽）{?
     if (!rects.any((Rect rect) => rect.inflate(2).contains(global))) {
       return null;
     }
@@ -261,8 +263,8 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
     return _HoveredLink(run.href, anchor);
   }
 
-  /// [index] 处的 href 及其所�?*连续�?href �?*（同一链接可能被行内样�?
-  /// 切成多个 insert，故要合并相邻段）�?
+  /// [index] 处的 href 及其所�?*连续�?href �?*（同一链接可能被行内样�?
+  /// 切成多个 insert，故要合并相邻段）{?
   _HrefRun? _runAt(Delta delta, int index) {
     if (index < 0) return null;
     final List<_HrefRun> runs = <_HrefRun>[];
@@ -289,22 +291,22 @@ class _LinkHoverTooltipState extends State<LinkHoverTooltip> {
 
   @override
   Widget build(BuildContext context) {
-    // hitTestBehavior.translucent + opaque:false�?*只旁�?*悬浮事件，不�?
-    // 编辑器自己的命中（链接手型光标、块手柄悬浮等照旧）�?
+    // hitTestBehavior.translucent + opaque:false柄?*只旁柄?*悬浮事件，不编?
+    // 编辑器自己的命中（链接手型光标、块手柄悬浮等照旧）(?
     return Listener(
       behavior: .translucent,
-      // 滚动 / 按下鼠标：链接矩形立刻失效，直接收�?
+      // 滚动 / 按下鼠标：链接矩形立刻失效，直接收,?
       onPointerSignal: (_) => _dismissNow(),
       onPointerDown: (_) => _dismissNow(),
       child: MouseRegion(
         opaque: false,
         hitTestBehavior: .translucent,
         onHover: _onHover,
-        // ⚠️ **必须走宽限，不能立即�?*：面板是�?overlay 里的另一棵子树，
-        // 指针一进面板，这层就收�?`onExit`（hover 命中�?overlay 挡住�?
-        // �?立即收就等于"面板自己把自己关�?，`onEnter` 来不及生效（用户
-        // 实机反馈�?无法点击、离开内容就消�?就是这个）。宽限期内面板的
-        // `onEnter` 会把它取消�?
+        // ⚠️ **必须走宽限，不能立即这?*：面板是`?overlay 里的另一棵子树，
+        // 指针一进面板，这层就收`?`onExit`（hover 命中户?overlay 挡住户?
+        // 实?立即收就等于"面板自己把自己关的?，`onEnter` 来不及生效（用户
+        // 实机反馈�?无法点击、离开内容就消�?就是这个）。宽限期内面板的
+        // `onEnter` 会把它取消{?
         onExit: (_) {
           _overLink = false; // 待弹出计时器到点时不该再弹（指针已离开编辑器）
           _dismissLater();
@@ -320,7 +322,7 @@ class _HoveredLink {
 
   final String href;
 
-  /// 该链接段在屏幕上的包围盒（全局坐标，可跨行 �?取并集）�?
+  /// 该链接段在屏幕上的包围盒（全局坐标，可跨行 ;?取并集）;?
   final Rect anchor;
 }
 
@@ -332,7 +334,7 @@ class _HrefRun {
   final String href;
 }
 
-/// 面板本体：URL 一�?+ 「打开」「复制」两个动作�?
+/// 面板本体：URL 一t?+ 「打开」「复制」两个动作{?
 class _LinkHoverPanel extends StatelessWidget {
   const _LinkHoverPanel({
     required this.href,
@@ -366,13 +368,21 @@ class _LinkHoverPanel extends StatelessWidget {
           Row(
             children: <Widget>[
               _PanelAction(
-                icon: const tabler.ExternalLink(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                icon: const tabler.ExternalLink(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                ),
                 label: '打开',
                 onPressed: onOpen,
               ),
               const SizedBox(width: Tokens.spaceXs),
               _PanelAction(
-                icon: const tabler.Copy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                icon: const tabler.Copy(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                ),
                 label: '复制',
                 onPressed: onCopy,
               ),
@@ -384,7 +394,7 @@ class _LinkHoverPanel extends StatelessWidget {
   }
 }
 
-/// 面板里的动作钮：悬停状态层与工具栏/菜单同一口径�?
+/// 面板里的动作钮：悬停状态层与工具栏/菜单同一口径;?
 class _PanelAction extends StatefulWidget {
   const _PanelAction({
     required this.icon,

@@ -84,10 +84,12 @@ void main() {
     expect(find.text('继续'), findsOneWidget);
     expect(find.text('最近'), findsOneWidget);
     expect(find.text('新建'), findsOneWidget);
-    // 3 篇笔记 ⇒ 继续 1 行 + 最近折叠头 1 + 最近 2 行 + 新建 ghost 2 行 = 6。
+    // 3 篇笔记 ⇒ 日历 3 行（都建在今天、选中当天）+ 继续 1 行 +
+    // 最近折叠头 1 + 最近 2 行 + 新建 ghost 2 行 = 9。
+    // ⚠️ 日历分区在最前，它的行同样带 FocusRing —— 增删分区这个数要跟着改。
     expect(
       find.byType(FocusRing),
-      findsNWidgets(6),
+      findsNWidgets(9),
       reason: '主页行与折叠头都是自绘交互件 ⇒ 必须全部接进 Focus 树（§5.2）',
     );
   });
@@ -97,7 +99,8 @@ void main() {
 
     expect(container.read(selectedNoteIdProvider), isNull, reason: '主页 = 未选中');
 
-    // FocusRing 视觉顺序：0 = 继续行，1 = 最近折叠头，2..3 = 最近行，4..5 = 新建。
+    // FocusRing 视觉顺序：0..2 = 日历当天行，3 = 继续行，4 = 最近折叠头，
+    // 5..6 = 最近行，7..8 = 新建。这里 at(2) 落在日历的一行上（同样是笔记行）。
     await tester.tap(find.byType(FocusRing).at(2));
     await tester.pumpAndSettle();
 
@@ -117,12 +120,13 @@ void main() {
   /// ② 行**垂直堆叠**（second 在 first 正下方、left 相同——出现并排 = 退回多列）；
   /// ③ 内容列有 [HomeHub.maxWidth] 上限（不写死：钳制后 ≤ 700）。
   testWidgets('单列：行全宽等宽、垂直堆叠，内容列不超 maxWidth', (WidgetTester tester) async {
-    // 4 篇 ⇒ 继续 1 + 最近头 1 + 最近 3 + 新建 2；FocusRing 顺序 = 视觉顺序。
+    // 4 篇 ⇒ 日历 4 + 继续 1 + 最近头 1 + 最近 3 + 新建 2；FocusRing 顺序 = 视觉顺序。
     await pumpHub(tester, noteCount: 4);
 
-    final Rect hero = tester.getRect(find.byType(FocusRing).at(0));
-    final Rect first = tester.getRect(find.byType(FocusRing).at(2));
-    final Rect second = tester.getRect(find.byType(FocusRing).at(3));
+    // ⚠️ 日历在最前占 4 个 ⇒ 继续行 = at(4)，最近行从 at(6) 起。
+    final Rect hero = tester.getRect(find.byType(FocusRing).at(4));
+    final Rect first = tester.getRect(find.byType(FocusRing).at(6));
+    final Rect second = tester.getRect(find.byType(FocusRing).at(7));
 
     expect(
       hero.width,
@@ -146,22 +150,36 @@ void main() {
   testWidgets('折叠「最近」：头可切换，折叠时计数可见、行收起', (WidgetTester tester) async {
     await pumpHub(tester, noteCount: 3);
 
-    // 折叠头 = FocusRing.at(1)。
-    await tester.tap(find.byType(FocusRing).at(1));
+    // 折叠头 = 「最近」那个标题所在的 FocusRing。
+    // ⚠️ **不写死下标**：日历分区在最前、且它的行同样是 FocusRing，写死
+    // `at(1)` 会点到日历的行上（没点中折叠头 ⇒ 后面两条断言全不成立）。
+    final Finder recentHeader = find.ancestor(
+      of: find.text('最近'),
+      matching: find.byType(FocusRing),
+    );
+    // ⚠️ 日历把主页撑高了 ⇒ 「最近」头会落到 800×600 测试视口**之外**
+    // （实测 y=630 > 600）。不先滚进视口就 tap，会**打空且不报错**（只有
+    // 一条 hit-test 警告）⇒ 表现为"折叠没生效"，实则根本没点到。
+    await tester.ensureVisible(recentHeader);
+    await tester.pumpAndSettle();
+    await tester.tap(recentHeader);
     await tester.pumpAndSettle();
 
     // 3 篇 ⇒ 最近里有 2 篇；折叠后行收起、计数出现。
     expect(find.text('2 篇'), findsOneWidget, reason: '折叠时分组头应交代收起了几篇');
     expect(
       find.byType(FocusRing),
-      findsNWidgets(4), // 继续行 1 + 折叠头 1 + 新建 2；最近 2 行已收起。
+      // 日历 3 + 继续行 1 + 折叠头 1 + 新建 2；最近 2 行已收起。
+      findsNWidgets(7),
       reason: '折叠后「最近」的行不该还挂在树上',
     );
 
-    // 再点一次展开回来。
-    await tester.tap(find.byType(FocusRing).at(1));
+    // 再点一次展开回来（同样先滚进视口：展开后页面又变高）。
+    await tester.ensureVisible(recentHeader);
     await tester.pumpAndSettle();
-    expect(find.byType(FocusRing), findsNWidgets(6));
+    await tester.tap(recentHeader);
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusRing), findsNWidgets(9));
   });
 
   test('回主页（`locateProvider.goHome`）：清空选中与待消费的跳转请求', () {

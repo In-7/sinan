@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -9,25 +10,25 @@ import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
 import '../core/shortcut_label.dart';
 
-/// 块样式（**正文 / 标题 1~3 合并成一个下拉按�?*）�?
+/// 块样式（**正文 / 标题 1~3 合并成一个下拉按�?*）�?
 ///
-/// ## 为什么合�?+ 成熟方案长什么样
-/// 主流文档应用�?块样�?都是**一个下�?*，而不�?4 个平铺按钮：
-/// - **Google Docs / Word**：「样式」下拉，**按钮显示当前样式**�?
-/// - **飞书 / 语雀**：顶栏「正�?/ 标题」下拉；
-/// - **Notion**：块类型菜单（拖柄点开或输�?`/`）；
+/// ## 为什么合�?+ 成熟方案长什么样
+/// 主流文档应用�?块样�?都是**一个下�?*，而不�?4 个平铺按钮：
+/// - **Google Docs / Word**：「样式」下拉，**按钮显示当前样式**�?
+/// - **飞书 / 语雀**：顶栏「正�?/ 标题」下拉；
+/// - **Notion**：块类型菜单（拖柄点开或输�?`/`）；
 /// - **桌面软件菜单惯例**：菜单项右侧**右对齐标注快捷键**
-///   （Material �?`MenuItemButton.shortcut` 就是这个惯例的官方实现）�?
+///   （Material �?`MenuItemButton.shortcut` 就是这个惯例的官方实现）�?
 ///
-/// 这里取三者的交集：按钮显示当前样�?+ 下拉四选一 + 每项右侧标快捷键 +
-/// 当前项打勾。好处与颜色/对齐条目一致：�?3 个槽位、激活态一眼可读�?
-/// 新增档位（h4~h6）不用再占工具栏位置�?
+/// 这里取三者的交集：按钮显示当前样�?+ 下拉四选一 + 每项右侧标快捷键 +
+/// 当前项打勾。好处与颜色/对齐条目一致：�?3 个槽位、激活态一眼可读�?
+/// 新增档位（h4~h6）不用再占工具栏位置�?
 ///
 /// ## 语义差异（有意为之）
-/// - **下拉里选一�?= 直接应用**该样式（Word/Google Docs 的样式下拉语义，
-///   重复选同一项不会跳回正文）�?
-/// - **快捷键仍�?toggle**（官�?`Ctrl+Shift+B/T/G/J`，appflowy 原生行为�?
-///   未改动）——tooltip 里声明的就是这四个键�?
+/// - **下拉里选一�?= 直接应用**该样式（Word/Google Docs 的样式下拉语义，
+///   重复选同一项不会跳回正文）�?
+/// - **快捷键仍�?toggle**（官�?`Ctrl+Shift+B/T/G/J`，appflowy 原生行为�?
+///   未改动）——tooltip 里声明的就是这四个键�?
 final ToolbarItem sinanHeadingItem = ToolbarItem(
   id: 'sinan.heading',
   group: 1,
@@ -51,18 +52,18 @@ final ToolbarItem sinanHeadingItem = ToolbarItem(
   },
 );
 
-/// 当前块是几级标题；非标题（或空块）返�?null�?
+/// 当前块是几级标题；非标题（或空块）返�?null�?
 int? currentHeadingLevel(Node? node) {
   if (node == null || node.type != HeadingBlockKeys.type) return null;
   final Object? level = node.attributes[HeadingBlockKeys.level];
   return level is int ? level : 1;
 }
 
-/// 应用块样式：[level] �?null 即正文�?
+/// 应用块样式：[level] �?null 即正文�?
 ///
-/// 与官�?`toggleBody/toggleH1~H3` 的差别只�?不做 toggle"；属性处理照�?
-/// 官方�?*只带走背景色 / 文字方向 / 文本 delta**，其余不继承（避免把待办
-/// �?`checked` 之类脏属性带给标题）。转正文�?*摘掉 level**，不留脏数据�?
+/// 与官�?`toggleBody/toggleH1~H3` 的差别只�?不做 toggle"；属性处理照�""?
+/// 官方�?*只带走背景色 / 文字方向 / 文本 delta**，其余不继承（避免把待办
+/// �?`checked` 之类脏属性带给标题）。转正文�?*摘掉 level**，不留脏数据�?
 void applyBlockStyle(
   EditorState editorState,
   Selection selection, {
@@ -74,7 +75,7 @@ void applyBlockStyle(
       (Node node) => node.copyWith(
         type: level == null ? ParagraphBlockKeys.type : HeadingBlockKeys.type,
         attributes: <String, dynamic>{
-          // 转正文时不带 level（`?` = 值为 null 就整条省略），不留脏属性�?
+          // 转正文时不带 level（`?` = 值为 null 就整条省略），不留脏属性�?
           HeadingBlockKeys.level: ?level,
           blockComponentBackgroundColor:
               node.attributes[blockComponentBackgroundColor],
@@ -87,10 +88,10 @@ void applyBlockStyle(
   );
 }
 
-/// 档位定义（顺序即菜单顺序）：正文 + 标题 1~3�?
+/// 档位定义（顺序即菜单顺序）：正文 + 标题 1~3�?
 ///
 /// 快捷键取自官方绑定（`heading_command_shortcut.dart`），改这里等于同时改
-/// 菜单标注——`fixed_toolbar_test.dart` 会核对它们与官方命令一致�?
+/// 菜单标注——`fixed_toolbar_test.dart` 会核对它们与官方命令一致�?
 class _BlockStyle {
   const _BlockStyle(this.level, this.label, this.icon, this.shortcut);
 
@@ -101,10 +102,34 @@ class _BlockStyle {
 }
 
 const List<_BlockStyle> _styles = <_BlockStyle>[
-  _BlockStyle(null, '正文', tabler.Typography(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+B'),
-  _BlockStyle(1, '标题 1', tabler.H1(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+T'),
-  _BlockStyle(2, '标题 2', tabler.H2(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+G'),
-  _BlockStyle(3, '标题 3', tabler.H3(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5), 'Ctrl+Shift+J'),
+  _BlockStyle(
+    null,
+    '正文',
+    tabler.Typography(
+      height: Tokens.iconSm,
+      width: Tokens.iconSm,
+      strokeWidth: 1.5,
+    ),
+    'Ctrl+Shift+B',
+  ),
+  _BlockStyle(
+    1,
+    '标题 1',
+    tabler.H1(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    'Ctrl+Shift+T',
+  ),
+  _BlockStyle(
+    2,
+    '标题 2',
+    tabler.H2(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    'Ctrl+Shift+G',
+  ),
+  _BlockStyle(
+    3,
+    '标题 3',
+    tabler.H3(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+    'Ctrl+Shift+J',
+  ),
 ];
 
 class _SinanHeadingButton extends StatefulWidget {
@@ -165,23 +190,30 @@ class _SinanHeadingButtonState extends State<_SinanHeadingButton> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 当前样式图标 + 小箭头（箭头�?这是下拉"的可供性，与对齐按钮一致）�?
+    // 当前样式图标 + 小箭头（箭头�?这是下拉"的可供性，与对齐按钮一致）�""?
     final _BlockStyle current = _styles.firstWhere(
       (_BlockStyle s) => s.level == widget.level,
       orElse: () => _styles.first,
     );
-    final Color color =
-        widget.iconColor ?? scheme.onSurfaceVariant;
+    final Color color = widget.iconColor ?? scheme.onSurfaceVariant;
 
     return SVGIconItemWidget(
       iconBuilder: (BuildContext context) => Row(
         mainAxisSize: .min,
         children: <Widget>[
           current.icon,
-          tabler.ChevronDown(height: Tokens.iconXxs, width: Tokens.iconXxs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(color.withValues(alpha: 0.7), ui.BlendMode.srcIn)),
+          tabler.ChevronDown(
+            height: Tokens.iconXxs,
+            width: Tokens.iconXxs,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              color.withValues(alpha: 0.7),
+              ui.BlendMode.srcIn,
+            ),
+          ),
         ],
       ),
-      // 光标落在标题里时点亮�?你在某级标题�?），与旧的四按钮行为等价�?
+      // 光标落在标题里时点亮�?你在某级标题�?），与旧的四按钮行为等价�?
       isHighlight: widget.level != null,
       highlightColor: widget.highlightColor,
       iconColor: widget.iconColor,
@@ -207,7 +239,7 @@ class _HeadingOverlay extends StatelessWidget {
   final Size anchorSize;
   final VoidCallback onDismiss;
 
-  // 248：与对齐下拉菜单同宽，两个面板视觉完全统一�?
+  // 248：与对齐下拉菜单同宽，两个面板视觉完全统一�?
   static const double _panelWidth = 248;
 
   @override
@@ -284,9 +316,17 @@ class _HeadingOverlay extends StatelessWidget {
                 style: textTheme.bodySmall?.copyWith(color: color),
               ),
             ),
-            // 当前项打勾；快捷�?*右对�?*标注（桌面软件菜单惯例）�?
+            // 当前项打勾；快捷�?*右对�?*标注（桌面软件菜单惯例）�?
             if (active) ...<Widget>[
-              tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurface, ui.BlendMode.srcIn)),
+              tabler.Check(
+                height: Tokens.iconXs,
+                width: Tokens.iconXs,
+                strokeWidth: 1.5,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.onSurface,
+                  ui.BlendMode.srcIn,
+                ),
+              ),
               const SizedBox(width: Tokens.spaceXs),
             ],
             Text(

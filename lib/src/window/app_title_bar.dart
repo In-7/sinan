@@ -7,33 +7,33 @@ import '../theme/tokens.dart';
 import 'window_service.dart';
 
 /// 窗口 Chrome 组件（自绘标题栏体系，原生标题栏已由 [WindowService]
-/// 隐藏）�?
+/// 隐藏）�?
 ///
-/// 桌面布局�?*左右分栏**（见 HomeScreen），主区是一条自绘顶条：
+/// 桌面布局�?*左右分栏**（见 HomeScreen），主区是一条自绘顶条：
 ///
-/// - [WindowStrip]�?*主区顶条**——拖拽区�? 可选窄屏动�?标题�?
-///   最小化/最大化/关闭。左侧导航板的顶行由 [HubNav] 自己承载，不在这里�?
+/// - [WindowStrip]�?*主区顶条**——拖拽区�? 可选窄屏动�?标题�?
+///   最小化/最大化/关闭。左侧导航板的顶行由 [HubNav] 自己承载，不在这里�?
 ///
-/// 顶条不铺底色（底 = 窗口 Mica 材质），承担 DragToMoveArea 与双�?
-/// 最大化；失焦时文字降一级颜色（与系统应用的非焦点窗口行为一致）�?
+/// 顶条不铺底色（底 = 窗口 Mica 材质），承担 DragToMoveArea 与双�?
+/// 最大化；失焦时文字降一级颜色（与系统应用的非焦点窗口行为一致）�?
 ///
-/// 已知取舍：自绘按钮拿不到 Windows 11 �?Snap Layouts 悬停菜单�?
+/// 已知取舍：自绘按钮拿不到 Windows 11 �?Snap Layouts 悬停菜单�?
 
-/// 主区顶条：拖拽区 + 窗控按钮（最小化/最大化/关闭）�?
+/// 主区顶条：拖拽区 + 窗控按钮（最小化/最大化/关闭）�?
 ///
 /// 宽屏布局下只放拖拽与窗控；窄屏兜底布局（整宽一条）可通过
-/// [leading]/[title] 放动作与应用名�?
+/// [leading]/[title] 放动作与应用名�?
 class WindowStrip extends StatefulWidget {
   const WindowStrip({super.key, this.leading, this.title, this.trailing});
 
-  /// 窄屏兜底布局的左侧动作区（宽屏分栏时�?null——按钮在侧栏头部）�?
+  /// 窄屏兜底布局的左侧动作区（宽屏分栏时�?null——按钮在侧栏头部）�?
   final List<Widget>? leading;
 
-  /// 窄屏兜底布局的应用名�?
+  /// 窄屏兜底布局的应用名�?
   final String? title;
 
   /// 右侧紧贴窗控按钮前的动作区（如主菜单）。宽屏分栏时用来把主菜单
-  /// 放在「最小化」左侧，与窗控成组�?
+  /// 放在「最小化」左侧，与窗控成组�?
   final List<Widget>? trailing;
 
   @override
@@ -85,9 +85,9 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
           ...?widget.leading?.map(
             (Widget action) => chromeActionButton(context, action),
           ),
-          // 顶边的缩放手�?*不在这里**：由 `main.dart` �?builder 层统一盖一�?
-          // `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的说明）�?
-          // 这里只负�?拖动窗口"：[DragToMoveArea] + 双击最大化�?
+          // 顶边的缩放手�?*不在这里**：由 `main.dart` �?builder 层统一盖一�?
+          // `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的说明）�?
+          // 这里只负�?拖动窗口"：[DragToMoveArea] + 双击最大化�""?
           Expanded(
             child: DragToMoveArea(
               child: GestureDetector(
@@ -123,8 +123,8 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
   }
 }
 
-/// 窗控按钮组：最小化 / 最大化·还原 / 关闭。复�?window_manager �?
-/// 标准字形（图标库里没有这三个字形，不要自己画）�?
+/// 窗控按钮组：最小化 / 最大化·还原 / 关闭。复�?window_manager �?
+/// 标准字形（图标库里没有这三个字形，不要自己画）�?
 class _CaptionButtons extends StatefulWidget {
   const _CaptionButtons();
 
@@ -205,16 +205,16 @@ class _CaptionButtonsState extends State<_CaptionButtons> with WindowListener {
   }
 }
 
-/// Chrome �?IconButton 的统一主题包裹：全局 iconButtonTheme 的最�?
-/// 尺寸�?40×40，直接放�?48 高的顶条会溢出——收成紧凑方形�?
+/// Chrome �?IconButton 的统一主题包裹：全局 iconButtonTheme 的最�?
+/// 尺寸�?40×40，直接放�?48 高的顶条会溢出——收成紧凑方形�?
 Widget chromeActionButton(BuildContext context, Widget action) {
   final ThemeData theme = Theme.of(context);
   return Theme(
     data: theme.copyWith(
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          // 形状与全局一致（radiusSm 圆角方形）。M3 �?IconButton
-          // 默认�?StadiumBorder 正圆，不显式指定会盖掉全局样式�?
+          // 形状与全局一致（radiusSm 圆角方形）。M3 �?IconButton
+          // 默认�?StadiumBorder 正圆，不显式指定会盖掉全局样式�?
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
           ),
@@ -236,9 +236,9 @@ Widget chromeActionButton(BuildContext context, Widget action) {
   );
 }
 
-// 顶边缩放手柄曾在这里（`_TopResizeHandle`，两�?chrome 各铺一�?6~8px 感应带）�?
-// 2026-09-22 搬到 `main.dart` �?builder 层，改用 window_manager �?
-// `DragToResizeArea`（只�?top / topLeft / topRight）：
-// �?一处管全窗�?�?换布局不会再漏掉（漏了就是"顶边拖不�?，历史上真踩过）�?
-// �?两个**顶角**一并有了手柄（旧版只有 top）；
-// �?厚度收成一个常量（�?�?底三边仍是系统原生边框，不受影响）�?
+// 顶边缩放手柄曾在这里（`_TopResizeHandle`，两�?chrome 各铺一�?6~8px 感应带）�?
+// 2026-09-22 搬到 `main.dart` �?builder 层，改用 window_manager �?
+// `DragToResizeArea`（只�?top / topLeft / topRight）：
+// �?一处管全窗�?�?换布局不会再漏掉（漏了就是"顶边拖不�"?，历史上真踩过）�"?
+// �?两个**顶角**一并有了手柄（旧版只有 top）；
+// �?厚度收成一个常量（�?�?底三边仍是系统原生边框，不受影响）�?

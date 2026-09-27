@@ -18,6 +18,7 @@ import 'src/data/database.dart';
 import 'src/data/note_store.dart';
 import 'src/data/settings_store.dart';
 import 'src/dev/frame_probe.dart';
+import 'src/dev/startup_probe.dart';
 import 'src/domain/settings.dart';
 import 'src/editor/core/editor_icons.dart';
 import 'src/app/providers.dart';
@@ -27,7 +28,9 @@ import 'src/window/window_base.dart';
 import 'src/window/window_service.dart';
 
 Future<void> main() async {
+  StartupProbe.start();
   WidgetsFlutterBinding.ensureInitialized();
+  StartupProbe.mark('ensureInitialized');
   // 编辑器图标统一为 Tabler：官方工具栏/斜杠菜单/图片工具条的图标是包内 SVG，
   // 这里注册映射让它们走 Tabler 控件（vendored 侧的钩子见
   // third_party/appflowy_editor/PATCHES.md 补丁 4）。未登记的名字自动回落 SVG。
@@ -44,15 +47,31 @@ Future<void> main() async {
     debugPrint(stack.toString());
     return true;
   };
+  StartupProbe.mark('icons+probe');
+  // ⚡ **开库与建窗口重叠**（2026-09-28 实测：串行 268.86ms → 并行 ~229ms）。
+  // 两者互不依赖：建窗口是原生窗口创建（228ms，走 Win32/DWM，压不动），开库
+  // 是开文件 + 跑迁移（40ms）⇒ 把开库**先挂起**，让它在这 228ms 里顺路跑完，
+  // 省掉串行时那 40ms 的纯等待。
+  //
+  // ⚠️ **顺序不能反**：仍然**先等窗口就绪**，之后才收开库的结果。窗口没就绪
+  // 就 `runApp` 会先以默认尺寸渲染一帧、再跳到目标尺寸（可见抖动）。开库只是
+  // "顺路做完"，它何时完成都不改变窗口那一步的时序。
+  //
+  // 📌 探针读数会变：`dbOpen` 那段趋近 **0**（开库已被折叠进 `windowService`
+  // 那段）——这正是优化生效的标志，不是漏记。
+  final Future<AppDatabase> dbFuture = AppDatabase.open();
   // 移动端 / Web 上会自动跳过，不会崩。
   await WindowService.init();
+  StartupProbe.mark('windowService');
 
-  final AppDatabase db = await AppDatabase.open();
+  final AppDatabase db = await dbFuture;
+  StartupProbe.mark('dbOpen');
 
   // 应用数据根目录：画布的媒体引用要拿它做「绝对 ⇄ 相对」换算，而那发生在同步
   // 的序列化里（拿不到 Future），所以在这里解析一次、注入成常量。
   // 目录本身与 [AppDatabase.open] 用的是同一个（path_provider 内部会缓存）。
   final Directory supportDir = await getApplicationSupportDirectory();
+  StartupProbe.mark('supportDir');
 
   runApp(
     ProviderScope(
@@ -68,6 +87,7 @@ Future<void> main() async {
       child: const MainApp(),
     ),
   );
+  StartupProbe.mark('runAppCalled');
 
   // 块表回填（迁移第 3 步）：把存量笔记的块树补进 blocks。
   //
@@ -79,6 +99,10 @@ Future<void> main() async {
   // content 列（`rebuilt ?? legacy`），本轮还没轮到的笔记照常能打开；量由
   // `backfillBlocks` 的 limit 封顶（50 篇/次），未做完下次启动接着来。
   WidgetsBinding.instance.addPostFrameCallback((_) {
+    // 首帧已上屏 ⇒ 冷启动计时到此为止。回填是**首帧之后**才做的活，
+    // 不该算进冷启动（它本来就刻意挪到了这里，见下方注释）。
+    StartupProbe.mark('firstFrame');
+    StartupProbe.report();
     try {
       final NoteStore store = NoteStore(db.db);
       store.backfillBlocks();

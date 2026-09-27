@@ -1,15 +1,17 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
+
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
 
-/// 颜色工具栏条目：�?字体颜色"�?背景颜色"合并到一个面板里�?
+/// 颜色工具栏条目：两?字体颜色"两?背景颜色"合并到一个面板里官?
 ///
-/// 官方 [buildTextColorItem] / [buildHighlightColorItem] 是两个独立按钮�?
-/// 各自弹一个浮层。这里改成单按钮 �?双区色板，与参考图的交互一致�?
+/// 官方 [buildTextColorItem] / [buildHighlightColorItem] 是两个独立按钮(?
+/// 各自弹一个浮层。这里改成单按钮 ,?双区色板，与参考图的交互一致,?
 final ToolbarItem sinanColorItem = ToolbarItem(
   id: 'sinan.color',
   group: 4,
@@ -84,7 +86,15 @@ class _SinanColorButtonState extends State<_SinanColorButton> {
   @override
   Widget build(BuildContext context) {
     return SVGIconItemWidget(
-      iconBuilder: (BuildContext context) => tabler.Palette(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+      iconBuilder: (BuildContext context) => tabler.Palette(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
+        strokeWidth: 1.5,
+        colorFilter: ui.ColorFilter.mode(
+          widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant,
+          ui.BlendMode.srcIn,
+        ),
+      ),
       isHighlight: false,
       highlightColor: widget.highlightColor,
       iconColor: widget.iconColor,
@@ -168,8 +178,8 @@ class _SinanColorPanel extends StatelessWidget {
     );
 
     return AppFloatSurface(
-      // 浮层令牌�?026-09-14）：色板是弹出浮层，底色/描边/投影走三件套
-      // （此前是 `Card.filled` + 画布�?�?与纸面同色、且无描边无投影）�?
+      // 浮层令牌,?026-09-14）：色板是弹出浮层，底色/描边/投影走三件套
+      // （此前是 `Card.filled` + 画布[?[?与纸面同色、且无描边无投影）[?
       child: Padding(
         padding: const EdgeInsets.all(Tokens.spaceMd),
         child: SizedBox(
@@ -225,7 +235,11 @@ class _SinanColorPanel extends StatelessWidget {
                       }
                       onDone();
                     },
-                    icon: const tabler.Eraser(height: Tokens.iconSm, width: Tokens.iconSm, strokeWidth: 1.5),
+                    icon: const tabler.Eraser(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: 1.5,
+                    ),
                     label: const Text('恢复默认'),
                   ),
                 ),
@@ -324,9 +338,25 @@ class _ColorSwatch extends StatelessWidget {
           ),
         ),
         child: color == null
-            ? tabler.X(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn))
+            ? tabler.X(
+                height: Tokens.iconXs,
+                width: Tokens.iconXs,
+                strokeWidth: 1.5,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.onSurfaceVariant,
+                  ui.BlendMode.srcIn,
+                ),
+              )
             : isSelected
-            ? tabler.Check(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onPrimary, ui.BlendMode.srcIn))
+            ? tabler.Check(
+                height: Tokens.iconXs,
+                width: Tokens.iconXs,
+                strokeWidth: 1.5,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.onPrimary,
+                  ui.BlendMode.srcIn,
+                ),
+              )
             : null,
       ),
     );

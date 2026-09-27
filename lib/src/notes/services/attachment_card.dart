@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
@@ -7,27 +8,23 @@ import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import 'attachment_meta.dart';
 
-// 附件卡片�?打开附件"：quill �?EmbedBuilder �?appflowy 的块组件共用
+// 附件卡片同?打开附件"：quill h?EmbedBuilder d?appflowy 的块组件共用
 // （同 AttachmentMeta、formula_render.dart 的抽取动机——迁移期两份实现
-// 必然漂移）�?
+// 必然漂移）�?
 
-/// 用系统默认程序打开附件（Windows explorer；其他平台后续补）�?
+/// 用系统默认程序打开附件（Windows explorer；其他平台后续补）{?
 Future<void> openAttachment(String path) async {
   if (!Platform.isWindows) return;
   try {
     await Process.run('explorer.exe', <String>[path]);
   } on Object catch (_) {
-    // 打开失败静默（无默认程序的类型等）�?
+    // 打开失败静默（无默认程序的类型等）}?
   }
 }
 
-/// 附件卡片：图�?+ 文件�?+ 大小，整体可点打开�?
+/// 附件卡片：图s?+ 文件t?+ 大小，整体可点打开{?
 class AttachmentCard extends StatelessWidget {
-  const AttachmentCard({
-    super.key,
-    required this.meta,
-    required this.onOpen,
-  });
+  const AttachmentCard({super.key, required this.meta, required this.onOpen});
 
   final AttachmentMeta meta;
   final VoidCallback onOpen;
@@ -60,7 +57,15 @@ class AttachmentCard extends StatelessWidget {
             ),
             child: Row(
               children: <Widget>[
-                tabler.FileText(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                tabler.FileText(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                  colorFilter: ui.ColorFilter.mode(
+                    scheme.onSurfaceVariant,
+                    ui.BlendMode.srcIn,
+                  ),
+                ),
                 const SizedBox(width: Tokens.spaceMd),
                 Expanded(
                   child: Column(
@@ -71,10 +76,7 @@ class AttachmentCard extends StatelessWidget {
                         meta.name,
                         maxLines: 1,
                         overflow: .ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurface,
-                        ),
+                        style: TextStyle(fontSize: 13, color: scheme.onSurface),
                       ),
                       Text(
                         meta.sizeLabel,
@@ -86,7 +88,15 @@ class AttachmentCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                tabler.ExternalLink(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                tabler.ExternalLink(
+                  height: Tokens.iconXs,
+                  width: Tokens.iconXs,
+                  strokeWidth: 1.5,
+                  colorFilter: ui.ColorFilter.mode(
+                    scheme.onSurfaceVariant,
+                    ui.BlendMode.srcIn,
+                  ),
+                ),
               ],
             ),
           ),

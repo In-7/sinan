@@ -1,45 +1,51 @@
 import 'package:flutter/material.dart';
+
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../app/providers.dart';
 import '../../domain/block_hit.dart';
 import '../../theme/tokens.dart';
 
-/// 弹「选一个块」对话框，返回所选块 id（取�?�?null）�?
+/// 弹「选一个块」对话框，返回所选块 id（取�?�?null）�?
 ///
-/// 双链�?*块级**创建入口（斜杠菜单「引用块」调它）。存的是�?id 而不是文本，
-/// 于是目标日后改名 / 改写都不会断链（�?`RefBlockKeys`）�?
+/// 双链�?*块级**创建入口（斜杠菜单「引用块」调它）。存的是�?id 而不是文本，
+/// 于是目标日后改名 / 改写都不会断链（�?`RefBlockKeys`）�?
 ///
-/// ## 为什么是**一级扁平搜�?*而不�?先选笔记、再选块"
-/// 两级导航�?*文件优先**模型（Notion �?`Copy link to block`、Obsidian �?
-/// `[[文件#^块]]`）的产物：块住在文件里，得先定位文件。sinan �?`blocks` 表是
-/// 全库扁平的（块只�?*属于**某篇笔记），一次查询就能搜�?�?�?Roam / Logseq
-/// 那种"一个框搜全�?的路子，用户不必先回�?它在哪篇笔记�?�?
+/// ## 为什么是**一级扁平搜�?*而不�"?先选笔记、再选块"
+/// 两级导航�?*文件优先**模型（Notion �?`Copy link to block`、Obsidian �?
+/// `[[文件#^块]]`）的产物：块住在文件里，得先定位文件。sinan �?`blocks` 表是
+/// 全库扁平的（块只�?*属于**某篇笔记），一次查询就能搜�?�?�?Roam / Logseq
+/// 那种"一个框搜全�"?的路子，用户不必先回�?它在哪篇笔记�?�"?
 Future<String?> pickBlockToReference(BuildContext context) async {
-  final ProviderContainer container =
-      ProviderScope.containerOf(context, listen: false);
-  // 类型�?provider 推断：本�?*�?import `data/`**（架构闸门要求经 DI �?store�?
-  // �?test/architecture/architecture_test.dart）�?
+  final ProviderContainer container = ProviderScope.containerOf(
+    context,
+    listen: false,
+  );
+  // 类型�?provider 推断：本�?*�?import `data/`**（架构闸门要求经 DI �?store�?
+  // �?test/architecture/architecture_test.dart）�?
   final store = container.read(noteStoreProvider);
 
   if (!context.mounted) return null;
   return showDialog<String>(
     context: context,
-    // 搜索能力�?*闭包**注入（而不是把 store 传进去）：对话框因此不依赖数据层�?
-    // 测试里塞一个假�?search 就能验证交互�?
-    builder: (BuildContext ctx) => _BlockPickerDialog(search: store.searchBlocks),
+    // 搜索能力�?*闭包**注入（而不是把 store 传进去）：对话框因此不依赖数据层�?
+    // 测试里塞一个假�?search 就能验证交互�?
+    builder: (BuildContext ctx) =>
+        _BlockPickerDialog(search: store.searchBlocks),
   );
 }
 
-/// 块选择框：**搜块内容** + 列表（每条带所属笔记做定位线索）�?
+/// 块选择框：**搜块内容** + 列表（每条带所属笔记做定位线索）�?
 ///
-/// 每条都显示来源笔记标题，是因为结果来�?*全库**——没有它，用户无法判�?
-/// 搜到的块是哪一篇里的�?
+/// 每条都显示来源笔记标题，是因为结果来�?*全库**——没有它，用户无法判�?
+/// 搜到的块是哪一篇里的�?
 class _BlockPickerDialog extends StatefulWidget {
   const _BlockPickerDialog({required this.search});
 
-  /// 按关键词搜块（空�?�?最近一批）�?
+  /// 按关键词搜块（空�?�?最近一批）�?
   final List<BlockHit> Function(String query) search;
 
   @override
@@ -63,7 +69,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
   }
 
   void _refresh() {
-    // 同步查库（SQLite 在本地，几十毫秒内）�?直接 setState，无需异步编排�?
+    // 同步查库（SQLite 在本地，几十毫秒内）�?直接 setState，无需异步编排�?
     _hits = widget.search(_filter.text);
   }
 
@@ -72,7 +78,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<BlockHit> hits = _hits;
     return AlertDialog(
-      title: const Text('引用�?),
+      title: const Text('引用'),
       content: SizedBox(
         width: 420,
         height: 420,
@@ -82,7 +88,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
               controller: _filter,
               autofocus: true,
               decoration: const InputDecoration(
-                hintText: '搜块内容（留空看最近改过的�?,
+                hintText: '搜块内容（留空看最近改过的）',
                 isDense: true,
               ),
               onChanged: (_) => setState(_refresh),
@@ -93,9 +99,7 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
                   ? Align(
                       alignment: Alignment.topLeft,
                       child: Text(
-                        _filter.text.trim().isEmpty
-                            ? '还没有可引用的块'
-                            : '没有匹配的块',
+                        _filter.text.trim().isEmpty ? '还没有可引用的块' : '没有匹配的块',
                         style: TextStyle(color: scheme.onSurfaceVariant),
                       ),
                     )
@@ -111,15 +115,23 @@ class _BlockPickerDialogState extends State<_BlockPickerDialog> {
                             maxLines: 2,
                             overflow: .ellipsis,
                           ),
-                          // 来源笔记 = 全库结果里唯一的定位线索�?
+                          // 来源笔记 = 全库结果里唯一的定位线索�?
                           subtitle: Row(
                             children: <Widget>[
-                              tabler.LayoutDashboard(height: Tokens.iconXs, width: Tokens.iconXs, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+                              tabler.LayoutDashboard(
+                                height: Tokens.iconXs,
+                                width: Tokens.iconXs,
+                                strokeWidth: 1.5,
+                                colorFilter: ui.ColorFilter.mode(
+                                  scheme.onSurfaceVariant,
+                                  ui.BlendMode.srcIn,
+                                ),
+                              ),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
                                   hit.noteTitle.trim().isEmpty
-                                      ? '未命名笔�?
+                                      ? '未命名笔记'
                                       : hit.noteTitle.trim(),
                                   maxLines: 1,
                                   overflow: .ellipsis,

@@ -5,35 +5,35 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
-/// **绐楀彛搴曠殑鍣偣绾圭悊**锛坄docs/ui_rewrite_plan.md` 搂5.6锛氭柟妗?2 + 3 鏄厤瀵癸級銆?
+/// **窗口底的噪点纹理**（`docs/ui_rewrite_plan.md` §5.6：方妗?2 + 3 是配对）銆?
 ///
-/// ## 涓轰粈涔堝畠鍊煎緱瀛樺湪锛堜笉鏄缇庯紝鏄姛鑳斤級
-/// 鈶?**娑堣壊甯?*锛?-bit 鑹叉繁涓嬫瀬娣℃笎鍙橈紙鎴戜滑鍙法 ~4%锛?*蹇呯劧**鍑虹幇涓€鍦堝湀 banding锛?
-///    鍣偣鎶婂畠鎶栨帀鈥斺€旇繖鏄渶纭殑浠峰€硷紱鈶?娑?鏁板瓧濉戞枡鎰?锛涒憿 鏉愯川绾х殑缁嗚妭鎰熴€?
+/// ## 为什么它值得存在（不是审美，是功能）
+/// 鈶?**消色甯?*锛?-bit 色深下极淡渐变（我们只跨 ~4%锛?*必然**出现一圈圈 banding锛?
+///    噪点把它抖掉——这是最硬的价值；鈶?娑?数字塑料鎰?；③ 材质级的细节感€?
 ///
-/// ## 涓夋潯纭害鏉燂紙瓒婁竴鏉″氨绔嬪埢寤変环锛?
-/// - 寮哄害 **< 5%**锛堟殫 3% / 浜?1.5%锛岃 `AppTheme.windowNoiseAlpha`锛夛紝瓒呰繃灏?鑴?锛?
-/// - 棰楃矑**鍗曡壊**锛堜笉鏄僵鑹诧級锛屼笖鐢?[grain] 鎸夋槑鏆楅€夌櫧/榛戯紙榛戠矑鍦ㄨ繎榛戝簳涓婄湅涓嶈锛夛紱
-/// - **鎸?DPR 1:1**锛氶绮?= 1 璁惧鍍忕礌锛涙斁澶ф垚"浜?灏卞簾浜嗐€?
+/// ## 三条硬约束（越一条就立刻廉价锛?
+/// - 强度 **< 5%**（暗 3% / 浜?1.5%，见 `AppTheme.windowNoiseAlpha`），超过灏?鑴?锛?
+/// - 颗粒**单色**（不是彩色），且鐢?[grain] 按明暗选白/黑（黑粒在近黑底上看不见）；
+/// - **鎸?DPR 1:1**：颗绮?= 1 设备像素；放大成"浜?就废了€?
 ///
-/// ## 涓轰粈涔堣繍琛屾椂鐢熸垚銆佷笖绉嶅瓙鍥哄畾
-/// 涓嶅線浠撳簱鎻愪氦 PNG锛堟湰椤圭洰涓嶆斁浜岃繘鍒惰祫婧愶級锛涘浐瀹氱瀛?鈬?姣忔鍚姩棰楃矑**瀹屽叏涓€鑷?*
-/// 锛堝惁鍒欎細"闂?锛夈€傛垚鏈細鍚姩鍚庣敓鎴愪竴娆★紙鍑犲崄寰绾э級锛岀粯鍒舵槸涓€娆″钩閾猴紝
-/// **鏃?saveLayer銆佹棤妯＄硦**锛堢孩绾夸笉纰帮級銆?
+/// ## 为什么运行时生成、且种子固定
+/// 不往仓库提交 PNG（本项目不放二进制资源）；固定种瀛?鈬?每次启动颗粒**完全一鑷?*
+/// （否则会"闂?）。成本：启动后生成一次（几十微秒级），绘制是一次平铺，
+/// **鏃?saveLayer、无模糊**（红线不碰）銆?
 ///
-/// ## 鐢ㄦ硶锛氬彧鑳介摵鍦?*绐楀彛搴?*
-/// 瀹冨繀椤诲湪鍐呭**涔嬩笅**锛堣 `main.dart` 鐨?`builder`锛夆€斺€旇繖鏍蜂笉閫忔槑椤甸潰锛堢焊闈級
-/// 浼氳嚜鐒剁洊浣忓畠锛屼笉浼氱粰姝ｆ枃娣婚绮掓劅銆?
+/// ## 用法：只能铺鍦?*窗口搴?*
+/// 它必须在内容**之下**（见 `main.dart` 鐨?`builder`）——这样不透明页面（纸面）
+/// 会自然盖住它，不会给正文添颗粒感銆?
 class NoiseTexture extends StatelessWidget {
   const NoiseTexture({super.key, required this.intensity, required this.grain});
 
-  /// 棰楃矑鏈€澶?alpha锛?鈥?锛夈€?
+  /// 颗粒最澶?alpha锛?鈥?）€?
   final double intensity;
 
-  /// 棰楃矑棰滆壊锛氭殫鑹插簳鐢ㄧ櫧绮掞紝浜壊搴曠敤榛戠矑銆?
+  /// 颗粒颜色：暗色底用白粒，亮色底用黑粒銆?
   final Color grain;
 
-  /// 涓€寮?tile 鐨勯€昏緫杈归暱锛堜細鎸?DPR 鎹㈡垚鏁存暟璁惧鍍忕礌鐢熸垚锛屼繚璇?1:1锛夈€?
+  /// 一寮?tile 的逻辑边长（会鎸?DPR 换成整数设备像素生成，保璇?1:1）€?
   static const double _tileLogical = 128;
 
   @override
@@ -45,7 +45,7 @@ class NoiseTexture extends StatelessWidget {
       future: _noiseImage(px, intensity, grain),
       builder: (BuildContext context, AsyncSnapshot<ui.Image> snapshot) {
         final ui.Image? image = snapshot.data;
-        // 杩樻病鐢熸垚濂斤紙鍚姩鍚庡嚑鍗佸井绉掞級锛氬氨鏄函娓愬彉搴曪紝涓嶉棯涓嶈烦銆?
+        // 还没生成好（启动后几十微秒）：就是纯渐变底，不闪不跳銆?
         if (image == null) return const SizedBox.expand();
         return CustomPaint(
           painter: _NoisePainter(image: image, tileLogical: _tileLogical),
@@ -56,7 +56,7 @@ class NoiseTexture extends StatelessWidget {
   }
 }
 
-/// 缂撳瓨锛氬悓涓€ (璁惧杈归暱, 寮哄害, 棰楃矑鑹? 鍙敓鎴愪竴娆°€?
+/// 缓存：同一 (设备边长, 强度, 颗粒鑹? 只生成一次€?
 final Map<(int, int, Color), Future<ui.Image>> _noiseCache =
     <(int, int, Color), Future<ui.Image>>{};
 
@@ -68,11 +68,11 @@ Future<ui.Image> _noiseImage(int px, double intensity, Color grain) =>
     ), () => _generateNoise(px, intensity, grain));
 
 Future<ui.Image> _generateNoise(int px, double intensity, Color grain) {
-  // 鍥哄畾绉嶅瓙锛氶绮掓瘡娆″惎鍔ㄥ畬鍏ㄤ竴鑷达紙鍚﹀垯浼?闂?锛夈€?
+  // 固定种子：颗粒每次启动完全一致（否则浼?闂?）€?
   final math.Random rnd = math.Random(0x51A9);
   final int maxAlpha = (intensity * 255).round().clamp(0, 255);
-  // 鐧界矑/榛戠矑鐨勫熀鑹诧細**棰勪箻**鍐欐硶锛堢櫧 = a,a,a,a锛涢粦 = 0,0,0,a锛夆€斺€?
-  // 杩欐牱鏃犺 `rgba8888` 琚寜棰勪箻杩樻槸鐩撮€氳В閲婏紝瑙傛劅閮戒笉浼氳窇鍒板彟涓€澶村幓銆?
+  // 白粒/黑粒的基色：**预乘**写法（白 = a,a,a,a；黑 = 0,0,0,a）—€?
+  // 这样无论 `rgba8888` 被按预乘还是直通解释，观感都不会跑到另一头去銆?
   final int base = grain == Colors.white ? 1 : 0;
 
   final Uint8List bytes = Uint8List(px * px * 4);
@@ -104,9 +104,9 @@ class _NoisePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 涓€寮?tile 鐨?*閫昏緫**杈归暱鍥哄畾 鈬?scale 鍙?image.width / tileLogical锛?
-    // 浜庢槸 tile 鐨勬瘡涓儚绱犳濂借惤鍦?1 涓澶囧儚绱犱笂锛圖PR 鍙樺寲涔熶笉绯婏級銆?
-    // `repeat` 鍦ㄦ暣鍧?rect 涓婂钩閾猴紱`filterQuality.none` 淇濊瘉棰楃矑涓嶈鎻掑€肩硦鎺夈€?
+    // 一寮?tile 鐨?*逻辑**边长固定 鈬?scale 鍙?image.width / tileLogical锛?
+    // 于是 tile 的每个像素正好落鍦?1 个设备像素上（DPR 变化也不糊）銆?
+    // `repeat` 在整鍧?rect 上平铺；`filterQuality.none` 保证颗粒不被插值糊掉€?
     paintImage(
       canvas: canvas,
       rect: Offset.zero & size,
