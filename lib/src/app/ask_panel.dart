@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
@@ -12,19 +12,19 @@ import '../theme/tokens.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show appNavigatorKey;
 
-/// 「问笔记」面板（`docs/data_layer.md` 6.7 R6）�?
+/// /
 ///
-/// ## 形态：居中浮层（不是推挤式页面�?
+/// /
 /// 与设置页同一个范式（遮罩 + 悬浮卡片 + Esc 关闭）——问一句、看一眼、要么点角标
-/// 跳走、要�?Esc 退出，全程不改变主界面布局�?
+/// /
 ///
 /// ## 引用角标是这层的灵魂
-/// 答案里的每条结论后面跟着可点的编号角标，点了�?*跳到那条来源所在的�?*�?
-/// 没有它，本地 RAG 就只是一�?看起来很有道�?的聊天框—�?*可核�?*才是它相�?
-/// 云端模型的全部优势�?
+/// /
+/// /
+/// /
 ///
 /// ## 初版不做流式
-/// 客户端整段返回（�?[AnswerService] 的说明）；SSE 留到真实使用后按手感定�?
+/// /
 Future<void> showAskPanel() {
   final OverlayState overlay = appNavigatorKey.currentState!.overlay!;
   final Completer<void> closed = Completer<void>();
@@ -64,7 +64,7 @@ class _AskOverlay extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Stack(
       children: <Widget>[
-        // 遮罩：点击关闭（卡片在其上层且吸收事件）�?
+        //  
         Positioned.fill(
           child: GestureDetector(
             behavior: .opaque,
@@ -79,11 +79,11 @@ class _AskOverlay extends StatelessWidget {
                 maxWidth: 560,
                 maxHeight: MediaQuery.sizeOf(context).height * 0.8,
               ),
-              // 焦点边界：Tab 不许漏到面板外（§5.2）�?
-              // 输入框在 `initState` 里已 `requestFocus` �?焦点天然�?*边界�?*�?
-              // 这里只补边界。⚠�?边界只能�?`FocusScope`（SDK：`_moveFocus` �?
-              // `nearestScope` 的子孙，走到末尾�?closedLoop 绕回**本作用域**第一个）�?
-              // `FocusTraversalGroup` 只管顺序、圈不住�?
+              //  
+              //  
+              //  
+              //  
+              //  
               child: AppFloatSurface(
                 width: 560,
                 child: FocusScope(child: _AskCard(onClose: onClose)),
@@ -115,7 +115,7 @@ class _AskCardState extends ConsumerState<_AskCard> {
   @override
   void initState() {
     super.initState();
-    // 打开即聚焦输入框：这个面板的唯一目的就是"问一�"?�"?
+    //  
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focus.requestFocus();
     });
@@ -143,8 +143,8 @@ class _AskCardState extends ConsumerState<_AskCard> {
         _busy = false;
       });
     } on LlmUnavailableException catch (e) {
-      // 模型不可达是**可操作的**提示�?Ollama 没起"/"没填模型�?），
-      // 原样呈现给用户，不要吞成"出错�"?�"?
+      //  
+      //  
       if (mounted) {
         setState(() {
           _error = e.message;
@@ -161,12 +161,12 @@ class _AskCardState extends ConsumerState<_AskCard> {
     }
   }
 
-  /// 点击角标：切到来源笔记并跳到那个块（�?`locateProvider`，�? 的唯一跳转通道）�?
+  ///  
   ///
-  /// 面板**关闭**：用户点角标就是要去看原文，让他少按一�?Esc。目标笔记往往还没
-  /// 打开，所以走中转（见 `LocateNotifier` 的说明）�?
+  ///  
+  ///  
   ///
-  /// `focus: true`：点角标�?我要�?/ 改这一�?，落地就该能直接敲字�?
+  ///  
   void _jumpTo(Citation citation) {
     ref
         .read(locateProvider.notifier)
@@ -305,7 +305,7 @@ class _AskCardState extends ConsumerState<_AskCard> {
     );
   }
 
-  /// 角标上的摘要素短（它�?*指路�?*不是内容，全文在目标块里）�?
+  ///  
   static String _preview(String snippet) {
     final String flat = snippet.replaceAll(RegExp(r'\s+'), ' ').trim();
     return flat.length <= 16 ? flat : '${flat.substring(0, 16)}…';

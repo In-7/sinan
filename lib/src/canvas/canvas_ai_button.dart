@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
@@ -7,28 +7,28 @@ import '../theme/app_popover.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 
-/// 工具条上的「AI」按钮：一句话指令 �?模型 �?改画布�?
+/// 工具条上的「AI」按钮：一句话指令 → 模型 → 改画布。
 ///
-/// ## 形态照 [CanvasInsertButton]（同一�?[AppPopover] 范式�?
-/// �?插入"一致：锚点是个 IconButton，展开一个窄浮层。这样工具条不会因为多一�""?
-/// 常驻输入框而变高，也符�?工具条只放触发器、参数进浮层"的既有分工�""?
+/// ## 形态照 [CanvasInsertButton]（同一个 [AppPopover] 范式）
+/// 与"插入"一致：锚点是个 IconButton，展开一个窄浮层。这样工具条不会因为多一个
+/// 常驻输入框而变高，也符合"工具条只放触发器、参数进浮层"的既有分工。
 ///
 /// ## 为什么浮层里只有一个输入框
-/// 其余信息（画布现状、动作契约、坐标规则）全部�?[runCanvasAi] 拼进提示词，
-/// 用户只需要说人话。暴露坐�?动作给用户填，等于把模型该干的活推给人�?
+/// 其余信息（画布现状、动作契约、坐标规则）全部由 [runCanvasAi] 拼进提示词，
+/// 用户只需要说人话。暴露坐标/动作给用户填，等于把模型该干的活推给人。
 class CanvasAiButton extends StatefulWidget {
   const CanvasAiButton({super.key, required this.onRun, this.enabled = true});
 
-  /// 执行一次指令。由宿主提供：它持有 [NoteStore]（候选块 + 块文本）�?LLM 客户端�?
+  /// 执行一次指令。由宿主提供：它持有 [NoteStore]（候选块 + 块文本）与 LLM 客户端。
   ///
-  /// 返回�?Future 完成即视�?这一轮结�?（成功与否由宿主自己弹提示）�?
+  /// 返回的 Future 完成即视为"这一轮结束"（成功与否由宿主自己弹提示）。
   final Future<void> Function(String instruction) onRun;
 
-  /// 未配置模型时�?false �?按钮仍可见但不可点（�?整个按钮消失"更好�""?
-  /// 用户能看出这里有功能，只是还没配好）�?
+  /// 未配置模型时置 false ⇒ 按钮仍可见但不可点（比"整个按钮消失"更好：
+  /// 用户能看出这里有功能，只是还没配好）。
   final bool enabled;
 
-  /// 浮层宽度：够放一行中�?+ 「运行」按钮�?
+  /// 浮层宽度：够放一行中文 + 「运行」按钮。
   static const double panelWidth = 320;
 
   @override
@@ -52,7 +52,7 @@ class _CanvasAiButtonState extends State<CanvasAiButton> {
     try {
       await widget.onRun(instruction);
     } finally {
-      // 宿主可能已经换了页面/移除了本组件；`mounted` 必须判�?
+      // 宿主可能已经换了页面/移除了本组件；`mounted` 必须判。
       if (mounted) {
         setState(() => _busy = false);
         _controller.clear();

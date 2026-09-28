@@ -1,27 +1,27 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/tokens.dart';
 
-/// 左下角的轻量通知条（"已删/?· 撤销"这类**可撤销**提示）/?
+/// 左下角的轻量通知条（"已删除 · 撤销"这类**可撤销**提示）。
 ///
-/// ## 为什么不：?`SnackBar`
-/// 1. **宽度**：SnackBar  ?[Scaffold] 铺满整行（实测截图里横跨整个窗口），
-///    桌面上像一条横幅；这里要的己?*贴着左下角的窄条***?
-///    （自绘标题栏 + 透明 Scaffold + 材质桥）上实�?*不自动消�?*，只能点
-///    ✕。这里用自持 [Timer] 明确负责"到点就走"�?
-///    ✕。这里用自持 [Timer] 明确负责"到点就走"/?
+/// ## 为什么不用 `SnackBar`
+/// 1. **宽度**：SnackBar 由 [Scaffold] 铺满整行（实测截图里横跨整个窗口），
+///    桌面上像一条横幅；这里要的是**贴着左下角的窄条**。
+/// 2. **消失时机**：SnackBar 的自动消失依赖它自己的动画状态机；在本应用
+///    （自绘标题栏 + 透明 Scaffold + 材质桥）上实测**不自动消失**，只能点
+///    ✕。这里用自持 [Timer] 明确负责"到点就走"。
 ///
 /// 行为：最多同时只有一条（新提示顶掉旧的）；入场淡入上浮、退场淡出；
-/// 8 秒后自动消失；「撤销」或 ;?之后立即消失;?
+/// 8 秒后自动消失；「撤销」或 ✕ 之后立即消失。
 const Duration kUndoToastDuration = Duration(seconds: 8);
 
-/// 当前正在显示的那条（新的顶掉旧的，避免叠成一摞）;?
+/// 当前正在显示的那条（新的顶掉旧的，避免叠成一摞）。
 OverlayEntry? _currentEntry;
 
-/// 在左下角弹一条可撤销通知(?
+/// 在左下角弹一条可撤销通知。
 void showUndoToast(
   BuildContext context, {
   required String message,
@@ -34,7 +34,7 @@ void showUndoToast(
 
   dismissUndoToast();
 
-  // 先声明再赋值：`onGone` 要引 ?entry 自身（自摘）;?
+  // 先声明再赋值：`onGone` 要引用 entry 自身（自摘）。
   OverlayEntry? entry;
   entry = OverlayEntry(
     builder: (BuildContext context) => _UndoToast(
@@ -42,7 +42,7 @@ void showUndoToast(
       actionLabel: actionLabel,
       duration: duration,
       onUndo: onUndo,
-      // 自己摘掉自己：overlay 只是容器，不负责生命周期{?
+      // 自己摘掉自己：overlay 只是容器，不负责生命周期。
       onGone: () {
         if (identical(_currentEntry, entry)) _currentEntry = null;
         entry?.remove();
@@ -53,7 +53,7 @@ void showUndoToast(
   overlay.insert(entry);
 }
 
-/// 主动收起当前通知（没有则什么都不做）{?
+/// 主动收起当前通知（没有则什么都不做）。
 void dismissUndoToast() {
   final OverlayEntry? entry = _currentEntry;
   _currentEntry = null;
@@ -106,7 +106,7 @@ class _UndoToastState extends State<_UndoToast>
     _timer = Timer(duration, _dismiss);
   }
 
-  /// 淡出后摘除（动画期间先撤掉定时器，避免重复触发）{?
+  /// 淡出后摘除（动画期间先撤掉定时器，避免重复触发）。
   Future<void> _dismiss() async {
     _timer?.cancel();
     _timer = null;
@@ -124,20 +124,20 @@ class _UndoToastState extends State<_UndoToast>
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // M3 的反色表面：深浅两套主题下都与背景区分明确;?
+    // M3 的反色表面：深浅两套主题下都与背景区分明确。
     final Color background = scheme.inverseSurface;
     final Color foreground = scheme.onInverseSurface;
     final Color accent = scheme.inversePrimary;
 
     return Positioned(
       key: const ValueKey<String>('undo-toast'),
-      // **左下,?*：只占内容宽度，不横跨窗口,?
+      // **左下角**：只占内容宽度，不横跨窗口。
       left: Tokens.spaceLg,
       bottom: Tokens.spaceLg,
       child: FadeTransition(
         opacity: _controller,
         child: SlideTransition(
-          // 上浮入场(?px，够表态但不夸张）(?
+          // 上浮入场（8px，够表态但不夸张）。
           position:
               Tween<Offset>(
                 begin: const Offset(0, 0.25),

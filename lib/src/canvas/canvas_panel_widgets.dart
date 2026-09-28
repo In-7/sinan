@@ -1,15 +1,15 @@
-/// 画布浮层面板里的小件（笔刷面板与形状属性面板共用）�?
+﻿/// 画布浮层面板里的小件（笔刷面板与形状属性面板共用）。
 ///
-/// 单独一份的理由：这两个面板的滑杆与图标必须**永远同形�?*，而浮层里最容易
-/// 悄悄漂移的就是这类小件（各自 `copyWith` 一次就分叉了）�?
+/// 单独一份的理由：这两个面板的滑杆与图标必须**永远同形制**，而浮层里最容易
+/// 悄悄漂移的就是这类小件（各自 `copyWith` 一次就分叉了）。
 library;
 
 import 'package:material_ui/material_ui.dart';
 
-/// 紧凑高度的小滑杆：默�?`Slider` 的上下留白在浮层面板里太空�?
+/// 紧凑高度的小滑杆：默认 `Slider` 的上下留白在浮层面板里太空。
 ///
-/// [onChanged] �?null 表示该项当前不适用（如填充形状�?描边粗细"）—�""?
-/// 显示为禁用态，而不是让用户拖了没反应�?
+/// [onChanged] 传 null 表示该项当前不适用（如填充形状的"描边粗细"）——
+/// 显示为禁用态，而不是让用户拖了没反应。
 class CanvasPanelSlider extends StatelessWidget {
   const CanvasPanelSlider({
     super.key,
@@ -41,16 +41,16 @@ class CanvasPanelSlider extends StatelessWidget {
   }
 }
 
-/// 图标 + 右下角一�?当前颜色"圆点�""?
+/// 图标 + 右下角一颗"当前颜色"圆点。
 ///
-/// 颜色类设置（笔色 / 图形描边色）改完必须**一眼可�?*：工具栏其余按钮都是
-/// 无状态图标，只靠图标本身用户看不出颜色改了没有�?
+/// 颜色类设置（笔色 / 图形描边色）改完必须**一眼可见**：工具栏其余按钮都是
+/// 无状态图标，只靠图标本身用户看不出颜色改了没有。
 class CanvasInkDotIcon extends StatelessWidget {
   const CanvasInkDotIcon({super.key, required this.icon, required this.ink});
 
   final Widget icon;
 
-  /// 已解析成实际绘制色的颜色（哨兵要先解析，否则暗色下发黑）�?
+  /// 已解析成实际绘制色的颜色（哨兵要先解析，否则暗色下发黑）。
   final Color ink;
 
   @override
@@ -68,7 +68,7 @@ class CanvasInkDotIcon extends StatelessWidget {
             decoration: BoxDecoration(
               color: ink,
               shape: .circle,
-              // 描边让浅色墨点在浅色工具条上也有轮廓�?
+              // 描边让浅色墨点在浅色工具条上也有轮廓。
               border: Border.all(
                 color: Theme.of(context).colorScheme.outlineVariant,
               ),

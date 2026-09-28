@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
@@ -10,13 +10,13 @@ import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_item.dart';
 import 'kernel/canvas_mindmap.dart';
 
-/// 工具条上的「插入」按钮：形状（矩�?/ 椭圆�? 图片�?
+/// 工具条上的「插入」按钮：形状（矩形 / 椭圆）+ 图片。
 ///
-/// ## 形状�?工具"，不�"?一次性插�?�?026-09-17 用户反馈修正�"?
+/// ## 形状是"工具"，不是"一次性插入"（2026-09-17 用户反馈修正）
 /// 上一版点"矩形"就落一个固定大小的矩形、并立刻切回选择工具，于是用户接着拖拽
-/// 出来的是**框�?*—�?矩形工具像假�?。现在选形�?= 进入 [CanvasTool.shape]�?
-/// **按住拖拽定尺�?*，点一下则落一个默认大小；画完**停在形状工具**里可以接着画�?
-/// 落账仍走既有命令（`_AddItem`），撤销栈不受影响�?
+/// 出来的是**框选**——"矩形工具像假的"。现在选形状 = 进入 [CanvasTool.shape]：
+/// **按住拖拽定尺寸**，点一下则落一个默认大小；画完**停在形状工具**里可以接着画。
+/// 落账仍走既有命令（`_AddItem`），撤销栈不受影响。
 class CanvasInsertButton extends StatelessWidget {
   const CanvasInsertButton({
     super.key,
@@ -26,11 +26,11 @@ class CanvasInsertButton extends StatelessWidget {
 
   final CanvasController controller;
 
-  /// 插入图片：拾取文�?�?复制进数据目�?�?�?item。由宿主提供（它才拿得到
-  /// BuildContext 做错误提示）�?
+  /// 插入图片：拾取文件 → 复制进数据目录 → 建 item。由宿主提供（它才拿得到
+  /// BuildContext 做错误提示）。
   final Future<void> Function() onInsertImage;
 
-  /// 面板固定宽度（同时供 [AppPopover] 做屏幕内钳制）�?
+  /// 面板固定宽度（同时供 [AppPopover] 做屏幕内钳制）。
   static const double panelWidth = 168;
 
   @override
@@ -43,8 +43,8 @@ class CanvasInsertButton extends StatelessWidget {
             (BuildContext context, VoidCallback toggle, bool isOpen) =>
                 FocusRingIconButton(
                   tooltip: '插入形状（按住拖拽定尺寸）/ 图片',
-                  // 形状工具生效期间按钮保持"选中"：否则用户看不出自己现在是在�?
-                  // 形状、还是已经回到选择工具（这正是"矩形像框�"?的知觉根源）�"?
+                  // 形状工具生效期间按钮保持"选中"：否则用户看不出自己现在是在画
+                  // 形状、还是已经回到选择工具（这正是"矩形像框选"的知觉根源）。
                   isSelected: isOpen || controller.tool == CanvasTool.shape,
                   onPressed: toggle,
                   icon: const tabler.Shape(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
@@ -77,7 +77,7 @@ class CanvasInsertButton extends StatelessWidget {
                 onTap: () {
                   close();
                   // 拾取是异步的：先收起浮层（否则文件对话框会压在浮层上）；
-                  // 有意�?await——这里只是发起，结果由宿主自己提示�?
+                  // 有意不 await——这里只是发起，结果由宿主自己提示。
                   unawaited(onInsertImage());
                 },
               ),
@@ -97,7 +97,7 @@ class CanvasInsertButton extends StatelessWidget {
   }
 }
 
-/// 浮层里的一行菜单项（图�?+ 文字，整行可点）�?
+/// 浮层里的一行菜单项（图标 + 文字，整行可点）。
 class _MenuItem extends StatelessWidget {
   const _MenuItem({
     required this.icon,
@@ -132,13 +132,13 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
-/// �?*已复制进数据目录**的文件插入一张图片，返回�?item�?
+/// 从**已复制进数据目录**的文件插入一张图片，返回该 item。
 ///
-/// 初始框按图片**像素宽高�?*定（长边�?320 逻辑像素），所以不会把图拉变形�?
-/// 为此先解码一次（同时让首帧就画出真图，不必等懒加载的下一帧）�?
+/// 初始框按图片**像素宽高比**定（长边约 320 逻辑像素），所以不会把图拉变形；
+/// 为此先解码一次（同时让首帧就画出真图，不必等懒加载的下一帧）。
 ///
 /// 路径约定：调用方负责把文件复制进应用数据目录（见 [NoteMediaService]），
-/// �?*绝对路径**进来——落盘时�?`MediaResolver` 换算成相对引用，画布因此自包含�?
+/// 传**绝对路径**进来——落盘时由 `MediaResolver` 换算成相对引用，画布因此自包含。
 Future<ImageItem> insertImageFromPath(
   CanvasController controller,
   String path, {
@@ -165,10 +165,10 @@ Future<ImageItem> insertImageFromPath(
   return item;
 }
 
-/// 在视口中心插入一张默认思维导图�?中心主题"+ 两个分支），落地即选中�""?
+/// 在视口中心插入一张默认思维导图（"中心主题"+ 两个分支），落地即选中。
 ///
-/// 尺寸�?*屏幕**给（�?420×260 屏幕像素）⇒ 任何缩放级别下插进来�?看起来一样大"�""?
-/// 之后用户拖角点缩放它即可——绘制按 rect **等比映射**，节点不会变形�?
+/// 尺寸按**屏幕**给（约 420×260 屏幕像素）⇒ 任何缩放级别下插进来都"看起来一样大"；
+/// 之后用户拖角点缩放它即可——绘制按 rect **等比映射**，节点不会变形。
 MindMapItem insertMindMap(CanvasController controller) {
   final Size box = _screenToWorld(controller, const Size(420, 260));
   final MindMapItem item = newMindMapItem(
@@ -180,11 +180,11 @@ MindMapItem insertMindMap(CanvasController controller) {
   return item;
 }
 
-/// 屏幕尺寸 �?世界尺寸（保�?屏幕上看起来一样大"）�""?
+/// 屏幕尺寸 → 世界尺寸（保证"屏幕上看起来一样大"）。
 Size _screenToWorld(CanvasController controller, Size screen) =>
     screen / controller.camera.scale;
 
-/// 视口中心的矩形；[screenOffset] �?*屏幕**像素错开（一次插入多张时不重叠）�?
+/// 视口中心的矩形；[screenOffset] 按**屏幕**像素错开（一次插入多张时不重叠）。
 Rect _centeredRectOf(
   CanvasController controller,
   Size world, [

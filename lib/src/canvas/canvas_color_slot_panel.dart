@@ -1,4 +1,4 @@
-import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+﻿import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
@@ -11,21 +11,21 @@ import 'kernel/canvas_mindmap.dart';
 import 'kernel/canvas_palette.dart';
 import 'kernel/ink_stroke.dart';
 
-/// 支持**语义色槽�?*�?item：卡片与思维导图�?
+/// /
 ///
 /// 形状/图片不在内——形状有自己的颜色面板（[ShapeItem.color] 是任意色），
-/// 图片�?颜色"没有意义�""?
+/// /
 bool supportsColorSlot(CanvasItem item) => item is CardItem || item is MindMapItem;
 
-/// 当前选中�?能标语义�?�?item（面板与按钮的作用对象）�?
+/// /
 List<CanvasItem> selectedColorSlotTargets(CanvasController controller) =>
     controller.selectedItems.where(supportsColorSlot).toList(growable: false);
 
-/// 工具条上的「语义色」按钮：**只在选中卡片/思维导图时出�?*，弹�?
-/// [CanvasColorSlotPanel]�?
+/// /
+/// /
 ///
-/// 没选中这类对象时渲染成空——属性面板是针对**所选对�?*的，没有对象就不该占�?
-/// （同 [CanvasShapeButton] 的口径）�?
+/// /
+/// /
 class CanvasColorSlotButton extends StatelessWidget {
   const CanvasColorSlotButton({super.key, required this.controller});
 
@@ -49,7 +49,7 @@ class CanvasColorSlotButton extends StatelessWidget {
                     onPressed: toggle,
                     icon: const tabler.Palette(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
                   ),
-          // 连着试色不需�?选完即关"（同笔刷 / 形状面板）�""?
+          //  
           builder: (BuildContext context, VoidCallback _) =>
               CanvasColorSlotPanel(controller: controller),
         );
@@ -58,14 +58,14 @@ class CanvasColorSlotButton extends StatelessWidget {
   }
 }
 
-/// 语义色面板：8 个槽�?+ "跟随主题"�?
+/// /
 ///
-/// 每次操作都走 [CanvasController.setSelectedColorSlot]—�?*一次操作一条撤销命令**�?
-/// 于是调完色可以直�?Ctrl+Z 回去�?
+/// /
+/// /
 class CanvasColorSlotPanel extends StatelessWidget {
   const CanvasColorSlotPanel({super.key, required this.controller});
 
-  /// 面板固定宽度（同时供 [AppPopover] 做屏幕内钳制）�?
+  ///  
   static const double width = 236;
 
   final CanvasController controller;
@@ -77,9 +77,9 @@ class CanvasColorSlotPanel extends StatelessWidget {
       listenable: controller,
       builder: (BuildContext context, Widget? _) {
         final List<CanvasItem> targets = selectedColorSlotTargets(controller);
-        // 选区在浮层开着时被清掉（Esc / 点到空白）：退化成空面板比抛异常好�?
+        //  
         if (targets.isEmpty) return const SizedBox.shrink();
-        // 多选时�?*第一�?*为准显示；改动仍应用到所有选中项�?
+        //  
         final CanvasColorSlot? current = targets.first.colorSlot;
 
         return Padding(
@@ -115,7 +115,7 @@ class CanvasColorSlotPanel extends StatelessWidget {
     );
   }
 
-  /// 面板选项：首�?= 跟随主题（哨兵），其�?= 8 个语义槽位�?
+  ///  
   List<AppColorOption> _slotOptions(Brightness brightness) => <AppColorOption>[
     AppColorOption(
       value: kThemeInk,
@@ -131,7 +131,7 @@ class CanvasColorSlotPanel extends StatelessWidget {
   ];
 }
 
-/// 色块颜色 �?槽位。首项哨兵（[kThemeInk]）与未知色都返回 `null`�? 跟随主题）�?
+/// /
 CanvasColorSlot? slotOfColor(Color color) {
   for (final CanvasColorSlot slot in CanvasColorSlot.values) {
     if (canvasSlotColor(slot) == color) return slot;
@@ -139,7 +139,7 @@ CanvasColorSlot? slotOfColor(Color color) {
   return null;
 }
 
-/// 槽位的中文名（面�?tooltip）�?
+/// /
 String slotLabel(CanvasColorSlot slot) => switch (slot) {
   CanvasColorSlot.red => '红',
   CanvasColorSlot.orange => '橙',

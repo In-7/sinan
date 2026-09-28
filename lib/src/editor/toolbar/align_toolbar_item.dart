@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -10,11 +10,11 @@ import '../../theme/app_float_surface.dart';
 import '../../theme/tokens.dart';
 import '../core/shortcut_label.dart';
 
-/// 对齐工具栏条目：把官方的「左 / �?/ 右」三个独立按钮合并成**一个下拉按�?*�?
-/// 按钮显示当前对齐方式，点开列出三选一（与 Word / Google Docs 同款）�?
+/// 对齐工具栏条目：把官方的「左 / 中 / 右」三个独立按钮合并成**一个下拉按钮**，
+/// 按钮显示当前对齐方式，点开列出三选一（与 Word / Google Docs 同款）。
 ///
-/// 应用逻辑完全复用官方 [alignmentItems]（`editor.updateNode` �?
-/// [blockComponentAlign]），不另立一套语义；只把"三按�"?换成"一按钮 + 弹层"�"?
+/// 应用逻辑完全复用官方 [alignmentItems]（`editor.updateNode` 写
+/// [blockComponentAlign]），不另立一套语义；只把"三按钮"换成"一按钮 + 弹层"。
 final ToolbarItem sinanAlignItem = ToolbarItem(
   id: 'sinan.align',
   group: 6,
@@ -36,7 +36,7 @@ final ToolbarItem sinanAlignItem = ToolbarItem(
   },
 );
 
-/// 取当前选区的一致对齐：三块都相同时返回该值，否则回落默认「左对齐」�?
+/// 取当前选区的一致对齐：三块都相同时返回该值，否则回落默认「左对齐」。
 String _currentAlign(EditorState editorState, Selection selection) {
   final List<Node> nodes = editorState.getNodesInSelection(selection);
   if (nodes.isEmpty) return 'left';
@@ -125,7 +125,7 @@ class _SinanAlignButtonState extends State<_SinanAlignButton> {
     final Color color =
         widget.iconColor ?? Theme.of(context).colorScheme.onSurfaceVariant;
     return SVGIconItemWidget(
-      // 当前对齐图标 + 小箭头（"这是下拉"的可供性，与块样式按钮一致）�?
+      // 当前对齐图标 + 小箭头（"这是下拉"的可供性，与块样式按钮一致）。
       iconBuilder: (BuildContext context) => Row(
         mainAxisSize: .min,
         children: <Widget>[
@@ -175,8 +175,8 @@ class _AlignOverlay extends StatelessWidget {
   final Size anchorSize;
   final VoidCallback onDismiss;
 
-  // 248：容得下「图�?+ 名称 + 勾�?+ 右对齐快捷键」一整行并留余量�?
-  // �?60 时快捷键标注会被挤出面板、点不到——实测；216 仍差 0.8px 溢出。）
+  // 248：容得下「图标 + 名称 + 勾选 + 右对齐快捷键」一整行并留余量。
+  // （160 时快捷键标注会被挤出面板、点不到——实测；216 仍差 0.8px 溢出。）
   static const double _panelWidth = 248;
 
   @override
@@ -273,7 +273,7 @@ class _AlignOverlay extends StatelessWidget {
                           ),
                           const SizedBox(width: Tokens.spaceXs),
                         ],
-                        // 快捷键右对齐标注（与块样式菜单同一惯例）�?
+                        // 快捷键右对齐标注（与块样式菜单同一惯例）。
                         Text(
                           shortcutLabel(o.shortcut),
                           maxLines: 1,

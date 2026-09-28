@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../domain/note.dart';
@@ -9,8 +9,8 @@ import 'undo_toast.dart' show showUndoToast;
 import '../theme/tokens.dart';
 
 /// 收藏页（主区分区 [kFavoritesNavIndex]）：把跨形态（笔记 / 画布）的收藏笔记
-/// 聚合成一页。复�?[SpaceItemRow]（与导航板内联列表同款行），只换数据�?
-/// ——按 [Note.promotedAt] 过滤，两类形态都收�?
+/// 聚合成一页。复用 [SpaceItemRow]（与导航板内联列表同款行），只换数据源
+/// ——按 [Note.promotedAt] 过滤，两类形态都收录。
 class FavoritesSection extends ConsumerWidget {
   const FavoritesSection({super.key});
 
@@ -21,7 +21,7 @@ class FavoritesSection extends ConsumerWidget {
     final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
     final String? openId = ref.watch(selectedNoteIdProvider);
 
-    // 跨形态拆两栏：笔记（spark/note�? 画布（canvas），都按收藏时间倒序�?
+    // 跨形态拆两栏：笔记（spark/note） 画布（canvas），都按收藏时间倒序。
     final List<Note> noteItems =
         all
             .where(
@@ -48,7 +48,7 @@ class FavoritesSection extends ConsumerWidget {
       );
     }
 
-    // 删除 + 可撤销提示（与 [SpaceItemList] 同一�?[showUndoToast] 通道）�?
+    // 删除 + 可撤销提示（与 [SpaceItemList] 同一个 [showUndoToast] 通道）。
     Future<void> deleteNote(Note note) async {
       final NotesNotifier notifier = ref.read(notesProvider.notifier);
       final Note? removed = await notifier.deleteNote(note.id);
@@ -61,7 +61,7 @@ class FavoritesSection extends ConsumerWidget {
       );
     }
 
-    // 单栏：栏头（标题 + 数量�? 可滚动列�?/ 各自空态。行上标出形态图标�?
+    // 单栏：栏头（标题 + 数量） 可滚动列表/ 各自空态。行上标出形态图标。
     Widget columnFor(String title, List<Note> items) {
       final bool isCanvas = title == '画布';
       return Column(
@@ -101,8 +101,8 @@ class FavoritesSection extends ConsumerWidget {
                       onTap: () => ref
                           .read(locateProvider.notifier)
                           .locate(noteId: items[i].id),
-                      // 右键 / 「···」菜单三件事，与导航板列表项同源�?
-                      // 重命�?/ 收藏 / 删除�?
+                      // 右键 / 「···」菜单三件事，与导航板列表项同源。
+                      // 重命名/ 收藏 / 删除。
                       onRename: (String t) => ref
                           .read(notesProvider.notifier)
                           .saveTitle(items[i].id, t),
@@ -110,7 +110,7 @@ class FavoritesSection extends ConsumerWidget {
                           .read(notesProvider.notifier)
                           .togglePromoted(items[i]),
                       onDelete: () => deleteNote(items[i]),
-                      // 2026-09-26 定：行上额外标出画布 / 笔记形态图标�?
+                      // 2026-09-26 定：行上额外标出画布 / 笔记形态图标。
                       showKindIcon: true,
                     ),
                   ),
@@ -119,7 +119,7 @@ class FavoritesSection extends ConsumerWidget {
       );
     }
 
-    // 响应式：宽屏左右两栏（≥720），窄屏上下堆叠。纯留白 + 栏头，无分隔�?面板�?
+    // 响应式：宽屏左右两栏（≥720），窄屏上下堆叠。纯留白 + 栏头，无分隔线，面板分隔。
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: Tokens.spaceLg,
