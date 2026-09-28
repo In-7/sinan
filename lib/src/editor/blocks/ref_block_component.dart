@@ -11,14 +11,14 @@ import '../../domain/note.dart';
 import '../../theme/tokens.dart';
 import 'non_text_block.dart';
 
-/// 引用块（type = `ref`）：指向**另一篇笔�?/ 另一个块**的结构化引用�?
+/// 引用块（type = `ref`）：指向**另一篇笔记 / 另一个块**的结构化引用。
 ///
-/// 属性：`ref_type` = [refNote] / [refBlock]，`ref_id` = 目标 id�?
+/// 属性：`ref_type` = [refNote] / [refBlock]，`ref_id` = 目标 id。
 ///
-/// ## 为什么是"�"?而不是正文里�"?`[[…]]`
-/// 引用存的�?**id** 而不是标题文本：于是"谁引用了�"?（反链）只是一�"?SQL
-/// （见 `NoteStore.backlinks`），不需要解析正文，也不会因为改名而断�?—�?
-/// 目标是删掉时这里显式显示"引用已失�"?，而不是悄悄变成一段死文字�"?
+/// ## 为什么是"块"而不是正文里的 `[[…]]`
+/// 引用存的是 **id** 而不是标题文本：于是"谁引用了我"（反链）只是一条 SQL
+/// （见 `NoteStore.backlinks`），不需要解析正文，也不会因为改名而断链 ——
+/// 目标是删掉时这里显式显示"引用已失效"，而不是悄悄变成一段死文字。
 class RefBlockKeys {
   const RefBlockKeys._();
 
@@ -27,19 +27,19 @@ class RefBlockKeys {
   static const String refId = 'ref_id';
   static const String refView = 'ref_view';
 
-  /// [refType] 的取值：引用整篇笔记 / 引用某一块�?
+  /// [refType] 的取值：引用整篇笔记 / 引用某一块。
   static const String refNote = 'note';
   static const String refBlock = 'block';
 
   /// [refView] 的取值：
-  /// - [viewLink]（默认）：一行卡片，只显示目标标题（= 传统双链�"?链接"）；
-  /// - [viewEmbed]�?*就地展开**目标内容（Obsidian �?`![[…]]` / Notion �?
-  ///   "显示�"?embed"）。只�"?—�?编辑得去目标那边�?
+  /// - [viewLink]（默认）：一行卡片，只显示目标标题（= 传统双链的"链接"）；
+  /// - [viewEmbed]：**就地展开**目标内容（Obsidian 的 `![[…]]` / Notion 的
+  ///   "显示为 embed"）。只读 —— 编辑得去目标那边。
   static const String viewLink = 'link';
   static const String viewEmbed = 'embed';
 }
 
-/// 构造引用块节点�?
+/// 构造引用块节点。
 Node refBlockNode({
   required String refType,
   required String refId,
@@ -49,12 +49,12 @@ Node refBlockNode({
   attributes: <String, dynamic>{
     RefBlockKeys.refType: refType,
     RefBlockKeys.refId: refId,
-    // link 是默认值也照样写进属性：读侧不必�?缺这个键"再准备一条分支�""?
+    // link 是默认值也照样写进属性：读侧不必为"缺这个键"再准备一条分支。
     RefBlockKeys.refView: refView,
   },
 );
 
-/// 解出来的引用目标；`null` 表示目标已不存在（UI 显示"引用已失�"?）�"?
+/// 解出来的引用目标；`null` 表示目标已不存在（UI 显示"引用已失效"）。
 class RefTarget {
   const RefTarget({required this.title, required this.kind});
 
@@ -62,11 +62,11 @@ class RefTarget {
   final NoteKind kind;
 }
 
-/// 引用块与宿主（笔记库 / 导航）之间的**接缝**�?
+/// 引用块与宿主（笔记库 / 导航）之间的**接缝**。
 ///
-/// 内核不碰 provider：解析目标、跳转都由宿主注�?—�?�?`MediaResolver` /
-/// `EditorTypography` 同一条路子。于是块组件不依�?Riverpod、可单测�?
-/// 也不会在渲染层执着�?数据从哪�?�?
+/// 内核不碰 provider：解析目标、跳转都由宿主注入 —— 与 `MediaResolver` /
+/// `EditorTypography` 同一条路子。于是块组件不依赖 Riverpod、可单测，
+/// 也不会在渲染层执着于"数据从哪来"。
 class RefBlockBridge {
   const RefBlockBridge({
     required this.resolve,
@@ -75,26 +75,26 @@ class RefBlockBridge {
     this.revision,
   });
 
-  /// �?(`refType`, `refId`) 解析目标；目标不存在返回 null�?
+  /// 按 (`refType`, `refId`) 解析目标；目标不存在返回 null。
   final RefTarget? Function(String refType, String refId) resolve;
 
-  /// 打开目标（跳到那篇笔记）�?
+  /// 打开目标（跳到那篇笔记）。
   final void Function(String refType, String refId) open;
 
-  /// 嵌入模式（`ref_view='embed'`）要展示的内容；�?null �?嵌入降级为链接卡片�?
+  /// 嵌入模式（`ref_view='embed'`）要展示的内容；为 null ⇒ 嵌入降级为链接卡片。
   ///
-  /// 只读：嵌入只�?在这里看到内�?，编辑得去目标那边（避免两套编辑入口�?
-  /// 同一份数据写）�?
+  /// 只读：嵌入只是"在这里看到内容"，编辑得去目标那边（避免两套编辑入口对
+  /// 同一份数据写）。
   final List<EmbedLine> Function(String refType, String refId)? preview;
 
-  /// 目标信息可能变了的信号（改名 / 删除�?+1）。不传则不自动刷新标题�?
+  /// 目标信息可能变了的信号（改名 / 删除时 +1）。不传则不自动刷新标题。
   final Listenable? revision;
 }
 
 class RefBlockComponentBuilder extends BlockComponentBuilder {
   RefBlockComponentBuilder({this.bridge, super.configuration});
 
-  /// 宿主注入的接缝；�?null 时块只显示原�?id（测�?/ 无宿主场景）�?
+  /// 宿主注入的接缝；为 null 时块只显示原始 id（测试 / 无宿主场景）。
   final RefBlockBridge? bridge;
 
   @override
@@ -113,7 +113,7 @@ class RefBlockComponentBuilder extends BlockComponentBuilder {
     );
   }
 
-  /// 非文本块：不接受子块（与官方 divider 的判定一致）�?
+  /// 非文本块：不接受子块（与官方 divider 的判定一致）。
   @override
   BlockComponentValidate get validate =>
       (node) => node.children.isEmpty;
@@ -145,7 +145,7 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
   @override
   final GlobalKey contentKey = GlobalKey(debugLabel: 'ref_block');
 
-  // 本状态自�?editorState（骨架的混入组合里没有声明它，故不是 override）�?
+  // 本状态自持 editorState（骨架的混入组合里没有声明它，故不是 override）。
   late final EditorState editorState = Provider.of<EditorState>(
     context,
     listen: false,
@@ -156,9 +156,9 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
 
   @override
   Widget buildContent(BuildContext context) {
-    // 属性在 ListenableBuilder 内读：事务改�?ref_id �?node �?notify�?
-    // 这样读到的是新值（在外面读会拿到陈旧闭包值）�?
-    // 目标标题可能�?*别处**改（改名 / 删除），所以接上宿主的 [RefBlockBridge.revision]�?
+    // 属性在 ListenableBuilder 内读：事务改完 ref_id 后 node 会 notify，
+    // 这样读到的是新值（在外面读会拿到陈旧闭包值）。
+    // 目标标题可能被**别处**改（改名 / 删除），所以接上宿主的 [RefBlockBridge.revision]。
     final Listenable? revision = widget.bridge?.revision;
     final Listenable listenable = revision == null
         ? node
@@ -169,7 +169,7 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
     );
   }
 
-  /// 三个属性都�?`ListenableBuilder` 内读（事务改�?node �?notify）�?
+  /// 三个属性都在 `ListenableBuilder` 内读（事务改完 node 会 notify）。
   String get _refType =>
       (node.attributes[RefBlockKeys.refType] as String?) ??
       RefBlockKeys.refNote;
@@ -184,8 +184,8 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final RefTarget? target = widget.bridge?.resolve(_refType, _refId);
     final bool missing = target == null;
-    // 嵌入模式：就地展开目标内容（只读）�?*断链时仍走链接卡�?*—�?引用�?
-    // 失效"这个位置在那边�""?
+    // 嵌入模式：就地展开目标内容（只读）。**断链时仍走链接卡片**——"引用已
+    // 失效"这个位置在那边。
     if (!missing && _view == RefBlockKeys.viewEmbed) return _embedCard(context);
     final Color base = missing ? scheme.error : scheme.primary;
     return MouseRegion(
@@ -199,9 +199,9 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
             vertical: Tokens.spaceXs,
           ),
           decoration: BoxDecoration(
-            // 底色�?*主题色的极淡�?*（不是固定灰）：深浅两套主题下都成立�?
+            // 底色用**主题色的极淡染**（不是固定灰）：深浅两套主题下都成立，
             // 也与正文的卡片式块（callout）同一口气。用 alpha 而非 Opacity
-            // —�?后者是 SaveLayer，Impeller 下的性能红线�?
+            // —— 后者是 SaveLayer，Impeller 下的性能红线。
             color: base.withValues(alpha: 0.06),
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
             border: Border.all(color: base.withValues(alpha: 0.28)),
@@ -238,7 +238,7 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
     );
   }
 
-  /// 嵌入卡片�?*就地展开**目标内容（只读），顶上一行可点回原处�?
+  /// 嵌入卡片：**就地展开**目标内容（只读），顶上一行可点回原处。
   Widget _embedCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -248,7 +248,7 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: Tokens.spaceXs / 2),
-      // 左边一道竖�?= "这是别处的内�"?（与引用�?quote 同一口气）�"?
+      // 左边一道竖线 = "这是别处的内容"（与引用块 quote 同一口气）。
       decoration: BoxDecoration(
         border: Border(
           left: BorderSide(
@@ -269,7 +269,7 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
         crossAxisAlignment: .stretch,
         mainAxisSize: .min,
         children: <Widget>[
-          // 顶行：来源标题。嵌入是只读的，这是**回到原处去编�?*的唯一入口�?
+          // 顶行：来源标题。嵌入是只读的，这是**回到原处去编辑**的唯一入口。
           GestureDetector(
             onTap: () => widget.bridge?.open(_refType, _refId),
             child: Row(
@@ -315,8 +315,8 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
     );
   }
 
-  /// 嵌入内容的一行：**按块类型给一个只读的样子**（不套用编辑器组件—�?
-  /// 目标属于另一篇笔记，没有本编辑器�?`EditorState`）�?
+  /// 嵌入内容的一行：**按块类型给一个只读的样子**（不套用编辑器组件——
+  /// 目标属于另一篇笔记，没有本编辑器的 `EditorState`）。
   Widget _embedLine(BuildContext context, EmbedLine line) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;

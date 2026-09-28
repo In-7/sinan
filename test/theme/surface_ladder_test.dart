@@ -123,12 +123,19 @@ void main() {
     ('亮色', Brightness.light),
     ('暗色', Brightness.dark),
   ]) {
+    // ⚠️ 亮色的窗口底是**刻意的例外**（2026-09-26 用户定）：直接落 `#F7F7F5`，
+    // 不再走 `ladder.light.base`（`#F8F8F6` / L*97.5）——见 [AppTheme.windowBackground]
+    // 的注释。所以这里不要求它等于 `ladder.base`，但**仍然钉住具体值**（防止它
+    // 再悄悄漂）；浮层 / 板底两条仍严格取自明度序，本闸门的主体没被削弱。
     test('$name：四个面都取自明度序（谁写死 hex 就报）', () {
       final SurfaceLadder ladder = AppTheme.ladder(brightness);
-      expect(AppTheme.windowBackground(brightness), ladder.base);
+      final Color expectedBase = brightness == Brightness.light
+          ? const Color(0xFFF7F7F5)
+          : ladder.base;
+      expect(AppTheme.windowBackground(brightness), expectedBase);
       expect(
         AppTheme.contentCanvas(brightness),
-        ladder.base,
+        expectedBase,
         reason: '纸面必须与底同色（两处共用一个令牌，2026-09-22 用户定）',
       );
       expect(AppTheme.floatSurface(brightness), ladder.floating);

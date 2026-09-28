@@ -256,21 +256,22 @@ void main() {
           ),
         )
         .toList();
-    // 顶行 3 个图标（设置 / 搜索 / 主页）+ 笔记空间的 1 条列表行 + 该行
+    // 顶行 4 个图标（设置 / 搜索 / **收藏** / 主页）+ 笔记空间的 1 条列表行 + 该行
     // 「···」按钮（Visibility 用 maintainSize/maintainState，即便 hover 前不可见
     // 也仍驻树，自带一个透明 Material）。切换器用 DecoratedBox，无 Material；
     // 「新建」在切换器井内最右，是同款新拟态正方格（DecoratedBox，无 Material）。
-    expect(materials.length, 5);
+    // ⚠️ 收藏图标是后来加的（顶行由 3 枚变 4 枚）⇒ 计数是 6 不是 5。
+    expect(materials.length, 6);
 
     final int transparent = materials
         .where((Material m) => m.color == Colors.transparent)
         .length;
     expect(
       transparent,
-      5,
+      6,
       reason:
-          '顶行**无选中态**（2026-09-24 用户定：主页只是动作）⇒ 5 个'
-          '（设置/搜索/主页图标 + 列表行 + 列表行的「···」按钮）必须全部透明'
+          '顶行**无选中态**（2026-09-24 用户定：主页只是动作）⇒ 6 个'
+          '（设置/搜索/收藏/主页图标 + 列表行 + 列表行的「···」按钮）必须全部透明'
           '——落到 surface 就是黑块',
     );
   });

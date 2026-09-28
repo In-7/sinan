@@ -144,15 +144,6 @@ class AppMenuButton extends ConsumerWidget {
               trailing: _brightnessLabel(mode),
               onTap: () => pick(_AppMenuItem.toggleBrightness),
             ),
-            _MenuRow(
-              icon: const tabler.Logout(
-                height: Tokens.iconMd,
-                width: Tokens.iconMd,
-                strokeWidth: 1.5,
-              ),
-              label: '退出',
-              onTap: () => pick(_AppMenuItem.exit),
-            ),
           ],
         );
       },
