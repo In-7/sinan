@@ -160,12 +160,13 @@ overlay > canvas / editor > note > global
 | 本应用已加 | `Ctrl+F/H`、`Ctrl+Shift+7/8/Q/L/E/R`、`Ctrl+Shift+\``、`Ctrl+Shift+O`(目录)、`Ctrl+V`(URL 转链) |
 | 画布 | `Space`(抓手)、`Ctrl+Z/Shift+Z`、`Delete`、`Esc` |
 
-**空闲区**：`Ctrl+P`、`Ctrl+Shift+P`、`Ctrl+N`、`Ctrl+Shift+N`、`Ctrl+,`、`Ctrl+W`、`Ctrl+\`、`Ctrl+Alt+<字母>`（除 Backspace/方向键）、`F1`–`F12`。
+**空闲区**：`Ctrl+P`、`Ctrl+Shift+P`、`Ctrl+N`、`Ctrl+Shift+N`、`Ctrl+,`、`Ctrl+W`、`Ctrl+J`（2026-09-28 划入：块样式占的是 `Ctrl+Shift+J`，单按 `J` 空闲）、`Ctrl+\`、`Ctrl+Alt+<字母>`（除 Backspace/方向键）、`F1`–`F12`。
 
 **P0 新增键位**（全部落在空闲区）：
 
 | 命令 | 键位 | 备注 |
 |---|---|---|
+| 问笔记（AI 问答轨开关） | `Ctrl+J` | ✅ 2026-09-28 落地（`ai.ask`）：宽窗开合右轨，窄窗降级浮层 |
 | **命令面板** | **`Ctrl+Shift+P`** | ✅ 已定（`Ctrl+K` 被链接菜单占用，不改既有习惯） |
 | 快速打开（笔记 / 块） | `Ctrl+P` | 与面板同族 |
 | 新建笔记 | `Ctrl+N` | 现无键盘入口 |

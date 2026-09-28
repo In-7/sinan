@@ -73,6 +73,9 @@ void main() {
       'Ctrl+W',
       r'Ctrl+\',
       'F1',
+      // 2026-09-28：AI 问答轨开关（§3.4 空闲区新增）。单按 Ctrl+J 编辑器
+      // 不占（占的是块样式 Ctrl+Shift+J），二者不撞。
+      'Ctrl+J',
     };
     final RegExp functionKeys = RegExp(r'^F([1-9]|1[0-2])$');
     bool isFree(String label) =>
@@ -121,6 +124,7 @@ void main() {
       'note.promote',
       'palette.open',
       'app.settings',
+      'ai.ask',
     ]) {
       expect(registry.byId(id), isNotNull, reason: '缺命令 $id');
     }

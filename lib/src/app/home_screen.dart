@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
@@ -114,8 +114,31 @@ class HomeScreen extends ConsumerWidget {
       // 主页（[HomeHub]）/ 笔记·画布编辑器。点导航列表直接在右栏打开，不进新路由，
       // 也不重建左侧列表（旧的 [NoteListView] 侧栏已删，那个分支看着像"跳新页面"）。
       //
+      // 2026-09-28 加第三列 **AI 问答轨**（[AskRail]）：宽窗常驻右缘，窄窗
+      // （< [kAskRailBreakpoint]）降级回 [showAskPanel] 浮层——状态只有
+      // [aiPanelOpenProvider] 一个布尔，呈现形态归外壳按宽度选。
+      //
       // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder` 统一铺一层
       // 纯色（`AppTheme.windowBackground`）⇒ 这里保持透明让它透出来。
+
+      final bool aiWanted = ref.watch(aiPanelOpenProvider);
+      final bool railFits =
+          MediaQuery.sizeOf(context).width >= kAskRailBreakpoint;
+      final bool aiInline = aiWanted && railFits;
+
+      // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
+      //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
+      // 放在 post-frame 里、且进入时再读一次当前值——一道机制同时覆盖两种
+      // 触发：① 窄窗里按 Ctrl+J / 点图标"打开"；② 开着轨把窗口拖过断点。
+      // 首个回调复位后同帧的其余回调读到的已是 false ⇒ 浮层不会弹两层。
+      if (aiWanted && !railFits) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!ref.read(aiPanelOpenProvider)) return;
+          ref.read(aiPanelOpenProvider.notifier).close();
+          unawaited(showAskPanel());
+        });
+      }
+
       return Scaffold(
         backgroundColor: Colors.transparent,
         body: Row(
@@ -142,62 +165,91 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            // 右栏：选中态时整列铺编辑器画布底，与左栏 Mica 形成硬分区；顶条与
-            // 内容面板都透出这层底色。主页时底色仍是同一窗口底（[HomeHub] 直接坐
-            // 窗口底），不铺纸面。
+            // 右栏：**全程与窗口底同色**（2026-09-29 用户定）。选中态曾经铺过
+            // 一层"编辑器画布底 + 纸面噪点"想跟左栏形成硬分区，但画布底早已并入
+            // 窗口底、噪点又把笔记页染得和主页不一样（用户实报"点进笔记会变色"）
+            // ——两者都已撤掉。左栏 [HubNav] 同样取窗口底，主区/侧栏的分界现在
+            // 只由窗控条那道 1px 分隔线表达（§5.6 的"同色平铺"）。
             Expanded(
               child: selectedId == null
                   ? Column(
                       children: <Widget>[
                         // 主页顶条只剩窗控：设置走导航板顶行，退出即关窗。
-                        // 左起第一枚是折叠面板按钮（展开态也要能再折叠）。
+                        // 左起第一枚是折叠面板按钮（展开态也要能再折叠）；
+                        // 右端 `trailing` 最右一枚是 AI 轨开关（紧贴「最小化」
+                        // 左侧），与左边的折叠按钮左右对称。
                         const WindowStrip(
                           leading: <Widget>[NavCollapseButton()],
+                          trailing: <Widget>[AiRailToggleButton()],
                         ),
                         Expanded(
-                          child: Padding(
-                            // 右侧 0（2026-09-26 用户定）：主区滚动 viewport 必须
-                            // 触到窗口右缘，滚动条才永远贴边；内容自身的呼吸
-                            // （HomeHub / 搜索 / 收藏各有各的 padding）不受影响。
-                            // 左 6 = 与导航板的间隙；上 6 = 与窗控条的间隙。
-                            padding: const EdgeInsets.fromLTRB(6, 6, 0, 6),
-                            child: Consumer(
-                              builder:
-                                  (
-                                    BuildContext context,
-                                    WidgetRef ref,
-                                    Widget? _,
-                                  ) {
-                                    final int section = ref.watch(
-                                      hubNavSelectionProvider,
-                                    );
-                                    if (section == 0) return const HomeHub();
-                                    if (section == kSearchNavIndex) {
-                                      return const SearchSection();
-                                    }
-                                    if (section == kFavoritesNavIndex) {
-                                      return const FavoritesSection();
-                                    }
-                                    return _SectionPlaceholder(
-                                      label: hubNavItems[section].label,
-                                    );
-                                  },
-                            ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Expanded(
+                                child: Padding(
+                                  // 右侧 0（2026-09-26 用户定）：主区滚动
+                                  // viewport 必须触到窗口右缘，滚动条才永远贴边；
+                                  // 内容自身的呼吸（HomeHub / 搜索 / 收藏各有各的
+                                  // padding）不受影响。AI 轨收起时这里仍到右缘。
+                                  // 左 6 = 与导航板的间隙；上 6 = 与窗控条的间隙。
+                                  padding: const EdgeInsets.fromLTRB(
+                                    6,
+                                    6,
+                                    0,
+                                    6,
+                                  ),
+                                  child: Consumer(
+                                    builder:
+                                        (
+                                          BuildContext context,
+                                          WidgetRef ref,
+                                          Widget? _,
+                                        ) {
+                                          final int section = ref.watch(
+                                            hubNavSelectionProvider,
+                                          );
+                                          if (section == 0) {
+                                            return const HomeHub();
+                                          }
+                                          if (section == kSearchNavIndex) {
+                                            return const SearchSection();
+                                          }
+                                          if (section == kFavoritesNavIndex) {
+                                            return const FavoritesSection();
+                                          }
+                                          return _SectionPlaceholder(
+                                            label: hubNavItems[section].label,
+                                          );
+                                        },
+                                  ),
+                                ),
+                              ),
+                              // AI 问答轨（宽窗常驻；窄窗不渲染，改走浮层）。
+                              _AiRailSlot(open: aiInline),
+                            ],
                           ),
                         ),
                       ],
                     )
                   : DecoratedBox(
                       decoration: BoxDecoration(
-                        color: AppTheme.contentCanvas(
+                        // 2026-09-29 用户定：笔记 / 画布页的右侧主区**必须与主题
+                        // 背景同色**——从主页点进笔记不许"变色"。故直取
+                        // [windowBackground]（不再走语义上"可能再分档"的
+                        // [contentCanvas]）：后者早已并入窗口底，本来就不产生色差，
+                        // 真正把笔记页染出色差的是下面那层纸面噪点（已撤）。
+                        color: AppTheme.windowBackground(
                           Theme.of(context).brightness,
                         ),
                       ),
                       child: Stack(
                         fit: .expand,
+                        // [Stack] 现在只剩一个孩子，留着只为 `fit: expand`：
+                        // 它把 [Column] 撑满整列高度，比依赖 Column 的
+                        // `mainAxisSize.max` 更直白（这个结构承载过纸面噪点，
+                        // 噪点已在 2026-09-29 撤掉，见上面的底色注释）。
                         children: <Widget>[
-                          // 纸面噪点（暗 2% / 亮 0）：铺在**纸色之上、内容之下**。
-                          _PaperNoise(brightness: Theme.of(context).brightness),
                           Column(
                             children: <Widget>[
                               WindowStrip(
@@ -218,6 +270,8 @@ class HomeScreen extends ConsumerWidget {
                                         .goHome(),
                                   ),
                                 ],
+                                // 右端：AI 轨开关（紧贴「最小化」左侧）。
+                                trailing: const <Widget>[AiRailToggleButton()],
                               ),
                               // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
                               // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段。
@@ -232,9 +286,20 @@ class HomeScreen extends ConsumerWidget {
                                 ),
                               ),
                               Expanded(
-                                child: _ContentPanel(
-                                  partition: true,
-                                  child: detailPane(),
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: _ContentPanel(
+                                        partition: true,
+                                        child: detailPane(),
+                                      ),
+                                    ),
+                                    // AI 问答轨：写正文时同屏对照答案/引用，
+                                    // 轨底取窗口色把自己从"纸面"里分出来。
+                                    _AiRailSlot(open: aiInline),
+                                  ],
                                 ),
                               ),
                             ],
@@ -495,6 +560,75 @@ class _SectionPlaceholder extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 右侧 **AI 问答轨**的动画槽：打开 [kAskRailWidth]、关闭收为 0。
+///
+/// 与左导航槽**同一套做法**（[AnimatedContainer] 布局插值 + [ClipRect] 裁切 +
+/// [OverflowBox] 固定满宽布局）：纯 layout 动画、不触发 saveLayer；
+/// 收起过渡期内部也不被窄约束顶出 overflow。问答体因此在开合之间**不销毁**
+/// ——问题、答案、输入都保留。
+///
+/// 关闭时 [ExcludeFocus] 把整列移出 Tab 链：宽 0 的隐藏控件不许被键盘聚焦
+///（打开聚焦由 [AskRail] 自己在开关翻转时处理）。
+class _AiRailSlot extends StatelessWidget {
+  const _AiRailSlot({required this.open});
+
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      width: open ? kAskRailWidth : 0,
+      child: ExcludeFocus(
+        excluding: !open,
+        child: const ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            maxWidth: kAskRailWidth,
+            child: AskRail(),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// **AI 问答轨开关**（桌面顶条右端，紧贴「最小化」左侧）。
+///
+/// 与左端的 [NavCollapseButton] **左右对称**：一边管左栏、一边管右轨，两枚都
+/// 钉在窗控条上——位置固定，不随"现在哪个分栏在显示"变（AI 轨在主页时同样能开）。
+///
+/// - 走命令层 `ai.ask`：按钮与 `Ctrl+J` 必须是**同一条路**（§3.2 命令是权威面）；
+/// - 开态披一档中性 tint（[AppTheme.navSelectedTint]）——它是个开/关，得如实
+///   显示现在开着；
+/// - **不按"AI 是否配置"显隐**：未配置时点开，面板里的报错本身就是可操作的
+///   说明；藏起来只会让人以为"这软件没有问答"。
+class AiRailToggleButton extends ConsumerWidget {
+  const AiRailToggleButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool open = ref.watch(aiPanelOpenProvider);
+    return IconButton(
+      icon: const tabler.Sparkles(
+        height: Tokens.iconMdSm,
+        width: Tokens.iconMdSm,
+        strokeWidth: 1.5,
+      ),
+      // 键位写进 tooltip：顶条是它唯一的图标入口，这里不提就没人知道。
+      tooltip: '问笔记（Ctrl+J）',
+      style: IconButton.styleFrom(
+        backgroundColor: open
+            ? AppTheme.navSelectedTint(scheme.onSurface)
+            : Colors.transparent,
+      ),
+      onPressed: () => unawaited(runCommandById(ref, 'ai.ask')),
     );
   }
 }

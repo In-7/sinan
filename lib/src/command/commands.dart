@@ -156,6 +156,25 @@ List<Command> buildCommands(Ref ref) => <Command>[
     ],
     run: (CommandContext _) => showSettingsPanel(),
   ),
+
+  // ── AI ────────────────────────────────────────────────────────────────
+  Command(
+    id: 'ai.ask',
+    title: '问笔记',
+    hint: '右侧常驻问答轨',
+    group: CommandGroup.ai,
+    scope: CommandScope.global,
+    keys: <KeyBinding>[
+      const KeyBinding(key: LogicalKeyboardKey.keyJ, control: true),
+    ],
+    // 恒可用（不在此处读 settings：注册表要在裸容器的元测试里构建，
+    // settings 依赖真实 store；未配置的报错由面板内 LlmUnavailableException
+    // 给出，与移动端入口同口径）。命令只管翻转单一布尔——**呈现形态**
+    // （宽窗右轨 / 窄窗浮层）由 HomeScreen 外壳按窗口宽度决定。
+    run: (CommandContext _) async {
+      ref.read(aiPanelOpenProvider.notifier).toggle();
+    },
+  ),
 ];
 
 /// 新建笔记并选中它（`note.new` / `canvas.new` 共用）。

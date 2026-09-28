@@ -141,6 +141,28 @@ final navCollapsedProvider = NotifierProvider<NavCollapsedNotifier, bool>(
   NavCollapsedNotifier.new,
 );
 
+/// 右侧常驻 **AI 问答轨**的开关态（桌面布局的第三列，见 [AskRail]）。
+///
+/// 与 [navCollapsedProvider] 同型：它只表达"用户此刻想不想看到 AI 轨"，
+/// 不关心 AI 以什么形态出现——宽窗（≥ `kAskRailBreakpoint`）时 [HomeScreen]
+/// 把它画成右侧常驻栏；窄窗放不下 ⇒ 降级为既有居中浮层（`showAskPanel`）。
+/// 呈现选择归外壳，状态保持**单一真相源**，于是「命令 / 图标 / 自己的关闭钮 /
+/// Esc」四条入口写的都是同一个布尔。
+///
+/// 默认关闭。再按一次 `Ctrl+J`（`ai.ask` 命令）或导航板 Sparkles 收起。
+class AiPanelNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void open() => state = true;
+  void close() => state = false;
+  void toggle() => state = !state;
+}
+
+final aiPanelOpenProvider = NotifierProvider<AiPanelNotifier, bool>(
+  AiPanelNotifier.new,
+);
+
 /// 笔记列表（含增删改后自动刷新）。
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,

@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+
 import 'dart:ui' show PointerDeviceKind;
+
 import 'package:sinan/src/app/hub_nav.dart';
 import 'package:sinan/src/app/providers.dart'
     show
@@ -77,10 +79,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 顶行三枚是图标（Tooltip），不落成文本项。
-    expect(find.text('设置'), findsNothing,
-        reason: '设置是顶行图标（Tooltip），不是文本项');
-    expect(find.text('主页'), findsNothing,
-        reason: '主页是顶行图标（Tooltip），不是文本项');
+    expect(find.text('设置'), findsNothing, reason: '设置是顶行图标（Tooltip），不是文本项');
+    expect(find.text('主页'), findsNothing, reason: '主页是顶行图标（Tooltip），不是文本项');
     expect(find.byTooltip('设置'), findsOneWidget);
     // 搜索图标已接线（2026-09-25）：不再是"开发中"占位，tooltip 是真动作。
     expect(find.byTooltip('搜索'), findsOneWidget);
@@ -95,9 +95,7 @@ void main() {
 
     // 默认空间 = 笔记 ⇒ 只滤出非画布的那条。
     expect(find.text('灵感碎片'), findsOneWidget);
-    expect(find.text('架构草图'), findsNothing,
-        reason: '画布笔记不该出现在笔记空间里',
-    );
+    expect(find.text('架构草图'), findsNothing, reason: '画布笔记不该出现在笔记空间里');
   });
 
   /// **右键菜单闸门**（2026-09-25）：导航内联列表的条目与左侧 [NoteListView]
@@ -110,8 +108,7 @@ void main() {
     await tester.tap(find.text('灵感碎片'), buttons: 2);
     await tester.pumpAndSettle();
 
-    expect(find.text('重命名'), findsOneWidget,
-        reason: '菜单应含就地重命名');
+    expect(find.text('重命名'), findsOneWidget, reason: '菜单应含就地重命名');
     // 未收藏 ⇒ 菜单项是「收藏」（不是「取消收藏」）。
     expect(find.text('收藏'), findsOneWidget, reason: '菜单应含收藏切换');
     expect(find.text('删除笔记'), findsOneWidget, reason: '菜单应含删除');
@@ -120,9 +117,7 @@ void main() {
   /// **hover 背景闸门**（2026-09-25 回归）：行 hover 必须真的把底色从透明换成
   /// [AppTheme.boardFillHover]——否则"悬浮背景没有了"的回归就抓不到。
   /// 此 Flutter 版本无 `tester.hover`，手动派发一个鼠标 hover 事件。
-  testWidgets('行 hover ⇒ 底色变 boardFillHover（非透明）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('行 hover ⇒ 底色变 boardFillHover（非透明）', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
     await tester.pumpAndSettle();
 
@@ -130,8 +125,11 @@ void main() {
       of: find.text('灵感碎片'),
       matching: find.byType(Material),
     );
-    expect(tester.widget<Material>(rowMaterial.first).color, Colors.transparent,
-        reason: '未 hover 时底色必须透明');
+    expect(
+      tester.widget<Material>(rowMaterial.first).color,
+      Colors.transparent,
+      reason: '未 hover 时底色必须透明',
+    );
 
     // 手动派发鼠标移动事件（驱动 MouseTracker 触发 MouseRegion.onEnter）。
     // 必须先 addPointer 把鼠标指针登记进 tracker，否则 move 事件不触发 hover。
@@ -241,9 +239,7 @@ void main() {
     expect(decoration.boxShadow, isNull, reason: '板底不允许阴影（浮雕已撤）');
   });
 
-  testWidgets('未选中行的底色是透明的（不能落到 surface 的近黑）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('未选中行的底色是透明的（不能落到 surface 的近黑）', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
     // 等列表落地（否则只有顶行 3 个 Material）。
     await tester.pumpAndSettle();
@@ -295,36 +291,49 @@ void main() {
             matching: find.byType(DecoratedBox),
           ),
         )
-        .where((DecoratedBox box) =>
-            box.decoration is BoxDecoration &&
-            hasGradient((box.decoration as BoxDecoration).gradient))
+        .where(
+          (DecoratedBox box) =>
+              box.decoration is BoxDecoration &&
+              hasGradient((box.decoration as BoxDecoration).gradient),
+        )
         .toList();
 
     // 一层「玻璃片」= 一个 sheen（内光泽）+ rim + baseEdge ⇒ 数 sheen 的个数
     // 就是数玻璃片的个数。当前恰好**一片**：切换器滑块（滑块本身就是抬起
     // 的那块玻璃）。顶行主页图标已无选中态（2026-09-24 用户定：主页只是动作）。
     // ⚠️ 切换器轨道的那条内渐变（凹井用）不是玻璃令牌，不会混进来。
-    final Gradient sheen =
-        AppTheme.glassSheen(Brightness.light, alphaScale: AppTheme.glassSheetBoost);
-    final int sheets = lit
-        .where((DecoratedBox box) =>
-            (box.decoration as BoxDecoration).gradient == sheen)
-        .length;
-    expect(
-      sheets,
-      1,
-      reason: '玻璃片应恰好一片（切换器滑块）；多 ⇒ 有非选中处也挂了光',
+    final Gradient sheen = AppTheme.glassSheen(
+      Brightness.light,
+      alphaScale: AppTheme.glassSheetBoost,
     );
+    final int sheets = lit
+        .where(
+          (DecoratedBox box) =>
+              (box.decoration as BoxDecoration).gradient == sheen,
+        )
+        .length;
+    expect(sheets, 1, reason: '玻璃片应恰好一片（切换器滑块）；多 ⇒ 有非选中处也挂了光');
     final Set<Gradient> gradients = lit
         .map((DecoratedBox box) => (box.decoration as BoxDecoration).gradient!)
         .toSet();
-    expect(gradients, containsAll(<Gradient>[
-      AppTheme.glassSheen(Brightness.light,
-          alphaScale: AppTheme.glassSheetBoost),
-      AppTheme.glassRim(Brightness.light, alphaScale: AppTheme.glassSheetBoost),
-      AppTheme.glassBaseEdge(Brightness.light,
-          alphaScale: AppTheme.glassSheetBoost),
-    ]), reason: '三层光必须直接取 AppTheme 令牌（含玻璃片加力），不许就地手搓');
+    expect(
+      gradients,
+      containsAll(<Gradient>[
+        AppTheme.glassSheen(
+          Brightness.light,
+          alphaScale: AppTheme.glassSheetBoost,
+        ),
+        AppTheme.glassRim(
+          Brightness.light,
+          alphaScale: AppTheme.glassSheetBoost,
+        ),
+        AppTheme.glassBaseEdge(
+          Brightness.light,
+          alphaScale: AppTheme.glassSheetBoost,
+        ),
+      ]),
+      reason: '三层光必须直接取 AppTheme 令牌（含玻璃片加力），不许就地手搓',
+    );
   });
 
   /// **玻璃片与文字对齐闸门**（2026-09-24 实机截图抓到的错位）：
@@ -347,16 +356,14 @@ void main() {
 
     final Rect text = tester.getRect(find.text('灵感碎片'));
     final Rect pill = tester.getRect(
-      find.ancestor(
-        of: find.text('灵感碎片'),
-        matching: find.byType(FocusRing),
-      ),
+      find.ancestor(of: find.text('灵感碎片'), matching: find.byType(FocusRing)),
     );
 
     expect(
       (text.center.dy - pill.center.dy).abs(),
       lessThan(0.5),
-      reason: '文字中心与玻璃片中心差了 ${text.center.dy - pill.center.dy}px —— '
+      reason:
+          '文字中心与玻璃片中心差了 ${text.center.dy - pill.center.dy}px —— '
           'Stack 对齐丢了，行又被钉到上沿了',
     );
   });
@@ -401,9 +408,7 @@ void main() {
   ///
   /// 钉的是那条最容易漏的：命令层只 create + locate，**不切空间** ⇒ 在笔记空间
   /// 建画布，主区开了、侧栏列表却把新画布筛掉 ⇒ "点了没反应"。
-  testWidgets('菜单「新建画布」⇒ 建出画布并把空间切过去', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('菜单「新建画布」⇒ 建出画布并把空间切过去', (WidgetTester tester) async {
     // 真库（内存）：新建要走真实 [NoteStore]，不是假列表。
     final Database db = sqlite3.openInMemory();
     addTearDown(db.close);
@@ -454,9 +459,7 @@ void main() {
 
   /// 主页入口的回归（2026-09-22 用户实报的死角：主页的 `onTap` 曾被设成 null）。
   /// 主页只剩顶行图标这一个入口 ⇒ 钉住它点得动、且不炸。
-  testWidgets('顶行主页图标点得动（onTap 非 null 的回归）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('顶行主页图标点得动（onTap 非 null 的回归）', (WidgetTester tester) async {
     final ProviderContainer container = ProviderContainer(
       overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
     );

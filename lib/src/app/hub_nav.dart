@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
@@ -33,7 +33,7 @@ const int kSearchNavIndex = 3;
 /// 全局搜索的分区号（顶行搜索图标与主区分发共用这一个常量，别写死字面量）。
 ///
 /// ⚠️ 除 0（主页）与 [kSearchNavIndex]（搜索）外都是**占位**——对应页面还没建。
-              // 该空间的**内联列表**（真实笔记，按 kind 过滤）。
+// 该空间的**内联列表**（真实笔记，按 kind 过滤）。
 const int kFavoritesNavIndex = 4;
 // ⚠️ 非 const：列表里混了外引彩色插画（CustomIcons.book/canvas 是方法调用，
 // 不能进 const 表达式）。其余项仍是 const 构造，无性能影响。
@@ -163,8 +163,8 @@ class HubNav extends ConsumerWidget {
           borderRadius: radius,
         ),
         // **必须裁切**：底色是满矩形，右边两角的圆角靠它收口。
-// 已经把底色画成圆角了，这里防的是列表行的 hover 底色块（矩形）滚到
-// 右上 / 右下圆角处露出方角。⚠️ 别因"底色本来就是圆的"就把它删了
+        // 已经把底色画成圆角了，这里防的是列表行的 hover 底色块（矩形）滚到
+        // 右上 / 右下圆角处露出方角。⚠️ 别因"底色本来就是圆的"就把它删了
         child: ClipRRect(
           borderRadius: radius,
           child: Column(
@@ -204,14 +204,14 @@ class HubNav extends ConsumerWidget {
                   ),
                   _TopAction(
                     // 与旁边三枚同源（Remix line，size 20 + 主题灰）：tabler.Star
-// 是另一族字形（24 画板 stroke 制），实机对比明显偏大偏粗。
+                    // 是另一族字形（24 画板 stroke 制），实机对比明显偏大偏粗。
                     icon: CustomIcons.star(
                       size: 20,
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                     tooltip: '收藏',
                     onTap: () {
-// 正开着笔记时先回主页再切收藏分区——与搜索图标同款处理。
+                      // 正开着笔记时先回主页再切收藏分区——与搜索图标同款处理。
                       // 正开着笔记时先回主页再切搜索分区——否则 select 只改
                       ref.read(locateProvider.notifier).goHome();
                       ref
@@ -235,7 +235,7 @@ class HubNav extends ConsumerWidget {
                     onTap: () {
                       // 2026-09-25：主页图标**同时**清选中态 + 回主页——
                       // 否则在「已打开某篇」时它只切导航板分区、右栏仍停在编辑器，
-// 看着像点了没反应
+                      // 看着像点了没反应
                       ref.read(hubNavSelectionProvider.notifier).select(0);
                       ref.read(locateProvider.notifier).goHome();
                     },
@@ -268,8 +268,8 @@ class HubNav extends ConsumerWidget {
   }
 }
 
-/// 顶部图标行里的一个**工具图标**（设置 / 搜索 / 主页）：36×36 方形热区、
-/// 圆角 8、hover 叠一档淡底、Tooltip 交代身份。
+/// 顶部图标行里的一个**工具图标**（设置 / 搜索 / 收藏 / 主页）：36×36 方形
+/// 热区、圆角 8、hover 叠一档淡底、Tooltip 交代身份。
 ///
 /// **无选中态**（2026-09-24 用户定）：顶行是"动作"不是"位置"——主页图标
 /// 只是"回主页"，侧栏一切换就"不在主页"了，常亮一块玻璃片反而撒谎。
@@ -356,12 +356,13 @@ class _GlassSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const double boost = AppTheme.glassSheetBoost;
-/// 全部 `IgnorePointer` 且画在内容之下——光改的是"材质"，不给内容加滤镜。
-// 简化：此前三个装饰层各包一个，重复 3 次；提到外层语义等价、少 3 个 widget）
+
+    /// 全部 `IgnorePointer` 且画在内容之下——光改的是"材质"，不给内容加滤镜。
+    // 简化：此前三个装饰层各包一个，重复 3 次；提到外层语义等价、少 3 个 widget）
     return IgnorePointer(
       child: Stack(
         children: <Widget>[
-        // ① 内光泽：竖向，上沿最亮 → 45% 归零。
+          // ① 内光泽：竖向，上沿最亮 → 45% 归零。
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -369,7 +370,7 @@ class _GlassSheet extends StatelessWidget {
               ),
             ),
           ),
-        // ② 顶沿光边：一条亮线、两端淡出。
+          // ② 顶沿光边：一条亮线、两端淡出。
           Positioned(
             top: 0,
             left: 0,
@@ -381,7 +382,7 @@ class _GlassSheet extends StatelessWidget {
               child: const SizedBox(height: 1),
             ),
           ),
-        // ③ 底沿厚度边：一条影线、两端淡出——与 ② 成对读出厚度。
+          // ③ 底沿厚度边：一条影线、两端淡出——与 ② 成对读出厚度。
           Positioned(
             bottom: 0,
             left: 0,
@@ -461,7 +462,7 @@ class _SpaceSwitch extends StatefulWidget {
   /// 点切换器最右那枚「+」方格 ⇒ 弹「新建笔记 / 新建画布」菜单。
   final VoidCallback onNewNote;
 
-/// 菜单里选了「新建画布」。
+  /// 菜单里选了「新建画布」。
   final VoidCallback onNewCanvas;
 
   @override
@@ -525,7 +526,7 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                 height: height,
                 child: Stack(
                   children: <Widget>[
-// 轨道（凹陷的井）
+                    // 轨道（凹陷的井）
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -584,7 +585,7 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                     // ③ 三格（画在滑块**之上** ⇒ 文字不会被不透明滑块盖住）。
                     // 前两格是空间切换（active 随选中态，Expanded 平分）；最右是
                     // 「+」正方格——和滑块同一枚凸玻璃材料，点它弹新建菜单
-// （见 [_NewButton]）。
+                    // （见 [_NewButton]）。
                     Row(
                       children: <Widget>[
                         _Segment(
@@ -690,7 +691,7 @@ class _NewButton extends StatefulWidget {
   /// 菜单里选了「新建笔记」。
   final VoidCallback onNewNote;
 
-/// 菜单里选了「新建画布」。
+  /// 菜单里选了「新建画布」。
   final VoidCallback onNewCanvas;
 
   @override
@@ -968,11 +969,11 @@ class SpaceItemRow extends StatefulWidget {
   /// 收藏切换（togglePromoted）。
   final VoidCallback onTogglePromoted;
 
-/// 删除（带撤销提示）。
+  /// 删除（带撤销提示）。
   final VoidCallback onDelete;
 
-/// 是否在行首额外标出形态图标（笔记/画布）。默认 false——导航板内联列表
-/// 不传（列表已按空间分形态，冗余）；收藏页两栏传 true，行上也能一眼区分。
+  /// 是否在行首额外标出形态图标（笔记/画布）。默认 false——导航板内联列表
+  /// 不传（列表已按空间分形态，冗余）；收藏页两栏传 true，行上也能一眼区分。
   final bool showKindIcon;
 
   @override
@@ -1173,8 +1174,8 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                     Row(
                       children: <Widget>[
                         const SizedBox(width: 10),
-// 形态图标（可选，仅收藏页两栏）：笔记=FileText / 画布=LayoutGrid。
-                    // （AppIconTheme 桥接的 onSurfaceVariant）一致。
+                        // 形态图标（可选，仅收藏页两栏）：笔记=FileText / 画布=LayoutGrid。
+                        // （AppIconTheme 桥接的 onSurfaceVariant）一致。
                         if (widget.showKindIcon) ...<Widget>[
                           widget.note.kind == NoteKind.canvas
                               ? tabler.LayoutGrid(
