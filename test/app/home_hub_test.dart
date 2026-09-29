@@ -14,13 +14,16 @@ import 'package:sqlite3/sqlite3.dart';
 /// 主页（2026-09-29 重做：顶栏视图切换 + 常驻搜索 + 卡片网格）的回归。
 ///
 /// 钉的是"主页是什么"这几条结构性事实：
-/// ① 顶栏 = 上一步/下一步 + 4 枚常驻 tab（全部/日历/收藏/更多），默认落**全部**；
-///    笔记 / 画布是低频视图，入口收进「更多」面板（点了整页切换）；
+/// ① 顶栏 = 3 枚常驻 tab（全部/日历/收藏）+ **三点溢出菜单**（低频页面
+///    笔记/画布 的入口，点了整页切换）+ 排序/标签两枚全局控件钮，默认落
+///    **全部**；「更多」**不是视图**（2026-09-29 定：它只是低频页面的
+///    收纳容器，[HomeView] 里没有它这一项）；
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
 ///   "显式透明"相反，卡片就该是一块浮起的板子）；
 /// ③ 点卡片走 `locateProvider`（§4 唯一跳转通道）；
 /// ④ 搜索框常驻顶栏，**在当前视图范围内**过滤（日历忽略搜索词）；
-/// ⑤ 收藏视图可就地取消收藏；「更多」面板 = 视图入口 + 排序方案 + 标签 chips；
+/// ⑤ 收藏视图可就地取消收藏；**排序方案与标签筛选不是页面**——它们是顶栏
+///    右侧的两枚控件钮，对所有视图全局生效（2026-09-29 定）；
 /// ⑥「全部」跨形态统一池（默认按最近编辑排序，不单设「最近」视图）；
 /// ⑦ 视图历史（上一步 / 下一步）在**主区顶条**（title_bar_nav_test.dart 钉），
 ///    provider 语义在本文件钉。
@@ -81,19 +84,34 @@ void main() {
     return container;
   }
 
-  testWidgets('默认落全部视图：4 枚 tab + 常驻搜索框 + 卡片网格', (WidgetTester tester) async {
+  /// 顶栏控件菜单里的某一项（排序 / 标签 / 三点溢出菜单）。
+  ///
+  /// ⚠️ 两个坑：① 菜单画在 **overlay** 里，不在页面内容树里；② **标签名会
+  /// 同时出现在卡片上** ⇒ 裸 `find.text('工作法')` 撞两处，必须圈进菜单项。
+  Finder menuItem(String label) => find.descendant(
+    of: find.byType(PopupMenuItem<void>),
+    matching: find.text(label),
+  );
+
+  testWidgets('默认落全部视图：3 枚 tab + 三点菜单 + 排序控件 + 卡片网格', (
+    WidgetTester tester,
+  ) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲', '乙'],
     );
 
-    expect(container.read(homeViewProvider), HomeView.all);
-    for (final String t in <String>['全部', '日历', '收藏', '更多']) {
+    expect(container.read(homeViewProvider).view, HomeView.all);
+    // 常驻 tab 只剩高频三枚——「更多」不是视图，是三点溢出菜单。
+    for (final String t in <String>['全部', '日历', '收藏']) {
       expect(find.text(t), findsOneWidget, reason: '顶栏必须有「$t」常驻 tab');
     }
-    // 笔记 / 画布不再是常驻 tab（低频，收进「更多」）。
+    expect(find.byTooltip('更多页面'), findsOneWidget, reason: '三点溢出菜单');
+    // 笔记 / 画布是低频页面 ⇒ 入口在三点菜单里，不是常驻 tab。
     expect(find.text('笔记'), findsNothing);
     expect(find.text('画布'), findsNothing);
+    // 排序是全局控件钮（不是页面）⇒ 恒在顶栏。
+    expect(find.byTooltip('排序方案'), findsOneWidget);
     // 上一步 / 下一步在主区顶条，不在 HomeHub 顶栏里。
     expect(find.byTooltip('上一步'), findsNothing);
     expect(find.byTooltip('下一步'), findsNothing);
@@ -102,31 +120,34 @@ void main() {
     expect(find.text('乙'), findsOneWidget);
     // 空白新笔记给可读兜底。
     expect(find.text('（空白）'), findsNWidgets(2));
-    // 键盘可达（§5.2）：4 枚 tab + 2 张卡片都接了 FocusRing（禁用箭头不接）。
-    expect(find.byType(FocusRing), findsNWidgets(6));
+    // 键盘可达（§5.2）：3 枚 tab + 2 张卡片接 FocusRing（三点 / 排序 / 标签是
+    // IconButton，走各自焦点环，不挂 FocusRing）。
+    expect(find.byType(FocusRing), findsNWidgets(5));
   });
 
   testWidgets('空库：全部视图给指路文案，tab 照常', (WidgetTester tester) async {
     await pumpHub(tester);
     expect(find.text('还没有笔记或画布'), findsOneWidget);
-    // 空库只剩 4 枚 tab 是交互件（箭头禁用不进交互链）。
-    expect(find.byType(FocusRing), findsNWidgets(4));
+    // 空库只剩 3 枚 tab 是交互件（箭头禁用不进交互链）。
+    expect(find.byType(FocusRing), findsNWidgets(3));
   });
 
-  testWidgets('「更多」进画布：整页切换，只看画布形态，笔记被滤掉', (WidgetTester tester) async {
+  testWidgets('三点菜单进画布：整页切换，只看画布形态，笔记被滤掉', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲'],
       canvasTitles: <String>['乙画布'],
     );
 
-    await tester.tap(find.text('更多'));
+    // 「更多」= 顶栏三点溢出菜单（**不是视图**）：菜单里列出的都是整页。
+    await tester.tap(find.byTooltip('更多页面'));
     await tester.pumpAndSettle();
-    // 面板第一行是视图入口：笔记 / 画布两枚 chips。
-    await tester.tap(find.text('画布'));
+    await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
 
-    expect(container.read(homeViewProvider), HomeView.canvas);
+    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    // 进了低频页 ⇒ 顶栏**临时长出**该页的 tab（"我在哪个视图"的着落）。
+    expect(find.text('画布'), findsOneWidget, reason: '低频页进入后应有自己的 tab');
     expect(find.text('乙画布'), findsOneWidget);
     expect(find.text('甲'), findsNothing, reason: '笔记视图的东西不该混进画布');
   });
@@ -141,7 +162,7 @@ void main() {
     await tester.tap(find.text('全部'));
     await tester.pumpAndSettle();
 
-    expect(container.read(homeViewProvider), HomeView.all);
+    expect(container.read(homeViewProvider).view, HomeView.all);
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙画布'), findsOneWidget, reason: '全部不分笔记与画布');
   });
@@ -182,10 +203,11 @@ void main() {
   testWidgets('搜索在当前视图范围内过滤；清空钮撤词', (WidgetTester tester) async {
     await pumpHub(tester, titles: <String>['甲'], canvasTitles: <String>['乙画布']);
 
-    // 进「笔记」视图（经更多）：搜「乙」命中的是画布 ⇒ 超出当前范围，视图内无结果。
-    await tester.tap(find.text('更多'));
+    // 进「笔记」视图（经三点菜单）：搜「乙」命中的是画布 ⇒ 超出当前范围，
+    // 视图内无结果。
+    await tester.tap(find.byTooltip('更多页面'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('笔记'));
+    await tester.tap(menuItem('笔记'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField), '乙');
@@ -194,9 +216,9 @@ void main() {
     expect(find.text('没有与「乙」匹配的结果'), findsOneWidget);
 
     // 切画布视图（同一个词还在）：命中范围内的画布。
-    await tester.tap(find.text('更多'));
+    await tester.tap(find.byTooltip('更多页面'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('画布'));
+    await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
     expect(find.text('乙画布'), findsOneWidget);
 
@@ -292,9 +314,9 @@ void main() {
     expect(notes.noteById(jia.id)!.promotedAt, isNull, reason: '点星标必须真的落库取消收藏');
   });
 
-  testWidgets('「更多」视图：排序 chips + 标签 chips 点选过滤（跨形态一套池）', (
-    WidgetTester tester,
-  ) async {
+  /// **排序 / 标签是顶栏全局控件**（2026-09-29 定）：它们不是页面，改排序
+  /// 不必先去任何低频页；标签筛选对**当前视图**生效（跨形态一套池）。
+  testWidgets('排序菜单 + 标签菜单：点选过滤（跨形态一套池）', (WidgetTester tester) async {
     // 默认 800 宽下最后一枚 tab 贴着右侧搜索框（tab 区可横滚），命中不稳——
     // 加宽测试表面让整排 tab 从容露出再点。
     tester.view.physicalSize = const Size(1400, 900);
@@ -316,24 +338,36 @@ void main() {
     ]);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('更多'));
+    // ① 排序：顶栏控件钮 ⇒ 三枚方案都在菜单里。**不必**先去某个「更多」页。
+    await tester.tap(find.byTooltip('排序方案'));
     await tester.pumpAndSettle();
-
-    // 排序行常驻：三枚方案 chips；标签行出现；未选标签 ⇒ 空态是"选一枚
-    // 标签"的指路，而非"还没有标签"。
     expect(find.text('最近编辑'), findsOneWidget);
     expect(find.text('最近创建'), findsOneWidget);
     expect(find.text('标题 A–Z'), findsOneWidget);
-    expect(find.text('工作法'), findsOneWidget);
-    expect(find.text('选一枚标签，看它名下的内容'), findsOneWidget);
+    // 点一枚（选默认的，不改变排序）⇒ 菜单关闭。
+    await tester.tap(menuItem('最近编辑'));
+    await tester.pumpAndSettle();
+    expect(container.read(homeSortProvider), NoteSort.revised);
 
-    await tester.tap(find.text('工作法'));
+    // ② 标签：同款控件钮 ⇒ 菜单里是带篇数的标签。
+    expect(find.byTooltip('标签筛选'), findsOneWidget, reason: '有标签 ⇒ 钮要出现');
+    await tester.tap(find.byTooltip('标签筛选'));
+    await tester.pumpAndSettle();
+    expect(menuItem('工作法'), findsOneWidget);
+    await tester.tap(menuItem('工作法'));
     await tester.pumpAndSettle();
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙'), findsNothing, reason: '无标签的那篇必须被筛掉');
+    // 已选标签 ⇒ 菜单里给一枚显式的"清除"。
+    await tester.tap(find.byTooltip('标签筛选'));
+    await tester.pumpAndSettle();
+    expect(menuItem('全部标签（清除筛选）'), findsOneWidget);
+    await tester.tap(menuItem('全部标签（清除筛选）'));
+    await tester.pumpAndSettle();
+    expect(find.text('乙'), findsOneWidget, reason: '清除后无标签的那篇回来');
   });
 
-  testWidgets('「更多」：切排序方案写入 homeSortProvider，且切视图后保留', (
+  testWidgets('排序方案写入 homeSortProvider，且切视图后保留（顶栏控件）', (
     WidgetTester tester,
   ) async {
     // 同上：加宽测试表面，让整排 tab 从容露出。
@@ -346,26 +380,27 @@ void main() {
       titles: <String>['甲'],
     );
 
-    await tester.tap(find.text('更多'));
-    await tester.pumpAndSettle();
     expect(
       container.read(homeSortProvider),
       NoteSort.revised,
       reason: '默认最近编辑',
     );
 
-    await tester.tap(find.text('标题 A–Z'));
+    // 排序在**顶栏** ⇒ 改排序不必先去任何低频页（2026-09-29 定）。
+    await tester.tap(find.byTooltip('排序方案'));
+    await tester.pumpAndSettle();
+    await tester.tap(menuItem('标题 A–Z'));
     await tester.pumpAndSettle();
     expect(container.read(homeSortProvider), NoteSort.title);
 
-    // 排序对笔记 / 画布 / 更多三视图全局生效：切走再回，选中不丢。
+    // 对全部 / 收藏 / 笔记 / 画布**全局生效**：切走再回，选中不丢。
     await tester.tap(find.text('收藏'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('更多'));
+    await tester.tap(find.byTooltip('排序方案'));
     await tester.pumpAndSettle();
     expect(container.read(homeSortProvider), NoteSort.title);
-    // 标签行在无标签库整行收起 ⇒ 空态给"还没有标签"的指路。
-    expect(find.text('还没有标签，先在笔记里打上标签'), findsOneWidget);
+    // 无标签库 ⇒ 标签控件钮**整枚收起**（不再有"还没有标签"的空态指路）。
+    expect(find.byTooltip('标签筛选'), findsNothing);
   });
 
   test('回主页（`locateProvider.goHome`）：清空选中与待消费的跳转请求', () {
@@ -382,31 +417,39 @@ void main() {
 
   test('homeViewProvider：默认全部，select 入栈、goBack/goForward 重做', () {
     final ProviderContainer container = newContainer();
-    expect(container.read(homeViewProvider), HomeView.all);
+    expect(container.read(homeViewProvider).view, HomeView.all);
 
     final HomeViewNotifier nav = container.read(homeViewProvider.notifier);
     nav.select(HomeView.notes);
-    expect(container.read(homeViewProvider), HomeView.notes);
-    expect(nav.canGoBack, isTrue);
-    expect(nav.canGoForward, isFalse);
+    expect(container.read(homeViewProvider).view, HomeView.notes);
+    // 可用态在 **state** 里（[HomeNavState]）⇒ 从 provider 读，不是 notifier
+    // 的公开 getter（`riverpod_lint` 禁后者，且它拿不到重建通知）。
+    expect(container.read(homeViewProvider).canGoBack, isTrue);
+    expect(container.read(homeViewProvider).canGoForward, isFalse);
 
-    nav.select(HomeView.filter);
-    expect(container.read(homeViewProvider), HomeView.filter);
+    // 第二个视图用「画布」（低频页）——枚举里已无 `HomeView.filter`：
+    // 「更多」是容器不是视图（2026-09-29 定）。
+    nav.select(HomeView.canvas);
+    expect(container.read(homeViewProvider).view, HomeView.canvas);
 
     nav.goBack();
-    expect(container.read(homeViewProvider), HomeView.notes);
+    expect(container.read(homeViewProvider).view, HomeView.notes);
     nav.goBack();
-    expect(container.read(homeViewProvider), HomeView.all);
-    expect(nav.canGoBack, isFalse, reason: '退到底了');
+    expect(container.read(homeViewProvider).view, HomeView.all);
+    expect(container.read(homeViewProvider).canGoBack, isFalse, reason: '退到底了');
 
     nav.goForward();
-    expect(container.read(homeViewProvider), HomeView.notes);
+    expect(container.read(homeViewProvider).view, HomeView.notes);
     nav.goForward();
-    expect(container.read(homeViewProvider), HomeView.filter);
-    expect(nav.canGoForward, isFalse, reason: '进到底了');
+    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    expect(
+      container.read(homeViewProvider).canGoForward,
+      isFalse,
+      reason: '进到底了',
+    );
 
     // 新导航清空前进栈。
     nav.select(HomeView.calendar);
-    expect(nav.canGoForward, isFalse);
+    expect(container.read(homeViewProvider).canGoForward, isFalse);
   });
 }

@@ -36,9 +36,23 @@ class CustomIcons {
         : ColorFilter.mode(color, BlendMode.srcIn),
   );
 
-  /// 主页（Remix `home-4-line`）。顶行工具图标在用。
+  /// 主页（Remix `home-4-line`）。顶行工具图标 + 主区顶条「主页」钮在用
+  /// （2026-09-30 用户定：顶条三枚改 Remix 这套，不用 tabler 的房子）。
+  ///
+  /// 资产文件 `home.svg` 头部的许可注释即写明来源 `icons/Buildings/home-4-line`。
   static Widget home({double size = Tokens.iconMd, Color? color}) =>
       _asset('home', size: size, color: color);
+
+  /// **上一步**（Remix `arrow-left-s-line`，2026-09-30 用户定）。主区顶条左簇
+  /// 的历史箭头——替掉原先的 `tabler.ChevronLeft`（箭头语义更直给，且与主页 /
+  /// 设置那批 Remix 工具图标同族）。
+  static Widget arrowLeft({double size = Tokens.iconMd, Color? color}) =>
+      _asset('arrow-left-s-line', size: size, color: color);
+
+  /// **下一步**（Remix `arrow-right-s-line`，2026-09-30 用户定）。同上，
+  /// 与 [arrowLeft] 成对。
+  static Widget arrowRight({double size = Tokens.iconMd, Color? color}) =>
+      _asset('arrow-right-s-line', size: size, color: color);
 
   /// 搜索（Remix `search-ai-line`）。顶行工具图标在用。
   static Widget search({double size = Tokens.iconMd, Color? color}) =>

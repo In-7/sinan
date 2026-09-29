@@ -20,31 +20,33 @@ import 'search_provider.dart';
 
 /// 主页顶部的**视图切换**（2026-09-29 用户定，取代 Things 式单列一页纸）。
 ///
-/// 六个视图各答一个问题，且**正交于搜索框**（[searchNotifierProvider]）：
+/// 五个视图各答一个问题，且**正交于搜索框**（[searchNotifierProvider]）：
 /// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
 ///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
 ///   什么直接看前几张卡即可（2026-09-29 用户定：不单设「最近」视图）。
 /// - [HomeView.notes]：文档类笔记（spark + note）的卡片网格。**低频**，
-///   顶栏无常驻 tab——入口在「更多」面板（2026-09-29 用户定）。
-/// - [HomeView.canvas]：画布类（canvas）的卡片网格。同上收进「更多」。
+///   顶栏无常驻 tab——入口在顶栏三点溢出菜单（[kLowFreqViews]）。
+/// - [HomeView.canvas]：画布类（canvas）的卡片网格。同上。
 /// - [HomeView.calendar]：按新建日期回看（日历网格成一张卡片，卡片底部
 ///   「写日记」**只写今天**——点选日只管回看；选中日的篇目列在卡片**之外**
 ///   的页面背景上）。
 /// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
-/// - [HomeView.filter]：**更多**（2026-09-29 改名）——视图入口（笔记 / 画布）
-///   + 标签筛选 + 排序方案，排序对全部 / 笔记 / 画布 / 本视图全局生效
-///   （[homeSortProvider]）。
 ///
-/// ⚠️ 全部 / 日历 / 收藏 / 更多**不分笔记与画布**（用户 2026-09-29 明确）；
-/// 只有笔记、画布两个视图按形态各自过滤。常驻 tab 只挂高频四枚
-/// （[kHomeTabs]）；经「更多」进入笔记 / 画布时顶栏高亮「更多」。
+/// ⚠️ 全部 / 日历 / 收藏**不分笔记与画布**（用户 2026-09-29 明确）；
+/// 只有笔记、画布两个视图按形态各自过滤。常驻 tab 只挂高频三枚
+/// （[kHomeTabs]）；低频页面经三点菜单进入，进入后顶栏**临时长出该页的
+/// tab 并高亮**（否则"我现在在哪个视图"没有着落）。
+///
+/// ⚠️ **排序方案与标签筛选不是页面**：它们是全局控件，住在顶栏右侧
+/// （[_SortMenuButton] / [_TagMenuButton]），对全部 / 笔记 / 画布 / 收藏
+/// 同时生效。2026-09-29 之前它们被塞进一个叫「更多」的视图里，那就是
+/// "「更多」不是我要的"的根因——已拆开。
 enum HomeView {
   all('全部'),
   notes('笔记'),
   canvas('画布'),
   calendar('日历'),
-  favorites('收藏'),
-  filter('更多');
+  favorites('收藏');
 
   const HomeView(this.label);
 
@@ -81,14 +83,6 @@ enum HomeView {
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
-    // 「更多」= 视图选项（标签 + 排序），用滑杆图标而不是漏斗——它不只是
-    // 筛选（2026-09-29 改名用户定）。
-    HomeView.filter => tabler.AdjustmentsHorizontal(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
-      strokeWidth: Tokens.iconStroke,
-      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
-    ),
   };
 }
 
@@ -99,58 +93,100 @@ enum HomeView {
 /// 顶栏要**记住上次停在哪个视图**（widget 会被重建，局部 State 丢失）。
 ///
 /// ⚠️ riverpod 3.4.3 无 `StateProvider`，用显式 [Notifier]。
-final homeViewProvider = NotifierProvider<HomeViewNotifier, HomeView>(
+final homeViewProvider = NotifierProvider<HomeViewNotifier, HomeNavState>(
   HomeViewNotifier.new,
 );
 
-/// 自带**视图历史**（2026-09-29 用户定）：笔记 / 画布收进「更多」后是两跳
+/// [homeViewProvider] 的**状态**：当前视图 + 视图历史的可用态。
+///
+/// ⚠️ 两个 `canGo*` **必须住在 state 里**，不能做成 [HomeViewNotifier] 的公开
+/// getter——`riverpod_lint` 的 `avoid_public_notifier_properties` 钉的就是这条：
+/// Notifier 的公开 API 只允许「改 state 的方法」，**读**状态一律走 `state`。
+/// 道理不只是风格：读的一方靠 `ref.watch` 拿重建通知，而 watch 只跟 `state`
+/// 走 ⇒ 挂在 getter 上的东西变了**不会**触发重建。
+@immutable
+class HomeNavState {
+  const HomeNavState({
+    required this.view,
+    required this.canGoBack,
+    required this.canGoForward,
+  });
+
+  /// 当前视图（顶栏高亮 / 内容区分发的依据）。
+  final HomeView view;
+
+  /// 有上一个视图可退（主区顶条「上一步」的可用态）。
+  final bool canGoBack;
+
+  /// 有下一个视图可进（主区顶条「下一步」的可用态）。
+  final bool canGoForward;
+}
+
+/// 自带**视图历史**（2026-09-29 用户定）：笔记 / 画布收进三点菜单后是两跳
 /// 目的地，主区顶条左缘的「上一步 / 下一步」（home_screen.dart 的
 /// [NavHistoryButton]）把往返成本抹平。栈只记视图、不记滚动位置——低频导航，
 /// 不欠这份精细。
-class HomeViewNotifier extends Notifier<HomeView> {
+class HomeViewNotifier extends Notifier<HomeNavState> {
   final List<HomeView> _back = <HomeView>[];
   final List<HomeView> _forward = <HomeView>[];
 
-  /// 是否可退 / 可进（顶栏箭头钮的可用态）。每次导航 `state` 都会变 ⇒
-  /// UI watch state 后重读这两个 getter 就能拿到正确的可用态。
-  bool get canGoBack => _back.isNotEmpty;
-  bool get canGoForward => _forward.isNotEmpty;
-
   @override
-  HomeView build() => HomeView.all;
+  HomeNavState build() => const HomeNavState(
+    view: HomeView.all,
+    canGoBack: false,
+    canGoForward: false,
+  );
 
-  /// 切换视图（顶栏 tab 与「更多」面板的视图入口都走这里）。
+  /// 切换视图（顶栏 tab 与三点菜单的页面入口都走这里）。
   void select(HomeView view) {
-    if (view == state) return;
-    _back.add(state);
+    if (view == state.view) return;
+    _back.add(state.view);
     _forward.clear();
-    state = view;
+    _emit(view);
   }
 
   /// 回到上一个视图（「上一步」）。
   void goBack() {
     if (_back.isEmpty) return;
-    _forward.add(state);
-    state = _back.removeLast();
+    _forward.add(state.view);
+    _emit(_back.removeLast());
   }
 
   /// 前进到下一个视图（「下一步」）。
   void goForward() {
     if (_forward.isEmpty) return;
-    _back.add(state);
-    state = _forward.removeLast();
+    _back.add(state.view);
+    _emit(_forward.removeLast());
   }
+
+  /// 落 state：**两个可用态跟着栈一起算**——它们本就是这两个栈的函数，
+  /// 放在 state 里才能保证 watch 到（见 [HomeNavState] 的理由）。
+  void _emit(HomeView view) => state = HomeNavState(
+    view: view,
+    canGoBack: _back.isNotEmpty,
+    canGoForward: _forward.isNotEmpty,
+  );
 }
 
-/// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频四枚——全部 / 日历 / 收藏 /
-/// 更多）。笔记 / 画布是低频视图，入口收进「更多」面板（[_ViewEntriesRow]），
-/// 点了照旧**整页切换**。[HomeView] 枚举仍是全量视图（内容区分发不变），
-/// tab 只列这四枚。
+/// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频三枚——全部 / 日历 / 收藏）。
+/// [HomeView] 枚举里**没有**"「更多」视图"这一项：低频页面的入口走顶栏三点
+/// 溢出菜单（[_MoreOverflowButton]），「更多」是**容器**不是页面。
 const List<HomeView> kHomeTabs = <HomeView>[
   HomeView.all,
   HomeView.calendar,
   HomeView.favorites,
-  HomeView.filter,
+];
+
+/// **低频页面**（三点溢出菜单里列出的整页入口）：笔记 / 画布。
+///
+/// 它们与 [kHomeTabs] 那三枚是**同一种东西**（都是视图 / 整页），只是使用
+/// 频率低 ⇒ 收进溢出菜单、不占常驻 tab 位（2026-09-29 用户定）。
+/// 点选照旧 [HomeViewNotifier.select] **整页切换** ⇒ 历史栈照旧，主区顶条的
+/// 上一步 / 下一步仍然可用；进入后顶栏会临时长出该页的 tab（见
+/// [_HomeHubState._buildTopBar]）。
+const List<HomeView> kLowFreqViews = <HomeView>[
+  HomeView.notes,
+  HomeView.canvas,
 ];
 
 /// 卡片网格的**排序方案**（2026-09-29 用户定，在「更多」视图里选）。
@@ -287,7 +323,7 @@ class _HomeHubState extends ConsumerState<HomeHub> {
 
   @override
   Widget build(BuildContext context) {
-    final HomeView view = ref.watch(homeViewProvider);
+    final HomeView view = ref.watch(homeViewProvider).view;
     final SearchState s = ref.watch(searchNotifierProvider);
 
     return Column(
@@ -311,9 +347,14 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     );
   }
 
-  /// 顶栏：左 = 4 枚常驻视图 tab（窄窗可横滚），右 = 常驻搜索框（定宽）。
+  /// 顶栏：左 = 常驻视图 tab（[kHomeTabs] 三枚；经三点菜单进入低频页时**临时
+  /// 多出一枚**并高亮，窄窗可横滚）+ 三点溢出菜单；右 = 常驻搜索框（定宽）
+  /// + 排序 / 标签两枚全局控件钮。
   /// 上一步 / 下一步在主区顶条（[NavHistoryButton]），不在这里。
   Widget _buildTopBar(BuildContext context, HomeView view) {
+    // 右侧两枚控件钮（排序 / 标签，各 32 宽）与它们前面的间隙：搜索框的可分
+    // 宽度要先把它们扣掉，否则窄窗下顶栏会被撑破。
+    const double controlsWidth = 2 * 32 + 2 * Tokens.spaceXs;
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool hasQuery = ref.watch(
@@ -332,9 +373,10 @@ class _HomeHubState extends ConsumerState<HomeHub> {
       // 横向滚动）吃掉其余 ⇒ 任何宽度都不撑破顶栏。
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final double searchWidth = (constraints.maxWidth - Tokens.spaceMd)
-              .clamp(0.0, 260.0)
-              .toDouble();
+          final double searchWidth =
+              (constraints.maxWidth - Tokens.spaceMd - controlsWidth)
+                  .clamp(0.0, 260.0)
+                  .toDouble();
           return Row(
             children: <Widget>[
               Expanded(
@@ -342,25 +384,37 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: <Widget>[
-                      // 常驻 tab 只挂高频四枚；经「更多」进入笔记 / 画布时，
-                      // 「更多」高亮（More-tab 惯例：人在它的分区里）。
-                      // 上一步 / 下一步不在这里——它们是全局导航，2026-09-29
-                      // 用户定挪去主区顶条（home_screen.dart 的
-                      // [NavHistoryButton]）。
+                      // 常驻 tab = 高频三枚（[kHomeTabs]）。上一步 / 下一步
+                      // 不在这里——它们是全局导航，2026-09-29 用户定挪去主区
+                      // 顶条（home_screen.dart 的 [NavHistoryButton]）。
                       for (final HomeView v in kHomeTabs)
                         Padding(
                           padding: const EdgeInsets.only(right: Tokens.spaceXs),
                           child: _ViewTab(
                             view: v,
-                            active:
-                                v == view ||
-                                (v == HomeView.filter &&
-                                    (view == HomeView.notes ||
-                                        view == HomeView.canvas)),
+                            active: v == view,
                             onTap: () =>
                                 ref.read(homeViewProvider.notifier).select(v),
                           ),
                         ),
+                      // 经三点菜单进入**低频页面**后，顶栏**临时长出**该页的
+                      // tab 并高亮（2026-09-29 定）：三点只是入口，进去了必须
+                      // 让"我现在在哪个视图"有着落，不能三枚常驻 tab 全灭。
+                      if (kLowFreqViews.contains(view))
+                        Padding(
+                          padding: const EdgeInsets.only(right: Tokens.spaceXs),
+                          child: _ViewTab(
+                            view: view,
+                            active: true,
+                            // 已在当前页 ⇒ 点它无副作用；留着只为看得见的落点。
+                            onTap: () {},
+                          ),
+                        ),
+                      // 三点溢出菜单：低频页面的入口（「更多」**不是**视图）。
+                      const Padding(
+                        padding: EdgeInsets.only(right: Tokens.spaceXs),
+                        child: _MoreOverflowButton(),
+                      ),
                     ],
                   ),
                 ),
@@ -425,6 +479,12 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                   ),
                 ),
               ),
+              // 排序 / 标签两枚**全局控件**（2026-09-29 用户定）：它们不是
+              // 页面，不再住进任何「更多」面板 ⇒ 改排序不必先去低频页。
+              const SizedBox(width: Tokens.spaceXs),
+              const _SortMenuButton(),
+              const SizedBox(width: Tokens.spaceXs),
+              const _TagMenuButton(),
             ],
           );
         },
@@ -487,18 +547,12 @@ class _HomeBody extends ConsumerWidget {
       );
     }
 
-    // 其余四视图：卡片网格（搜索词在当前范围内过滤）。
+    // 其余视图：卡片网格（搜索词在当前范围内过滤）。
     final List<Note> items = _itemsFor(ref, all);
-
-    // 「更多」视图：排序方案 + 标签筛选两行常驻在网格上方（跨形态统一池）。
-    final Widget? morePanel = view == HomeView.filter
-        ? const _MorePanel()
-        : null;
 
     if (items.isEmpty) {
       return Column(
         children: <Widget>[
-          ?morePanel,
           Expanded(
             child: _EmptyView(
               view: view,
@@ -513,7 +567,6 @@ class _HomeBody extends ConsumerWidget {
 
     return Column(
       children: <Widget>[
-        ?morePanel,
         Expanded(
           child: _CardsGrid(
             items: items,
@@ -541,7 +594,8 @@ class _HomeBody extends ConsumerWidget {
   /// 避免把 State 的方法下传到 StatelessWidget）。
   List<Note> _itemsFor(WidgetRef ref, List<Note> all) {
     final SearchState s = search;
-    // 排序方案在「更多」里选，对全部 / 笔记 / 画布 / 更多四视图全局生效。
+    // 排序方案在顶栏 [_SortMenuButton] 里选，对全部 / 笔记 / 画布 / 收藏
+    // **全局生效**（2026-09-29 起不再是某个「更多」页的私有控件）。
     final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
     final List<Note> scope = switch (view) {
       // 全部：跨形态统一池，跟随全局排序。
@@ -554,18 +608,16 @@ class _HomeBody extends ConsumerWidget {
       HomeView.favorites => <Note>[
         ...all.where((Note n) => n.promotedAt != null),
       ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
-      HomeView.filter =>
-        all
-            .where(
-              (Note n) => s.activeTag != null && n.tags.contains(s.activeTag),
-            )
-            .toList()
-          ..sort(order),
       HomeView.calendar => const <Note>[],
     };
+    // 标签筛选是**全局控件**（顶栏 [_TagMenuButton]）⇒ 对当前视图生效，
+    // 不再只属于某个「更多」页（2026-09-29 定）。未选标签时原样返回。
+    final List<Note> tagged = s.activeTag == null
+        ? scope
+        : scope.where((Note n) => n.tags.contains(s.activeTag)).toList();
     // 有搜索词时命中按相关度（s.hits）排序，不被全局排序打乱。
-    if (s.query.trim().isEmpty) return scope;
-    final Set<String> ids = scope.map((Note n) => n.id).toSet();
+    if (s.query.trim().isEmpty) return tagged;
+    final Set<String> ids = tagged.map((Note n) => n.id).toSet();
     return <Note>[
       for (final SearchHit h in s.hits)
         if (ids.contains(h.note.id)) h.note,
@@ -653,6 +705,244 @@ class _ViewTabState extends State<_ViewTab> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 顶栏**三点溢出菜单**：低频页面（[kLowFreqViews]：笔记 / 画布）的入口。
+///
+/// ⚠️ 「更多」**不再是视图**（2026-09-29 用户定）：它只是低频页面的收纳处，
+/// [HomeView] 里没有"「更多」"这个页面。菜单里每一项都是**和日历 / 收藏同级
+/// 的整页**，点选走 [HomeViewNotifier.select] 整页切换 ⇒ 历史栈照旧，主区
+/// 顶条的「上一步 / 下一步」仍然可用。
+///
+/// 图标 = [tabler.Dots]（**横向**三点 ⋯，2026-09-30 用户定）。
+/// ⚠️ 与行内「更多」菜单**刻意不同**：列表行 / 导航条目的那枚是竖三点
+/// [tabler.DotsVertical]（⋮，`note_list_view.dart` / `hub_nav.dart`）——那里是
+/// 挂在行尾的**单独一枚**，竖排更贴行高；这里是**水平顶栏**里的一枚，横三点
+/// 才与左右并排的其它控件同向。
+class _MoreOverflowButton extends ConsumerStatefulWidget {
+  const _MoreOverflowButton();
+
+  @override
+  ConsumerState<_MoreOverflowButton> createState() =>
+      _MoreOverflowButtonState();
+}
+
+class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
+  /// 菜单锚点（GlobalKey）：不挂的话 `currentContext` 为 null ⇒ position 落
+  /// Offset.zero ⇒ 菜单弹到屏幕左上角（hub_nav 踩过同款）。
+  final GlobalKey _key = GlobalKey();
+
+  Future<void> _openMenu() async {
+    final HomeView current = ref.read(homeViewProvider).view;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    Offset position = Offset.zero;
+    final RenderBox? box =
+        _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null) {
+      position = box.localToGlobal(Offset(0, box.size.height));
+    }
+    await showMenu<void>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: <PopupMenuEntry<void>>[
+        for (final HomeView v in kLowFreqViews)
+          PopupMenuItem<void>(
+            onTap: () => ref.read(homeViewProvider.notifier).select(v),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                v.icon(scheme.onSurface),
+                const SizedBox(width: Tokens.spaceSm),
+                Text(v.label),
+                // 当前就在这页 ⇒ 打勾（替代旧版"「更多」tab 高亮"的指示）。
+                if (v == current) ...<Widget>[
+                  const SizedBox(width: Tokens.spaceSm),
+                  const tabler.Check(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    strokeWidth: Tokens.iconStroke,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: _key,
+      // 顶栏行高由搜索框定（32）⇒ 控件钮同样压到 32，不把它撑高。
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      padding: EdgeInsets.zero,
+      icon: const tabler.Dots(
+        height: Tokens.iconMdSm,
+        width: Tokens.iconMdSm,
+        strokeWidth: Tokens.iconStroke,
+      ),
+      tooltip: '更多页面',
+      onPressed: _openMenu,
+    );
+  }
+}
+
+/// 顶栏**排序方案**控件钮（2026-09-29 用户定：排序**不是页面**，从旧「更多」
+/// 面板搬出来，对 [kHomeTabs] / [kLowFreqViews] 里所有视图**全局生效**，
+/// 见 [homeSortProvider]）。
+class _SortMenuButton extends ConsumerStatefulWidget {
+  const _SortMenuButton();
+
+  @override
+  ConsumerState<_SortMenuButton> createState() => _SortMenuButtonState();
+}
+
+class _SortMenuButtonState extends ConsumerState<_SortMenuButton> {
+  final GlobalKey _key = GlobalKey();
+
+  Future<void> _openMenu() async {
+    final NoteSort current = ref.read(homeSortProvider);
+    Offset position = Offset.zero;
+    final RenderBox? box =
+        _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null) {
+      position = box.localToGlobal(Offset(0, box.size.height));
+    }
+    await showMenu<void>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: <PopupMenuEntry<void>>[
+        for (final NoteSort s in NoteSort.values)
+          PopupMenuItem<void>(
+            onTap: () => ref.read(homeSortProvider.notifier).select(s),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(s.label),
+                if (s == current) ...<Widget>[
+                  const SizedBox(width: Tokens.spaceSm),
+                  const tabler.Check(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    strokeWidth: Tokens.iconStroke,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: _key,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      padding: EdgeInsets.zero,
+      icon: const tabler.ArrowsSort(
+        height: Tokens.iconMdSm,
+        width: Tokens.iconMdSm,
+        strokeWidth: Tokens.iconStroke,
+      ),
+      tooltip: '排序方案',
+      onPressed: _openMenu,
+    );
+  }
+}
+
+/// 顶栏**标签筛选**控件钮（同上：筛选**不是页面**）。全库无标签时整枚收起
+/// （沿用旧标签 chips 行同款处理）。
+class _TagMenuButton extends ConsumerStatefulWidget {
+  const _TagMenuButton();
+
+  @override
+  ConsumerState<_TagMenuButton> createState() => _TagMenuButtonState();
+}
+
+class _TagMenuButtonState extends ConsumerState<_TagMenuButton> {
+  final GlobalKey _key = GlobalKey();
+
+  Future<void> _openMenu() async {
+    final List<(String, int)> tags = ref.read(allTagsProvider);
+    final String? active = ref.read(searchNotifierProvider).activeTag;
+    Offset position = Offset.zero;
+    final RenderBox? box =
+        _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null) {
+      position = box.localToGlobal(Offset(0, box.size.height));
+    }
+    await showMenu<void>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx,
+        position.dy,
+      ),
+      items: <PopupMenuEntry<void>>[
+        // 有选中标签时先给一枚显式的"清除"（否则只能靠再点一次同一枚取消）。
+        if (active != null)
+          PopupMenuItem<void>(
+            onTap: () =>
+                ref.read(searchNotifierProvider.notifier).selectTag(null),
+            child: const Text('全部标签（清除筛选）'),
+          ),
+        for (final (String tag, int count) in tags)
+          PopupMenuItem<void>(
+            // 点已选中的标签 = 取消（沿用旧 chips 的 toggle 语义）。
+            onTap: () => ref
+                .read(searchNotifierProvider.notifier)
+                .selectTag(tag == active ? null : tag),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(tag),
+                const SizedBox(width: Tokens.spaceXs),
+                Text('$count', style: Theme.of(context).textTheme.labelSmall),
+                if (tag == active) ...<Widget>[
+                  const SizedBox(width: Tokens.spaceSm),
+                  const tabler.Check(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    strokeWidth: Tokens.iconStroke,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<(String, int)> tags = ref.watch(allTagsProvider);
+    if (tags.isEmpty) return const SizedBox.shrink();
+    return IconButton(
+      key: _key,
+      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+      padding: EdgeInsets.zero,
+      icon: const tabler.Tag(
+        height: Tokens.iconMdSm,
+        width: Tokens.iconMdSm,
+        strokeWidth: Tokens.iconStroke,
+      ),
+      tooltip: '标签筛选',
+      onPressed: _openMenu,
     );
   }
 }
@@ -929,20 +1219,16 @@ class _EmptyView extends ConsumerWidget {
     final String text;
     if (hasQuery) {
       text = '没有与「$query」匹配的结果';
+    } else if (activeTag != null) {
+      // 标签筛选是**全局控件**（顶栏 [_TagMenuButton]）⇒ 任何视图都可能因它
+      // 而空，先答这一条，再答各视图自己的空态（2026-09-29 定）。
+      text = '「$activeTag」标签下还没有内容';
     } else {
       text = switch (view) {
         HomeView.notes => '还没有笔记',
         HomeView.canvas => '还没有画布',
         HomeView.all => '还没有笔记或画布',
         HomeView.favorites => '还没有收藏',
-        HomeView.filter => switch ((
-          activeTag,
-          ref.watch(allTagsProvider).isNotEmpty,
-        )) {
-          (null, true) => '选一枚标签，看它名下的内容',
-          (null, false) => '还没有标签，先在笔记里打上标签',
-          (final String tag, _) => '「$tag」标签下还没有内容',
-        },
         HomeView.calendar => '', // 不会走到。
       };
     }
@@ -951,188 +1237,6 @@ class _EmptyView extends ConsumerWidget {
         text,
         style: theme.textTheme.bodyMedium?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-}
-
-/// 「更多」视图顶部的常驻面板（2026-09-29 用户定）：第一行**视图入口**
-/// （笔记 / 画布——2026-09-29 再定：低频视图收进来，顶栏只留高频四枚
-/// [kHomeTabs]，点了照旧整页切换）、第二行排序方案、第三行标签筛选。
-class _MorePanel extends ConsumerWidget {
-  const _MorePanel();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[_ViewEntriesRow(), _SortRow(), _TagChips()],
-    );
-  }
-}
-
-/// 视图入口行：**笔记 / 画布**两枚 chips（低频视图的整页入口）。与排序 /
-/// 标签 chips 同语言（[_TagChip]），但点它不是"过滤当前池"，是**切换视图**
-/// （[HomeViewNotifier.select]）——顶栏随之高亮「更多」。
-class _ViewEntriesRow extends ConsumerWidget {
-  const _ViewEntriesRow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Tokens.spaceLg,
-          vertical: Tokens.spaceSm,
-        ),
-        scrollDirection: Axis.horizontal,
-        itemCount: 2,
-        separatorBuilder: (BuildContext _, int _) =>
-            const SizedBox(width: Tokens.spaceSm),
-        itemBuilder: (BuildContext context, int i) {
-          final HomeView v = i == 0 ? HomeView.notes : HomeView.canvas;
-          return _TagChip(
-            label: v.label,
-            selected: false,
-            onTap: () => ref.read(homeViewProvider.notifier).select(v),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 排序方案行：[NoteSort.values] 一排 chips，选中走 [homeSortProvider]。
-/// 视觉与标签 chips 同语言（[_TagChip]，无篇数小字）。
-class _SortRow extends ConsumerWidget {
-  const _SortRow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final NoteSort sort = ref.watch(homeSortProvider);
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Tokens.spaceLg,
-          vertical: Tokens.spaceSm,
-        ),
-        scrollDirection: Axis.horizontal,
-        itemCount: NoteSort.values.length,
-        separatorBuilder: (BuildContext _, int _) =>
-            const SizedBox(width: Tokens.spaceSm),
-        itemBuilder: (BuildContext context, int i) {
-          final NoteSort s = NoteSort.values[i];
-          return _TagChip(
-            label: s.label,
-            selected: s == sort,
-            onTap: () => ref.read(homeSortProvider.notifier).select(s),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 标签筛选行（「更多」面板的第二行）：全库标签池（[allTagsProvider]，按出现
-/// 篇数倒序），无标签时整行收起。
-///
-/// 用 `select` 只订阅 [SearchState.activeTag]——chips 行不该因结果变化而重建。
-class _TagChips extends ConsumerWidget {
-  const _TagChips();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final List<(String, int)> tags = ref.watch(allTagsProvider);
-    if (tags.isEmpty) return const SizedBox.shrink();
-    final String? active = ref.watch(
-      searchNotifierProvider.select((SearchState s) => s.activeTag),
-    );
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Tokens.spaceLg,
-          vertical: Tokens.spaceSm,
-        ),
-        scrollDirection: Axis.horizontal,
-        itemCount: tags.length,
-        separatorBuilder: (BuildContext _, int _) =>
-            const SizedBox(width: Tokens.spaceSm),
-        itemBuilder: (BuildContext context, int i) {
-          final (String tag, int count) = tags[i];
-          final bool selected = tag == active;
-          return _TagChip(
-            label: tag,
-            count: count,
-            selected: selected,
-            onTap: () => ref
-                .read(searchNotifierProvider.notifier)
-                .selectTag(selected ? null : tag),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 一枚筛选 chip（排序 / 标签共用）：主文字 + 可选篇数小字。
-/// 选中 = 导航项同款选中底，未选中 = 极淡描边。
-class _TagChip extends StatelessWidget {
-  const _TagChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.count,
-  });
-
-  final String label;
-
-  /// 篇数小字（标签行传；排序行不传则不渲染）。
-  final int? count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(Tokens.radiusLg),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Tokens.spaceSm + 2,
-          vertical: 4,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.navSelectedTint(scheme.onSurface) : null,
-          borderRadius: BorderRadius.circular(Tokens.radiusLg),
-          border: Border.fromBorderSide(
-            BorderSide(color: AppTheme.cardStroke(theme.brightness)),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: scheme.onSurface,
-              ),
-            ),
-            if (count != null) ...<Widget>[
-              const SizedBox(width: Tokens.spaceXs),
-              Text(
-                '$count',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );

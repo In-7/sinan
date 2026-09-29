@@ -18,7 +18,8 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// 主页 / 设置 / 上一步 / 下一步搬进 [WindowStrip]）。
 ///
 /// 钉的是这几条结构性事实：
-/// ① 左簇 = 主页 + 上一步 + 下一步 + 折叠面板；右簇 = 设置 + AI 开关
+/// ① 左簇自左向右 = **折叠面板**（整栏开关，钉最左）+ 上一步 + **主页** +
+///    下一步（主页夹在两个历史箭头中间）；右簇 = 设置 + AI 开关
 ///    （设置紧挨 AI——全局动作靠右、页面导航靠左）；
 /// ② 箭头是视图历史（[homeViewProvider]）的出口：初始禁用，导航后可用；
 /// ③ 第一列 [AppRail] 已删——HubNav 子树与整窗里都不许再有它的位置；
@@ -108,7 +109,17 @@ void main() {
             .first,
       );
 
-  testWidgets('左簇 = 主页/上一步/下一步/折叠，右簇 = 设置紧挨 AI；箭头初始禁用', (
+  /// 三点溢出菜单里的某一项（2026-09-29 起「更多」是菜单、不是视图）。
+  ///
+  /// ⚠️ 两个坑：① 菜单画在 **overlay** 里，不在 [HomeHub] 子树内 ⇒ 不能沿用
+  /// 旧版 `descendant(of: HomeHub)` 的定位；② 整壳里还有第二列 HubNav 的
+  /// 「画布」空间标签 ⇒ 裸 `find.text('画布')` 会撞两处。故必须圈进菜单项本身。
+  Finder menuItem(String label) => find.descendant(
+    of: find.byType(PopupMenuItem<void>),
+    matching: find.text(label),
+  );
+
+  testWidgets('左簇 = 折叠/上一步/主页/下一步，右簇 = 设置紧挨 AI；箭头初始禁用', (
     WidgetTester tester,
   ) async {
     await pump(tester);
@@ -119,6 +130,24 @@ void main() {
     expect(find.byTooltip('折叠面板'), findsOneWidget);
     expect(find.byTooltip('设置'), findsOneWidget);
     expect(find.byTooltip('问笔记（Ctrl+J）'), findsOneWidget);
+
+    // **左簇顺序闸门**（2026-09-29 用户定）：折叠面板钉最左，主页夹在
+    // 上一步 / 下一步**中间**——顺序被改动这里就会红。
+    final Rect collapse = tester.getRect(find.byTooltip('折叠面板'));
+    final Rect back = tester.getRect(find.byTooltip('上一步'));
+    final Rect home = tester.getRect(find.byTooltip('主页'));
+    final Rect forward = tester.getRect(find.byTooltip('下一步'));
+    expect(
+      collapse.right,
+      lessThanOrEqualTo(back.left),
+      reason: '折叠面板应在最左（整栏开关，不混进页面导航）',
+    );
+    expect(back.right, lessThanOrEqualTo(home.left), reason: '主页应在上一步右侧');
+    expect(
+      home.right,
+      lessThanOrEqualTo(forward.left),
+      reason: '主页应在下一步左侧 ⇒ 夹在两个历史箭头中间',
+    );
 
     // 初始无历史：两枚箭头都置灰（onPressed null）。
     expect(buttonOf(tester, '上一步').onPressed, isNull);
@@ -134,32 +163,27 @@ void main() {
     );
   });
 
-  testWidgets('上一步/下一步驱动视图历史：更多→画布后可退回、可重做', (WidgetTester tester) async {
+  testWidgets('上一步/下一步驱动视图历史：三点菜单进画布后可退回、可重做', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    // 主页顶栏：更多 → 画布（「更多」面板第一行的视图入口）。
-    // ⚠️ 整壳里有第二列 HubNav 的「画布」空间标签，finder 必须圈进 [HomeHub]。
-    await tester.tap(find.text('更多'));
+    // 主页顶栏**三点菜单** → 画布（低频页面的整页入口）。
+    await tester.tap(find.byTooltip('更多页面'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(of: find.byType(HomeHub), matching: find.text('画布')),
-    );
+    await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider), HomeView.canvas);
+    expect(container.read(homeViewProvider).view, HomeView.canvas);
 
-    // 顶条「上一步」：退回「更多」，再退回落地的「全部」。
+    // 顶条「上一步」：直退落地的「全部」（中间不再有"「更多」页"这一跳——
+    // 它就是 2026-09-29 拆掉的那一层）。
     await tester.tap(find.byTooltip('上一步'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider), HomeView.filter);
-    await tester.tap(find.byTooltip('上一步'));
-    await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider), HomeView.all);
+    expect(container.read(homeViewProvider).view, HomeView.all);
     expect(buttonOf(tester, '上一步').onPressed, isNull, reason: '退到底了');
 
-    // 顶条「下一步」：重做。
+    // 顶条「下一步」：重做，回到画布。
     await tester.tap(find.byTooltip('下一步'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider), HomeView.filter);
+    expect(container.read(homeViewProvider).view, HomeView.canvas);
   });
 
   testWidgets('编辑器页同一簇替换旧「上一页」；上一步 = 回主页 + 退回上一视图', (
@@ -167,8 +191,11 @@ void main() {
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 先走到「更多」，再建一篇笔记并打开（进编辑器）。
-    await tester.tap(find.text('更多'));
+    // 先经**三点菜单**走到「画布」视图（低频页面），再建一篇笔记并打开
+    // （进编辑器）。
+    await tester.tap(find.byTooltip('更多页面'));
+    await tester.pumpAndSettle();
+    await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(selectedNoteIdProvider.notifier).select(note.id);
@@ -180,13 +207,13 @@ void main() {
     expect(find.byTooltip('上一步'), findsOneWidget);
     expect(find.byTooltip('下一步'), findsOneWidget);
 
-    // 顶条「主页」：回主页（视图仍是「更多」）。
+    // 顶条「主页」：回主页（视图仍是「画布」）。
     await tester.tap(find.byTooltip('主页'));
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull);
     expect(
-      container.read(homeViewProvider),
-      HomeView.filter,
+      container.read(homeViewProvider).view,
+      HomeView.canvas,
       reason: '主页不动视图历史',
     );
 
@@ -196,6 +223,10 @@ void main() {
     await tester.tap(find.byTooltip('上一步'));
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull, reason: '先离开编辑器');
-    expect(container.read(homeViewProvider), HomeView.all, reason: '再退回上一视图');
+    expect(
+      container.read(homeViewProvider).view,
+      HomeView.all,
+      reason: '再退回上一视图',
+    );
   });
 }

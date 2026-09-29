@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'dart:ui' as ui;
-
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +16,7 @@ import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show showSettingsPanel;
+import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
@@ -179,16 +178,17 @@ class HomeScreen extends ConsumerWidget {
               child: selectedId == null
                   ? Column(
                       children: <Widget>[
-                        // 主页分支的顶条（2026-09-29 用户定）：左 = 主页 +
-                        // 上一步/下一步（视图历史）+ 折叠面板钮；右 = 设置
+                        // 主页分支的顶条（2026-09-29 用户定）：左簇自左向右 =
+                        // 折叠面板（整栏开关，钉最左）+ 上一步 + **主页** +
+                        // 下一步（主页夹在两个历史箭头中间）；右簇 = 设置
                         // （紧挨 AI 开关）+ AI 轨开关。全局动作靠右、页面
                         // 导航靠左。
                         const WindowStrip(
                           leading: <Widget>[
-                            HomeNavButton(),
-                            NavHistoryButton(),
-                            NavHistoryButton(forward: true),
                             NavCollapseButton(),
+                            NavHistoryButton(),
+                            HomeNavButton(),
+                            NavHistoryButton(forward: true),
                           ],
                           trailing: <Widget>[
                             SettingsNavButton(),
@@ -240,19 +240,20 @@ class HomeScreen extends ConsumerWidget {
                         children: <Widget>[
                           Column(
                             children: <Widget>[
-                              WindowStrip(
-                                // 左起：主页 + 上一步/下一步 + 折叠面板钮
-                                // （2026-09-29 用户定：与主页分支同一簇，替换
-                                // 旧的「上一页」单钮——编辑器不在视图历史栈里，
-                                // 所以箭头按下时先回主页再走历史）。
-                                leading: const <Widget>[
-                                  HomeNavButton(),
-                                  NavHistoryButton(),
-                                  NavHistoryButton(forward: true),
+                              const WindowStrip(
+                                // 左簇与主页分支**同一簇、同一顺序**：折叠面板
+                                // （最左）+ 上一步 + 主页 + 下一步
+                                // （2026-09-29 用户定：替换旧的「上一页」单钮
+                                // ——编辑器不在视图历史栈里，所以箭头按下时
+                                // 先回主页再走历史）。
+                                leading: <Widget>[
                                   NavCollapseButton(),
+                                  NavHistoryButton(),
+                                  HomeNavButton(),
+                                  NavHistoryButton(forward: true),
                                 ],
                                 // 右端：设置 + AI 轨开关（紧贴「最小化」左侧）。
-                                trailing: const <Widget>[
+                                trailing: <Widget>[
                                   SettingsNavButton(),
                                   AiRailToggleButton(),
                                 ],
@@ -588,11 +589,12 @@ class AiRailToggleButton extends ConsumerWidget {
   }
 }
 
+/// **折叠 / 展开左栏**（2026-09-29 用户定：钉在左簇**最左端**，排在上一步 /
+/// 主页 / 下一步**之前**——它是"整栏开关"，语义上不属于页面导航那一簇）。
 ///
-///
-/// 放在主区顶条最左：展开态可随时折叠，折叠态（此时 [HubNav] 不渲染）
-/// 靠它重新展开。图标随状态切换：展开→`LayoutSidebarLeftCollapse`（提示可收起），
-///
+/// 展开态可随时折叠；折叠态（此时 [HubNav] 不渲染）靠它重新展开。
+/// 图标随状态切换：展开 → `LayoutSidebarLeftCollapse`（提示可收起），
+/// 折叠 → `LayoutSidebarLeftExpand`。
 class NavCollapseButton extends ConsumerWidget {
   const NavCollapseButton({super.key});
 
@@ -617,9 +619,14 @@ class NavCollapseButton extends ConsumerWidget {
   }
 }
 
-/// 顶条左缘的**主页**钮（2026-09-29 用户定：50px 第一列总导航栏撤掉，主页 /
-/// 设置搬进标题栏——两枚图标撑不起一整列）。在主页上披主题色（延续 AppRail
-/// 时代的 active 语义），在笔记 / 画布页点亮即回主页。
+/// 顶条左簇的**主页**钮（2026-09-29 用户定：50px 第一列总导航栏撤掉，主页 /
+/// 设置搬进标题栏——两枚图标撑不起一整列；同日再定：**位置夹在上一步 / 下一步
+/// 中间**，让"回主页"落在两个历史箭头之间）。
+///
+/// 图标 = [tabler.Home]（房子）。⚠️ 曾用 [tabler.LayoutDashboard]（仪表盘网格），
+/// 那是"仪表盘 / 看板"语义、不是"主页"，2026-09-29 用户指出后改回房子。
+///
+/// 在主页上披主题色（延续 AppRail 时代的 active 语义），在笔记 / 画布页点亮即回主页。
 class HomeNavButton extends ConsumerWidget {
   const HomeNavButton({super.key});
 
@@ -628,14 +635,20 @@ class HomeNavButton extends ConsumerWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool onHome = ref.watch(selectedNoteIdProvider) == null;
     return IconButton(
-      icon: tabler.LayoutDashboard(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: 1.5,
-        colorFilter: ui.ColorFilter.mode(
-          onHome ? scheme.primary : scheme.onSurfaceVariant,
-          ui.BlendMode.srcIn,
-        ),
+      // Remix `home-4-line`（2026-09-30 用户定）。
+      //
+      // 尺寸**刻意大一档**：走 [CustomIcons] 的默认档 [Tokens.iconMd]（24），
+      // 而顶条次要控件（设置 / AI 轨 / 折叠）是 [Tokens.iconMdSm]（20）。
+      // 主页 / 上一步 / 下一步是顶栏**主键**，2026-09-30 用户定要它们与次要
+      // 控件**拉开层级**——族（更重的 Remix 填充路径）与尺寸两个维度一起拉开，
+      // 不许回退成"和旁边一样"。
+      // ⚠️ 不写 `size:` 是**故意**的：24 就是默认档，写了会撞
+      // `avoid_redundant_argument_values`（analyze 零问题是硬要求）。
+      //
+      // ⚠️ CustomIcons 是**裸 SVG**，不读 Material IconTheme ⇒ 必须显式给色，
+      // 不传就是资产里的死黑。
+      icon: CustomIcons.home(
+        color: onHome ? scheme.primary : scheme.onSurfaceVariant,
       ),
       tooltip: '主页',
       onPressed: () {
@@ -660,22 +673,25 @@ class NavHistoryButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 订阅视图 state：每次导航 state 都会变 ⇒ 重读 canGo* 拿到正确可用态。
-    ref.watch(homeViewProvider);
-    final HomeViewNotifier nav = ref.read(homeViewProvider.notifier);
-    final bool can = forward ? nav.canGoForward : nav.canGoBack;
+    // watch 一次拿到「当前视图 + 历史可用态」：[HomeNavState] 把两个 `canGo*`
+    // 放在 state 里 ⇒ 导航后本 widget 重建，可用态自动跟着更新。
+    // （不再读 notifier 的公开 getter——那是 `riverpod_lint` 禁止的，且拿不到
+    // 重建通知。）
+    final HomeNavState navState = ref.watch(homeViewProvider);
+    final bool can = forward ? navState.canGoForward : navState.canGoBack;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // Remix `arrow-*-s-line`（2026-09-30 用户定）。⚠️ CustomIcons 是**裸 SVG**，
+    // 不读 Material IconTheme ⇒ 必须**自己算禁用色**（M3 禁用图标 = onSurface
+    // 38%），否则"无可退 / 可进时置灰"会失效（tabler 那版靠桥接自动拿到）。
+    final Color iconColor = can
+        ? scheme.onSurfaceVariant
+        : scheme.onSurface.withValues(alpha: 0.38);
     return IconButton(
+      // 尺寸同 [HomeNavButton]：主键**大一档**——取 [CustomIcons] 默认档
+      // [Tokens.iconMd]（24），顶条次要控件是 20（2026-09-30 用户定，不许回退）。
       icon: forward
-          ? const tabler.ChevronRight(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-              strokeWidth: 1.5,
-            )
-          : const tabler.ChevronLeft(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-              strokeWidth: 1.5,
-            ),
+          ? CustomIcons.arrowRight(color: iconColor)
+          : CustomIcons.arrowLeft(color: iconColor),
       tooltip: forward ? '下一步' : '上一步',
       onPressed: can
           ? () {

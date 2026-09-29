@@ -6,6 +6,23 @@ plugins:
   # 不是 `enabled: true`——写错的话插件会被静默忽略。
   riverpod_lint: 3.1.9
 
+# ⚠️⚠️ **命令行闸门漏了这一族规则**（2026-09-30 实测，别再踩第二次）
+#
+# `plugins:` 走的是 analysis_server_plugin，而两个 CLI **加载行为不同**：
+#   · `flutter analyze` → **不加载** ⇒ riverpod_lint 一条都不报；
+#   · `dart analyze`    → **加载**   ⇒ 正常报出；
+#   · IDE（分析服务）    → **加载**   ⇒ 编辑器里看得见。
+#
+# 实测方法：故意写一个 Notifier 的公开 getter（如 `bool get hasLog`），
+#   `flutter analyze 该文件` → "No issues found!"
+#   `dart analyze 该文件`    → "info … avoid_public_notifier_properties"
+#
+# ⇒ **"flutter analyze 零问题" ≠ "没有 riverpod_lint 问题"**。想在命令行也拦住
+#   这族规则，跑 **`dart analyze`**，别跑 `flutter analyze`。
+#
+# 实例：`home_hub.dart` 的 [HomeNavState]——视图历史的「可退 / 可进」原本是
+# `HomeViewNotifier` 的公开 getter，IDE 报了才暴露出来，已折进 state
+# （Notifier 的公开 API 只允许"改 state 的方法"，读状态一律走 `state`）。
 analyzer:
   exclude:
     - build/**
