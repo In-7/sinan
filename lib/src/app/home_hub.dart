@@ -3,67 +3,234 @@ import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
+// 键盘事件类型（搜索框 Esc / Enter）：KeyDownEvent / LogicalKeyboardKey
+// 在 `services.dart`，不由 material 转出。
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../command/commands.dart';
 import '../domain/note.dart';
+import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
 import 'providers.dart';
+import 'search_provider.dart';
 
-/// **主页**：Things 3 式「呼吸极简」的一页纸（2026-09-24 重写，取代 Bento 卡片格）。
+/// 主页顶部的**视图切换**（2026-09-29 用户定，取代 Things 式单列一页纸）。
 ///
-/// ## 为什么放弃 Bento
-/// 2026-09-22 的 Bento（hero 大卡 + 两列中卡 + 小卡）是**控件语言**：底色块、
-/// 圆角、玻璃光泽、hover 抬档。它的信息密度适合"仪表盘"，但主页要回答的只有一个
-/// 问题——「我上次在写哪篇」。Bento 里这个问题被图标、摘要、卡片边距稀释了。
-/// Things 3 证明桌面端更好的答案是**排版语言**：大标题 + 全宽行 + 字重分层，
-/// 一行 = 一条笔记，没有容器。
+/// 六个视图各答一个问题，且**正交于搜索框**（[searchNotifierProvider]）：
+/// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
+///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
+///   什么直接看前几张卡即可（2026-09-29 用户定：不单设「最近」视图）。
+/// - [HomeView.notes]：文档类笔记（spark + note）的卡片网格。**低频**，
+///   顶栏无常驻 tab——入口在「更多」面板（2026-09-29 用户定）。
+/// - [HomeView.canvas]：画布类（canvas）的卡片网格。同上收进「更多」。
+/// - [HomeView.calendar]：按新建日期回看（日历网格成一张卡片，卡片底部
+///   「写日记」**只写今天**——点选日只管回看；选中日的篇目列在卡片**之外**
+///   的页面背景上）。
+/// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
+/// - [HomeView.filter]：**更多**（2026-09-29 改名）——视图入口（笔记 / 画布）
+///   + 标签筛选 + 排序方案，排序对全部 / 笔记 / 画布 / 本视图全局生效
+///   （[homeSortProvider]）。
 ///
-/// ## 四条结构事实（改动前先读）
-/// 1. **行就是单元**：无底、无框、无图标框；hover 才给一档淡底
-///    （[AppTheme.boardFillHover]，与导航行同一套"再叠一档"语言）。
-/// 2. **层级交给排版**：「继续」行 `titleMedium` 加粗；普通行 `bodyMedium`；
-///    时间 `labelSmall` 灰字右对齐。**摘要砍掉**——主页回答"在写哪篇"，
-///    不回答"写了什么"。
-/// 3. **永远单列**（[maxWidth] 700）：两列 Bento 整个退场。列窄 + 页首
-///    [Tokens.spaceXl] 大留白 = 呼吸感的两个来源。
-/// 4. **每行都接 [FocusRing]**（§5.2）：自绘交互件必须能键盘用——这是桌面特权，
-///    与视觉极简同等重要。
+/// ⚠️ 全部 / 日历 / 收藏 / 更多**不分笔记与画布**（用户 2026-09-29 明确）；
+/// 只有笔记、画布两个视图按形态各自过滤。常驻 tab 只挂高频四枚
+/// （[kHomeTabs]）；经「更多」进入笔记 / 画布时顶栏高亮「更多」。
+enum HomeView {
+  all('全部'),
+  notes('笔记'),
+  canvas('画布'),
+  calendar('日历'),
+  favorites('收藏'),
+  filter('更多');
+
+  const HomeView(this.label);
+
+  /// 顶栏 tab 上显示的名字（也是测试 find 的锚点）。
+  final String label;
+
+  /// 顶栏 tab 的图标（Remix 单色线形，与第一列 [AppRail] 同族）。
+  ///
+  /// 画布用 `CustomIcons.canvas`（彩色插画）——它是"空间"不是"工具"，与
+  /// 第二列切换器里的画布格同源；其余走 tabler 单色线形。
+  Widget icon(Color color) => switch (this) {
+    HomeView.all => tabler.LayoutGrid(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+    HomeView.notes => tabler.FileText(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+    HomeView.canvas => CustomIcons.canvas(size: Tokens.iconMdSm),
+    HomeView.calendar => tabler.Calendar(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+    HomeView.favorites => tabler.Star(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+    // 「更多」= 视图选项（标签 + 排序），用滑杆图标而不是漏斗——它不只是
+    // 筛选（2026-09-29 改名用户定）。
+    HomeView.filter => tabler.AdjustmentsHorizontal(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+  };
+}
+
+/// 主页当前选中的视图。默认落 [HomeView.all]——"全库扫一眼、最近编辑在
+/// 前排"是最有用的落地页（2026-09-29 用户定，顶栏精简后笔记不再是常驻 tab）。
 ///
-/// ## 分组的时间叙事
-/// 「日历」（页首，2026-09-26 用户定；按**新建日期**回看）→「收藏」→「继续」
-/// （最近一篇，加粗）→「最近」（可折叠，`▸` 头）→「新建」（ghost 行，灰字加号）。
+/// 放在 provider 而非 widget 的 `setState`：进编辑器再点「上一页」回主页时，
+/// 顶栏要**记住上次停在哪个视图**（widget 会被重建，局部 State 丢失）。
 ///
-/// ⚠️ **页标题已撤**（2026-09-26 用户定）：分区名不再在页内重复，页首呼吸交给
-/// 外层大留白。
+/// ⚠️ riverpod 3.4.3 无 `StateProvider`，用显式 [Notifier]。
+final homeViewProvider = NotifierProvider<HomeViewNotifier, HomeView>(
+  HomeViewNotifier.new,
+);
+
+/// 自带**视图历史**（2026-09-29 用户定）：笔记 / 画布收进「更多」后是两跳
+/// 目的地，主区顶条左缘的「上一步 / 下一步」（home_screen.dart 的
+/// [NavHistoryButton]）把往返成本抹平。栈只记视图、不记滚动位置——低频导航，
+/// 不欠这份精细。
+class HomeViewNotifier extends Notifier<HomeView> {
+  final List<HomeView> _back = <HomeView>[];
+  final List<HomeView> _forward = <HomeView>[];
+
+  /// 是否可退 / 可进（顶栏箭头钮的可用态）。每次导航 `state` 都会变 ⇒
+  /// UI watch state 后重读这两个 getter 就能拿到正确的可用态。
+  bool get canGoBack => _back.isNotEmpty;
+  bool get canGoForward => _forward.isNotEmpty;
+
+  @override
+  HomeView build() => HomeView.all;
+
+  /// 切换视图（顶栏 tab 与「更多」面板的视图入口都走这里）。
+  void select(HomeView view) {
+    if (view == state) return;
+    _back.add(state);
+    _forward.clear();
+    state = view;
+  }
+
+  /// 回到上一个视图（「上一步」）。
+  void goBack() {
+    if (_back.isEmpty) return;
+    _forward.add(state);
+    state = _back.removeLast();
+  }
+
+  /// 前进到下一个视图（「下一步」）。
+  void goForward() {
+    if (_forward.isEmpty) return;
+    _back.add(state);
+    state = _forward.removeLast();
+  }
+}
+
+/// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频四枚——全部 / 日历 / 收藏 /
+/// 更多）。笔记 / 画布是低频视图，入口收进「更多」面板（[_ViewEntriesRow]），
+/// 点了照旧**整页切换**。[HomeView] 枚举仍是全量视图（内容区分发不变），
+/// tab 只列这四枚。
+const List<HomeView> kHomeTabs = <HomeView>[
+  HomeView.all,
+  HomeView.calendar,
+  HomeView.favorites,
+  HomeView.filter,
+];
+
+/// 卡片网格的**排序方案**（2026-09-29 用户定，在「更多」视图里选）。
+///
+/// 一旦选定，对**全部 / 笔记 / 画布 / 更多**四个视图同时生效（进编辑器再
+/// 回来也
+/// 保留，所以放 provider 而非 widget state）；收藏视图坚持按收藏时间倒序
+/// （"最近收藏的排前面"是收藏视图自身的语义，不该被这里覆盖）。
+enum NoteSort {
+  /// 最近修改（默认）：`revisedAt` 倒序——最常回看的是"刚碰过的"。
+  revised('最近编辑'),
+
+  /// 最近创建：`createdAt` 倒序——日历之外的线性"新写的在前"。
+  created('最近创建'),
+
+  /// 标题 A–Z：按显示标题升序（空标题按「无标题」参与排序）。
+  title('标题 A–Z');
+
+  const NoteSort(this.label);
+
+  /// 「更多」视图里排序 chip 的文字（测试锚点）。
+  final String label;
+
+  /// 比较器：返回传给 `List.sort` 的顺序（`true` = 升序语义）。
+  Comparator<Note> get comparator => switch (this) {
+    NoteSort.revised => (Note a, Note b) => b.revisedAt.compareTo(a.revisedAt),
+    NoteSort.created => (Note a, Note b) => b.createdAt.compareTo(a.createdAt),
+    // 统一转小写：英文标题不被大小写劈开；中文不受影响（按码点稳定排序）。
+    NoteSort.title => (Note a, Note b) => _titleOf(
+      a,
+    ).toLowerCase().compareTo(_titleOf(b).toLowerCase()),
+  };
+}
+
+/// 主页当前的排序方案。默认 [NoteSort.revised]。
+final homeSortProvider = NotifierProvider<HomeSortNotifier, NoteSort>(
+  HomeSortNotifier.new,
+);
+
+class HomeSortNotifier extends Notifier<NoteSort> {
+  @override
+  NoteSort build() => NoteSort.revised;
+
+  void select(NoteSort sort) => state = sort;
+}
+
+/// **主页**：顶栏（视图切换 + 常驻搜索）+ 内容区（卡片网格 / 日历）。
+///
+/// ## 为什么从"单列一页纸"改成这个（2026-09-29 用户定）
+/// 旧的 Things 式一页纸把日历 / 收藏 / 继续 / 最近 / 新建**串成一列**，一次只能
+/// 从上往下扫；用户要的是**空间切换**范式（对标 Craft / Bear）：顶部一排视图
+/// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容），搜索
+/// 从第一列图标挪到**顶部中间的常驻输入框**。
+///
+/// ## 三条结构事实
+/// 1. **顶栏**：左 = 4 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.navSelectedTint]），
+///    右 = 常驻搜索框（点击直接输入，走 [searchNotifierProvider]）。上一步 /
+///    下一步（视图历史）与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
+/// 2. **内容区按视图 + 搜索词解析**（[_HomeBody._itemsFor]）：搜索词在**当前
+///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
+/// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
+///    [cardFillHover]）——静止态**有底色**（与列表行的"显式透明"相反：卡片本就
+///    该是一块浮起的板子）。每张接 [FocusRing]（§5.2 键盘可达）。
 ///
 /// ## 页面模型（不变）
 /// 未选中笔记 = 主页；选中 = 笔记 / 画布页。同一个 `selectedNoteIdProvider` 驱动。
 class HomeHub extends ConsumerStatefulWidget {
   const HomeHub({super.key});
 
-  /// 最近列表条数。
-  static const int recentCount = 6;
-
-  /// 内容列宽：Things 的"一页纸"宽度。比 Bento 时代的 880 窄——
-  /// 单列下 880 会让一行文字横跨过宽，700 是 13px 正文的舒适阅读宽。
-  static const double maxWidth = 700;
-
   @override
   ConsumerState<HomeHub> createState() => _HomeHubState();
 }
 
 class _HomeHubState extends ConsumerState<HomeHub> {
-  /// 「最近」分组的展开态。只放本地 State：折叠是纯视图节奏，
-  /// 不进 provider 也不落盘（重启回展开 = Things 的默认行为）。
-  bool _recentOpen = true;
+  /// 常驻搜索框：文本控制器 + 焦点（Esc 清词 / Enter 跳首条，沿用旧搜索分区键位）。
+  final TextEditingController _searchController = TextEditingController();
+  late final FocusNode _searchFocus;
 
-  /// 日历分区的视图状态：显示月份与选中日。只放本地 State（与 [_recentOpen]
-  /// 同理）：切月/选中是纯浏览节奏，不进 provider 不落盘，重启回今天。
+  /// 日历视图的浏览态：显示月份与选中日。只放本地 State（纯浏览节奏，
+  /// 不进 provider 不落盘，重启回今天）。
   DateTime _calMonth = _todayMonth();
   DateTime _calSelected = _today();
 
@@ -78,412 +245,354 @@ class _HomeHubState extends ConsumerState<HomeHub> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<Note> notes = ref.watch(notesProvider).value ?? const <Note>[];
-    // 排序依据 `revisedAt`（不是 `createdAt`）：主页要回答的是"我上次在写哪篇"。
-    final List<Note> byRecent = <Note>[...notes]
-      ..sort((Note a, Note b) => b.revisedAt.compareTo(a.revisedAt));
-    final Note? latest = byRecent.isEmpty ? null : byRecent.first;
-
-    // **收藏**：`promotedAt` 非空的笔记，按收藏时间倒序（最新置顶）。
-    // 2026-09-25 A 方案：收藏进主页分区，取代把它塞进侧栏切换器（那样得 4 段）。
-    final List<Note> favorites = <Note>[
-      ...notes.where((Note n) => n.promotedAt != null),
-    ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!));
-
-    // 滚动条永远贴窗口最右缘（2026-09-26 用户定）：viewport 占满全宽，
-    // 内容列的居中交给内层 [Align] + [ConstrainedBox]，不跟着内容走。
-    return SingleChildScrollView(
-      // 页首呼吸（2026-09-26 用户定：日历置顶后顶留白减半）：
-      // 顶部 [Tokens.spaceXl]（24）；左右与底部同 [Tokens.spaceXl]。
-      padding: const EdgeInsets.fromLTRB(
-        Tokens.spaceXl,
-        Tokens.spaceXl,
-        Tokens.spaceXl,
-        Tokens.spaceXl,
-      ),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: HomeHub.maxWidth),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (latest == null)
-                const _EmptyHub()
-              else ...<Widget>[
-                // 日历分区（2026-09-26）：按**新建日期**（createdAt）回看，
-                // 不跟修改日期走。放页首（2026-09-26 用户定：日历置顶）。
-                _Section(
-                  label: '日历',
-                  child: _CalendarView(
-                    notes: notes,
-                    month: _calMonth,
-                    selected: _calSelected,
-                    onPickMonth: (DateTime m) => setState(() => _calMonth = m),
-                    onPickDay: (DateTime d) => setState(() {
-                      _calSelected = d;
-                      _calMonth = DateTime(d.year, d.month);
-                    }),
-                    onOpenNote: (Note n) =>
-                        ref.read(locateProvider.notifier).locate(noteId: n.id),
-                  ),
-                ),
-                const SizedBox(height: Tokens.spaceXl),
-                if (favorites.isNotEmpty) ...<Widget>[
-                  // 收藏分区（2026-09-25 A 方案）：promotedAt 非空的笔记，
-                  // 按收藏时间倒序。只在有收藏时渲染——不出空分组头。
-                  _Section(
-                    label: '收藏',
-                    child: Column(
-                      children: <Widget>[
-                        for (final Note n in favorites)
-                          _HubRow(
-                            title: _titleOf(n),
-                            kindTag: _kindTagOf(n),
-                            trailing: _TimeLabel(at: n.revisedAt),
-                            promoted: true,
-                            onTogglePromoted: () => ref
-                                .read(notesProvider.notifier)
-                                .togglePromoted(n),
-                            onTap: () => ref
-                                .read(locateProvider.notifier)
-                                .locate(noteId: n.id),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: Tokens.spaceXl),
-                ],
-                _Section(
-                  label: '继续',
-                  child: _HubRow(
-                    title: _titleOf(latest),
-                    emphasized: true,
-                    kindTag: _kindTagOf(latest),
-                    trailing: _TimeLabel(at: latest.revisedAt),
-                    onTap: () => ref
-                        .read(locateProvider.notifier)
-                        .locate(noteId: latest.id, focus: true),
-                  ),
-                ),
-                // 只有 1 篇时「最近」没有内容 ⇒ 整组不渲染（不出空分组头）。
-                if (byRecent.length > 1) ...<Widget>[
-                  const SizedBox(height: Tokens.spaceXl),
-                  _Section(
-                    label: '最近',
-                    open: _recentOpen,
-                    onToggle: () =>
-                        setState(() => _recentOpen = !_recentOpen),
-                    collapsedHint: '${byRecent.length - 1} 篇',
-                    child: Column(
-                      children: <Widget>[
-                        for (final Note n
-                            in byRecent.skip(1).take(HomeHub.recentCount))
-                          _HubRow(
-                            title: _titleOf(n),
-                            kindTag: _kindTagOf(n),
-                            trailing: _TimeLabel(at: n.revisedAt),
-                            onTap: () => ref
-                                .read(locateProvider.notifier)
-                                .locate(noteId: n.id),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: Tokens.spaceXl),
-                _Section(
-                  label: '新建',
-                  child: Column(
-                    children: <Widget>[
-                      _HubRow(
-                        leading: _ghostPlus(scheme),
-                        title: '新建笔记',
-                        ghost: true,
-                        onTap: () =>
-                            unawaited(runCommandById(ref, 'note.new')),
-                      ),
-                      _HubRow(
-                        leading: _ghostPlus(scheme),
-                        title: '新建画布',
-                        ghost: true,
-                        onTap: () =>
-                            unawaited(runCommandById(ref, 'canvas.new')),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+  void initState() {
+    super.initState();
+    // 回填上次的查询词（状态在 provider，不在本 widget）：进笔记再回来，词还在。
+    _searchController.text = ref.read(searchNotifierProvider).query;
+    _searchFocus = FocusNode(onKeyEvent: _onSearchKey);
   }
 
-  /// ghost 行的加号：次级小图标（[Tokens.iconXs]）+ 灰——
-  /// 「新建」是次级动作，视觉重量必须低于任何一条笔记行。
-  static Widget _ghostPlus(ColorScheme scheme) => tabler.Plus(
-        height: Tokens.iconXs,
-        width: Tokens.iconXs,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(
-          scheme.onSurfaceVariant,
-          ui.BlendMode.srcIn,
-        ),
-      );
-}
-
-String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
-
-/// 画布笔记的形态标签（文档是默认形态 ⇒ 不标）。
-/// 相当于 Things 行尾的项目 tag：只有"不是默认"的才说。
-String? _kindTagOf(Note note) =>
-    note.kind == NoteKind.canvas ? '画布' : null;
-
-/// 相对时间：主页关心的是"多久没碰了"，不是精确时刻。
-String _relativeTime(DateTime at) {
-  final Duration d = DateTime.now().difference(at);
-  if (d.inMinutes < 1) return '刚刚';
-  if (d.inHours < 1) return '${d.inMinutes} 分钟前';
-  if (d.inDays < 1) return '${d.inHours} 小时前';
-  if (d.inDays < 7) return '${d.inDays} 天前';
-  return '${at.month}-${at.day.toString().padLeft(2, '0')}';
-}
-
-/// 时间小字（行尾那格）：灰、右对齐、永远只有一格宽。
-class _TimeLabel extends StatelessWidget {
-  const _TimeLabel({required this.at});
-
-  final DateTime at;
-
   @override
-  Widget build(BuildContext context) => Text(
-        _relativeTime(at),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-      );
-}
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
 
-/// 分组：小灰字标题 + 其下的行。
-///
-/// [open]/[onToggle] 非 null 时是**可折叠分组**（`▸` 头 + 计数），
-/// 折叠是 Things 的节奏工具——"最近"一长，收起来让"继续"独占视线。
-class _Section extends StatelessWidget {
-  const _Section({
-    required this.label,
-    required this.child,
-    this.open,
-    this.onToggle,
-    this.collapsedHint,
-  });
-
-  final String label;
-  final Widget child;
-
-  /// 展开/折叠态。`null` = 该分组不可折叠（无箭头、永远展开）。
-  final bool? open;
-
-  /// 折叠开关（[open] 非 null 时必有）。
-  final VoidCallback? onToggle;
-
-  /// 折叠时标题右侧的提示（如「3 篇」）——收起来的内容要有交代。
-  final String? collapsedHint;
+  /// 搜索框键位：`Esc` 有词 = 清空（保留焦点），无词 = 失焦；`Enter` = 跳第一个命中。
+  KeyEventResult _onSearchKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final SearchState s = ref.read(searchNotifierProvider);
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (s.query.isNotEmpty) {
+        _searchController.clear();
+        ref.read(searchNotifierProvider.notifier).submit('');
+        _searchFocus.requestFocus();
+      } else {
+        _searchFocus.unfocus();
+      }
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (s.hits.isNotEmpty) {
+        ref
+            .read(locateProvider.notifier)
+            .locate(noteId: s.hits.first.note.id, focus: true);
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool expanded = open ?? true;
-    final Widget header = onToggle == null
-        ? _plainHeader(context)
-        : _FoldHeader(
-            label: label,
-            open: expanded,
-            onToggle: onToggle!,
-            collapsedHint: collapsedHint,
-          );
+    final HomeView view = ref.watch(homeViewProvider);
+    final SearchState s = ref.watch(searchNotifierProvider);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        header,
-        if (expanded) ...<Widget>[
-          const SizedBox(height: Tokens.spaceXs),
-          child,
-        ],
+        _buildTopBar(context, view),
+        Expanded(
+          child: _HomeBody(
+            view: view,
+            search: s,
+            calMonth: _calMonth,
+            calSelected: _calSelected,
+            onPickMonth: (DateTime m) => setState(() => _calMonth = m),
+            onPickDay: (DateTime d) => setState(() {
+              _calSelected = d;
+              _calMonth = DateTime(d.year, d.month);
+            }),
+          ),
+        ),
       ],
     );
   }
 
-  /// 不可折叠的分组头：左缘与行内文字对齐（行内 padding [Tokens.spaceMd]）。
-  Widget _plainHeader(BuildContext context) {
+  /// 顶栏：左 = 4 枚常驻视图 tab（窄窗可横滚），右 = 常驻搜索框（定宽）。
+  /// 上一步 / 下一步在主区顶条（[NavHistoryButton]），不在这里。
+  Widget _buildTopBar(BuildContext context, HomeView view) {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool hasQuery = ref.watch(
+      searchNotifierProvider.select((SearchState s) => s.query.isNotEmpty),
+    );
+
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Tokens.spaceMd,
-        vertical: Tokens.spaceXs,
+      padding: const EdgeInsets.fromLTRB(
+        Tokens.spaceLg,
+        Tokens.spaceMd,
+        Tokens.spaceLg,
+        Tokens.spaceSm,
       ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-          fontWeight: FontWeight.w600,
-        ),
+      // LayoutBuilder：搜索框**贴右定宽 260**，但主区被挤窄（开右轨 /
+      // 拖窗过断点的过渡帧）时随剩余空间收缩，左侧 tab 区（`Expanded`
+      // 横向滚动）吃掉其余 ⇒ 任何宽度都不撑破顶栏。
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double searchWidth = (constraints.maxWidth - Tokens.spaceMd)
+              .clamp(0.0, 260.0)
+              .toDouble();
+          return Row(
+            children: <Widget>[
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      // 常驻 tab 只挂高频四枚；经「更多」进入笔记 / 画布时，
+                      // 「更多」高亮（More-tab 惯例：人在它的分区里）。
+                      // 上一步 / 下一步不在这里——它们是全局导航，2026-09-29
+                      // 用户定挪去主区顶条（home_screen.dart 的
+                      // [NavHistoryButton]）。
+                      for (final HomeView v in kHomeTabs)
+                        Padding(
+                          padding: const EdgeInsets.only(right: Tokens.spaceXs),
+                          child: _ViewTab(
+                            view: v,
+                            active:
+                                v == view ||
+                                (v == HomeView.filter &&
+                                    (view == HomeView.notes ||
+                                        view == HomeView.canvas)),
+                            onTap: () =>
+                                ref.read(homeViewProvider.notifier).select(v),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: Tokens.spaceMd),
+              SizedBox(
+                width: searchWidth,
+                child: SizedBox(
+                  height: 32,
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    onChanged: (String v) =>
+                        ref.read(searchNotifierProvider.notifier).submit(v),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '搜索标题与内容',
+                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      // tabler 图标是自绘 widget ⇒ 直接放（同旧搜索分区）。
+                      prefixIcon: Center(
+                        widthFactor: 1,
+                        child: tabler.Search(
+                          height: Tokens.iconSm,
+                          width: Tokens.iconSm,
+                          strokeWidth: Tokens.iconStroke,
+                          colorFilter: ui.ColorFilter.mode(
+                            hasQuery
+                                ? scheme.onSurface
+                                : scheme.onSurfaceVariant,
+                            ui.BlendMode.srcIn,
+                          ),
+                        ),
+                      ),
+                      prefixIconConstraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 32,
+                      ),
+                      suffixIcon: hasQuery
+                          ? IconButton(
+                              icon: const tabler.CircleX(
+                                height: Tokens.iconSm,
+                                width: Tokens.iconSm,
+                                strokeWidth: Tokens.iconStroke,
+                              ),
+                              tooltip: '清空（Esc）',
+                              onPressed: () {
+                                _searchController.clear();
+                                ref
+                                    .read(searchNotifierProvider.notifier)
+                                    .submit('');
+                                _searchFocus.requestFocus();
+                              },
+                            )
+                          : null,
+                      suffixIconConstraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-/// 可折叠分组头：`▸` 箭头（展开旋 90°）+ 小灰字标题；折叠时右侧出计数。
+/// 「最近」不单设视图（2026-09-29 用户定）：「全部」默认按最近编辑排序，
+/// 看最近动过什么直接看前几张卡即可。
 ///
-/// 高 28（比行矮 6）——分组头是"节奏标记"不是目标，比行更轻。
-class _FoldHeader extends StatefulWidget {
-  const _FoldHeader({
-    required this.label,
-    required this.open,
-    required this.onToggle,
-    this.collapsedHint,
+/// 内容区：按 [view] 分发——日历走网格，其余走卡片网格（取数口径见
+/// [_HomeBody._itemsFor]）。
+class _HomeBody extends ConsumerWidget {
+  const _HomeBody({
+    required this.view,
+    required this.search,
+    required this.calMonth,
+    required this.calSelected,
+    required this.onPickMonth,
+    required this.onPickDay,
   });
 
-  final String label;
-  final bool open;
-  final VoidCallback onToggle;
-  final String? collapsedHint;
+  final HomeView view;
+  final SearchState search;
+  final DateTime calMonth;
+  final DateTime calSelected;
+  final ValueChanged<DateTime> onPickMonth;
+  final ValueChanged<DateTime> onPickDay;
 
   @override
-  State<_FoldHeader> createState() => _FoldHeaderState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
 
-class _FoldHeaderState extends State<_FoldHeader> {
-  final FocusNode _focus = FocusNode();
-  bool _hover = false;
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final Color fill = _hover
-        ? AppTheme.boardFillHover(theme.brightness)
-        : Colors.transparent;
-
-    return FocusRing(
-      focusNode: _focus,
-      borderRadius: BorderRadius.circular(Tokens.radiusSm),
-      child: Material(
-        color: fill,
-        borderRadius: BorderRadius.circular(Tokens.radiusSm),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          focusNode: _focus,
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          hoverColor: Colors.transparent,
-          splashColor: Colors.transparent,
-          highlightColor: Colors.transparent,
-          onHover: (bool v) => setState(() => _hover = v),
-          onTap: widget.onToggle,
-          child: SizedBox(
-            height: 28,
-            width: double.infinity,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-              child: Row(
-                children: <Widget>[
-                  AnimatedRotation(
-                    turns: widget.open ? 0.25 : 0,
-                    duration: Tokens.durationFast,
-                    child: tabler.ChevronRight(
-                      height: Tokens.iconXs,
-                      width: Tokens.iconXs,
-                      strokeWidth: Tokens.iconStroke,
-                      colorFilter: ui.ColorFilter.mode(
-                        scheme.onSurfaceVariant,
-                        ui.BlendMode.srcIn,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: Tokens.spaceXs),
-                  Text(
-                    widget.label,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (!widget.open && widget.collapsedHint != null)
-                    Text(
-                      widget.collapsedHint!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
-              ),
+    // 日历视图：日历卡片 + 卡片外下方的选中日篇目（忽略搜索词）。
+    if (view == HomeView.calendar) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          Tokens.spaceLg,
+          0,
+          Tokens.spaceLg,
+          Tokens.spaceLg,
+        ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: _CalendarView(
+              notes: all,
+              month: calMonth,
+              selected: calSelected,
+              onPickMonth: onPickMonth,
+              onPickDay: onPickDay,
+              onOpenNote: (Note n) =>
+                  ref.read(locateProvider.notifier).locate(noteId: n.id),
+              onCreateToday: () => _createDiaryToday(ref),
             ),
           ),
         ),
-      ),
+      );
+    }
+
+    // 其余四视图：卡片网格（搜索词在当前范围内过滤）。
+    final List<Note> items = _itemsFor(ref, all);
+
+    // 「更多」视图：排序方案 + 标签筛选两行常驻在网格上方（跨形态统一池）。
+    final Widget? morePanel = view == HomeView.filter
+        ? const _MorePanel()
+        : null;
+
+    if (items.isEmpty) {
+      return Column(
+        children: <Widget>[
+          ?morePanel,
+          Expanded(
+            child: _EmptyView(
+              view: view,
+              hasQuery: search.query.trim().isNotEmpty,
+              query: search.query.trim(),
+              activeTag: search.activeTag,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: <Widget>[
+        ?morePanel,
+        Expanded(
+          child: _CardsGrid(
+            items: items,
+            onOpen: (Note n) =>
+                ref.read(locateProvider.notifier).locate(noteId: n.id),
+            onUnfavorite: view == HomeView.favorites
+                ? (Note n) => ref.read(notesProvider.notifier).togglePromoted(n)
+                : null,
+          ),
+        ),
+      ],
     );
+  }
+
+  /// 日历的「写日记」**只落今天**（2026-09-29 用户定：点选哪天只管回看，
+  /// 不改变落笔日期）：新建一篇，建好即定位聚焦——点完直接打字。
+  void _createDiaryToday(WidgetRef ref) {
+    unawaited(() async {
+      final Note n = await ref.read(notesProvider.notifier).createNote();
+      ref.read(locateProvider.notifier).locate(noteId: n.id, focus: true);
+    }());
+  }
+
+  /// 与 [_HomeHubState] 顶栏同一套口径的取数（这里在 build 内直接算，
+  /// 避免把 State 的方法下传到 StatelessWidget）。
+  List<Note> _itemsFor(WidgetRef ref, List<Note> all) {
+    final SearchState s = search;
+    // 排序方案在「更多」里选，对全部 / 笔记 / 画布 / 更多四视图全局生效。
+    final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
+    final List<Note> scope = switch (view) {
+      // 全部：跨形态统一池，跟随全局排序。
+      HomeView.all => all.toList()..sort(order),
+      HomeView.notes =>
+        all.where((Note n) => n.kind != NoteKind.canvas).toList()..sort(order),
+      HomeView.canvas =>
+        all.where((Note n) => n.kind == NoteKind.canvas).toList()..sort(order),
+      // 收藏不读全局排序，坚持"最近收藏在前"（收藏视图自身的语义）。
+      HomeView.favorites => <Note>[
+        ...all.where((Note n) => n.promotedAt != null),
+      ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
+      HomeView.filter =>
+        all
+            .where(
+              (Note n) => s.activeTag != null && n.tags.contains(s.activeTag),
+            )
+            .toList()
+          ..sort(order),
+      HomeView.calendar => const <Note>[],
+    };
+    // 有搜索词时命中按相关度（s.hits）排序，不被全局排序打乱。
+    if (s.query.trim().isEmpty) return scope;
+    final Set<String> ids = scope.map((Note n) => n.id).toSet();
+    return <Note>[
+      for (final SearchHit h in s.hits)
+        if (ids.contains(h.note.id)) h.note,
+    ];
   }
 }
 
-/// **一页纸里的一行**：标题 + 右侧灰信息（形态 tag + 时间），没有容器。
+/// 顶栏的一枚**视图 tab**：图标 + 文字，选中披 [AppTheme.navSelectedTint]。
 ///
-/// 状态：
-/// - **悬停**：整行叠一档淡底（[AppTheme.boardFillHover]，与导航行同语言）；
-/// - **聚焦**：[FocusRing] 画环（§5.2）。
-///
-/// ⚠️ 高度 34 是**档位**（Things 的行高），标题一律 `maxLines + ellipsis`。
-/// 「继续」行 [emphasized] 用 `titleMedium` 加粗——主次靠字重，不靠盒子。
-/// 「新建」行 [ghost] 灰字 + 加号 leading——次级动作的视觉重量低于笔记行。
-class _HubRow extends StatefulWidget {
-  const _HubRow({
-    required this.title,
+/// 静止态显式透明（防 Material 落 canvasColor 变黑块，全仓统一教训）；hover
+/// 叠 [AppTheme.boardFillHover]；自带 [FocusRing]（§5.2）。
+class _ViewTab extends StatefulWidget {
+  const _ViewTab({
+    required this.view,
+    required this.active,
     required this.onTap,
-    this.trailing,
-    this.leading,
-    this.kindTag,
-    this.emphasized = false,
-    this.ghost = false,
-    this.promoted = false,
-    this.onTogglePromoted,
   });
 
-  final String title;
+  final HomeView view;
+  final bool active;
   final VoidCallback onTap;
 
-  /// 行尾信息（笔记行 = 相对时间）。
-  final Widget? trailing;
-
-  /// 行首小图标（新建行的加号）。笔记行没有——图标是导航的语言，不是这里的。
-  final Widget? leading;
-
-  /// 形态标签（「画布」）。文档是默认 ⇒ 不标。
-  final String? kindTag;
-
-  final bool emphasized;
-  final bool ghost;
-
-  /// 收藏态（决定星标实/空）。非收藏行传 `false`。
-  final bool promoted;
-
-  /// **就地切换收藏**（2026-09-25 A 方案）。非 null 时行尾恒显一枚星标按钮，
-  /// 收藏区用它在主页直接取消收藏；普通行不传 ⇒ 不显星标（标记入口在左侧
-  /// 列表的 `···` 菜单，见 [NoteListView]）。
-  final VoidCallback? onTogglePromoted;
-
   @override
-  State<_HubRow> createState() => _HubRowState();
+  State<_ViewTab> createState() => _ViewTabState();
 }
 
-class _HubRowState extends State<_HubRow> {
+class _ViewTabState extends State<_ViewTab> {
   final FocusNode _focus = FocusNode();
   bool _hover = false;
 
@@ -498,21 +607,19 @@ class _HubRowState extends State<_HubRow> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
-    final Color fill = _hover
+    final Color fill = widget.active
+        ? AppTheme.navSelectedTint(scheme.onSurface)
+        : _hover
         ? AppTheme.boardFillHover(theme.brightness)
         : Colors.transparent;
-
-    // ghost 行平时灰；hover/聚焦抬成 onSurface（"次级但活着"）。
-    final Color titleColor = widget.ghost && !_hover && !_focus.hasFocus
-        ? scheme.onSurfaceVariant
-        : scheme.onSurface;
+    final Color iconColor = widget.active
+        ? scheme.onSurface
+        : scheme.onSurfaceVariant;
 
     return FocusRing(
       focusNode: _focus,
       borderRadius: radius,
       child: Material(
-        // ⚠️ 静止态必须显式 transparent（与导航行同款的坑：
-        // null 会落到 canvasColor，把窗口底盖成黑方块）。
         color: fill,
         borderRadius: radius,
         clipBehavior: Clip.antiAlias,
@@ -524,85 +631,24 @@ class _HubRowState extends State<_HubRow> {
           highlightColor: Colors.transparent,
           onHover: (bool v) => setState(() => _hover = v),
           onTap: widget.onTap,
-          child: SizedBox(
-            height: 34,
-            width: double.infinity,
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
-              child: Row(
-                children: <Widget>[
-                  if (widget.leading != null) ...<Widget>[
-                    widget.leading!,
-                    const SizedBox(width: Tokens.spaceSm),
-                  ],
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: (widget.emphasized
-                              ? theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                )
-                              : theme.textTheme.bodyMedium)
-                          ?.copyWith(color: titleColor),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Tokens.spaceMd,
+              vertical: Tokens.spaceSm,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                widget.view.icon(iconColor),
+                const SizedBox(width: Tokens.spaceSm),
+                Text(
+                  widget.view.label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: widget.active ? scheme.onSurface : iconColor,
+                    fontWeight: widget.active ? FontWeight.w600 : null,
                   ),
-                  if (widget.kindTag != null) ...<Widget>[
-                    const SizedBox(width: Tokens.spaceSm),
-                    Text(
-                      widget.kindTag!,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                  if (widget.trailing != null) ...<Widget>[
-                    const SizedBox(width: Tokens.spaceMd),
-                    DefaultTextStyle.merge(
-                      // 时间与形态 tag 同灰——行尾是"次要信息列"，不抢标题。
-                      style: theme.textTheme.labelSmall!.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      child: widget.trailing!,
-                    ),
-                  ],
-                  // 就地收藏切换（仅收藏区行传了 onTogglePromoted）：恒显星标，
-                  // 实/空随 promoted。与左侧列表 `···` 菜单里的「收藏」同一条
-                  // 通道（togglePromoted），主页就能直接取消收藏。
-                  if (widget.onTogglePromoted != null) ...<Widget>[
-                    const SizedBox(width: Tokens.spaceSm),
-                    SizedBox(
-                      width: Tokens.formatButtonHeight,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        tooltip: widget.promoted ? '取消收藏' : '收藏',
-                        icon: widget.promoted
-                            ? tabler.StarFilled(
-                                height: Tokens.iconMd,
-                                width: Tokens.iconMd,
-                                strokeWidth: Tokens.iconStroke,
-                                colorFilter: ui.ColorFilter.mode(
-                                  scheme.onSurfaceVariant,
-                                  ui.BlendMode.srcIn,
-                                ),
-                              )
-                            : tabler.Star(
-                                height: Tokens.iconMd,
-                                width: Tokens.iconMd,
-                                strokeWidth: Tokens.iconStroke,
-                                colorFilter: ui.ColorFilter.mode(
-                                  scheme.onSurfaceVariant,
-                                  ui.BlendMode.srcIn,
-                                ),
-                              ),
-                        onPressed: widget.onTogglePromoted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -611,38 +657,517 @@ class _HubRowState extends State<_HubRow> {
   }
 }
 
-/// 空库：不给空行，直接指路（新建是此时唯一有意义的事）。
-class _EmptyHub extends ConsumerWidget {
-  const _EmptyHub();
+/// 卡片网格：随窗口宽度自动增删列（[SliverGridDelegateWithMaxCrossAxisExtent]，
+/// 无写死列数）。
+///
+/// 两种用法：`Expanded` 里自己滚（主页各视图，默认）；`shrinkWrap: true`
+/// 收缩成内容高、交给外层滚动体（日历选中日的篇目，2026-09-29 用户定：
+/// 篇目也从列表行改成卡片，与其余视图同语言）。
+class _CardsGrid extends StatelessWidget {
+  const _CardsGrid({
+    required this.items,
+    required this.onOpen,
+    this.onUnfavorite,
+    this.shrinkWrap = false,
+    this.padding = const EdgeInsets.fromLTRB(
+      Tokens.spaceLg,
+      Tokens.spaceXs,
+      Tokens.spaceLg,
+      Tokens.spaceLg,
+    ),
+  });
+
+  final List<Note> items;
+  final ValueChanged<Note> onOpen;
+
+  /// 收藏视图传入：卡片右上出一枚实心星，点它就地取消收藏。其余视图传 `null`。
+  final ValueChanged<Note>? onUnfavorite;
+
+  /// `true` = 高度收到内容（嵌在外层滚动体里用），并把滚动让给外层。
+  final bool shrinkWrap;
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: padding,
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 260,
+        childAspectRatio: 1.5,
+        crossAxisSpacing: Tokens.spaceMd,
+        mainAxisSpacing: Tokens.spaceMd,
+      ),
+      itemCount: items.length,
+      itemBuilder: (BuildContext _, int i) => _NoteCard(
+        // key 钉在 noteId：搜索过滤 / 切视图时列表内容变，Element 复用会让
+        // 卡片的 hover 态串到别的卡上（无 key 的 GridView 经典坑）。
+        key: ValueKey<String>('note-card-${items[i].id}'),
+        note: items[i],
+        onOpen: () => onOpen(items[i]),
+        onUnfavorite: onUnfavorite == null
+            ? null
+            : () => onUnfavorite!(items[i]),
+      ),
+    );
+  }
+}
+
+/// 一张**笔记卡片**：标题 + 摘要（2–3 行）+ 标签 + 相对时间。
+///
+/// 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] / [cardFillHover]）——
+/// 静止态**有底色**（与列表行"显式透明"相反：卡片是一块浮起的板子，透明就没了
+/// 卡片的样子）。画布卡片用 [CustomIcons.canvas] 角标区分形态（无缩略图渲染管线）。
+class _NoteCard extends StatefulWidget {
+  const _NoteCard({
+    super.key,
+    required this.note,
+    required this.onOpen,
+    this.onUnfavorite,
+  });
+
+  final Note note;
+  final VoidCallback onOpen;
+  final VoidCallback? onUnfavorite;
+
+  @override
+  State<_NoteCard> createState() => _NoteCardState();
+}
+
+class _NoteCardState extends State<_NoteCard> {
+  final FocusNode _focus = FocusNode();
+  bool _hover = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final Brightness brightness = theme.brightness;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusLg);
+    final Note n = widget.note;
+    final bool isCanvas = n.kind == NoteKind.canvas;
+
+    final String summary = n.plainText.trim();
+    final List<String> tags = n.tags;
+
+    return FocusRing(
+      focusNode: _focus,
+      borderRadius: radius,
+      child: Material(
+        color: _hover
+            ? AppTheme.cardFillHover(brightness)
+            : AppTheme.cardFill(brightness),
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          focusNode: _focus,
+          borderRadius: radius,
+          hoverColor: Colors.transparent,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          onHover: (bool v) => setState(() => _hover = v),
+          onTap: widget.onOpen,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: AppTheme.cardStroke(brightness)),
+            ),
+            padding: const EdgeInsets.all(Tokens.spaceMd),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                // 标题行：左 = 形态角标（仅画布）+ 标题，右 = 取消收藏星（仅收藏视图）。
+                Row(
+                  children: <Widget>[
+                    if (isCanvas) ...<Widget>[
+                      CustomIcons.canvas(size: Tokens.iconXs + 4),
+                      const SizedBox(width: Tokens.spaceXs),
+                    ],
+                    Expanded(
+                      child: Text(
+                        _titleOf(n),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: scheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (widget.onUnfavorite != null) ...<Widget>[
+                      const SizedBox(width: Tokens.spaceXs),
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          tooltip: '取消收藏',
+                          icon: tabler.StarFilled(
+                            height: Tokens.iconSm,
+                            width: Tokens.iconSm,
+                            strokeWidth: Tokens.iconStroke,
+                            colorFilter: ui.ColorFilter.mode(
+                              scheme.onSurfaceVariant,
+                              ui.BlendMode.srcIn,
+                            ),
+                          ),
+                          onPressed: widget.onUnfavorite,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: Tokens.spaceXs),
+                // 摘要：2–3 行，让人一眼知道大概内容。
+                Expanded(
+                  child: summary.isEmpty
+                      ? Text(
+                          '（空白）',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.6,
+                            ),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        )
+                      : Text(
+                          summary,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                ),
+                const SizedBox(height: Tokens.spaceSm),
+                // 底行：标签（最多 3 枚 + `+n`）+ 右对齐相对时间。
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Wrap(
+                        spacing: Tokens.spaceXs,
+                        runSpacing: Tokens.spaceXs,
+                        children: <Widget>[
+                          for (final String t in tags.take(3))
+                            _CardTag(label: t),
+                          if (tags.length > 3)
+                            _CardTag(label: '+${tags.length - 3}'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text(
+                      _relativeTime(n.revisedAt),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 卡片底部的一枚小标签记号（极淡描边，非交互——只是标注）。
+class _CardTag extends StatelessWidget {
+  const _CardTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Tokens.spaceXs + 2,
+        vertical: 1,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+        border: Border.all(color: AppTheme.cardStroke(theme.brightness)),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// 某视图没有内容时的空态（各视图说各的话，别一律"还没有笔记"）。
+class _EmptyView extends ConsumerWidget {
+  const _EmptyView({
+    required this.view,
+    required this.hasQuery,
+    required this.query,
+    required this.activeTag,
+  });
+
+  final HomeView view;
+  final bool hasQuery;
+  final String query;
+  final String? activeTag;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXl),
-      child: Column(
-        children: <Widget>[
-          Text('还没有笔记', style: theme.textTheme.titleMedium),
-          const SizedBox(height: Tokens.spaceSm),
-          FilledButton(
-            onPressed: () => unawaited(runCommandById(ref, 'note.new')),
-            child: const Text('新建第一条'),
-          ),
-        ],
+    final String text;
+    if (hasQuery) {
+      text = '没有与「$query」匹配的结果';
+    } else {
+      text = switch (view) {
+        HomeView.notes => '还没有笔记',
+        HomeView.canvas => '还没有画布',
+        HomeView.all => '还没有笔记或画布',
+        HomeView.favorites => '还没有收藏',
+        HomeView.filter => switch ((
+          activeTag,
+          ref.watch(allTagsProvider).isNotEmpty,
+        )) {
+          (null, true) => '选一枚标签，看它名下的内容',
+          (null, false) => '还没有标签，先在笔记里打上标签',
+          (final String tag, _) => '「$tag」标签下还没有内容',
+        },
+        HomeView.calendar => '', // 不会走到。
+      };
+    }
+    return Center(
+      child: Text(
+        text,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }
+}
+
+/// 「更多」视图顶部的常驻面板（2026-09-29 用户定）：第一行**视图入口**
+/// （笔记 / 画布——2026-09-29 再定：低频视图收进来，顶栏只留高频四枚
+/// [kHomeTabs]，点了照旧整页切换）、第二行排序方案、第三行标签筛选。
+class _MorePanel extends ConsumerWidget {
+  const _MorePanel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[_ViewEntriesRow(), _SortRow(), _TagChips()],
+    );
+  }
+}
+
+/// 视图入口行：**笔记 / 画布**两枚 chips（低频视图的整页入口）。与排序 /
+/// 标签 chips 同语言（[_TagChip]），但点它不是"过滤当前池"，是**切换视图**
+/// （[HomeViewNotifier.select]）——顶栏随之高亮「更多」。
+class _ViewEntriesRow extends ConsumerWidget {
+  const _ViewEntriesRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceLg,
+          vertical: Tokens.spaceSm,
+        ),
+        scrollDirection: Axis.horizontal,
+        itemCount: 2,
+        separatorBuilder: (BuildContext _, int _) =>
+            const SizedBox(width: Tokens.spaceSm),
+        itemBuilder: (BuildContext context, int i) {
+          final HomeView v = i == 0 ? HomeView.notes : HomeView.canvas;
+          return _TagChip(
+            label: v.label,
+            selected: false,
+            onTap: () => ref.read(homeViewProvider.notifier).select(v),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 排序方案行：[NoteSort.values] 一排 chips，选中走 [homeSortProvider]。
+/// 视觉与标签 chips 同语言（[_TagChip]，无篇数小字）。
+class _SortRow extends ConsumerWidget {
+  const _SortRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final NoteSort sort = ref.watch(homeSortProvider);
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceLg,
+          vertical: Tokens.spaceSm,
+        ),
+        scrollDirection: Axis.horizontal,
+        itemCount: NoteSort.values.length,
+        separatorBuilder: (BuildContext _, int _) =>
+            const SizedBox(width: Tokens.spaceSm),
+        itemBuilder: (BuildContext context, int i) {
+          final NoteSort s = NoteSort.values[i];
+          return _TagChip(
+            label: s.label,
+            selected: s == sort,
+            onTap: () => ref.read(homeSortProvider.notifier).select(s),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 标签筛选行（「更多」面板的第二行）：全库标签池（[allTagsProvider]，按出现
+/// 篇数倒序），无标签时整行收起。
+///
+/// 用 `select` 只订阅 [SearchState.activeTag]——chips 行不该因结果变化而重建。
+class _TagChips extends ConsumerWidget {
+  const _TagChips();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<(String, int)> tags = ref.watch(allTagsProvider);
+    if (tags.isEmpty) return const SizedBox.shrink();
+    final String? active = ref.watch(
+      searchNotifierProvider.select((SearchState s) => s.activeTag),
+    );
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceLg,
+          vertical: Tokens.spaceSm,
+        ),
+        scrollDirection: Axis.horizontal,
+        itemCount: tags.length,
+        separatorBuilder: (BuildContext _, int _) =>
+            const SizedBox(width: Tokens.spaceSm),
+        itemBuilder: (BuildContext context, int i) {
+          final (String tag, int count) = tags[i];
+          final bool selected = tag == active;
+          return _TagChip(
+            label: tag,
+            count: count,
+            selected: selected,
+            onTap: () => ref
+                .read(searchNotifierProvider.notifier)
+                .selectTag(selected ? null : tag),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 一枚筛选 chip（排序 / 标签共用）：主文字 + 可选篇数小字。
+/// 选中 = 导航项同款选中底，未选中 = 极淡描边。
+class _TagChip extends StatelessWidget {
+  const _TagChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.count,
+  });
+
+  final String label;
+
+  /// 篇数小字（标签行传；排序行不传则不渲染）。
+  final int? count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Tokens.radiusLg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Tokens.spaceSm + 2,
+          vertical: 4,
+        ),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+          border: Border.fromBorderSide(
+            BorderSide(color: AppTheme.cardStroke(theme.brightness)),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: scheme.onSurface,
+              ),
+            ),
+            if (count != null) ...<Widget>[
+              const SizedBox(width: Tokens.spaceXs),
+              Text(
+                '$count',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── 公共小料 ───────────────────────────
+
+String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
+
+/// 相对时间：关心的是"多久没碰了"，不是精确时刻。
+String _relativeTime(DateTime at) {
+  final Duration d = DateTime.now().difference(at);
+  if (d.inMinutes < 1) return '刚刚';
+  if (d.inHours < 1) return '${d.inMinutes} 分钟前';
+  if (d.inDays < 1) return '${d.inHours} 小时前';
+  if (d.inDays < 7) return '${d.inDays} 天前';
+  return '${at.month}-${at.day.toString().padLeft(2, '0')}';
 }
 
 // ─────────────────────────── 日历分区 ───────────────────────────
 
 /// 日历分区（2026-09-26）：按**新建日期**（`createdAt`）回看一个月。
 ///
-/// 不跟修改日期走——它回答"我什么时候写过什么"，与「最近」（`revisedAt` =
-/// "我上次在写哪篇"）互补。语言延续主页排版风：无格线、文字网格、语义色状态。
+/// 不跟修改日期走——它回答"我什么时候写过什么"。语言延续主页排版风：无格线、
+/// 文字网格、语义色状态。
 ///
 /// 2026-09-26 用户定：周一起始；标记 = 日期下小圆点（≥3 篇两枚，不显数字）；
 /// 今天 = 细描边圈（不填充）；选中 = 玻璃 tint 填充。
+///
+/// 2026-09-29 用户定：日历网格独占**一张卡片**（自有底色 / 颗粒 / 阴影），
+/// 卡片底部常驻「写日记」入口（**只写今天**，点完直接打字；2026-09-29 再定：
+/// 点选日只管回看，不改变落笔日期）；选中日的篇目列表挪到**卡片之外、下方
+/// 的页面背景上**——卡片与结果背景分开——且篇目本身也用**卡片网格**呈现
+/// （同日再定：列表行不直观，与其余视图统一成 [_NoteCard]）。
 class _CalendarView extends StatelessWidget {
   const _CalendarView({
     required this.notes,
@@ -651,6 +1176,7 @@ class _CalendarView extends StatelessWidget {
     required this.onPickMonth,
     required this.onPickDay,
     required this.onOpenNote,
+    required this.onCreateToday,
   });
 
   final List<Note> notes;
@@ -663,6 +1189,9 @@ class _CalendarView extends StatelessWidget {
 
   /// 打开某篇（父层走 `locateProvider`，主页不直接导航）。
   final ValueChanged<Note> onOpenNote;
+
+  /// **写今天的日记**（父层建笔记并定位聚焦；与点选日无关）。
+  final VoidCallback onCreateToday;
 
   /// 日期归一化键（去时间，本地时区）。
   static DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
@@ -757,7 +1286,9 @@ class _CalendarView extends StatelessWidget {
         : const Offset(6, 6);
     final double shadowBlur = isLight ? 6 : 8;
 
-    return DecoratedBox(
+    // 日历**卡片**：只装月份头 / 星期 / 网格 / 底部「写日记」。选中日的篇目
+    // 列表挪到卡片之外（见本方法 return 的第二段），两种背景分开。
+    final Widget card = DecoratedBox(
       decoration: BoxDecoration(
         color: panel,
         borderRadius: BorderRadius.circular(Tokens.radiusLg),
@@ -836,83 +1367,101 @@ class _CalendarView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: Tokens.spaceSm),
-                // 分组头：日期数字放进与日历选中格同款的灰圆片（navSelectedTint
-                // 圆形填充 + bodyMedium），建立「下面这些行 = 上面圈住的那天」的
-                // 视觉呼应——分区靠呼应而非容器。
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Tokens.spaceMd,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: AppTheme.navSelectedTint(scheme.onSurface),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              '${selected.day}',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: scheme.onSurface,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: Tokens.spaceSm),
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            children: <InlineSpan>[
-                              TextSpan(
-                                text: '${selected.month} 月',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: scheme.onSurface,
-                                ),
-                              ),
-                              TextSpan(
-                                text: '  ·  新建 ${dayNotes.length} 篇',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                // 卡片底部：一条发丝分隔 + 常驻「写日记」入口（像日记本每页
+                // 底下留白的那一行）。**只写今天**，点完直接打字。
+                Container(
+                  height: 1,
+                  color: AppTheme.cardStroke(theme.brightness),
                 ),
                 const SizedBox(height: Tokens.spaceXs),
-                if (dayNotes.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: Tokens.spaceMd,
-                    ),
-                    child: Text(
-                      '这天没有新建笔记',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                else
-                  for (final Note n in dayNotes)
-                    _HubRow(
-                      title: _titleOf(n),
-                      kindTag: _kindTagOf(n),
-                      trailing: _TimeLabel(at: n.createdAt),
-                      onTap: () => onOpenNote(n),
-                    ),
+                _DiaryEntryButton(day: today, onTap: onCreateToday),
               ],
             ),
           ),
         ],
       ),
+    );
+
+    // 卡片**之外**（页面背景上）：选中日的篇目——日期圆片与日历选中格同款，
+    // 建立「下面这些卡 = 上面圈住的那天」的视觉呼应；背景与卡片分开。
+    // 2026-09-29 用户定：篇目从列表行改成**卡片网格**（与其余视图同语言，
+    // 一眼读出标题 / 摘要 / 标签），列表行不直观。
+    final Widget daySection = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              SizedBox(
+                width: 30,
+                height: 30,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppTheme.navSelectedTint(scheme.onSurface),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${selected.day}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: <InlineSpan>[
+                      TextSpan(
+                        text: '${selected.month} 月',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '  ·  新建 ${dayNotes.length} 篇',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.spaceXs),
+          if (dayNotes.isEmpty)
+            Text(
+              '这天没有新建笔记',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            )
+          else
+            // shrinkWrap：高度收到内容，滚动交给日历页的外层滚动体；左右
+            // 不加内边距——与上方日期圆片对齐。
+            _CardsGrid(
+              items: dayNotes,
+              onOpen: onOpenNote,
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXs),
+            ),
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        card,
+        const SizedBox(height: Tokens.spaceMd),
+        daySection,
+      ],
     );
   }
 
@@ -969,6 +1518,95 @@ class _CalendarView extends StatelessWidget {
   }
 }
 
+/// 日历卡片底部的「写日记」入口（2026-09-29 用户定）：**只写今天**——
+/// 点选日只管回看，落笔日期永远是今天。全宽一条（发丝分隔之下），静止透明、
+/// hover 叠一档；左侧 PencilPlus +「写日记」，右侧灰字给出今天的日期（含周几）。
+class _DiaryEntryButton extends StatefulWidget {
+  const _DiaryEntryButton({required this.day, required this.onTap});
+
+  /// 恒为今天（由 [_CalendarView] 传入，本地时区零点）。
+  final DateTime day;
+  final VoidCallback onTap;
+
+  @override
+  State<_DiaryEntryButton> createState() => _DiaryEntryButtonState();
+}
+
+class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
+  final FocusNode _focus = FocusNode();
+  bool _hover = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
+    const List<String> weekdays = <String>['一', '二', '三', '四', '五', '六', '日'];
+    return Tooltip(
+      message: '为今天写一篇日记',
+      child: FocusRing(
+        focusNode: _focus,
+        borderRadius: radius,
+        child: Material(
+          color: _hover
+              ? AppTheme.boardFillHover(theme.brightness)
+              : Colors.transparent,
+          borderRadius: radius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            focusNode: _focus,
+            borderRadius: radius,
+            hoverColor: Colors.transparent,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            onHover: (bool v) => setState(() => _hover = v),
+            onTap: widget.onTap,
+            child: SizedBox(
+              height: 36,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
+                child: Row(
+                  children: <Widget>[
+                    tabler.PencilPlus(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                      colorFilter: ui.ColorFilter.mode(
+                        scheme.onSurfaceVariant,
+                        ui.BlendMode.srcIn,
+                      ),
+                    ),
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text(
+                      '写日记',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${widget.day.month} 月 ${widget.day.day} 日 · 周${weekdays[widget.day.weekday - 1]}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 日历单元格：36 高、数字居中、圆形状态底。无格线无底色——文字网格。
 class _CalCell extends StatefulWidget {
   const _CalCell({
@@ -1007,8 +1645,8 @@ class _CalCellState extends State<_CalCell> {
     final Color? fill = widget.isSelected
         ? AppTheme.navSelectedTint(scheme.onSurface)
         : (_hover && widget.onTap != null)
-            ? AppTheme.boardFillHover(theme.brightness)
-            : null;
+        ? AppTheme.boardFillHover(theme.brightness)
+        : null;
     final Color textColor = dim
         ? scheme.onSurface.withValues(alpha: 0.3)
         : scheme.onSurfaceVariant;
@@ -1087,16 +1725,16 @@ class _CalCellState extends State<_CalCell> {
   /// 新建标记点：绿色系（2026-09-26 用户定），明暗各一档保证两种主题都清晰
   /// ——亮色窗用深绿、暗色窗用亮绿（同一色相，只调明度）。
   Widget _calDot(Brightness brightness) => Container(
-        width: 4,
-        height: 4,
-        decoration: BoxDecoration(
-          color: switch (brightness) {
-            Brightness.dark => const Color(0xFF4ADE80),
-            Brightness.light => const Color(0xFF16A34A),
-          },
-          shape: BoxShape.circle,
-        ),
-      );
+    width: 4,
+    height: 4,
+    decoration: BoxDecoration(
+      color: switch (brightness) {
+        Brightness.dark => const Color(0xFF4ADE80),
+        Brightness.light => const Color(0xFF16A34A),
+      },
+      shape: BoxShape.circle,
+    ),
+  );
 }
 
 /// 切月 ghost 圆钮：28 圆，静止透明，hover 叠一档（"再叠一档"同语言）。

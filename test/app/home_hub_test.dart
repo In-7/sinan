@@ -11,13 +11,19 @@ import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 主页骨架的回归（Things 3 式一页纸，2026-09-24 重写）。
+/// 主页（2026-09-29 重做：顶栏视图切换 + 常驻搜索 + 卡片网格）的回归。
 ///
-/// 钉的是"主页是什么"这四条结构性事实：
-/// ① 未选中 = 主页（不是空面板）；② **行都接了焦点环**（§5.2：主页行是新出现的
-/// 自绘交互件，不能又变成只有鼠标能用）；③ 点行 = 走 `locateProvider`（§4 的唯一
-/// 跳转通道）；④ **永远单列**：行全宽等宽、垂直堆叠——一旦出现并排/不等宽，
-/// 就是退回了 Bento 卡片格（2026-09-24 明确弃用）。
+/// 钉的是"主页是什么"这几条结构性事实：
+/// ① 顶栏 = 上一步/下一步 + 4 枚常驻 tab（全部/日历/收藏/更多），默认落**全部**；
+///    笔记 / 画布是低频视图，入口收进「更多」面板（点了整页切换）；
+/// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
+///   "显式透明"相反，卡片就该是一块浮起的板子）；
+/// ③ 点卡片走 `locateProvider`（§4 唯一跳转通道）；
+/// ④ 搜索框常驻顶栏，**在当前视图范围内**过滤（日历忽略搜索词）；
+/// ⑤ 收藏视图可就地取消收藏；「更多」面板 = 视图入口 + 排序方案 + 标签 chips；
+/// ⑥「全部」跨形态统一池（默认按最近编辑排序，不单设「最近」视图）；
+/// ⑦ 视图历史（上一步 / 下一步）在**主区顶条**（title_bar_nav_test.dart 钉），
+///    provider 语义在本文件钉。
 void main() {
   late Database db;
   late NoteStore notes;
@@ -28,6 +34,7 @@ void main() {
   setUp(() {
     db = sqlite3.openInMemory();
     AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
     notes = NoteStore(db);
     settings = SettingsStore(db);
   });
@@ -35,22 +42,31 @@ void main() {
   tearDown(() => db.close());
 
   ProviderContainer newContainer() => ProviderContainer(
-        overrides: [
-          noteStoreProvider.overrideWithValue(notes),
-          settingsStoreProvider.overrideWithValue(settings),
-          appDataDirProvider.overrideWithValue(kDataDir),
-        ],
-      );
+    overrides: [
+      noteStoreProvider.overrideWithValue(notes),
+      settingsStoreProvider.overrideWithValue(settings),
+      appDataDirProvider.overrideWithValue(kDataDir),
+      // 检索设施只读这条裸连接（内容路缺席时优雅降级，标题路照常）。
+      databaseProvider.overrideWithValue(db),
+    ],
+  );
 
-  /// [noteCount] 条笔记先建好再挂主页（建笔记走 `notesProvider.notifier`，
-  /// 与产品路径同源）。
+  /// 先建好笔记（[titles] = 普通笔记，[canvasTitles] = 画布）再挂主页。
   Future<ProviderContainer> pumpHub(
     WidgetTester tester, {
-    int noteCount = 0,
+    List<String> titles = const <String>[],
+    List<String> canvasTitles = const <String>[],
   }) async {
     final ProviderContainer container = newContainer();
-    for (int i = 0; i < noteCount; i++) {
-      await container.read(notesProvider.notifier).createNote();
+    for (final String t in titles) {
+      final Note n = await container.read(notesProvider.notifier).createNote();
+      await container.read(notesProvider.notifier).saveTitle(n.id, t);
+    }
+    for (final String t in canvasTitles) {
+      final Note n = await container
+          .read(notesProvider.notifier)
+          .createNote(kind: NoteKind.canvas);
+      await container.read(notesProvider.notifier).saveTitle(n.id, t);
     }
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -65,47 +81,84 @@ void main() {
     return container;
   }
 
-  testWidgets('空库：不给空行，直接指路', (WidgetTester tester) async {
+  testWidgets('默认落全部视图：4 枚 tab + 常驻搜索框 + 卡片网格', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲', '乙'],
+    );
+
+    expect(container.read(homeViewProvider), HomeView.all);
+    for (final String t in <String>['全部', '日历', '收藏', '更多']) {
+      expect(find.text(t), findsOneWidget, reason: '顶栏必须有「$t」常驻 tab');
+    }
+    // 笔记 / 画布不再是常驻 tab（低频，收进「更多」）。
+    expect(find.text('笔记'), findsNothing);
+    expect(find.text('画布'), findsNothing);
+    // 上一步 / 下一步在主区顶条，不在 HomeHub 顶栏里。
+    expect(find.byTooltip('上一步'), findsNothing);
+    expect(find.byTooltip('下一步'), findsNothing);
+    expect(find.text('搜索标题与内容'), findsOneWidget, reason: '常驻搜索框（hint）');
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙'), findsOneWidget);
+    // 空白新笔记给可读兜底。
+    expect(find.text('（空白）'), findsNWidgets(2));
+    // 键盘可达（§5.2）：4 枚 tab + 2 张卡片都接了 FocusRing（禁用箭头不接）。
+    expect(find.byType(FocusRing), findsNWidgets(6));
+  });
+
+  testWidgets('空库：全部视图给指路文案，tab 照常', (WidgetTester tester) async {
     await pumpHub(tester);
-
-    expect(find.text('还没有笔记'), findsOneWidget);
-    expect(find.text('新建第一条'), findsOneWidget);
-    // 空库时主页只有指路文案 + 一个 FilledButton，没有自绘行 ⇒ 没有焦点环。
-    expect(
-      find.byType(FocusRing),
-      findsNothing,
-      reason: '空库没有行可交互；新建入口走 FilledButton（Material 自带焦点）',
-    );
+    expect(find.text('还没有笔记或画布'), findsOneWidget);
+    // 空库只剩 4 枚 tab 是交互件（箭头禁用不进交互链）。
+    expect(find.byType(FocusRing), findsNWidgets(4));
   });
 
-  testWidgets('有笔记：继续 + 最近 + 新建三段，行都接了焦点环', (WidgetTester tester) async {
-    await pumpHub(tester, noteCount: 3);
-
-    expect(find.text('继续'), findsOneWidget);
-    expect(find.text('最近'), findsOneWidget);
-    expect(find.text('新建'), findsOneWidget);
-    // 3 篇笔记 ⇒ 日历 3 行（都建在今天、选中当天）+ 继续 1 行 +
-    // 最近折叠头 1 + 最近 2 行 + 新建 ghost 2 行 = 9。
-    // ⚠️ 日历分区在最前，它的行同样带 FocusRing —— 增删分区这个数要跟着改。
-    expect(
-      find.byType(FocusRing),
-      findsNWidgets(9),
-      reason: '主页行与折叠头都是自绘交互件 ⇒ 必须全部接进 Focus 树（§5.2）',
+  testWidgets('「更多」进画布：整页切换，只看画布形态，笔记被滤掉', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲'],
+      canvasTitles: <String>['乙画布'],
     );
+
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+    // 面板第一行是视图入口：笔记 / 画布两枚 chips。
+    await tester.tap(find.text('画布'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(homeViewProvider), HomeView.canvas);
+    expect(find.text('乙画布'), findsOneWidget);
+    expect(find.text('甲'), findsNothing, reason: '笔记视图的东西不该混进画布');
   });
 
-  testWidgets('点行进入该笔记：走 locateProvider（唯一跳转通道）', (WidgetTester tester) async {
-    final ProviderContainer container = await pumpHub(tester, noteCount: 3);
+  testWidgets('「全部」视图：笔记 + 画布跨形态同一池', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲'],
+      canvasTitles: <String>['乙画布'],
+    );
+
+    await tester.tap(find.text('全部'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(homeViewProvider), HomeView.all);
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙画布'), findsOneWidget, reason: '全部不分笔记与画布');
+  });
+
+  testWidgets('点卡片进入该笔记：走 locateProvider（唯一跳转通道）', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲'],
+    );
 
     expect(container.read(selectedNoteIdProvider), isNull, reason: '主页 = 未选中');
 
-    // FocusRing 视觉顺序：0..2 = 日历当天行，3 = 继续行，4 = 最近折叠头，
-    // 5..6 = 最近行，7..8 = 新建。这里 at(2) 落在日历的一行上（同样是笔记行）。
-    await tester.tap(find.byType(FocusRing).at(2));
+    await tester.tap(find.text('甲'));
     await tester.pumpAndSettle();
 
     final String? selected = container.read(selectedNoteIdProvider);
-    expect(selected, isNotNull, reason: '点了行却没有选中笔记');
+    expect(selected, isNotNull, reason: '点了卡片却没有选中笔记');
     expect(
       notes.allNotes().map((Note n) => n.id).toList(),
       contains(selected),
@@ -113,73 +166,206 @@ void main() {
     );
   });
 
-  /// **单列闸门**（2026-09-24）：Things 式一页纸的结构事实。
-  ///
-  /// 钉的都是"布局一改就会立刻被抓到"的：
-  /// ① 所有行**全宽等宽**（出现不等宽 = 退回 Bento 的跨列卡）；
-  /// ② 行**垂直堆叠**（second 在 first 正下方、left 相同——出现并排 = 退回多列）；
-  /// ③ 内容列有 [HomeHub.maxWidth] 上限（不写死：钳制后 ≤ 700）。
-  testWidgets('单列：行全宽等宽、垂直堆叠，内容列不超 maxWidth', (WidgetTester tester) async {
-    // 4 篇 ⇒ 日历 4 + 继续 1 + 最近头 1 + 最近 3 + 新建 2；FocusRing 顺序 = 视觉顺序。
-    await pumpHub(tester, noteCount: 4);
+  testWidgets('卡片静止态有底色 cardFill（不许透明）', (WidgetTester tester) async {
+    await pumpHub(tester, titles: <String>['甲']);
 
-    // ⚠️ 日历在最前占 4 个 ⇒ 继续行 = at(4)，最近行从 at(6) 起。
-    final Rect hero = tester.getRect(find.byType(FocusRing).at(4));
-    final Rect first = tester.getRect(find.byType(FocusRing).at(6));
-    final Rect second = tester.getRect(find.byType(FocusRing).at(7));
-
-    expect(
-      hero.width,
-      first.width,
-      reason: '继续行与普通行不等宽 ⇒ 退回了 Bento 的"大卡跨两列"',
+    final Material card = tester.widget<Material>(
+      find.ancestor(of: find.text('甲'), matching: find.byType(Material)).first,
     );
-    expect(first.width, second.width, reason: '同一列的行应当等宽');
     expect(
-      second.top,
-      greaterThan(first.top),
-      reason: '行出现并排 ⇒ 退回了多列网格',
-    );
-    expect(first.left, second.left, reason: '行没有落到同一列');
-    expect(
-      first.width,
-      lessThanOrEqualTo(HomeHub.maxWidth),
-      reason: '内容列超出了 maxWidth 上限',
+      card.color,
+      AppTheme.cardFill(Brightness.light),
+      reason: '卡片是一块浮起的板子——静止态就该有底色（与列表行的透明相反）',
     );
   });
 
-  testWidgets('折叠「最近」：头可切换，折叠时计数可见、行收起', (WidgetTester tester) async {
-    await pumpHub(tester, noteCount: 3);
+  testWidgets('搜索在当前视图范围内过滤；清空钮撤词', (WidgetTester tester) async {
+    await pumpHub(tester, titles: <String>['甲'], canvasTitles: <String>['乙画布']);
 
-    // 折叠头 = 「最近」那个标题所在的 FocusRing。
-    // ⚠️ **不写死下标**：日历分区在最前、且它的行同样是 FocusRing，写死
-    // `at(1)` 会点到日历的行上（没点中折叠头 ⇒ 后面两条断言全不成立）。
-    final Finder recentHeader = find.ancestor(
-      of: find.text('最近'),
-      matching: find.byType(FocusRing),
-    );
-    // ⚠️ 日历把主页撑高了 ⇒ 「最近」头会落到 800×600 测试视口**之外**
-    // （实测 y=630 > 600）。不先滚进视口就 tap，会**打空且不报错**（只有
-    // 一条 hit-test 警告）⇒ 表现为"折叠没生效"，实则根本没点到。
-    await tester.ensureVisible(recentHeader);
+    // 进「笔记」视图（经更多）：搜「乙」命中的是画布 ⇒ 超出当前范围，视图内无结果。
+    await tester.tap(find.text('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(recentHeader);
+    await tester.tap(find.text('笔记'));
     await tester.pumpAndSettle();
 
-    // 3 篇 ⇒ 最近里有 2 篇；折叠后行收起、计数出现。
-    expect(find.text('2 篇'), findsOneWidget, reason: '折叠时分组头应交代收起了几篇');
+    await tester.enterText(find.byType(TextField), '乙');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('没有与「乙」匹配的结果'), findsOneWidget);
+
+    // 切画布视图（同一个词还在）：命中范围内的画布。
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('画布'));
+    await tester.pumpAndSettle();
+    expect(find.text('乙画布'), findsOneWidget);
+
+    // 清空（Esc 钮）⇒ 撤词，回到视图默认内容。
+    await tester.tap(find.byTooltip('清空（Esc）'));
+    await tester.pumpAndSettle();
+    expect(find.text('乙画布'), findsOneWidget);
+    expect(find.text('甲'), findsNothing, reason: '还在画布视图，笔记不该出现');
+  });
+
+  testWidgets('日历视图：月网格照常，且忽略搜索词', (WidgetTester tester) async {
+    await pumpHub(tester, titles: <String>['甲']);
+
+    await tester.enterText(find.byType(TextField), '不存在的词');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('日历'));
+    await tester.pumpAndSettle();
+
+    final DateTime now = DateTime.now();
+    expect(find.text('${now.year} 年 ${now.month} 月'), findsOneWidget);
     expect(
-      find.byType(FocusRing),
-      // 日历 3 + 继续行 1 + 折叠头 1 + 新建 2；最近 2 行已收起。
-      findsNWidgets(7),
-      reason: '折叠后「最近」的行不该还挂在树上',
+      find.text('没有与「不存在的词」匹配的结果'),
+      findsNothing,
+      reason: '日历回答"哪天写过什么"，不吃搜索词',
     );
 
-    // 再点一次展开回来（同样先滚进视口：展开后页面又变高）。
-    await tester.ensureVisible(recentHeader);
+    // 默认选中今天，「甲」（今天新建）以**卡片**出现在卡片网格里
+    // （2026-09-29 用户定：篇目不再用列表行）。
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.byType(GridView), findsOneWidget);
+  });
+
+  testWidgets('日历「写日记」只落今天：点选别天不改变新建日期', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲'],
+    );
+
+    await tester.tap(find.text('日历'));
     await tester.pumpAndSettle();
-    await tester.tap(recentHeader);
+
+    // 点选 15 号回看（任何月份都有 15 号，且不会与相邻月补位重号）。
+    await tester.tap(find.text('15'));
     await tester.pumpAndSettle();
-    expect(find.byType(FocusRing), findsNWidgets(9));
+
+    await tester.tap(find.text('写日记'));
+    await tester.pumpAndSettle();
+
+    // 新建的是无标题那篇（库里唯一非「甲」的篇目）。
+    final Note created = container
+        .read(notesProvider)
+        .value!
+        .firstWhere((Note n) => n.title.isEmpty);
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    expect(
+      !created.createdAt.isBefore(today) &&
+          created.createdAt.isBefore(today.add(const Duration(days: 1))),
+      isTrue,
+      reason:
+          '写日记只写今天（实际 ${created.createdAt}）——点选日只用于回看，'
+          '不得盖住新建日期',
+    );
+  });
+
+  testWidgets('收藏视图：只出 promoted，可就地取消收藏', (WidgetTester tester) async {
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲', '乙'],
+    );
+
+    // createNote 新笔记置顶 ⇒ 按标题找，别按下标猜。
+    final Note jia = container
+        .read(notesProvider)
+        .value!
+        .firstWhere((Note n) => n.title == '甲');
+    await container.read(notesProvider.notifier).togglePromoted(jia);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+
+    // 只有被收藏的那篇出现，且带就地取消入口。
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙'), findsNothing);
+    expect(find.byTooltip('取消收藏'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('取消收藏'));
+    await tester.pumpAndSettle();
+    expect(find.text('还没有收藏'), findsOneWidget);
+    expect(notes.noteById(jia.id)!.promotedAt, isNull, reason: '点星标必须真的落库取消收藏');
+  });
+
+  testWidgets('「更多」视图：排序 chips + 标签 chips 点选过滤（跨形态一套池）', (
+    WidgetTester tester,
+  ) async {
+    // 默认 800 宽下最后一枚 tab 贴着右侧搜索框（tab 区可横滚），命中不稳——
+    // 加宽测试表面让整排 tab 从容露出再点。
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲', '乙'],
+    );
+
+    // createNote 新笔记置顶 ⇒ 按标题找，别按下标猜。
+    final Note jia = container
+        .read(notesProvider)
+        .value!
+        .firstWhere((Note n) => n.title == '甲');
+    await container.read(notesProvider.notifier).saveTags(jia.id, <String>[
+      '工作法',
+    ]);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+
+    // 排序行常驻：三枚方案 chips；标签行出现；未选标签 ⇒ 空态是"选一枚
+    // 标签"的指路，而非"还没有标签"。
+    expect(find.text('最近编辑'), findsOneWidget);
+    expect(find.text('最近创建'), findsOneWidget);
+    expect(find.text('标题 A–Z'), findsOneWidget);
+    expect(find.text('工作法'), findsOneWidget);
+    expect(find.text('选一枚标签，看它名下的内容'), findsOneWidget);
+
+    await tester.tap(find.text('工作法'));
+    await tester.pumpAndSettle();
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙'), findsNothing, reason: '无标签的那篇必须被筛掉');
+  });
+
+  testWidgets('「更多」：切排序方案写入 homeSortProvider，且切视图后保留', (
+    WidgetTester tester,
+  ) async {
+    // 同上：加宽测试表面，让整排 tab 从容露出。
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final ProviderContainer container = await pumpHub(
+      tester,
+      titles: <String>['甲'],
+    );
+
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(homeSortProvider),
+      NoteSort.revised,
+      reason: '默认最近编辑',
+    );
+
+    await tester.tap(find.text('标题 A–Z'));
+    await tester.pumpAndSettle();
+    expect(container.read(homeSortProvider), NoteSort.title);
+
+    // 排序对笔记 / 画布 / 更多三视图全局生效：切走再回，选中不丢。
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
+    expect(container.read(homeSortProvider), NoteSort.title);
+    // 标签行在无标签库整行收起 ⇒ 空态给"还没有标签"的指路。
+    expect(find.text('还没有标签，先在笔记里打上标签'), findsOneWidget);
   });
 
   test('回主页（`locateProvider.goHome`）：清空选中与待消费的跳转请求', () {
@@ -194,29 +380,33 @@ void main() {
     expect(container.read(locateProvider), isNull);
   });
 
-  /// **收藏分区闸门**（2026-09-25 A 方案）：promotedAt 非空的笔记进主页
-  /// 「收藏」段，且能在主页就地取消收藏（行尾星标），取消后该段消失。
-  testWidgets('收藏分区：promoted 笔记出现，可就地取消收藏', (WidgetTester tester) async {
-    final ProviderContainer container = await pumpHub(tester, noteCount: 2);
+  test('homeViewProvider：默认全部，select 入栈、goBack/goForward 重做', () {
+    final ProviderContainer container = newContainer();
+    expect(container.read(homeViewProvider), HomeView.all);
 
-    // 默认无收藏 ⇒ 主页三段、无「收藏」头。
-    expect(find.text('收藏'), findsNothing);
+    final HomeViewNotifier nav = container.read(homeViewProvider.notifier);
+    nav.select(HomeView.notes);
+    expect(container.read(homeViewProvider), HomeView.notes);
+    expect(nav.canGoBack, isTrue);
+    expect(nav.canGoForward, isFalse);
 
-    // 收藏第一篇（与产品路径同源的 togglePromoted）。
-    final Note first =
-        container.read(notesProvider).value!.first;
-    await container.read(notesProvider.notifier).togglePromoted(first);
-    await tester.pumpAndSettle();
+    nav.select(HomeView.filter);
+    expect(container.read(homeViewProvider), HomeView.filter);
 
-    expect(find.text('收藏'), findsOneWidget,
-        reason: '有收藏后主页应出现「收藏」分区头');
-    expect(find.byTooltip('取消收藏'), findsOneWidget,
-        reason: '收藏行的行尾星标应可就地取消收藏');
+    nav.goBack();
+    expect(container.read(homeViewProvider), HomeView.notes);
+    nav.goBack();
+    expect(container.read(homeViewProvider), HomeView.all);
+    expect(nav.canGoBack, isFalse, reason: '退到底了');
 
-    // 点星标取消收藏 ⇒ 分区消失（无收藏不出空分组头）。
-    await tester.tap(find.byTooltip('取消收藏'));
-    await tester.pumpAndSettle();
-    expect(find.text('收藏'), findsNothing,
-        reason: '取消最后一枚收藏后「收藏」分区应整体消失');
+    nav.goForward();
+    expect(container.read(homeViewProvider), HomeView.notes);
+    nav.goForward();
+    expect(container.read(homeViewProvider), HomeView.filter);
+    expect(nav.canGoForward, isFalse, reason: '进到底了');
+
+    // 新导航清空前进栈。
+    nav.select(HomeView.calendar);
+    expect(nav.canGoForward, isFalse);
   });
 }

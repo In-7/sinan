@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:sinan/src/app/hub_nav.dart';
@@ -73,18 +74,20 @@ void main() {
     child: host(body: body),
   );
 
-  testWidgets('渲染顶行图标 + 切换器分段 + 该空间的列表', (WidgetTester tester) async {
+  testWidgets('全局图标已迁出本板；切换器分段 + 该空间的列表照常', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
     // notesProvider 是异步的（AsyncNotifier.build）⇒ 必须等它落地，否则列表是空的。
     await tester.pumpAndSettle();
 
-    // 顶行三枚是图标（Tooltip），不落成文本项。
-    expect(find.text('设置'), findsNothing, reason: '设置是顶行图标（Tooltip），不是文本项');
-    expect(find.text('主页'), findsNothing, reason: '主页是顶行图标（Tooltip），不是文本项');
-    expect(find.byTooltip('设置'), findsOneWidget);
-    // 搜索图标已接线（2026-09-25）：不再是"开发中"占位，tooltip 是真动作。
-    expect(find.byTooltip('搜索'), findsOneWidget);
-    expect(find.byTooltip('主页'), findsOneWidget);
+    // 2026-09-29：设置 / 搜索 / 收藏 / 主页迁去主区顶条（50px 第一列总导航栏
+    // 同日撤掉），HubNav 子树里**一个都不许剩**（防两处入口复活）。
+    for (final String t in <String>['设置', '搜索', '收藏', '主页']) {
+      expect(
+        find.descendant(of: find.byType(HubNav), matching: find.byTooltip(t)),
+        findsNothing,
+        reason: '「$t」已属于主区顶条，不该再出现在导航板里',
+      );
+    }
     // 新建（2026-09-26 定：挪进切换器，作为第三个同款单元格）同样是图标（Tooltip）。
     expect(find.byTooltip('新建'), findsOneWidget);
     expect(find.text('新建'), findsNothing);
@@ -212,7 +215,8 @@ void main() {
   });
 
   /// 2026-09-24 用户定：撤掉新拟态浮雕，恢复贴窗三边 + 同色平铺。
-  /// 切换器滑块的阴影是**唯一**允许的例外，且只挂在滑块上（见 [_SpaceSwitch]）。
+  /// （2026-09-29 起切换器滑块那枚凸阴影——曾经的"唯一例外"——也已去除，见
+  /// [_SpaceSwitch]；现在全应用零凸起阴影。）
   testWidgets('铺满左侧 ⇒ 只圆右边两角 + 同色底', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
 
@@ -241,7 +245,7 @@ void main() {
 
   testWidgets('未选中行的底色是透明的（不能落到 surface 的近黑）', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
-    // 等列表落地（否则只有顶行 3 个 Material）。
+    // 等列表落地。
     await tester.pumpAndSettle();
 
     final List<Material> materials = tester
@@ -252,88 +256,89 @@ void main() {
           ),
         )
         .toList();
-    // 顶行 4 个图标（设置 / 搜索 / **收藏** / 主页）+ 笔记空间的 1 条列表行 + 该行
-    // 「···」按钮（Visibility 用 maintainSize/maintainState，即便 hover 前不可见
-    // 也仍驻树，自带一个透明 Material）。切换器用 DecoratedBox，无 Material；
-    // 「新建」在切换器井内最右，是同款新拟态正方格（DecoratedBox，无 Material）。
-    // ⚠️ 收藏图标是后来加的（顶行由 3 枚变 4 枚）⇒ 计数是 6 不是 5。
-    expect(materials.length, 6);
+    // 2026-09-29 顶行 4 枚全局图标迁去主区顶条（50px 第一列同日撤掉）后，
+    // 板内只剩笔记空间的
+    // 1 条列表行 + 该行「···」按钮（Visibility 用 maintainSize/maintainState，
+    // 即便 hover 前不可见也仍驻树，自带一个透明 Material）。切换器与「新建」
+    // 都是纯 DecoratedBox（2026-09-29 改平：hover 才换底色，不铺凸玻璃）。
+    expect(materials.length, 2);
 
     final int transparent = materials
         .where((Material m) => m.color == Colors.transparent)
         .length;
-    expect(
-      transparent,
-      6,
-      reason:
-          '顶行**无选中态**（2026-09-24 用户定：主页只是动作）⇒ 6 个'
-          '（设置/搜索/收藏/主页图标 + 列表行 + 列表行的「···」按钮）必须全部透明'
-          '——落到 surface 就是黑块',
-    );
+    expect(transparent, 2, reason: '列表行与其「···」按钮必须全部透明——落到 surface 就是黑块');
   });
 
-  /// **玻璃片选中态闸门**（2026-09-24 用户定）：选中项 = tint 底 + 三层纯绘制的光
-  /// （内光泽 / 顶沿光边 / 底沿厚度边）。钉两条：
-  /// ① 三层光**只在选中处**出现；② 光的三条渐变必须与 [AppTheme] 令牌同一实例。
-  testWidgets('选中 = 玻璃片：三层光只挂在选中处', (WidgetTester tester) async {
+  /// **M3 药丸闸门**（2026-09-29 改方案，替掉原"玻璃片选中态"）：
+  /// 切换器滑块 = [ColorScheme.primaryContainer] 实色药丸，**无凸阴影、无玻璃
+  /// 三层光**；轨道 = [ColorScheme.surfaceContainer] 平底。钉两条：
+  /// ① 滑块取色**只吃 [ColorScheme]**（明暗各自派生 ⇒ 选中信号来自色相而非明
+  ///   度差，明暗天然对称——原新拟态做不到，见 [AppTheme.raisedFill] 注释）；
+  /// ② 滑块子树里不许再挂 boxShadow / 渐变（新拟态不许回潮）。
+  testWidgets('切换器滑块 = primaryContainer 药丸：无阴影、无玻璃', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(scope());
 
-    bool hasGradient(Gradient? g) => g != null;
-
-    // ⚠️ 只数**切换器滑块**（Key `spaceThumb`）子树里的玻璃片，故意**排除**
-    // 切换器井内最右那枚「+」正方格——它按设计也是同款凸玻璃（永远抬起），
-    // 自带一层玻璃光；若算进 HubNav 全树就会多一片。本用例只钉"切换器本身的玻璃
-    // 片只在选中处出现"这一条，+ 格的玻璃不在此断言范围。
-    final List<DecoratedBox> lit = tester
+    final List<DecoratedBox> boxes = tester
         .widgetList<DecoratedBox>(
           find.descendant(
             of: find.byKey(const Key('spaceThumb')),
             matching: find.byType(DecoratedBox),
           ),
         )
-        .where(
-          (DecoratedBox box) =>
-              box.decoration is BoxDecoration &&
-              hasGradient((box.decoration as BoxDecoration).gradient),
-        )
         .toList();
+    // 改平之后滑块就是**一枚**纯色 DecoratedBox（原先还挂着玻璃光层 + ClipRRect）。
+    expect(boxes.length, 1, reason: '滑块应只剩一枚纯色 DecoratedBox');
 
-    // 一层「玻璃片」= 一个 sheen（内光泽）+ rim + baseEdge ⇒ 数 sheen 的个数
-    // 就是数玻璃片的个数。当前恰好**一片**：切换器滑块（滑块本身就是抬起
-    // 的那块玻璃）。顶行主页图标已无选中态（2026-09-24 用户定：主页只是动作）。
-    // ⚠️ 切换器轨道的那条内渐变（凹井用）不是玻璃令牌，不会混进来。
-    final Gradient sheen = AppTheme.glassSheen(
-      Brightness.light,
-      alphaScale: AppTheme.glassSheetBoost,
-    );
-    final int sheets = lit
-        .where(
-          (DecoratedBox box) =>
-              (box.decoration as BoxDecoration).gradient == sheen,
-        )
-        .length;
-    expect(sheets, 1, reason: '玻璃片应恰好一片（切换器滑块）；多 ⇒ 有非选中处也挂了光');
-    final Set<Gradient> gradients = lit
-        .map((DecoratedBox box) => (box.decoration as BoxDecoration).gradient!)
-        .toSet();
+    final BoxDecoration decoration = boxes.first.decoration as BoxDecoration;
     expect(
-      gradients,
-      containsAll(<Gradient>[
-        AppTheme.glassSheen(
-          Brightness.light,
-          alphaScale: AppTheme.glassSheetBoost,
-        ),
-        AppTheme.glassRim(
-          Brightness.light,
-          alphaScale: AppTheme.glassSheetBoost,
-        ),
-        AppTheme.glassBaseEdge(
-          Brightness.light,
-          alphaScale: AppTheme.glassSheetBoost,
-        ),
-      ]),
-      reason: '三层光必须直接取 AppTheme 令牌（含玻璃片加力），不许就地手搓',
+      decoration.color,
+      AppTheme.light().colorScheme.primaryContainer,
+      reason: '滑块必须取 primaryContainer（M3 容器/内容配对）',
     );
+    expect(decoration.boxShadow, isNull, reason: 'M3 药丸不许有凸阴影（新拟态不许回潮）');
+    expect(decoration.gradient, isNull, reason: '药丸是实色，不许挂玻璃渐变');
+  });
+
+  /// **明暗对称闸门**（2026-09-29 改 M3 药丸的核心动机）：轨道取
+  /// [ColorScheme.surfaceContainer]，它与列底的**感知明度差 ΔL\*** 必须在明暗
+  /// 两档都落在同一区间（2~6）——否则就是"暗色整条轨道消失"那类不对称回归。
+  ///
+  /// 实测候选（ΔL\* 亮 / 暗）：`surfaceContainerLow` −1.1 / +2.4（亮色近乎不可
+  /// 见）、**`surfaceContainer` −3.2 / +4.4（最对称，现值）**、`surfaceContainerHigh`
+  /// −5.3 / +9.2、`surfaceContainerHighest` −7.1 / +14.3（暗色过冲）。
+  ///
+  /// ⚠️ 必须量 **L\*** 不能用相对亮度：后者在近黑区被指数压缩，会得出
+  /// "列底 0.85 vs 轨道 1.42 ≈ 没差别"的**错误结论**（实际 L\* 7.7 vs 12.1，
+  /// 肉眼可见）。换种子色只要 ΔL\* 还在这档就不该红。
+  testWidgets('轨道在明暗下与列底的感知差同档（明暗对称）', (WidgetTester tester) async {
+    double lStar(Color c) {
+      final double y = c.computeLuminance();
+      return y <= 0.008856
+          ? 903.3 * y
+          : (116 * math.pow(y, 1 / 3) - 16).toDouble();
+    }
+
+    for (final Brightness b in <Brightness>[
+      Brightness.light,
+      Brightness.dark,
+    ]) {
+      final ThemeData t = b == Brightness.light
+          ? AppTheme.light()
+          : AppTheme.dark();
+      final double d =
+          (lStar(t.colorScheme.surfaceContainer) -
+                  lStar(AppTheme.windowBackground(b)))
+              .abs();
+      expect(
+        d,
+        inInclusiveRange(2.0, 6.0),
+        reason:
+            '${b.name} 轨道与列底 ΔL* = ${d.toStringAsFixed(1)}，'
+            '应落在 2~6（<2 看不见，>6 太抢戏，且明暗会不同档）',
+      );
+    }
   });
 
   /// **玻璃片与文字对齐闸门**（2026-09-24 实机截图抓到的错位）：
@@ -455,23 +460,5 @@ void main() {
       isTrue,
       reason: '菜单的「新建画布」必须真的建出一条画布笔记',
     );
-  });
-
-  /// 主页入口的回归（2026-09-22 用户实报的死角：主页的 `onTap` 曾被设成 null）。
-  /// 主页只剩顶行图标这一个入口 ⇒ 钉住它点得动、且不炸。
-  testWidgets('顶行主页图标点得动（onTap 非 null 的回归）', (WidgetTester tester) async {
-    final ProviderContainer container = ProviderContainer(
-      overrides: [notesProvider.overrideWith(() => _FakeNotes(fakeNotes))],
-    );
-    addTearDown(container.dispose);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(container: container, child: host()),
-    );
-
-    await tester.tap(find.byTooltip('主页'));
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull);
-    expect(container.read(hubNavSelectionProvider), 0);
   });
 }

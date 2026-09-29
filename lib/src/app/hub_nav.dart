@@ -19,7 +19,6 @@ import '../app/undo_toast.dart';
 import '../command/commands.dart' show runCommandById;
 import 'providers.dart'
     show NotesNotifier, locateProvider, notesProvider, selectedNoteIdProvider;
-import 'settings_panel.dart' show showSettingsPanel;
 
 /// 主页导航的分区（index 与 [hubNavSelectionProvider] 对应）。
 ///
@@ -113,9 +112,12 @@ class HubNavSelection extends Notifier<int> {
 
 /// 主页左侧的**导航板**（`docs/ui_rewrite_plan.md` §5.6，2026-09-22 对齐 Craft）。
 ///
-/// 结构（2026-09-24 用户定）：**顶部图标行**（设置 / 搜索 / 主页，横向均布）
-/// → 分隔线 → **空间切换器**（[_SpaceSwitch]，笔记 / 画布滑动切换）→
-/// **该空间的内联列表**（[_SpaceItemList]，按 [NoteKind] 过滤 [notesProvider]）。
+/// 结构（2026-09-29 定）：全局工具图标已迁去主区顶条（home_screen.dart 的
+/// [HomeNavButton] / [NavHistoryButton] / [SettingsNavButton]；同日 50px
+/// 第一列总导航栏撤掉，[AppRail] 已删），
+/// 本板只留"这个分区里的东西"——**空间切换器**（[_SpaceSwitch]，
+/// 笔记 / 画布滑动切换，井内最右格「+」新建）→ **该空间的内联列表**
+///（[_SpaceItemList]，按 [NoteKind] 过滤 [notesProvider]）。
 /// 底 = [AppTheme.windowBackground]（与窗口同色平铺，见下）。
 ///
 /// ## 切换器只换"看哪个空间"，不切主区（2026-09-24 用户定）
@@ -170,81 +172,10 @@ class HubNav extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: .stretch,
             children: <Widget>[
-              // 图标行上呼吸 = 行下呼吸（2026-09-24 用户定：上下等距 8，
-              // 此前上 16 / 下 8，图标行看着偏沉）。
+              // 全局图标（主页 / 搜索 / 收藏 / 设置）2026-09-29 迁去最左的
+              // 总导航栏 [AppRail]——本板只留"这个分区里的东西"：上呼吸后
+              // 直接是空间切换器。
               const SizedBox(height: Tokens.spaceSm),
-              // 顶部图标行：设置 / 搜索 / 主页（2026-09-26 定：**新建已收进切换器**，
-              // 是井内最右的正方格，见下方那行——顶行只留全局工具）。
-              // 均布横向铺开——参考图的语言：一排安静的工具图标，而不是一列按钮。
-              Row(
-                mainAxisAlignment: .spaceEvenly,
-                children: <Widget>[
-                  _TopAction(
-                    icon: CustomIcons.settings(
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    tooltip: '设置',
-                    onTap: showSettingsPanel,
-                  ),
-                  _TopAction(
-                    icon: CustomIcons.search(
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    tooltip: '搜索',
-                    onTap: () {
-                      // 正开着笔记时先回主页再切搜索分区——否则 select 只改
-                      // 主区分发依据、右栏仍停在编辑器，"点了没反应"。
-                      ref.read(locateProvider.notifier).goHome();
-                      ref
-                          .read(hubNavSelectionProvider.notifier)
-                          .select(kSearchNavIndex);
-                    },
-                  ),
-                  _TopAction(
-                    // 与旁边三枚同源（Remix line，size 20 + 主题灰）：tabler.Star
-                    // 是另一族字形（24 画板 stroke 制），实机对比明显偏大偏粗。
-                    icon: CustomIcons.star(
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    tooltip: '收藏',
-                    onTap: () {
-                      // 正开着笔记时先回主页再切收藏分区——与搜索图标同款处理。
-                      // 正开着笔记时先回主页再切搜索分区——否则 select 只改
-                      ref.read(locateProvider.notifier).goHome();
-                      ref
-                          .read(hubNavSelectionProvider.notifier)
-                          .select(kFavoritesNavIndex);
-                    },
-                  ),
-                  _TopAction(
-                    // 顶行三枚全用外引 Remix（2026-09-24 用户定：home-4 /
-                    // search-ai / settings-2，主页在右）。裸 SVG 无主题桥接 ⇒
-                    // 显式给主题灰，且必须与旁边 tabler 列表图标的着色
-                    // （AppIconTheme 桥接的 onSurfaceVariant）一致。
-                    // 主页**无选中态**（2026-09-24 用户定）：侧栏一切换就"不在
-                    // 主页"了，常亮一块玻璃片反而撒谎；它只是个"回主页"的
-                    // 动作，悬浮反馈足够。
-                    icon: CustomIcons.home(
-                      size: 20,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    tooltip: '主页',
-                    onTap: () {
-                      // 2026-09-25：主页图标**同时**清选中态 + 回主页——
-                      // 否则在「已打开某篇」时它只切导航板分区、右栏仍停在编辑器，
-                      // 看着像点了没反应
-                      ref.read(hubNavSelectionProvider.notifier).select(0);
-                      ref.read(locateProvider.notifier).goHome();
-                    },
-                  ),
-                ],
-              ),
-              // 顶行与切换器之间**不再有分隔线**（2026-09-24 用户定：淡线也撤，
-              // 靠留白分节）。2026-09-25 用户定：间距收到 4px，更紧凑。
-              const SizedBox(height: 4),
               // **空间切换器**：井内三格——笔记 / 画布（平分、滑块在其间滑）+
               // 最右一枚正方「+」格（和滑块同款凸玻璃，点它弹「新建笔记 / 新建画布」
               // 菜单）。三格共用一个胶囊控件，"切空间 + 给那个空间加一篇"在同一
@@ -261,76 +192,6 @@ class HubNav extends ConsumerWidget {
               // 该空间的**内联列表**（真实笔记，按 kind 过滤）。
               const Expanded(child: _SpaceItemList()),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 顶部图标行里的一个**工具图标**（设置 / 搜索 / 收藏 / 主页）：36×36 方形
-/// 热区、圆角 8、hover 叠一档淡底、Tooltip 交代身份。
-///
-/// **无选中态**（2026-09-24 用户定）：顶行是"动作"不是"位置"——主页图标
-/// 只是"回主页"，侧栏一切换就"不在主页"了，常亮一块玻璃片反而撒谎。
-/// 反馈全靠 hover（[AppTheme.boardFillHover]）。
-///
-/// ⚠️ 静止态必须显式 `Colors.transparent`（`Material(color: null)` 会落到
-/// canvasColor = 近黑的窗口底色 ⇒ 黑方块，2026-09-22 用户实报）。
-class _TopAction extends StatefulWidget {
-  const _TopAction({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final Widget icon;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  State<_TopAction> createState() => _TopActionState();
-}
-
-class _TopActionState extends State<_TopAction> {
-  final FocusNode _focus = FocusNode();
-  bool _hover = false;
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Brightness brightness = Theme.of(context).brightness;
-    final Color fill = _hover
-        ? AppTheme.boardFillHover(brightness)
-        : Colors.transparent;
-
-    return FocusRing(
-      focusNode: _focus,
-      borderRadius: BorderRadius.circular(8),
-      child: Tooltip(
-        message: widget.tooltip,
-        child: Material(
-          color: fill,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: .antiAlias,
-          child: InkWell(
-            focusNode: _focus,
-            borderRadius: BorderRadius.circular(8),
-            hoverColor: Colors.transparent,
-            splashColor: Colors.transparent,
-            highlightColor: Colors.transparent,
-            onHover: (bool v) => setState(() => _hover = v),
-            onTap: widget.onTap,
-            child: SizedBox(
-              width: 36,
-              height: 36,
-              child: Center(child: widget.icon),
-            ),
           ),
         ),
       ),
@@ -400,51 +261,26 @@ class _GlassSheet extends StatelessWidget {
   }
 }
 
-/// **空间切换器**：「笔记 / 画布」两段，玻璃滑块在轨道里**滑动**（220ms）。
+/// **空间切换器**：「笔记 / 画布」两段，[ColorScheme.primaryContainer] 药丸滑块
+/// 在 [ColorScheme.surfaceContainer] 平轨道里**滑动**（220ms）。
 ///
-/// 混血方案（2026-09-24 用户定，要"互动性和触发感"）：
-/// - **轨道 = 凹陷的井**：[AppTheme.boardFill]（比列底深一档）+ 内渐变
-///   （顶沿暗、底沿亮 ⇒ 读作"凹进去"）；
-/// - **滑块 = 抬起的玻璃片**：底取 [AppTheme.windowBackground]（= 列底，比井亮
-///   一档）+ [_GlassSheet] 三层光 + **极淡凸阴影**（下黑上白，blur 5 / 偏移 2）
-///   ⇒ 既有新拟态的实体按压感，又是全列同一套玻璃光语言；
+/// M3 药丸方案（2026-09-29 用户定，替掉原新拟态"井 + 凸玻璃"）：
+/// - **轨道 = 平的**：[ColorScheme.surfaceContainer] 实色，**无内渐变**（不读作
+///   "凹"）、无阴影；
+/// - **滑块 = 药丸**：[ColorScheme.primaryContainer] 实色 + stadium 全圆角，
+///   **无阴影、无玻璃三层光**；
 /// - 两段标签**静止不动**（iOS 分段控件语言），滑块在其下滑动 ⇒ 文字不会跟着
-///   位移、也不会被不透明滑块盖住（滑块画在标签**之下**）。
+///   位移、也不会被不透明滑块盖住（滑块画在标签**之下**）；
 ///
-/// 凸起件的阴影对（滑块 / 「+」格共用）：下缘投影（暗）+ 上缘受光（白），
-/// 成对才读作"抬起"。
+/// **为什么换掉新拟态**：凹凸感依赖"明度方向"，而暗色下表面阶梯是**翻转**的
+/// （越浮起越亮、没有更深的井可挖）⇒ 明暗两套必然长得不一样（[AppTheme.raisedFill]
+/// 注释记着两次失败尝试）。改纯 [ColorScheme] 驱动后明暗**天然对称**：选中信号
+/// 由有色药丸给出，不再靠明度差。全控件纯色填充 ⇒ 无 saveLayer、无 blur。
 ///
-/// ⚠️ **暗色必须分档**：暗色里黑影落在深井上几乎不可见，"浮起"主要靠**白缘光**
-/// ⇒ 暗色白侧加强（0.12 → 0.16）、黑侧加深（0.10 → 0.28）；亮色维持原值
-/// （2026-09-26：暗色切换器没有层次，见 [AppTheme.raisedFill] 注释）。
-List<BoxShadow> _raisedShadows(Brightness b) => b == Brightness.dark
-    ? <BoxShadow>[
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.28),
-          blurRadius: 6,
-          offset: const Offset(0, 2),
-        ),
-        BoxShadow(
-          color: Colors.white.withValues(alpha: 0.16),
-          blurRadius: 3,
-          offset: const Offset(0, -1),
-        ),
-      ]
-    : <BoxShadow>[
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.10),
-          blurRadius: 5,
-          offset: const Offset(0, 2),
-        ),
-        BoxShadow(
-          color: Colors.white.withValues(alpha: 0.12),
-          blurRadius: 3,
-          offset: const Offset(0, -1),
-        ),
-      ];
-
-/// ⚠️ 阴影只挂在这一枚小滑块上——整板浮雕是 2026-09-24 撤掉的方案，不许回潮。
-/// 全部纯绘制（渐变 + boxShadow），无 saveLayer。
+/// ⚠️ 切换器**无阴影、无玻璃**（2026-09-29 改 M3 药丸）。
+///
+/// 整板浮雕是 2026-09-24 撤掉的方案；凸阴影曾是"只挂在滑块上"的唯一例外，
+/// 现随新拟态一并去除——全控件只剩 [ColorScheme] 纯色填充，无 saveLayer。
 class _SpaceSwitch extends StatefulWidget {
   const _SpaceSwitch({
     required this.selected,
@@ -481,20 +317,20 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Brightness brightness = theme.brightness;
-    // 井的内壁厚度 = 滑块与轨道之间露出的那条边。
+    // 轨道与滑块之间露出的那圈内边距。
     const double trackPad = 3;
     const double height = 36;
-    // 新拟态的"凹凸"来自色差 + 阴影对：井 vs 滑块。滑块必须**比井亮一档**
-    // （凸面令牌 [AppTheme.raisedFill]——暗色下不能跟列底同色，否则糊成一团）。
-    final Color trackFill = AppTheme.boardFill(brightness);
-    final Color thumbFill = AppTheme.raisedFill(brightness);
+    // M3 药丸：轨道 = 中性 surface 一档，滑块 = 主色容器一档。两者都**只吃
+    // ColorScheme**（明暗各自派生）⇒ 选中信号来自色相而非明度差，明暗对称。
+    final Color trackFill = theme.colorScheme.surfaceContainer;
+    final Color thumbFill = theme.colorScheme.primaryContainer;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
       child: FocusRing(
         focusNode: _focus,
-        borderRadius: BorderRadius.circular(Tokens.radiusLg),
+        // 焦点环跟着药丸走：半径 = 控件高的一半（stadium）。
+        borderRadius: BorderRadius.circular(height / 2),
         child: Focus(
           focusNode: _focus,
           // ← / → 切空间（桌面端键盘流：整个切换器是一个 Tab 停靠点）。
@@ -526,37 +362,17 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                 height: height,
                 child: Stack(
                   children: <Widget>[
-                    // 轨道（凹陷的井）
+                    // 轨道（平的 M3 surface 一档，无内渐变 ⇒ 不读作"凹"）
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: trackFill,
-                          borderRadius: BorderRadius.circular(Tokens.radiusLg),
-                        ),
-                        // 内渐变：顶暗底亮 ⇒ 读作"凹"（反过来就是"凸"）。
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(
-                                Tokens.radiusLg,
-                              ),
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: <Color>[
-                                  Colors.black.withValues(alpha: 0.05),
-                                  Colors.transparent,
-                                  Colors.transparent,
-                                  Colors.white.withValues(alpha: 0.03),
-                                ],
-                                stops: const <double>[0, 0.18, 0.82, 1],
-                              ),
-                            ),
-                          ),
+                          // 药丸：stadium（半径 = 高的一半），不写魔法数字。
+                          borderRadius: BorderRadius.circular(height / 2),
                         ),
                       ),
                     ),
-                    // ② 滑块（抬起的玻璃片）：left 在 0 ↔ seg 之间动画。
+                    // ② 滑块（M3 药丸）：left 在 0 ↔ seg 之间动画。
                     AnimatedPositioned(
                       key: const Key('spaceThumb'),
                       left: trackPad + (widget.selected ? seg : 0),
@@ -568,17 +384,10 @@ class _SpaceSwitchState extends State<_SpaceSwitch> {
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           color: thumbFill,
+                          // 药丸：stadium（半径 = 滑块高的一半）。
                           borderRadius: BorderRadius.circular(
-                            Tokens.radiusLg - 2,
+                            (height - 2 * trackPad) / 2,
                           ),
-                          boxShadow: _raisedShadows(brightness),
-                        ),
-                        // 圆角收口：把三层光裁进滑块（同 Material 的 Clip.antiAlias）。
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(
-                            Tokens.radiusLg - 2,
-                          ),
-                          child: _GlassSheet(brightness: brightness),
                         ),
                       ),
                     ),
@@ -659,8 +468,10 @@ class _Segment extends StatelessWidget {
               Text(
                 label,
                 style: theme.textTheme.bodyMedium?.copyWith(
+                  // 激活段坐在 primaryContainer 药丸上 ⇒ 必须配 onPrimaryContainer
+                  // （M3 容器/内容配对），沿用 onSurface 会和药丸底色打架。
                   color: active
-                      ? theme.colorScheme.onSurface
+                      ? theme.colorScheme.onPrimaryContainer
                       : theme.colorScheme.onSurfaceVariant,
                   fontWeight: active ? FontWeight.w600 : null,
                 ),
@@ -673,18 +484,18 @@ class _Segment extends StatelessWidget {
   }
 }
 
-/// 切换器**井里最右**那枚「新建」正方格（2026-09-26 定）：和滑块同一枚新拟态
-/// 材料——底色取 [AppTheme.windowBackground]（= 列底，比井亮一档）+ 极淡凸阴影
-/// （下黑上白）+ [_GlassSheet] 三层玻璃光，所以读作"同一个控件里一块凸起"，
-/// 不像早先那版浮在外面、风格打架。
+/// 切换器**轨道里最右**那枚「新建」正方格（2026-09-26 定；2026-09-29 随切换器
+/// 一起改平）：与轨道同一套 M3 语言——静止态**透明**（不抢药丸的选中信号），
+/// hover 才浮出 [ColorScheme.surfaceContainerHighest] 一档。无阴影、无玻璃光。
 ///
 /// 尺寸由父级给（切换器里 = 滑块高的正方）；它**不吃滑块**——滑块只管
-/// 笔记 / 画布两空间，「+」是动作，永远凸起、永远可点。点它弹
+/// 笔记 / 画布两空间，「+」是动作，永远可点。点它弹
 /// 「新建笔记 / 新建画布」菜单（用户定：保留菜单，不改成"直接建当前空间"），
 /// 锚点贴它右下角。
 ///
-/// ⚠️ 同切换器：不用 `Material`（拖进 InkWell 会撞"静止态落到 canvasColor 变黑块"
-/// 那个坑）。凸起感全靠 boxShadow + 玻璃光纯绘制，无 saveLayer。
+/// ⚠️ 不用 `Material`（拖进 InkWell 会撞"静止态落到 canvasColor 变黑块"
+/// 那个坑，且会把 hub_nav_test 的 Material 计数顶上去）。
+/// 反馈全靠 hover 换底色，纯 DecoratedBox 绘制，无 saveLayer。
 class _NewButton extends StatefulWidget {
   const _NewButton({required this.onNewNote, required this.onNewCanvas});
 
@@ -766,10 +577,9 @@ class _NewButtonState extends State<_NewButton> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Brightness brightness = theme.brightness;
-    // 与切换器滑块同一枚材料（凸面令牌，见 [AppTheme.raisedFill]）。尺寸**由父级给**
-    // （切换器里 = 滑块高的正方，见 [_SpaceSwitchState]），这里只铺"凸玻璃 + 图标"。
-    final Color thumbFill = AppTheme.raisedFill(brightness);
+    // 静止态透明（不抢药丸的选中信号），hover 才浮出一档 surface。尺寸**由父级给**
+    // （切换器里 = 滑块高的正方，见 [_SpaceSwitchState]），这里只铺"底 + 图标"。
+    final Color hoverFill = theme.colorScheme.surfaceContainerHighest;
     // 挂菜单锚点（GlobalKey）：不挂的话 `_key.currentContext` 恒为 null，
     // position 落在 Offset.zero ⇒ 菜单弹到屏幕左上角（2026-09-26 实机抓到）。
     return GestureDetector(
@@ -790,34 +600,16 @@ class _NewButtonState extends State<_NewButton> {
           message: '新建',
           child: Stack(
             children: <Widget>[
-              // ① 凸起玻璃底（同切换器滑块）。
+              // ① 底：静止透明，hover 浮出 surface 一档（纯色、无阴影、无玻璃）。
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: thumbFill,
-                    borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
-                    boxShadow: _raisedShadows(brightness),
+                    color: _hover ? hoverFill : Colors.transparent,
+                    borderRadius: BorderRadius.circular(Tokens.radiusLg),
                   ),
                 ),
               ),
-              // ② 玻璃光层（裁进圆角，同切换器滑块）。
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
-                  child: _GlassSheet(brightness: brightness),
-                ),
-              ),
-              // ③ hover 高光（在玻璃光之上、图标之下，仅反馈可点）。
-              if (_hover)
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(Tokens.radiusLg - 2),
-                    ),
-                  ),
-                ),
-              // ④ 「+」图标居中（中性灰，与空闲段文字同色）。
+              // ② 「+」图标居中（中性灰，与空闲段文字同色）。
               Positioned.fill(
                 child: Center(
                   child: CustomIcons.add(

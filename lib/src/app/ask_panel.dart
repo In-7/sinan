@@ -421,8 +421,8 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
           SelectableText(answer?.text ?? '', style: theme.textTheme.bodyMedium),
           if (answer?.vectorFallbackReason != null) ...<Widget>[
             const SizedBox(height: Tokens.spaceSm),
-            // 直接展示检索层给的降级原因（与搜索分区同一口径，见
-            // search_section.dart）：那句话本身就是可操作的说明。
+            // 直接展示检索层给的降级原因（与主页搜索同一口径，见
+            // search_provider.dart）：那句话本身就是可操作的说明。
             Text(
               answer!.vectorFallbackReason!,
               style: theme.textTheme.bodySmall?.copyWith(

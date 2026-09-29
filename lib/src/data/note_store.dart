@@ -35,6 +35,9 @@ class NoteStore {
   CanvasStore get _canvas => CanvasStore(db);
 
   /// 新建一条笔记（默认灵感卡片）。标题/正文可为空。
+  ///
+  /// 新建 / 修改日期都取当下——"写日记"也**只落今天**（2026-09-29 用户定：
+  /// 日历点选日只管回看，不改变落笔日期）。
   Note create({
     NoteKind kind = NoteKind.spark,
     String title = '',
