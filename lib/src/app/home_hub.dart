@@ -41,18 +41,13 @@ import 'search_provider.dart';
 /// （[_SortMenuButton] / [_TagMenuButton]），对全部 / 笔记 / 画布 / 收藏
 /// 同时生效。2026-09-29 之前它们被塞进一个叫「更多」的视图里，那就是
 /// "「更多」不是我要的"的根因——已拆开。
-enum HomeView {
-  all('全部'),
-  notes('笔记'),
-  canvas('画布'),
-  calendar('日历'),
-  favorites('收藏');
-
-  const HomeView(this.label);
-
-  /// 顶栏 tab 上显示的名字（也是测试 find 的锚点）。
-  final String label;
-
+/// [HomeView] 的**图标**扩展。
+///
+/// 枚举本体在 `providers.dart`：统一导航历史（[NavHistoryNotifier]）要同时
+/// 表达"主页视图"与"某篇笔记页"两种目的地，而它必须与 `locateProvider` 同住
+/// （唯一获准写"当前笔记"的文件，见 architecture_test 的源码扫描）。图标要
+/// 引用 tabler / [CustomIcons]，不进 DI 层，故留在这里。
+extension HomeViewIcon on HomeView {
   /// 顶栏 tab 的图标（Remix 单色线形，与第一列 [AppRail] 同族）。
   ///
   /// 画布用 `CustomIcons.canvas`（彩色插画）——它是"空间"不是"工具"，与
@@ -86,87 +81,7 @@ enum HomeView {
   };
 }
 
-/// 主页当前选中的视图。默认落 [HomeView.all]——"全库扫一眼、最近编辑在
-/// 前排"是最有用的落地页（2026-09-29 用户定，顶栏精简后笔记不再是常驻 tab）。
-///
-/// 放在 provider 而非 widget 的 `setState`：进编辑器再点「上一页」回主页时，
-/// 顶栏要**记住上次停在哪个视图**（widget 会被重建，局部 State 丢失）。
-///
-/// ⚠️ riverpod 3.4.3 无 `StateProvider`，用显式 [Notifier]。
-final homeViewProvider = NotifierProvider<HomeViewNotifier, HomeNavState>(
-  HomeViewNotifier.new,
-);
 
-/// [homeViewProvider] 的**状态**：当前视图 + 视图历史的可用态。
-///
-/// ⚠️ 两个 `canGo*` **必须住在 state 里**，不能做成 [HomeViewNotifier] 的公开
-/// getter——`riverpod_lint` 的 `avoid_public_notifier_properties` 钉的就是这条：
-/// Notifier 的公开 API 只允许「改 state 的方法」，**读**状态一律走 `state`。
-/// 道理不只是风格：读的一方靠 `ref.watch` 拿重建通知，而 watch 只跟 `state`
-/// 走 ⇒ 挂在 getter 上的东西变了**不会**触发重建。
-@immutable
-class HomeNavState {
-  const HomeNavState({
-    required this.view,
-    required this.canGoBack,
-    required this.canGoForward,
-  });
-
-  /// 当前视图（顶栏高亮 / 内容区分发的依据）。
-  final HomeView view;
-
-  /// 有上一个视图可退（主区顶条「上一步」的可用态）。
-  final bool canGoBack;
-
-  /// 有下一个视图可进（主区顶条「下一步」的可用态）。
-  final bool canGoForward;
-}
-
-/// 自带**视图历史**（2026-09-29 用户定）：笔记 / 画布收进三点菜单后是两跳
-/// 目的地，主区顶条左缘的「上一步 / 下一步」（home_screen.dart 的
-/// [NavHistoryButton]）把往返成本抹平。栈只记视图、不记滚动位置——低频导航，
-/// 不欠这份精细。
-class HomeViewNotifier extends Notifier<HomeNavState> {
-  final List<HomeView> _back = <HomeView>[];
-  final List<HomeView> _forward = <HomeView>[];
-
-  @override
-  HomeNavState build() => const HomeNavState(
-    view: HomeView.all,
-    canGoBack: false,
-    canGoForward: false,
-  );
-
-  /// 切换视图（顶栏 tab 与三点菜单的页面入口都走这里）。
-  void select(HomeView view) {
-    if (view == state.view) return;
-    _back.add(state.view);
-    _forward.clear();
-    _emit(view);
-  }
-
-  /// 回到上一个视图（「上一步」）。
-  void goBack() {
-    if (_back.isEmpty) return;
-    _forward.add(state.view);
-    _emit(_back.removeLast());
-  }
-
-  /// 前进到下一个视图（「下一步」）。
-  void goForward() {
-    if (_forward.isEmpty) return;
-    _back.add(state.view);
-    _emit(_forward.removeLast());
-  }
-
-  /// 落 state：**两个可用态跟着栈一起算**——它们本就是这两个栈的函数，
-  /// 放在 state 里才能保证 watch 到（见 [HomeNavState] 的理由）。
-  void _emit(HomeView view) => state = HomeNavState(
-    view: view,
-    canGoBack: _back.isNotEmpty,
-    canGoForward: _forward.isNotEmpty,
-  );
-}
 
 /// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频三枚——全部 / 日历 / 收藏）。
 /// [HomeView] 枚举里**没有**"「更多」视图"这一项：低频页面的入口走顶栏三点
@@ -181,7 +96,7 @@ const List<HomeView> kHomeTabs = <HomeView>[
 ///
 /// 它们与 [kHomeTabs] 那三枚是**同一种东西**（都是视图 / 整页），只是使用
 /// 频率低 ⇒ 收进溢出菜单、不占常驻 tab 位（2026-09-29 用户定）。
-/// 点选照旧 [HomeViewNotifier.select] **整页切换** ⇒ 历史栈照旧，主区顶条的
+/// 点选照旧 [NavHistoryNotifier.selectHome] **整页切换** ⇒ 历史栈照旧，主区顶条的
 /// 上一步 / 下一步仍然可用；进入后顶栏会临时长出该页的 tab（见
 /// [_HomeHubState._buildTopBar]）。
 const List<HomeView> kLowFreqViews = <HomeView>[
@@ -323,7 +238,7 @@ class _HomeHubState extends ConsumerState<HomeHub> {
 
   @override
   Widget build(BuildContext context) {
-    final HomeView view = ref.watch(homeViewProvider).view;
+    final HomeView view = ref.watch(navHistoryProvider).view;
     final SearchState s = ref.watch(searchNotifierProvider);
 
     return Column(
@@ -393,8 +308,9 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                           child: _ViewTab(
                             view: v,
                             active: v == view,
-                            onTap: () =>
-                                ref.read(homeViewProvider.notifier).select(v),
+                            onTap: () => ref
+                                .read(navHistoryProvider.notifier)
+                                .selectHome(v),
                           ),
                         ),
                       // 经三点菜单进入**低频页面**后，顶栏**临时长出**该页的
@@ -713,7 +629,7 @@ class _ViewTabState extends State<_ViewTab> {
 ///
 /// ⚠️ 「更多」**不再是视图**（2026-09-29 用户定）：它只是低频页面的收纳处，
 /// [HomeView] 里没有"「更多」"这个页面。菜单里每一项都是**和日历 / 收藏同级
-/// 的整页**，点选走 [HomeViewNotifier.select] 整页切换 ⇒ 历史栈照旧，主区
+/// 的整页**，点选走 [NavHistoryNotifier.selectHome] 整页切换 ⇒ 历史栈照旧，主区
 /// 顶条的「上一步 / 下一步」仍然可用。
 ///
 /// 图标 = [tabler.Dots]（**横向**三点 ⋯，2026-09-30 用户定）。
@@ -735,7 +651,7 @@ class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
   final GlobalKey _key = GlobalKey();
 
   Future<void> _openMenu() async {
-    final HomeView current = ref.read(homeViewProvider).view;
+    final HomeView current = ref.read(navHistoryProvider).view;
     final ColorScheme scheme = Theme.of(context).colorScheme;
     Offset position = Offset.zero;
     final RenderBox? box =
@@ -754,7 +670,7 @@ class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
       items: <PopupMenuEntry<void>>[
         for (final HomeView v in kLowFreqViews)
           PopupMenuItem<void>(
-            onTap: () => ref.read(homeViewProvider.notifier).select(v),
+            onTap: () => ref.read(navHistoryProvider.notifier).selectHome(v),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[

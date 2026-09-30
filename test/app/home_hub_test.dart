@@ -101,7 +101,7 @@ void main() {
       titles: <String>['甲', '乙'],
     );
 
-    expect(container.read(homeViewProvider).view, HomeView.all);
+    expect(container.read(navHistoryProvider).view, HomeView.all);
     // 常驻 tab 只剩高频三枚——「更多」不是视图，是三点溢出菜单。
     for (final String t in <String>['全部', '日历', '收藏']) {
       expect(find.text(t), findsOneWidget, reason: '顶栏必须有「$t」常驻 tab');
@@ -145,7 +145,7 @@ void main() {
     await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
 
-    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
     // 进了低频页 ⇒ 顶栏**临时长出**该页的 tab（"我在哪个视图"的着落）。
     expect(find.text('画布'), findsOneWidget, reason: '低频页进入后应有自己的 tab');
     expect(find.text('乙画布'), findsOneWidget);
@@ -162,7 +162,7 @@ void main() {
     await tester.tap(find.text('全部'));
     await tester.pumpAndSettle();
 
-    expect(container.read(homeViewProvider).view, HomeView.all);
+    expect(container.read(navHistoryProvider).view, HomeView.all);
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙画布'), findsOneWidget, reason: '全部不分笔记与画布');
   });
@@ -415,41 +415,41 @@ void main() {
     expect(container.read(locateProvider), isNull);
   });
 
-  test('homeViewProvider：默认全部，select 入栈、goBack/goForward 重做', () {
+  test('navHistoryProvider：默认全部，selectHome 入栈、goBack/goForward 重做', () {
     final ProviderContainer container = newContainer();
-    expect(container.read(homeViewProvider).view, HomeView.all);
+    expect(container.read(navHistoryProvider).view, HomeView.all);
 
-    final HomeViewNotifier nav = container.read(homeViewProvider.notifier);
-    nav.select(HomeView.notes);
-    expect(container.read(homeViewProvider).view, HomeView.notes);
-    // 可用态在 **state** 里（[HomeNavState]）⇒ 从 provider 读，不是 notifier
+    final NavHistoryNotifier nav = container.read(navHistoryProvider.notifier);
+    nav.selectHome(HomeView.notes);
+    expect(container.read(navHistoryProvider).view, HomeView.notes);
+    // 可用态在 **state** 里（[NavHistoryState]）⇒ 从 provider 读，不是 notifier
     // 的公开 getter（`riverpod_lint` 禁后者，且它拿不到重建通知）。
-    expect(container.read(homeViewProvider).canGoBack, isTrue);
-    expect(container.read(homeViewProvider).canGoForward, isFalse);
+    expect(container.read(navHistoryProvider).canGoBack, isTrue);
+    expect(container.read(navHistoryProvider).canGoForward, isFalse);
 
     // 第二个视图用「画布」（低频页）——枚举里已无 `HomeView.filter`：
     // 「更多」是容器不是视图（2026-09-29 定）。
-    nav.select(HomeView.canvas);
-    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    nav.selectHome(HomeView.canvas);
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
 
     nav.goBack();
-    expect(container.read(homeViewProvider).view, HomeView.notes);
+    expect(container.read(navHistoryProvider).view, HomeView.notes);
     nav.goBack();
-    expect(container.read(homeViewProvider).view, HomeView.all);
-    expect(container.read(homeViewProvider).canGoBack, isFalse, reason: '退到底了');
+    expect(container.read(navHistoryProvider).view, HomeView.all);
+    expect(container.read(navHistoryProvider).canGoBack, isFalse, reason: '退到底了');
 
     nav.goForward();
-    expect(container.read(homeViewProvider).view, HomeView.notes);
+    expect(container.read(navHistoryProvider).view, HomeView.notes);
     nav.goForward();
-    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
     expect(
-      container.read(homeViewProvider).canGoForward,
+      container.read(navHistoryProvider).canGoForward,
       isFalse,
       reason: '进到底了',
     );
 
     // 新导航清空前进栈。
-    nav.select(HomeView.calendar);
-    expect(container.read(homeViewProvider).canGoForward, isFalse);
+    nav.selectHome(HomeView.calendar);
+    expect(container.read(navHistoryProvider).canGoForward, isFalse);
   });
 }

@@ -128,8 +128,9 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
 
 /// 左侧 [HubNav] 导航面板的折叠态（桌面双栏布局）。
 ///
-/// 折叠后 [HomeScreen] 不再渲染 [HubNav]，整窗只留主区；顶条里的
-/// 折叠/展开按钮（[NavCollapseButton]）切换它。默认展开。
+/// 折叠后整窗只留主区。默认展开。
+/// ⚠️ 2026-09-30：消费方（左侧第一列的 [HubNav] 导航板）已整列暂撤——用户要
+/// 换个形态重做；顶条折叠按钮保留，新形态接上即可用。
 class NavCollapsedNotifier extends Notifier<bool> {
   @override
   bool build() => false;
@@ -242,6 +243,204 @@ final answerServiceProvider = Provider<AnswerService>(
   ),
 );
 
+// ── 统一导航历史（2026-09-30 用户定）────────────────────────────────────
+//
+// 「上一步 / 下一步」覆盖**所有**导航点击：主页视图切换**与**进入笔记 /
+// 画布页一律入栈，严格按点击顺序进退。此前历史只记主页视图（编辑器不在栈
+// 里），"进笔记后按上一步"因此失效。
+
+/// 主页内的视图（顶栏 tab / 三点溢出菜单的目的地）。
+///
+/// ⚠️ 从 `home_hub.dart` 迁来（2026-09-30）：统一导航历史要同时表达"主页
+/// 视图"与"某篇笔记页"两种目的地，而它必须与 `locateProvider` 同住本文件
+/// （唯一获准写 `selectedNoteIdProvider` 的地方，见 architecture_test 的源码
+/// 扫描）。视图的 `icon()` 扩展仍在 home_hub.dart——要引用 tabler /
+/// CustomIcons，不进 DI 层。
+enum HomeView {
+  all('全部'),
+  notes('笔记'),
+  canvas('画布'),
+  calendar('日历'),
+  favorites('收藏');
+
+  const HomeView(this.label);
+
+  /// 顶栏 tab 上显示的名字（也是测试 find 的锚点）。
+  final String label;
+}
+
+/// 统一导航历史的一个**目的地**：主页视图，或某篇笔记 / 画布页。
+sealed class NavLocation {
+  const NavLocation();
+}
+
+/// 主页视图目的地。
+class HomeLocation extends NavLocation {
+  const HomeLocation(this.view);
+
+  final HomeView view;
+
+  @override
+  bool operator ==(Object other) => other is HomeLocation && other.view == view;
+
+  @override
+  int get hashCode => Object.hash(HomeLocation, view);
+
+  @override
+  String toString() => 'HomeLocation(${view.label})';
+}
+
+/// 笔记 / 画布页目的地。
+class NoteLocation extends NavLocation {
+  const NoteLocation(this.noteId);
+
+  final String noteId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is NoteLocation && other.noteId == noteId;
+
+  @override
+  int get hashCode => Object.hash(NoteLocation, noteId);
+
+  @override
+  String toString() => 'NoteLocation($noteId)';
+}
+
+/// [navHistoryProvider] 的状态：当前主页视图 + 统一历史的可用态。
+///
+/// ⚠️ 两个 `canGo*` **必须住在 state 里**，不能做成 [NavHistoryNotifier] 的
+/// 公开 getter——`riverpod_lint` 的 `avoid_public_notifier_properties` 钉的就是
+/// 这条：读的一方靠 `ref.watch` 拿重建通知，而 watch 只跟 `state` 走。
+class NavHistoryState {
+  const NavHistoryState({
+    required this.view,
+    required this.canGoBack,
+    required this.canGoForward,
+  });
+
+  /// 当前主页视图（在主页时的顶栏高亮 / 内容分发依据）。进编辑器后**保留
+  /// 不动**，回主页时还原"上次停在哪个视图"。
+  final HomeView view;
+
+  /// 有上一个位置可退（主区顶条「上一步」的可用态）。
+  final bool canGoBack;
+
+  /// 有下一个位置可进（主区顶条「下一步」的可用态）。
+  final bool canGoForward;
+}
+
+/// **统一导航历史**（两栈经典模型）。
+///
+/// 新导航（[NavHistoryNotifier.selectHome] / 经 [locateProvider] 进编辑器）把
+/// 当前位置压入 back 并清空 forward；「上一步」「下一步」在两栈间搬移并落地
+/// 目的地。目的地可以是主页视图，也可以是某篇笔记 / 画布页——所以"进笔记
+/// 再按上一步"能回到进入前的地方，"退到一篇笔记"会重新打开它。
+///
+/// 放在本文件的原因：后退 / 前进的落点可能是一篇笔记，必须写
+/// [selectedNoteIdProvider]，而本文件是唯一获准写它的地方（architecture_test
+/// 的源码扫描钉住）。
+class NavHistoryNotifier extends Notifier<NavHistoryState> {
+  final List<NavLocation> _back = <NavLocation>[];
+  final List<NavLocation> _forward = <NavLocation>[];
+
+  @override
+  NavHistoryState build() => const NavHistoryState(
+    view: HomeView.all,
+    canGoBack: false,
+    canGoForward: false,
+  );
+
+  /// 当前位置：在编辑器 = 该笔记 / 画布页；否则 = 主页当前视图。
+  NavLocation get _current {
+    final String? noteId = ref.read(selectedNoteIdProvider);
+    if (noteId != null) return NoteLocation(noteId);
+    return HomeLocation(state.view);
+  }
+
+  /// **导航发生前**的挂钩：把当前位置压入 back、清空 forward。
+  ///
+  /// 供 [LocateNotifier.locate]（进编辑器）这类"目的地不在本 Notifier"的入口
+  /// 调用；连续落在同一位置的导航去重（不入重复栈项）。
+  void recordBeforeNavigate() {
+    final NavLocation loc = _current;
+    if (_back.isNotEmpty && _back.last == loc) return;
+    _back.add(loc);
+    _forward.clear();
+    _emit();
+  }
+
+  /// 切换主页视图（顶栏 tab / 三点菜单 / 主页钮）。在编辑器里调用会先退回主页。
+  void selectHome(HomeView view) {
+    final bool inEditor = ref.read(selectedNoteIdProvider) != null;
+    if (!inEditor && view == state.view) return;
+    recordBeforeNavigate();
+    _exitToHome();
+    _emit(view: view);
+  }
+
+  /// 回到上一个位置（「上一步」）。
+  void goBack() {
+    if (_back.isEmpty) return;
+    _forward.add(_current);
+    _apply(_back.removeLast());
+  }
+
+  /// 前进到下一个位置（「下一步」）。
+  void goForward() {
+    if (_forward.isEmpty) return;
+    _back.add(_current);
+    _apply(_forward.removeLast());
+  }
+
+  /// **回主页**（保持当前视图）。已在主页时不产生历史（无导航发生）。
+  void goHome() {
+    if (ref.read(selectedNoteIdProvider) == null) return;
+    recordBeforeNavigate();
+    _exitToHome();
+    _emit();
+  }
+
+  /// 离开编辑器：清选中 + 作废待消费的跳转请求。
+  void _exitToHome() {
+    ref.read(selectedNoteIdProvider.notifier).select(null);
+    ref.read(locateProvider.notifier).consume();
+  }
+
+  /// 落地一个历史目的地。
+  void _apply(NavLocation loc) {
+    switch (loc) {
+      case HomeLocation(:final view):
+        _exitToHome();
+        _emit(view: view);
+      case NoteLocation(:final noteId):
+        // 笔记可能已被删（历史栈不随删除清理）——落空就回主页，不指向幽灵。
+        final bool exists =
+            ref.read(notesProvider).value?.any((Note n) => n.id == noteId) ??
+            false;
+        if (!exists) {
+          _exitToHome();
+          _emit();
+          return;
+        }
+        ref.read(selectedNoteIdProvider.notifier).select(noteId);
+        _emit();
+    }
+  }
+
+  /// 落 state：`view` 给出时换视图（视图切换），否则保持；两个可用态跟着
+  /// 两个栈一起算。
+  void _emit({HomeView? view}) => state = NavHistoryState(
+    view: view ?? state.view,
+    canGoBack: _back.isNotEmpty,
+    canGoForward: _forward.isNotEmpty,
+  );
+}
+
+final navHistoryProvider = NotifierProvider<NavHistoryNotifier, NavHistoryState>(
+  NavHistoryNotifier.new,
+);
+
 /// 一次「要到哪里」的请求（`docs/ui_rewrite_plan.md` §4 的 `locateProvider` 载荷）。
 ///
 /// `seq` 是**单调序号**：连着点同一条角标两次也必须能再跳一次——只比
@@ -272,6 +471,9 @@ class LocateNotifier extends Notifier<LocateRequest?> {
   /// **不要**带它——那会把焦点从列表抢走，键盘上下选笔记就断了。
   void locate({required String noteId, String? blockId, bool focus = false}) {
     if (ref.read(selectedNoteIdProvider) != noteId) {
+      // 换笔记 = 一次导航：先把当前位置记入统一历史（2026-09-30 用户定：
+      // 进笔记 / 画布页也要能「上一步」回来）。
+      ref.read(navHistoryProvider.notifier).recordBeforeNavigate();
       ref.read(selectedNoteIdProvider.notifier).select(noteId);
     }
     state = (noteId: noteId, blockId: blockId, focus: focus, seq: ++_seq);
@@ -282,7 +484,9 @@ class LocateNotifier extends Notifier<LocateRequest?> {
   /// 放在这里而不是别处：**写 [selectedNoteIdProvider] 的只有本 Notifier**（架构测试
   /// 钉住，见本文件顶部的说明）。"回主页"也是一次跳转，不是"顺手把状态清掉"。
   void goHome() {
-    ref.read(selectedNoteIdProvider.notifier).select(null);
+    // 统一走导航历史：在编辑器里 = 记录"这篇笔记"入栈后退回主页（保持当前
+    // 视图）；已在主页则无导航发生（不入栈）。见 [NavHistoryNotifier.goHome]。
+    ref.read(navHistoryProvider.notifier).goHome();
     state = null;
   }
 

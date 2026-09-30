@@ -49,8 +49,6 @@ import '../domain/settings.dart';
 ///
 ///
 
-const double _navWidth = 275;
-
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -61,9 +59,10 @@ class HomeScreen extends ConsumerWidget {
     // ★ §5.6 阶段 2：**未选中 = 主页**（全窗口 Mica + 卡片入口分区）；选中 = 笔记 /
     // 画布页。同一个 `selectedNoteIdProvider` 驱动，不新增页面栈——切换，不是叠加。
     //
-    // 2026-09-25 统一桌面布局：左恒为 [HubNav]，右栏随 `selectedId` 在主页 / 编辑器
-    // 之间切换——**不进新路由**、不重建左侧列表（旧的 [NoteListView] 侧栏已删，点
-    // 导航列表直接在右栏打开文档）。具体分支见下方 `WindowService.isSupported`。
+    // 2026-09-25 统一桌面布局：右栏随 `selectedId` 在主页 / 编辑器之间切换——
+    // **不进新路由**（旧的 [NoteListView] 侧栏已删）。左侧第一列的导航板
+    // [HubNav] 已于 2026-09-30 整列暂撤（用户要换形态重做）。具体分支见下方
+    // `WindowService.isSupported`。
 
     final Widget listPane = NoteListView(
       selectedId: selectedId,
@@ -111,9 +110,9 @@ class HomeScreen extends ConsumerWidget {
     );
 
     if (WindowService.isSupported) {
-      // 桌面统一布局（2026-09-25）：左恒为 [HubNav]，右栏随 `selectedId` 切换——
-      // 主页（[HomeHub]）/ 笔记·画布编辑器。点导航列表直接在右栏打开，不进新路由，
-      // 也不重建左侧列表（旧的 [NoteListView] 侧栏已删，那个分支看着像"跳新页面"）。
+      // 桌面统一布局（2026-09-25）：右栏随 `selectedId` 切换——主页（[HomeHub]）/
+      // 笔记·画布编辑器，不进新路由。左侧第一列的导航板 [HubNav] 已于
+      // 2026-09-30 整列暂撤（用户要换形态重做）；折叠按钮保留在顶条左簇。
       //
       // 2026-09-28 加第三列 **AI 问答轨**（[AskRail]）：宽窗常驻右缘，窄窗
       // （< [kAskRailBreakpoint]）降级回 [showAskPanel] 浮层——状态只有
@@ -145,35 +144,16 @@ class HomeScreen extends ConsumerWidget {
         body: Row(
           crossAxisAlignment: .stretch,
           children: <Widget>[
-            // 第二列 [HubNav]：折叠态（`navCollapsedProvider`）下宽度动画收为 0，
-            // 只剩主区；展开时动画回 275。用 [AnimatedContainer] 做布局级宽度插值，
-            // [ClipRect] 裁掉过渡期溢出的内容——纯 layout 动画，不触发 saveLayer
-            // （符合 Impeller 性能规范）。右侧 Expanded 随之自动补满。
-            // 折叠 / 展开由主区顶条的 [NavCollapseButton] 控制。
+            // 左侧第一列的列表「折叠面板」（导航板 [HubNav]，原宽 275）已于
+            // 2026-09-30 **整列暂撤**——用户要换个形态重做。折叠按钮保留在
+            // 顶条左簇，[navCollapsedProvider] 折叠机制也保留，新形态接上即可用。
             // ⚠️ 第一列总导航栏（50px AppRail）已于 2026-09-29 撤掉：主页 /
-            // 设置 / 上一步 / 下一步都搬进主区顶条（[WindowStrip]）——
-            // 两枚图标撑不起一整列。
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              width: ref.watch(navCollapsedProvider) ? 0 : _navWidth,
-              // 折叠动画期间容器宽度会小于板宽，若直接约束子节点，[HubNav] 内部
-              // 的 Row（图标 + 标题 + 时间 + 「···」）会因空间不足而溢出报 layout
-              // 错误。用 [OverflowBox] 让 [HubNav] 始终按完整板宽（[_navWidth]）布局，
-              // 再由外层 [ClipRect] 裁掉可见区以外的部分——既平滑又不再溢出。
-              child: const ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.topLeft,
-                  maxWidth: _navWidth,
-                  child: HubNav(),
-                ),
-              ),
-            ),
+            // 设置 / 上一步 / 下一步都搬进主区顶条（[WindowStrip]）。
             // 右栏：**全程与窗口底同色**（2026-09-29 用户定）。选中态曾经铺过
             // 一层"编辑器画布底 + 纸面噪点"想跟左栏形成硬分区，但画布底早已并入
             // 窗口底、噪点又把笔记页染得和主页不一样（用户实报"点进笔记会变色"）
-            // ——两者都已撤掉。左栏 [HubNav] 同样取窗口底，主区/侧栏的分界现在
-            // 只由窗控条那道 1px 分隔线表达（§5.6 的"同色平铺"）。
+            // ——两者都已撤掉。整窗与窗口底同色，分界只由窗控条那道 1px
+            // 分隔线表达（§5.6 的"同色平铺"）。
             Expanded(
               child: selectedId == null
                   ? Column(
@@ -595,6 +575,9 @@ class AiRailToggleButton extends ConsumerWidget {
 /// 展开态可随时折叠；折叠态（此时 [HubNav] 不渲染）靠它重新展开。
 /// 图标随状态切换：展开 → `LayoutSidebarLeftCollapse`（提示可收起），
 /// 折叠 → `LayoutSidebarLeftExpand`。
+///
+/// ⚠️ 2026-09-30：左侧第一列的 [HubNav] 面板本体已整列暂撤（用户要换形态
+/// 重做），本按钮保留——当前切换暂无可见效果，新形态接上即可用。
 class NavCollapseButton extends ConsumerWidget {
   const NavCollapseButton({super.key});
 
@@ -637,34 +620,32 @@ class HomeNavButton extends ConsumerWidget {
     return IconButton(
       // Remix `home-4-line`（2026-09-30 用户定）。
       //
-      // 尺寸**刻意大一档**：走 [CustomIcons] 的默认档 [Tokens.iconMd]（24），
-      // 而顶条次要控件（设置 / AI 轨 / 折叠）是 [Tokens.iconMdSm]（20）。
-      // 主页 / 上一步 / 下一步是顶栏**主键**，2026-09-30 用户定要它们与次要
-      // 控件**拉开层级**——族（更重的 Remix 填充路径）与尺寸两个维度一起拉开，
-      // 不许回退成"和旁边一样"。
-      // ⚠️ 不写 `size:` 是**故意**的：24 就是默认档，写了会撞
-      // `avoid_redundant_argument_values`（analyze 零问题是硬要求）。
-      //
+      // 主页是顶栏**主键**，2026-09-30 用户定走 [CustomIcons]（Remix 线形）。
+      // 尺寸与设置等次要控件**同档**（[Tokens.iconMdSm]，20）——默认 24 视觉
+      // 偏大（2026-09-30 用户实报）。
       // ⚠️ CustomIcons 是**裸 SVG**，不读 Material IconTheme ⇒ 必须显式给色，
       // 不传就是资产里的死黑。
       icon: CustomIcons.home(
+        size: Tokens.iconMdSm,
         color: onHome ? scheme.primary : scheme.onSurfaceVariant,
       ),
       tooltip: '主页',
       onPressed: () {
+        // 回主页：统一走导航历史——[NavHistoryNotifier.selectHome] 会把当前
+        // 位置（编辑器里 = 这篇笔记）压入 back、离开编辑器并落回「全部」
+        // （2026-09-30 用户定：主页默认全部）；「上一步」即按点击顺序回到
+        // 进主页前的笔记。
+        ref.read(navHistoryProvider.notifier).selectHome(HomeView.all);
         ref.read(hubNavSelectionProvider.notifier).select(0);
-        ref.read(locateProvider.notifier).goHome();
       },
     );
   }
 }
 
-/// 顶条左缘的**上一步 / 下一步**（2026-09-29 用户定）：视图历史
-/// （[HomeViewNotifier]）的出口。低频视图（笔记 / 画布）收进「更多」后是
-/// 两跳目的地，靠这一对钮抹平往返。
-///
-/// 在编辑器页里按下 = 先回主页、再走历史——编辑器不在历史栈里，历史只记
-/// 主页视图。无可退 / 可进时按钮置灰（`onPressed: null`）。
+/// 顶条左缘的**上一步 / 下一步**（2026-09-29 用户定）：**统一导航历史**
+/// （[navHistoryProvider]）的出口——主页视图切换与进入笔记 / 画布页都入栈
+/// （2026-09-30 用户定），严格按点击顺序进退；编辑器也在栈里，退到一篇笔记
+/// = 重新打开它。无可退 / 可进时按钮置灰（`onPressed: null`）。
 class NavHistoryButton extends ConsumerWidget {
   const NavHistoryButton({super.key, this.forward = false});
 
@@ -673,32 +654,33 @@ class NavHistoryButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // watch 一次拿到「当前视图 + 历史可用态」：[HomeNavState] 把两个 `canGo*`
+    // watch 一次拿到「当前视图 + 历史可用态」：[NavHistoryState] 把两个 `canGo*`
     // 放在 state 里 ⇒ 导航后本 widget 重建，可用态自动跟着更新。
     // （不再读 notifier 的公开 getter——那是 `riverpod_lint` 禁止的，且拿不到
     // 重建通知。）
-    final HomeNavState navState = ref.watch(homeViewProvider);
+    final NavHistoryState navState = ref.watch(navHistoryProvider);
     final bool can = forward ? navState.canGoForward : navState.canGoBack;
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    // Remix `arrow-*-s-line`（2026-09-30 用户定）。⚠️ CustomIcons 是**裸 SVG**，
-    // 不读 Material IconTheme ⇒ 必须**自己算禁用色**（M3 禁用图标 = onSurface
-    // 38%），否则"无可退 / 可进时置灰"会失效（tabler 那版靠桥接自动拿到）。
+    // 上一步 / 下一步（回退为 Remix 实心箭头，与主页一致）：[CustomIcons] 是
+    // 裸 SVG，不读 Material IconTheme ⇒ 禁用色必须**自己算**（M3 禁用图标 =
+    // onSurface 38%），否则置灰失效。
     final Color iconColor = can
         ? scheme.onSurfaceVariant
         : scheme.onSurface.withValues(alpha: 0.38);
     return IconButton(
-      // 尺寸同 [HomeNavButton]：主键**大一档**——取 [CustomIcons] 默认档
-      // [Tokens.iconMd]（24），顶条次要控件是 20（2026-09-30 用户定，不许回退）。
+      // 尺寸同 [HomeNavButton]：主键**大一档**——[CustomIcons] 默认档
+      // [Tokens.iconMd]（24），顶条次要控件是 20。
       icon: forward
           ? CustomIcons.arrowRight(color: iconColor)
           : CustomIcons.arrowLeft(color: iconColor),
       tooltip: forward ? '下一步' : '上一步',
       onPressed: can
           ? () {
-              final HomeViewNotifier nav = ref.read(homeViewProvider.notifier);
-              if (ref.read(selectedNoteIdProvider) != null) {
-                ref.read(locateProvider.notifier).goHome();
-              }
+              // 直接走统一历史：退 / 进的落点是主页视图就离开编辑器，是某篇
+              // 笔记就重新打开——栈里已记录完整点击顺序，无需先 goHome。
+              final NavHistoryNotifier nav = ref.read(
+                navHistoryProvider.notifier,
+              );
               forward ? nav.goForward() : nav.goBack();
             }
           : null,

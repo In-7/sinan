@@ -2,7 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/home_screen.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
@@ -21,9 +20,9 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// ① 左簇自左向右 = **折叠面板**（整栏开关，钉最左）+ 上一步 + **主页** +
 ///    下一步（主页夹在两个历史箭头中间）；右簇 = 设置 + AI 开关
 ///    （设置紧挨 AI——全局动作靠右、页面导航靠左）；
-/// ② 箭头是视图历史（[homeViewProvider]）的出口：初始禁用，导航后可用；
+/// ② 箭头是统一导航历史（[navHistoryProvider]）的出口：初始禁用，导航后可用；
 /// ③ 第一列 [AppRail] 已删——HubNav 子树与整窗里都不许再有它的位置；
-/// ④ 编辑器页同一簇替换旧「上一页」：箭头按下 = 先回主页再走历史。
+/// ④ 编辑器页同一簇替换旧「上一页」：编辑器也在统一历史栈里，箭头按点击顺序进退。
 void main() {
   /// `WindowStrip` / 窗控按钮在 initState 里问 window_manager（isFocused /
   /// isMaximized）。测试环境没有插件，补一个返回假值的通道 mock。
@@ -133,6 +132,7 @@ void main() {
 
     // **左簇顺序闸门**（2026-09-29 用户定）：折叠面板钉最左，主页夹在
     // 上一步 / 下一步**中间**——顺序被改动这里就会红。
+    // （2026-09-30：左侧 HubNav 列表面板已整列暂撤，但按钮保留。）
     final Rect collapse = tester.getRect(find.byTooltip('折叠面板'));
     final Rect back = tester.getRect(find.byTooltip('上一步'));
     final Rect home = tester.getRect(find.byTooltip('主页'));
@@ -171,34 +171,34 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
 
     // 顶条「上一步」：直退落地的「全部」（中间不再有"「更多」页"这一跳——
     // 它就是 2026-09-29 拆掉的那一层）。
     await tester.tap(find.byTooltip('上一步'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider).view, HomeView.all);
+    expect(container.read(navHistoryProvider).view, HomeView.all);
     expect(buttonOf(tester, '上一步').onPressed, isNull, reason: '退到底了');
 
     // 顶条「下一步」：重做，回到画布。
     await tester.tap(find.byTooltip('下一步'));
     await tester.pumpAndSettle();
-    expect(container.read(homeViewProvider).view, HomeView.canvas);
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
   });
 
-  testWidgets('编辑器页同一簇替换旧「上一页」；上一步 = 回主页 + 退回上一视图', (
+  testWidgets('编辑器在统一历史栈里：主页→上一步=回笔记，再上一步=回画布', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 先经**三点菜单**走到「画布」视图（低频页面），再建一篇笔记并打开
-    // （进编辑器）。
+    // 与真实点击路径一致：三点菜单进「画布」（整页切换），再走 locateProvider
+    // 打开笔记（卡片 / 列表的入口同路）。
     await tester.tap(find.byTooltip('更多页面'));
     await tester.pumpAndSettle();
     await tester.tap(menuItem('画布'));
     await tester.pumpAndSettle();
     final Note note = await container.read(notesProvider.notifier).createNote();
-    container.read(selectedNoteIdProvider.notifier).select(note.id);
+    container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
 
     // 编辑器顶条：旧「上一页」没了，同一簇在（主页 / 上一步 / 下一步）。
@@ -207,26 +207,35 @@ void main() {
     expect(find.byTooltip('上一步'), findsOneWidget);
     expect(find.byTooltip('下一步'), findsOneWidget);
 
-    // 顶条「主页」：回主页（视图仍是「画布」）。
+    // 顶条「主页」：离开编辑器、落回「全部」，并把"这篇笔记"记入统一历史。
     await tester.tap(find.byTooltip('主页'));
-    await tester.pumpAndSettle();
-    expect(container.read(selectedNoteIdProvider), isNull);
-    expect(
-      container.read(homeViewProvider).view,
-      HomeView.canvas,
-      reason: '主页不动视图历史',
-    );
-
-    // 在编辑器里按「上一步」：先回主页、再退回「全部」。
-    container.read(selectedNoteIdProvider.notifier).select(note.id);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('上一步'));
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull, reason: '先离开编辑器');
     expect(
-      container.read(homeViewProvider).view,
+      container.read(navHistoryProvider).view,
       HomeView.all,
-      reason: '再退回上一视图',
+      reason: '主页应落回「全部」',
     );
+
+    // 「上一步」：按点击顺序回到刚离开的那篇笔记（重新打开编辑器）。
+    await tester.tap(find.byTooltip('上一步'));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), note.id, reason: '退回笔记');
+
+    // 再「上一步」：回到进笔记前的「画布」视图。
+    await tester.tap(find.byTooltip('上一步'));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), isNull, reason: '离开编辑器');
+    expect(container.read(navHistoryProvider).view, HomeView.canvas);
+
+    // 「下一步」×2：原路重做——先回笔记，再回主页「全部」。
+    await tester.tap(find.byTooltip('下一步'));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), note.id);
+    await tester.tap(find.byTooltip('下一步'));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), isNull);
+    expect(container.read(navHistoryProvider).view, HomeView.all);
+    expect(buttonOf(tester, '下一步').onPressed, isNull, reason: '进到底了');
   });
 }
