@@ -471,8 +471,10 @@ const Map<String, String> kEditorTooltips = <String, String>{
   'editor.highlightColor': '背景色',
   // 自研颜色面板：组合色板本身没有绑定，提示沿用官方的"切换高亮"。
   'sinan.color': '颜色 / 高亮（Ctrl+Shift+H）',
-  // 自研超链接（官方 showLinkMenuCommand 绑定 Ctrl+K，故新条目沿用提示）
-  'sinan.link': '链接（Ctrl+K）',
+  // 自研超链接。2026-09-30 起原官方 Ctrl+K 已**全局让位**给搜索浮层
+  // （search.open，⌘K 范式，见 note_editor_view 的命令表摘除），链接只走
+  // 工具栏按钮，故这里不再标注快捷键。
+  'sinan.link': '链接',
   // 自研对齐下拉：三个方向各有自研绑定（一个 tooltip 声明三条）。
   'sinan.align': '对齐（左 Ctrl+Shift+L / 中 Ctrl+Shift+E / 右 Ctrl+Shift+R）',
   // 自研目录开关（sinanTocCommand，视图持有状态）。

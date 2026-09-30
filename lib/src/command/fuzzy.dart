@@ -54,6 +54,11 @@ const Map<int, String> _initialByRune = <int, String>{
   0x9A7B: 'z', // 驻
   0x7B54: 'd', // 答
   0x8F68: 'g', // 轨
+  // ── `search.open`：hint「跨笔记与画布全局搜索」（2026-09-30）─────────
+  0x8DE8: 'k', // 跨
+  0x4E0E: 'y', // 与
+  0x5168: 'q', // 全
+  0x5C40: 'j', // 局
 };
 
 /// **检索键**：汉字取首字母，ASCII 字母/数字原样小写，其余（空格、标点）丢弃。

@@ -51,6 +51,7 @@ void main() {
     title: title,
     content: '',
     plainText: '',
+    summary: '',
     contentHash: '',
     createdAt: DateTime(2026, 9, 20),
     revisedAt: DateTime(2026, 9, 23),

@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite_vector/sqlite_vector.dart';
 
+import '../domain/note.dart';
+
 /// 数据库层：只负责「打开 + schema + 迁移」，不碰业务查询。
 ///
 /// 沿用手写 SQL 的轻量路线（无 codegen），便于将来演进更复杂的 schema
@@ -357,6 +359,28 @@ class AppDatabase {
         );
       }
       db.userVersion = 12;
+    }
+
+    // v13：列表快照投影列 `summary` = `plain_text` 的前 160 个字符。
+    //
+    // 动机（2026-09-30 用户拍板）：`allNotes()` 为了卡片摘要把**整篇**
+    // plain_text 拖进内存，万篇级笔记的快照要背约 20MB。卡片只展示 4 行，
+    // 投影一份短字符串即可把快照内存降一个量级；`plain_text` 全文照旧保留
+    // （FTS 之外的字数统计 / 单行懒取仍在用）。
+    //
+    // 纯增量、与写路径同口径（Note.summarize 也是前 160 字符）：
+    // SQLite `substr` 按字符计数，回填一次性毫秒级。门闩幂等沿 v10/v12
+    // 口径（列已存在则跳过——版本号回拨 / 半成品测试夹具都安全）。
+    if (db.userVersion < 13) {
+      if (!_hasColumn(db, 'notes', 'summary')) {
+        db.execute(
+          "ALTER TABLE notes ADD COLUMN summary TEXT NOT NULL DEFAULT '';",
+        );
+        db.execute(
+          'UPDATE notes SET summary = substr(plain_text, 1, ${Note.summaryLength});',
+        );
+      }
+      db.userVersion = 13;
     }
 
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。

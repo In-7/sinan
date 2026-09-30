@@ -19,6 +19,7 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 // ignore: implementation_imports
 import 'package:appflowy_editor/src/editor/toolbar/desktop/floating_toolbar.dart'
     as appflowy_toolbar;
+
 // 浮条容器 key（`@visibleForTesting`）由 barrel 导出，不必深路径引入。
 
 /// 编辑器工具栏（官方 FloatingToolbar，2026-09-12 起浮出）的回归测试。
@@ -45,14 +46,12 @@ void main() {
       final ToolbarItem align = items.firstWhere(
         (ToolbarItem item) => item.id == 'sinan.align',
       );
-      expect(
-        align.group,
-        6,
-        reason: '对齐单按钮应落在官方对齐组（分隔线位置）',
-      );
+      expect(align.group, 6, reason: '对齐单按钮应落在官方对齐组（分隔线位置）');
       // 块样式（正文 / 标题 1~3）已合并成**一个下拉**（官方四件套不再平铺）。
       expect(
-        items.firstWhere((ToolbarItem item) => item.id == 'sinan.heading').group,
+        items
+            .firstWhere((ToolbarItem item) => item.id == 'sinan.heading')
+            .group,
         1,
         reason: '块样式组（官方 group 1）',
       );
@@ -70,10 +69,7 @@ void main() {
       expect(usedBold.group, officialBold.group);
 
       // 颜色条目已合并为自研单按钮：id='sinan.color'、分组 4（官方颜色组）。
-      expect(
-        items.map((ToolbarItem item) => item.id),
-        contains('sinan.color'),
-      );
+      expect(items.map((ToolbarItem item) => item.id), contains('sinan.color'));
       expect(
         items.firstWhere((ToolbarItem item) => item.id == 'sinan.color').group,
         4,
@@ -88,9 +84,7 @@ void main() {
       );
     });
 
-    _desktopTestWidgets('无选区：浮动栏不挂载（官方语义：光标态即隐）', (
-      WidgetTester tester,
-    ) async {
+    _desktopTestWidgets('无选区：浮动栏不挂载（官方语义：光标态即隐）', (WidgetTester tester) async {
       final EditorState state = await _pump(tester);
       // _pump 落的是折叠光标（浮动栏不显示）；再显式清空——
       // 等价于 Esc / 光标移到标题栏。
@@ -102,9 +96,7 @@ void main() {
       expect(_toolbarItem('editor.bold'), findsNothing);
     });
 
-    _desktopTestWidgets('有选区：点"加粗"既写入属性、也不丢选区', (
-      WidgetTester tester,
-    ) async {
+    _desktopTestWidgets('有选区：点"加粗"既写入属性、也不丢选区', (WidgetTester tester) async {
       final EditorState state = await _pump(tester);
       state.selection = _selection(0, 2);
       await tester.pumpAndSettle();
@@ -145,9 +137,7 @@ void main() {
       expect(keepEditorFocusNotifier.value, 0, reason: '抬起后未释放（会一直保焦）');
     });
 
-    _desktopTestWidgets('块样式下拉：选「标题 1」把当前块变成标题', (
-      WidgetTester tester,
-    ) async {
+    _desktopTestWidgets('块样式下拉：选「标题 1」把当前块变成标题', (WidgetTester tester) async {
       final EditorState state = await _pump(tester);
       // 浮动栏只在**扩展选区**时浮出（折叠光标不显示）——固定栏时代可直接
       // 用折叠光标点，现在先拖出一段。
@@ -262,28 +252,31 @@ void main() {
     test('tooltip 承诺的快捷键 = 真实绑定（"按了没反应"就出在这里）', () {
       final Map<String, CommandShortcutEvent> bound =
           <String, CommandShortcutEvent>{
-        // 行内格式条目在 kEditorTooltips 里用**短 id**（bold/italic/…，
-        // 与段落/标题不同），故这里也用短 id 查表。
-        'bold': toggleBoldCommand,
-        'italic': toggleItalicCommand,
-        'underline': toggleUnderlineCommand,
-        'strikethrough': toggleStrikethroughCommand,
-        'code': toggleCodeCommand,
-        'sinan.undo': undoCommand,
-        'sinan.redo': redoCommand,
-        'sinan.todo_list': toggleTodoListCommand,
-        'sinan.link': showLinkMenuCommand,
-        // 颜色面板本身没有绑定，tooltip 声明的是官方"切换高亮"（Ctrl+Shift+H）。
-        'sinan.color': toggleHighlightCommand,
-        // 以下都是**自研**绑定（官方没有），tooltip 与命令一一对应。
-        'editor.bulleted_list': sinanBulletedListCommand,
-        'editor.numbered_list': sinanNumberedListCommand,
-        'editor.quote': sinanQuoteCommand,
-        'sinan.toc': sinanTocCommand(onToggle: () {}),
-        // ⚠️ 代码块不进这张表：它的 tooltip 写的是**字面量反引号**
-        // （`Ctrl+Shift+\``），而命令串必须用官方键名 `backquote`——
-        // 两者有意不同，故单独断言（见下方）。
-      };
+            // 行内格式条目在 kEditorTooltips 里用**短 id**（bold/italic/…，
+            // 与段落/标题不同），故这里也用短 id 查表。
+            'bold': toggleBoldCommand,
+            'italic': toggleItalicCommand,
+            'underline': toggleUnderlineCommand,
+            'strikethrough': toggleStrikethroughCommand,
+            'code': toggleCodeCommand,
+            'sinan.undo': undoCommand,
+            'sinan.redo': redoCommand,
+            'sinan.todo_list': toggleTodoListCommand,
+            // sinan.link 刻意不在表里：它的官方绑定是 Ctrl+K，但 2026-09-30 已把
+            // Ctrl+K 全局让位给搜索浮层（官方命令也从编辑器事件表摘除，见
+            // note_editor_view_appflowy.dart）——tooltip 改为不承诺任何快捷键，
+            // 下面单独钉这一条。
+            // 颜色面板本身没有绑定，tooltip 声明的是官方"切换高亮"（Ctrl+Shift+H）。
+            'sinan.color': toggleHighlightCommand,
+            // 以下都是**自研**绑定（官方没有），tooltip 与命令一一对应。
+            'editor.bulleted_list': sinanBulletedListCommand,
+            'editor.numbered_list': sinanNumberedListCommand,
+            'editor.quote': sinanQuoteCommand,
+            'sinan.toc': sinanTocCommand(onToggle: () {}),
+            // ⚠️ 代码块不进这张表：它的 tooltip 写的是**字面量反引号**
+            // （`Ctrl+Shift+\``），而命令串必须用官方键名 `backquote`——
+            // 两者有意不同，故单独断言（见下方）。
+          };
       bound.forEach((String id, CommandShortcutEvent event) {
         expect(
           _claimedShortcut(kEditorTooltips[id]!),
@@ -291,6 +284,19 @@ void main() {
           reason: '$id 的 tooltip 与绑定不一致',
         );
       });
+
+      // 链接钮：Ctrl+K 已全局让位给搜索浮层（官方命令事件已从编辑器摘除），
+      // tooltip 必须**不再承诺** Ctrl+K——否则就是"按了没反应"的死承诺。
+      expect(
+        _claimedShortcut(kEditorTooltips['sinan.link']!),
+        isNull,
+        reason: '链接 tooltip 不该再承诺已让出的 Ctrl+K',
+      );
+      expect(
+        kEditorTooltips['sinan.link'],
+        '链接',
+        reason: '链接钮文案保持简短，键位说明随 Ctrl+K 一并移除',
+      );
 
       // 块样式下拉：一个 tooltip 声明四条官方绑定，逐个核对（官方事件
       // 没被 barrel 导出，按实查值钉住——来源 `heading_command_shortcut.dart`
@@ -386,7 +392,11 @@ void main() {
         showLinkMenuCommand,
         toggleHighlightCommand,
       ]) {
-        final String key = official.command.split(',').first.trim().toLowerCase();
+        final String key = official.command
+            .split(',')
+            .first
+            .trim()
+            .toLowerCase();
         expect(
           <String>[
             sinanBulletedListCommand.command,
@@ -406,7 +416,10 @@ void main() {
     test('链接输入归一化：裸域名可提交，非法输入不静默', () {
       // 官方 `isUri` 拒绝裸域名且 onSubmitted 直接 return ⇒ "回车什么也没有"。
       expect(normalizeLinkInput('baidu.com'), 'https://baidu.com');
-      expect(normalizeLinkInput('  example.com/a?b=1  '), 'https://example.com/a?b=1');
+      expect(
+        normalizeLinkInput('  example.com/a?b=1  '),
+        'https://example.com/a?b=1',
+      );
       expect(normalizeLinkInput('localhost:8080'), 'https://localhost:8080');
       // 已带 scheme 的原样保留。
       expect(
@@ -552,8 +565,9 @@ void main() {
 
       expect(decorationOf(tester).color, isNull, reason: '常态不该有底色');
 
-      final TestGesture mouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       await mouse.addPointer(location: Offset.zero);
       addTearDown(mouse.removePointer);
 
@@ -594,8 +608,9 @@ void main() {
         ),
       );
       final Finder layer = find.byType(HoverStateLayer);
-      final TestGesture mouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       await mouse.addPointer(location: Offset.zero);
       addTearDown(mouse.removePointer);
 
@@ -615,9 +630,7 @@ void main() {
   testWidgets('浮条与选区留 8px 间隔（不贴着拖选区域）', (WidgetTester tester) async {
     final EditorState state = await _pump(tester);
     // 展开选区：浮动栏只在扩展选区时浮出（官方显示带 200ms debounce）。
-    state.selection = Selection.collapsed(
-      Position(path: <int>[0]),
-    );
+    state.selection = Selection.collapsed(Position(path: <int>[0]));
     state.selection = Selection(
       start: Position(path: <int>[0]),
       end: Position(path: <int>[0], offset: 2),
@@ -633,8 +646,9 @@ void main() {
     );
     final List<Rect> rects = state.selectionRects();
     expect(rects, isNotEmpty, reason: '选区矩形为空，量不出间隔');
-    final Rect anchor =
-        rects.reduce((Rect a, Rect b) => a.top <= b.top ? a : b);
+    final Rect anchor = rects.reduce(
+      (Rect a, Rect b) => a.top <= b.top ? a : b,
+    );
 
     // 正常落位在选区上方 ⇒ 间隙 = 选区顶缘 − 条的下缘；
     // 选区贴顶时改落选区下方 ⇒ 间隙 = 条的顶缘 − 选区下缘。
@@ -644,7 +658,8 @@ void main() {
     expect(
       above == expectedGap || below == expectedGap,
       isTrue,
-      reason: '浮条与选区的间隔不是 $expectedGap px（上方 $above / 下方 $below）——'
+      reason:
+          '浮条与选区的间隔不是 $expectedGap px（上方 $above / 下方 $below）——'
           '官方落位是"紧贴选区"，这段留白靠 [sinan 补丁 13]'
           '（`floating_toolbar.dart` 的 `_toolbarTop` / `_toolbarGap`），'
           '丢掉补丁（上游升级覆盖）就会退回零间隔',

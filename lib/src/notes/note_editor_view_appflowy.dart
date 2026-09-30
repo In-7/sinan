@@ -1631,7 +1631,12 @@ class _NoteEditorViewAppFlowyState
                   sinanPasteCommand,
                   ...standardCommandShortcutEvents.where(
                     (CommandShortcutEvent event) =>
-                        event.key != pasteCommand.key,
+                        event.key != pasteCommand.key &&
+                        // Ctrl+K 于 2026-09-30 **全局让位**给全局搜索浮层
+                        // （`search.open`，⌘K 范式）。官方链接菜单随之摘掉；
+                        // 加链接走工具栏「链接」钮（自研 sinan.link，支持
+                        // 裸域名补协议 / 自定义名称，见 link_toolbar_item.dart）。
+                        event.key != showLinkMenuCommand.key,
                   ),
                   ...findAndReplaceCommands(
                     context: context,

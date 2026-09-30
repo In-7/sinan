@@ -20,7 +20,9 @@ import 'search_provider.dart';
 
 /// 主页顶部的**视图切换**（2026-09-29 用户定，取代 Things 式单列一页纸）。
 ///
-/// 五个视图各答一个问题，且**正交于搜索框**（[searchNotifierProvider]）：
+/// 五个视图各答一个问题，浏览时**正交于搜索框**（[searchNotifierProvider]）；
+/// 一旦输入查询词，内容区统一切到**全局搜索结果态**（[_SearchResultsView]），
+/// 与当前 tab 无关——搜索跨笔记/画布、覆盖日历（2026-09-30 用户定）。
 /// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
 ///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
 ///   什么直接看前几张卡即可（2026-09-29 用户定：不单设「最近」视图）。
@@ -37,10 +39,9 @@ import 'search_provider.dart';
 /// （[kHomeTabs]）；低频页面经三点菜单进入，进入后顶栏**临时长出该页的
 /// tab 并高亮**（否则"我现在在哪个视图"没有着落）。
 ///
-/// ⚠️ **排序方案与标签筛选不是页面**：它们是全局控件，住在顶栏右侧
-/// （[_SortMenuButton] / [_TagMenuButton]），对全部 / 笔记 / 画布 / 收藏
-/// 同时生效。2026-09-29 之前它们被塞进一个叫「更多」的视图里，那就是
-/// "「更多」不是我要的"的根因——已拆开。
+/// ⚠️ **排序方案与标签筛选不是页面**：它们是全局控件，2026-09-30 起合住
+/// 顶栏右侧一枚「筛选与排序」漏斗钮（[_FilterMenuButton]：一个菜单、上半
+/// 排序下半标签），对全部 / 笔记 / 画布 / 收藏同时生效。
 /// [HomeView] 的**图标**扩展。
 ///
 /// 枚举本体在 `providers.dart`：统一导航历史（[NavHistoryNotifier]）要同时
@@ -80,8 +81,6 @@ extension HomeViewIcon on HomeView {
     ),
   };
 }
-
-
 
 /// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频三枚——全部 / 日历 / 收藏）。
 /// [HomeView] 枚举里**没有**"「更多」视图"这一项：低频页面的入口走顶栏三点
@@ -148,6 +147,45 @@ class HomeSortNotifier extends Notifier<NoteSort> {
   void select(NoteSort sort) => state = sort;
 }
 
+/// [homeItemsProvider] 的入参（record：结构相等即命中缓存）。
+typedef HomeItemsArgs = ({HomeView view, String? tag});
+
+/// 主页卡片网格的取数：**视图范围 + 标签过滤 + 排序**（2026-09-30 从
+/// `_HomeBody._itemsFor` 抽出）。
+///
+/// 为什么做成 provider 而不是 build 里现算：这是**记忆化**的结果——只有
+/// 笔记快照 / 排序方案 / 视图 / 标签四者之一变化才重算；窗口 resize、
+/// 胶囊 hover 等无关 rebuild 再触发 build，`ref.watch` 拿回的是**同一个
+/// List 实例**，不再每次 O(n log n) 全量重排。family 参数用 record，
+/// 结构相等自动复用；autoDispose 让每个条目随最后一个监听者释放。
+///
+/// 收藏视图不读全局排序，坚持"最近收藏在前"（收藏视图自身的语义）。
+final homeItemsProvider = Provider.autoDispose
+    .family<List<Note>, HomeItemsArgs>((Ref ref, HomeItemsArgs args) {
+      final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
+      final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
+      final List<Note> scope = switch (args.view) {
+        // 全部：跨形态统一池，跟随全局排序。
+        HomeView.all => all.toList()..sort(order),
+        HomeView.notes =>
+          all.where((Note n) => n.kind != NoteKind.canvas).toList()
+            ..sort(order),
+        HomeView.canvas =>
+          all.where((Note n) => n.kind == NoteKind.canvas).toList()
+            ..sort(order),
+        // 收藏不读全局排序：最近收藏的排前面。
+        HomeView.favorites => <Note>[
+          ...all.where((Note n) => n.promotedAt != null),
+        ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
+        HomeView.calendar => const <Note>[],
+      };
+      // 标签筛选是顶栏全局控件 ⇒ 对当前视图生效；未选标签时原样返回。
+      // 有搜索词时不走这里（搜索态由 _SearchResultsView 跨形态渲染）。
+      return args.tag == null
+          ? scope
+          : scope.where((Note n) => n.tags.contains(args.tag)).toList();
+    });
+
 /// **主页**：顶栏（视图切换 + 常驻搜索）+ 内容区（卡片网格 / 日历）。
 ///
 /// ## 为什么从"单列一页纸"改成这个（2026-09-29 用户定）
@@ -157,10 +195,11 @@ class HomeSortNotifier extends Notifier<NoteSort> {
 /// 从第一列图标挪到**顶部中间的常驻输入框**。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：左 = 4 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.navSelectedTint]），
-///    右 = 常驻搜索框（点击直接输入，走 [searchNotifierProvider]）。上一步 /
-///    下一步（视图历史）与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
-/// 2. **内容区按视图 + 搜索词解析**（[_HomeBody._itemsFor]）：搜索词在**当前
+/// 1. **顶栏**：左 = 3 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.navSelectedTint]）
+///    + 三点溢出菜单钮（[kLowFreqViews]：笔记 / 画布的入口），右 = 常驻搜索框
+///    （点击直接输入，走 [searchNotifierProvider]）。上一步 / 下一步（视图历史）
+///    与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
+/// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
 ///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
 ///    [cardFillHover]）——静止态**有底色**（与列表行的"显式透明"相反：卡片本就
@@ -264,12 +303,12 @@ class _HomeHubState extends ConsumerState<HomeHub> {
 
   /// 顶栏：左 = 常驻视图 tab（[kHomeTabs] 三枚；经三点菜单进入低频页时**临时
   /// 多出一枚**并高亮，窄窗可横滚）+ 三点溢出菜单；右 = 常驻搜索框（定宽）
-  /// + 排序 / 标签两枚全局控件钮。
+  /// + 一枚「筛选与排序」漏斗钮（排序 / 标签合住）。
   /// 上一步 / 下一步在主区顶条（[NavHistoryButton]），不在这里。
   Widget _buildTopBar(BuildContext context, HomeView view) {
-    // 右侧两枚控件钮（排序 / 标签，各 32 宽）与它们前面的间隙：搜索框的可分
-    // 宽度要先把它们扣掉，否则窄窗下顶栏会被撑破。
-    const double controlsWidth = 2 * 32 + 2 * Tokens.spaceXs;
+    // 右侧筛选器（32）与它前面的间隙：搜索框的可分宽度要先扣掉，否则窄窗下
+    // 顶栏会被撑破。
+    const double controlsWidth = 32 + Tokens.spaceXs;
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool hasQuery = ref.watch(
@@ -395,12 +434,11 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                   ),
                 ),
               ),
-              // 排序 / 标签两枚**全局控件**（2026-09-29 用户定）：它们不是
-              // 页面，不再住进任何「更多」面板 ⇒ 改排序不必先去低频页。
+              // **筛选器**（2026-09-30 用户定）：排序方案与标签筛选同属"对
+              // 当前池子做整理"的元控件，合并为一枚钮、一个菜单（上半排序、
+              // 下半标签）。它不是页面，不进「更多」。
               const SizedBox(width: Tokens.spaceXs),
-              const _SortMenuButton(),
-              const SizedBox(width: Tokens.spaceXs),
-              const _TagMenuButton(),
+              const _FilterMenuButton(),
             ],
           );
         },
@@ -413,7 +451,7 @@ class _HomeHubState extends ConsumerState<HomeHub> {
 /// 看最近动过什么直接看前几张卡即可。
 ///
 /// 内容区：按 [view] 分发——日历走网格，其余走卡片网格（取数口径见
-/// [_HomeBody._itemsFor]）。
+/// [homeItemsProvider]）。
 class _HomeBody extends ConsumerWidget {
   const _HomeBody({
     required this.view,
@@ -435,7 +473,15 @@ class _HomeBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
 
-    // 日历视图：日历卡片 + 卡片外下方的选中日篇目（忽略搜索词）。
+    // 有查询词 ⇒ **全局搜索结果态**（2026-09-30 用户定"搜索跨形态"）：
+    // 浏览与搜索是两种意图——tab 只管"逛哪个池子"，搜索永远是"去全库找
+    // 东西"。所以搜索态跨笔记/画布、**覆盖任何 tab（含日历）**；撤词后
+    // 回到原视图（查询词在 provider 里，视图状态从没被动过）。
+    if (search.query.trim().isNotEmpty) {
+      return _SearchResultsView(search: search);
+    }
+
+    // 日历视图：日历卡片 + 卡片外下方的选中日篇目。
     if (view == HomeView.calendar) {
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(
@@ -463,8 +509,11 @@ class _HomeBody extends ConsumerWidget {
       );
     }
 
-    // 其余视图：卡片网格（搜索词在当前范围内过滤）。
-    final List<Note> items = _itemsFor(ref, all);
+    // 其余视图：卡片网格。取数走 [homeItemsProvider]（记忆化：无关 rebuild
+    // 不重排；语义见 provider 文档）。
+    final List<Note> items = ref.watch(
+      homeItemsProvider((view: view, tag: search.activeTag)),
+    );
 
     if (items.isEmpty) {
       return Column(
@@ -505,39 +554,120 @@ class _HomeBody extends ConsumerWidget {
       ref.read(locateProvider.notifier).locate(noteId: n.id, focus: true);
     }());
   }
+}
 
-  /// 与 [_HomeHubState] 顶栏同一套口径的取数（这里在 build 内直接算，
-  /// 避免把 State 的方法下传到 StatelessWidget）。
-  List<Note> _itemsFor(WidgetRef ref, List<Note> all) {
-    final SearchState s = search;
-    // 排序方案在顶栏 [_SortMenuButton] 里选，对全部 / 笔记 / 画布 / 收藏
-    // **全局生效**（2026-09-29 起不再是某个「更多」页的私有控件）。
-    final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
-    final List<Note> scope = switch (view) {
-      // 全部：跨形态统一池，跟随全局排序。
-      HomeView.all => all.toList()..sort(order),
-      HomeView.notes =>
-        all.where((Note n) => n.kind != NoteKind.canvas).toList()..sort(order),
-      HomeView.canvas =>
-        all.where((Note n) => n.kind == NoteKind.canvas).toList()..sort(order),
-      // 收藏不读全局排序，坚持"最近收藏在前"（收藏视图自身的语义）。
-      HomeView.favorites => <Note>[
-        ...all.where((Note n) => n.promotedAt != null),
-      ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
-      HomeView.calendar => const <Note>[],
+/// **全局搜索结果态**（2026-09-30 用户定）：顶栏一输入，内容区统一切到这里——
+/// 与当前 tab 无关（**跨笔记/画布、覆盖日历**），命中顺序就是检索相关度
+/// （[SearchNotifier] 已按"标题命中置顶 → RRF 分"排好）。
+///
+/// 卡片拿到了检索产出的 **snippet**（命中块文本）：摘要位显示它并高亮查询
+/// 词，而不是默认的正文前三行——全局检索最贵的产出不再被渲染层丢掉。
+class _SearchResultsView extends ConsumerWidget {
+  const _SearchResultsView({required this.search});
+
+  final SearchState search;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final List<SearchHit> hits = search.hits;
+    final String query = search.query.trim();
+    final bool keywordOnly = search.vectorFallbackReason != null;
+
+    // 空结果分两种：检索还在途（去抖/语义路 HTTP）⇒ 转圈；已完成 ⇒ 空态文案。
+    if (hits.isEmpty) {
+      return Column(
+        children: <Widget>[
+          _SearchResultBar(
+            count: 0,
+            searching: search.searching,
+            keywordOnly: keywordOnly,
+          ),
+          Expanded(
+            child: search.searching
+                ? const Center(
+                    child: SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : _EmptyView(
+                    view: HomeView.all,
+                    hasQuery: true,
+                    query: query,
+                    activeTag: null,
+                  ),
+          ),
+        ],
+      );
+    }
+
+    final Map<String, SearchHit> hitOf = <String, SearchHit>{
+      for (final SearchHit h in hits) h.note.id: h,
     };
-    // 标签筛选是**全局控件**（顶栏 [_TagMenuButton]）⇒ 对当前视图生效，
-    // 不再只属于某个「更多」页（2026-09-29 定）。未选标签时原样返回。
-    final List<Note> tagged = s.activeTag == null
-        ? scope
-        : scope.where((Note n) => n.tags.contains(s.activeTag)).toList();
-    // 有搜索词时命中按相关度（s.hits）排序，不被全局排序打乱。
-    if (s.query.trim().isEmpty) return tagged;
-    final Set<String> ids = tagged.map((Note n) => n.id).toSet();
-    return <Note>[
-      for (final SearchHit h in s.hits)
-        if (ids.contains(h.note.id)) h.note,
-    ];
+    return Column(
+      children: <Widget>[
+        _SearchResultBar(
+          count: hits.length,
+          searching: search.searching,
+          keywordOnly: keywordOnly,
+        ),
+        Expanded(
+          child: _CardsGrid(
+            items: <Note>[for (final SearchHit h in hits) h.note],
+            onOpen: (Note n) =>
+                ref.read(locateProvider.notifier).locate(noteId: n.id),
+            hitsById: hitOf,
+            highlightQuery: query,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 搜索结果上方的一条**状态细栏**：左侧计数（在途 ⇒ "正在搜索…"），右侧在
+/// 语义路缺席时弱提示"关键词检索"（6.4：降级是提示不是错误）。
+class _SearchResultBar extends StatelessWidget {
+  const _SearchResultBar({
+    required this.count,
+    required this.searching,
+    required this.keywordOnly,
+  });
+
+  final int count;
+  final bool searching;
+  final bool keywordOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Tokens.spaceLg,
+        Tokens.spaceXs,
+        Tokens.spaceLg,
+        0,
+      ),
+      child: Row(
+        children: <Widget>[
+          Text(
+            searching ? '正在搜索…' : '$count 条结果',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          if (keywordOnly)
+            Text(
+              '关键词检索',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -649,6 +779,14 @@ class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
   /// 菜单锚点（GlobalKey）：不挂的话 `currentContext` 为 null ⇒ position 落
   /// Offset.zero ⇒ 菜单弹到屏幕左上角（hub_nav 踩过同款）。
   final GlobalKey _key = GlobalKey();
+  final FocusNode _focus = FocusNode();
+  bool _hover = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
 
   Future<void> _openMenu() async {
     final HomeView current = ref.read(navHistoryProvider).view;
@@ -695,43 +833,99 @@ class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      key: _key,
-      // 顶栏行高由搜索框定（32）⇒ 控件钮同样压到 32，不把它撑高。
-      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-      padding: EdgeInsets.zero,
-      icon: const tabler.Dots(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
+    // **图标 + 文字的标签钮**（2026-09-30 用户定）：光一个图标读不出"笔记 /
+    // 画布收在这里"——可发现性不行。视觉与三枚 tab 同语言（同字号同 hover），
+    // 但它不是页面，没有选中态；当前恰在低频页时，指示走菜单里的打勾。
+    // 图标用右向双箭头（chevrons-right，2026-09-30 用户定）："还有下一层"
+    // 的语感比三点强。
+    return FocusRing(
+      focusNode: _focus,
+      borderRadius: radius,
+      child: Tooltip(
+        message: '更多页面',
+        child: Material(
+          key: _key,
+          color: _hover
+              ? AppTheme.boardFillHover(theme.brightness)
+              : Colors.transparent,
+          borderRadius: radius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            focusNode: _focus,
+            borderRadius: radius,
+            hoverColor: Colors.transparent,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            onHover: (bool v) => setState(() => _hover = v),
+            onTap: _openMenu,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
+              child: SizedBox(
+                // 顶栏行高由搜索框定（32）⇒ 同高，不把它撑高。
+                height: 32,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const tabler.ChevronsRight(
+                      height: Tokens.iconMdSm,
+                      width: Tokens.iconMdSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    const SizedBox(width: Tokens.spaceXs),
+                    Text(
+                      '更多',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
-      tooltip: '更多页面',
-      onPressed: _openMenu,
     );
   }
 }
 
-/// 顶栏**排序方案**控件钮（2026-09-29 用户定：排序**不是页面**，从旧「更多」
-/// 面板搬出来，对 [kHomeTabs] / [kLowFreqViews] 里所有视图**全局生效**，
-/// 见 [homeSortProvider]）。
-class _SortMenuButton extends ConsumerStatefulWidget {
-  const _SortMenuButton();
+/// 顶栏**筛选器**控件钮（2026-09-30 用户定）：排序方案（[homeSortProvider]）
+/// 与标签筛选（[SearchState.activeTag]）同属"整理当前池子"的元操作，合住一枚
+/// 漏斗钮、一个菜单——上半段排序、下半段标签。对 [kHomeTabs] /
+/// [kLowFreqViews] 所有视图全局生效（收藏的排序语义除外，见 [_HomeHubState]）。
+///
+/// 标签段在全库无标签时**整段消失**，但钮本身常驻（排序永远可用，
+/// 2026-09-30 之前排序 / 标签是两枚钮，无标签时只剩排序，用户找不到入口）。
+///
+/// 有**任何**非默认条件生效（排序非默认 / 选中了标签）⇒ 图标披主题色，
+/// 一眼能看到"列表正被筛着"。
+class _FilterMenuButton extends ConsumerStatefulWidget {
+  const _FilterMenuButton();
 
   @override
-  ConsumerState<_SortMenuButton> createState() => _SortMenuButtonState();
+  ConsumerState<_FilterMenuButton> createState() => _FilterMenuButtonState();
 }
 
-class _SortMenuButtonState extends ConsumerState<_SortMenuButton> {
+class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
+  /// 菜单锚点（GlobalKey）：不挂的话 position 落 Offset.zero ⇒ 菜单弹到
+  /// 屏幕左上角（全仓统一教训）。
   final GlobalKey _key = GlobalKey();
 
   Future<void> _openMenu() async {
-    final NoteSort current = ref.read(homeSortProvider);
+    final NoteSort currentSort = ref.read(homeSortProvider);
+    final List<(String, int)> tags = ref.read(allTagsProvider);
+    final String? activeTag = ref.read(searchNotifierProvider).activeTag;
+
     Offset position = Offset.zero;
     final RenderBox? box =
         _key.currentContext?.findRenderObject() as RenderBox?;
     if (box != null) {
       position = box.localToGlobal(Offset(0, box.size.height));
     }
+
     await showMenu<void>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -741,6 +935,7 @@ class _SortMenuButtonState extends ConsumerState<_SortMenuButton> {
         position.dy,
       ),
       items: <PopupMenuEntry<void>>[
+        _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
           PopupMenuItem<void>(
             onTap: () => ref.read(homeSortProvider.notifier).select(s),
@@ -748,7 +943,7 @@ class _SortMenuButtonState extends ConsumerState<_SortMenuButton> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(s.label),
-                if (s == current) ...<Widget>[
+                if (s == currentSort) ...<Widget>[
                   const SizedBox(width: Tokens.spaceSm),
                   const tabler.Check(
                     height: Tokens.iconMdSm,
@@ -759,105 +954,78 @@ class _SortMenuButtonState extends ConsumerState<_SortMenuButton> {
               ],
             ),
           ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      key: _key,
-      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-      padding: EdgeInsets.zero,
-      icon: const tabler.ArrowsSort(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-      ),
-      tooltip: '排序方案',
-      onPressed: _openMenu,
-    );
-  }
-}
-
-/// 顶栏**标签筛选**控件钮（同上：筛选**不是页面**）。全库无标签时整枚收起
-/// （沿用旧标签 chips 行同款处理）。
-class _TagMenuButton extends ConsumerStatefulWidget {
-  const _TagMenuButton();
-
-  @override
-  ConsumerState<_TagMenuButton> createState() => _TagMenuButtonState();
-}
-
-class _TagMenuButtonState extends ConsumerState<_TagMenuButton> {
-  final GlobalKey _key = GlobalKey();
-
-  Future<void> _openMenu() async {
-    final List<(String, int)> tags = ref.read(allTagsProvider);
-    final String? active = ref.read(searchNotifierProvider).activeTag;
-    Offset position = Offset.zero;
-    final RenderBox? box =
-        _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      position = box.localToGlobal(Offset(0, box.size.height));
-    }
-    await showMenu<void>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx,
-        position.dy,
-      ),
-      items: <PopupMenuEntry<void>>[
-        // 有选中标签时先给一枚显式的"清除"（否则只能靠再点一次同一枚取消）。
-        if (active != null)
-          PopupMenuItem<void>(
-            onTap: () =>
-                ref.read(searchNotifierProvider.notifier).selectTag(null),
-            child: const Text('全部标签（清除筛选）'),
-          ),
-        for (final (String tag, int count) in tags)
-          PopupMenuItem<void>(
-            // 点已选中的标签 = 取消（沿用旧 chips 的 toggle 语义）。
-            onTap: () => ref
-                .read(searchNotifierProvider.notifier)
-                .selectTag(tag == active ? null : tag),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(tag),
-                const SizedBox(width: Tokens.spaceXs),
-                Text('$count', style: Theme.of(context).textTheme.labelSmall),
-                if (tag == active) ...<Widget>[
-                  const SizedBox(width: Tokens.spaceSm),
-                  const tabler.Check(
-                    height: Tokens.iconMdSm,
-                    width: Tokens.iconMdSm,
-                    strokeWidth: Tokens.iconStroke,
-                  ),
-                ],
-              ],
+        if (tags.isNotEmpty) ...<PopupMenuEntry<void>>[
+          const PopupMenuDivider(),
+          _menuHeader('标签'),
+          // 有选中标签时先给一枚显式的"清除"（否则只能再点同一枚取消）。
+          if (activeTag != null)
+            PopupMenuItem<void>(
+              onTap: () =>
+                  ref.read(searchNotifierProvider.notifier).selectTag(null),
+              child: const Text('全部标签（清除筛选）'),
             ),
-          ),
+          for (final (String tag, int count) in tags)
+            PopupMenuItem<void>(
+              // 点已选中的标签 = 取消（沿用旧 chips 的 toggle 语义）。
+              onTap: () => ref
+                  .read(searchNotifierProvider.notifier)
+                  .selectTag(tag == activeTag ? null : tag),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(tag),
+                  const SizedBox(width: Tokens.spaceXs),
+                  Text('$count', style: Theme.of(context).textTheme.labelSmall),
+                  if (tag == activeTag) ...<Widget>[
+                    const SizedBox(width: Tokens.spaceSm),
+                    const tabler.Check(
+                      height: Tokens.iconMdSm,
+                      width: Tokens.iconMdSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+        ],
       ],
     );
   }
 
+  /// 菜单里的**分段标题**（不可点、不响应 hover）：PopupMenuItem 没有
+  /// header 变体，用 `enabled: false` 落一个弱化的 labelSmall。
+  PopupMenuEntry<void> _menuHeader(String text) => PopupMenuItem<void>(
+    enabled: false,
+    height: 28,
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelSmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
-    final List<(String, int)> tags = ref.watch(allTagsProvider);
-    if (tags.isEmpty) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    final NoteSort sort = ref.watch(homeSortProvider);
+    final String? activeTag = ref.watch(
+      searchNotifierProvider.select((SearchState s) => s.activeTag),
+    );
+    final bool active = sort != NoteSort.revised || activeTag != null;
+
     return IconButton(
       key: _key,
       constraints: const BoxConstraints.tightFor(width: 32, height: 32),
       padding: EdgeInsets.zero,
-      icon: const tabler.Tag(
+      icon: tabler.Filter(
         height: Tokens.iconMdSm,
         width: Tokens.iconMdSm,
         strokeWidth: Tokens.iconStroke,
+        colorFilter: active
+            ? ui.ColorFilter.mode(theme.colorScheme.primary, ui.BlendMode.srcIn)
+            : null,
       ),
-      tooltip: '标签筛选',
+      tooltip: '筛选与排序',
       onPressed: _openMenu,
     );
   }
@@ -874,6 +1042,8 @@ class _CardsGrid extends StatelessWidget {
     required this.items,
     required this.onOpen,
     this.onUnfavorite,
+    this.hitsById,
+    this.highlightQuery,
     this.shrinkWrap = false,
     this.padding = const EdgeInsets.fromLTRB(
       Tokens.spaceLg,
@@ -889,6 +1059,13 @@ class _CardsGrid extends StatelessWidget {
   /// 收藏视图传入：卡片右上出一枚实心星，点它就地取消收藏。其余视图传 `null`。
   final ValueChanged<Note>? onUnfavorite;
 
+  /// 搜索结果态传入：noteId → 命中信息（含 snippet）。卡片摘要位改用命中
+  /// 片段，标题/片段高亮 [highlightQuery]。浏览态传 `null`。
+  final Map<String, SearchHit>? hitsById;
+
+  /// 搜索结果态的查询词（用于高亮）；浏览态为 `null`。
+  final String? highlightQuery;
+
   /// `true` = 高度收到内容（嵌在外层滚动体里用），并把滚动让给外层。
   final bool shrinkWrap;
 
@@ -901,8 +1078,18 @@ class _CardsGrid extends StatelessWidget {
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 260,
-        childAspectRatio: 1.5,
+        // 2026-09-30 用户定：**圆角正方形便签砖**，每行 6 个（取代此前
+        // 260×148 的扁卡）。列数公式是 ceil((可用宽−12)/(extent+12))，
+        // 240 是按默认 1340 窗宽（网格可用 1302）反解的：
+        // ceil((1302−12)/252) = 6、每块正好 207×207；最大化到 1529 逻辑宽
+        // 仍是 6 列（≈239 见方），逻辑窗宽 >1562（更大显示器）才自动升 7 列，
+        // 720 最小窗宽降到 3 列——**列数随窗宽自适应，绝不硬挤**。
+        // （200 是错档：ceil(1290/212)=7，默认窗宽就会排 7 个、每块只有 176。）
+        maxCrossAxisExtent: 240,
+        // 正方形：childAspectRatio 取默认 1.0（写出来会被 lint 判冗余，意图
+        // 钉在这里）。高度随列宽走正是想要的（与此前扁卡"宽卡下半截空白"的
+        // 担心相反）——摘要 4 行 + Expanded 吃余高，砖内有便签般的呼吸空间；
+        // 摘要不足 4 行时空白落在摘要与底行之间。
         crossAxisSpacing: Tokens.spaceMd,
         mainAxisSpacing: Tokens.spaceMd,
       ),
@@ -916,12 +1103,15 @@ class _CardsGrid extends StatelessWidget {
         onUnfavorite: onUnfavorite == null
             ? null
             : () => onUnfavorite!(items[i]),
+        hit: hitsById?[items[i].id],
+        highlightQuery: highlightQuery,
       ),
     );
   }
 }
 
-/// 一张**笔记卡片**：标题 + 摘要（2–3 行）+ 标签 + 相对时间。
+/// 一张**笔记卡片**（2026-09-30 起为**正方形便签砖**，默认窗宽每行 6 个）：
+/// 标题 + 摘要（≤4 行）+ 标签 + 相对时间。
 ///
 /// 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] / [cardFillHover]）——
 /// 静止态**有底色**（与列表行"显式透明"相反：卡片是一块浮起的板子，透明就没了
@@ -932,11 +1122,20 @@ class _NoteCard extends StatefulWidget {
     required this.note,
     required this.onOpen,
     this.onUnfavorite,
+    this.hit,
+    this.highlightQuery,
   });
 
   final Note note;
   final VoidCallback onOpen;
   final VoidCallback? onUnfavorite;
+
+  /// 搜索结果态的命中信息（null = 浏览态）：非空时摘要位优先显示
+  /// [SearchHit.snippet]（命中块文本）。
+  final SearchHit? hit;
+
+  /// 查询词；非空时标题与摘要里的命中词披主题色（搜索结果态）。
+  final String? highlightQuery;
 
   @override
   State<_NoteCard> createState() => _NoteCardState();
@@ -961,8 +1160,22 @@ class _NoteCardState extends State<_NoteCard> {
     final Note n = widget.note;
     final bool isCanvas = n.kind == NoteKind.canvas;
 
-    final String summary = n.plainText.trim();
+    final String title = _cardTitleOf(n);
+    final String? summary = _cardSummaryOf(n);
+    // 标题是不是借来的（无标题但正文非空）：借了且没余行 ⇒ 中段留白即可；
+    // 不是借的又没摘要（真空白 / 有标题无正文）⇒「（空白）」兜底。
+    final bool borrowedTitle = n.title.trim().isEmpty && title != '无标题';
     final List<String> tags = n.tags;
+
+    // 搜索结果态：摘要位优先放**命中块片段**（压空白，同 answer_service 的
+    // 口径）；仅标题命中（snippet 空）时退回普通摘要。浏览态 hit 为 null，
+    // 一切照旧。
+    final String? rawSnippet = widget.hit?.snippet?.trim();
+    final String? snippet = (rawSnippet == null || rawSnippet.isEmpty)
+        ? null
+        : rawSnippet.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String? displaySummary = snippet ?? summary;
+    final String? highlight = widget.highlightQuery;
 
     return FocusRing(
       focusNode: _focus,
@@ -998,14 +1211,17 @@ class _NoteCardState extends State<_NoteCard> {
                       const SizedBox(width: Tokens.spaceXs),
                     ],
                     Expanded(
-                      child: Text(
-                        _titleOf(n),
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: scheme.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      child: _matchRich(
+                        title,
+                        query: highlight,
+                        base:
+                            theme.textTheme.titleSmall?.copyWith(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w600,
+                            ) ??
+                            const TextStyle(),
+                        matchColor: scheme.primary,
                         maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (widget.onUnfavorite != null) ...<Widget>[
@@ -1032,10 +1248,28 @@ class _NoteCardState extends State<_NoteCard> {
                   ],
                 ),
                 const SizedBox(height: Tokens.spaceXs),
-                // 摘要：2–3 行，让人一眼知道大概内容。
+                // 摘要：搜索态 = 命中块片段（命中词高亮）；浏览态 = ≤4 行
+                // 真实正文（无标题笔记的标题借走了首行，摘要从余下行起，不
+                // 重复）。正方形砖（207 高）比旧扁卡多出纵向空间，4 行 + Expanded
+                // 吃余高，短笔记的空白落在摘要与底行之间，像便签留白而非坏版。
+                // 标题不是借的又没有正文时才落「（空白）」；借了标题但没余行的，
+                // 中段留白即可——假斜体填充比空白更吵。
                 Expanded(
-                  child: summary.isEmpty
-                      ? Text(
+                  child: displaySummary != null
+                      ? _matchRich(
+                          displaySummary,
+                          query: highlight,
+                          base:
+                              theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ) ??
+                              const TextStyle(),
+                          matchColor: scheme.primary,
+                          maxLines: 4,
+                        )
+                      : borrowedTitle
+                      ? const SizedBox.shrink()
+                      : Text(
                           '（空白）',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: scheme.onSurfaceVariant.withValues(
@@ -1043,14 +1277,6 @@ class _NoteCardState extends State<_NoteCard> {
                             ),
                             fontStyle: FontStyle.italic,
                           ),
-                        )
-                      : Text(
-                          summary,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
                         ),
                 ),
                 const SizedBox(height: Tokens.spaceSm),
@@ -1136,7 +1362,7 @@ class _EmptyView extends ConsumerWidget {
     if (hasQuery) {
       text = '没有与「$query」匹配的结果';
     } else if (activeTag != null) {
-      // 标签筛选是**全局控件**（顶栏 [_TagMenuButton]）⇒ 任何视图都可能因它
+      // 标签筛选是**全局控件**（顶栏 [_FilterMenuButton]）⇒ 任何视图都可能因它
       // 而空，先答这一条，再答各视图自己的空态（2026-09-29 定）。
       text = '「$activeTag」标签下还没有内容';
     } else {
@@ -1162,6 +1388,101 @@ class _EmptyView extends ConsumerWidget {
 // ─────────────────────────── 公共小料 ───────────────────────────
 
 String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
+
+/// 卡片**显示标题**：用户标题优先；无标题时借**正文第一个非空行**（Notion
+/// 惯例——一排「无标题」长得一模一样，扫读时等于没有信息）。正文也空才落
+/// 「无标题」。排序仍用 [_titleOf]（无标题常量成组，语义稳定）。
+String _cardTitleOf(Note note) {
+  final String t = note.title.trim();
+  if (t.isNotEmpty) return t;
+  for (final String line in note.summary.split('\n')) {
+    final String l = line.trim();
+    if (l.isNotEmpty) return l;
+  }
+  return '无标题';
+}
+
+/// 卡片**显示摘要**：自己写了标题 ⇒ 摘要 = 全部正文；标题是借的 ⇒ 摘要从
+/// 余下行起（首行已经站在标题位上，不重复展示）。没有可显示的 ⇒ `null`
+/// （调用方留白，不放假填充）。
+///
+/// 读的是 [Note.summary]（列表快照的 160 字投影，v13），不是整篇 plainText。
+String? _cardSummaryOf(Note note) {
+  final List<String> lines = <String>[
+    for (final String line in note.summary.split('\n'))
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  if (note.title.trim().isNotEmpty) {
+    return lines.isEmpty ? null : lines.join('\n');
+  }
+  return lines.length <= 1 ? null : lines.skip(1).join('\n');
+}
+
+/// 构造**命中词高亮**文本（搜索结果态卡片用）：[query] 按空白拆成多个
+/// token，大小写不敏感地把命中段染成 [matchColor] 并加粗；query 为空 /
+/// 无命中时退化为普通 Text（浏览态零成本）。中文无空格 ⇒ 整个词当一个
+/// 子串 token。
+Widget _matchRich(
+  String text, {
+  required String? query,
+  required TextStyle base,
+  required Color matchColor,
+  int? maxLines,
+}) {
+  final String q = (query ?? '').trim();
+  if (q.isEmpty || text.isEmpty) {
+    return Text(
+      text,
+      style: base,
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+  final List<String> tokens = q
+      .split(RegExp(r'\s+'))
+      .where((String t) => t.isNotEmpty)
+      .map(_escapeRegExp)
+      .toList(growable: false);
+  if (tokens.isEmpty) {
+    return Text(
+      text,
+      style: base,
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  final RegExp pattern = RegExp('(${tokens.join('|')})', caseSensitive: false);
+  final List<TextSpan> spans = <TextSpan>[];
+  int last = 0;
+  for (final RegExpMatch m in pattern.allMatches(text)) {
+    if (m.start > last) {
+      spans.add(TextSpan(text: text.substring(last, m.start)));
+    }
+    spans.add(
+      TextSpan(
+        text: m.group(0),
+        style: base.copyWith(color: matchColor, fontWeight: FontWeight.w700),
+      ),
+    );
+    last = m.end;
+  }
+  if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+
+  return Text.rich(
+    TextSpan(style: base, children: spans),
+    maxLines: maxLines,
+    overflow: TextOverflow.ellipsis,
+  );
+}
+
+/// 转义正则元字符（Dart 没有内置 RegExp.escape 可用时的手写版）。
+/// 字符类用 raw（`${` 在普通字符串里会被当插值开头）；替换值用普通
+/// 字符串 `'\\'`（raw 的 `r'\'` 反斜杠贴引号不合法）。
+String _escapeRegExp(String s) => s.replaceAllMapped(
+  RegExp(r'[.*+?^${}()|[\]\\]'),
+  (Match m) => '\\${m.group(0)}',
+);
 
 /// 相对时间：关心的是"多久没碰了"，不是精确时刻。
 String _relativeTime(DateTime at) {

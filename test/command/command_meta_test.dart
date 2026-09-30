@@ -35,8 +35,10 @@ void main() {
       'Ctrl+Z', 'Ctrl+Y', 'Ctrl+X', 'Ctrl+C', 'Ctrl+V', 'Ctrl+Shift+V',
       'Ctrl+A', 'Ctrl+Backspace', 'Ctrl+Delete',
       // 行内格式
-      'Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+S', 'Ctrl+E', 'Ctrl+K',
+      'Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+S', 'Ctrl+E',
       'Alt+Enter',
+      // ⚠️ Ctrl+K（原官方"插入链接"）2026-09-30 已从编辑器命令表摘除、让位给
+      // 全局搜索 search.open（⌘K 范式）。链接改走工具栏按钮，不再是编辑器占用键。
       // 块样式
       'Ctrl+Shift+B', 'Ctrl+Shift+T', 'Ctrl+Shift+G', 'Ctrl+Shift+J',
       'Ctrl+Enter', 'Ctrl+Shift+H',
@@ -76,6 +78,9 @@ void main() {
       // 2026-09-28：AI 问答轨开关（§3.4 空闲区新增）。单按 Ctrl+J 编辑器
       // 不占（占的是块样式 Ctrl+Shift+J），二者不撞。
       'Ctrl+J',
+      // 2026-09-30：全局搜索浮层 search.open（⌘K 范式）。编辑器已摘除官方
+      // 插入链接命令（note_editor_view 的命令表过滤），Ctrl+K 正式进入空闲区。
+      'Ctrl+K',
     };
     final RegExp functionKeys = RegExp(r'^F([1-9]|1[0-2])$');
     bool isFree(String label) =>
@@ -122,6 +127,7 @@ void main() {
       'note.new',
       'canvas.new',
       'note.promote',
+      'search.open',
       'palette.open',
       'app.settings',
       'ai.ask',

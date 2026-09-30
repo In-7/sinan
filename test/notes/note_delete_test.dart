@@ -163,6 +163,7 @@ void main() {
       title: id,
       content: '',
       plainText: '',
+      summary: '',
       contentHash: '',
       createdAt: t,
       revisedAt: t,

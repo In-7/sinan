@@ -66,7 +66,10 @@ class NoteStore {
       kind: kind,
       title: title,
       content: content,
+      // 新建时没有纯文本（首编才由编辑器提取 plainText 走 updateContent），
+      // plain_text / summary 两列都吃默认 ''，这里与库里保持一致。
       plainText: content,
+      summary: '',
       contentHash: hash,
       createdAt: now,
       revisedAt: now,
@@ -75,7 +78,8 @@ class NoteStore {
 
   /// 保存正文。content 的格式**由当前编辑器决定**（quill 时期是 Delta，
   /// 换成 appflowy 后是 v2 块树；详见 NoteDocumentAdapter）——本层不关心
-  /// 格式，只存字符串。plainText 同步入库（列表预览 / Tooltip / 搜索用）。
+  /// 格式，只存字符串。plainText 同步入库（全文搜索 / 字数统计用），其
+  /// [Note.summarize] 截断投影 `summary` 一并写入（列表卡片快照专用）。
   /// 内部哈希判变：内容没变则不写。
   ///
   /// 返回是否真的落了盘——调用方可据此跳过状态刷新（连快照都不用换）。
@@ -99,8 +103,16 @@ class NoteStore {
 
     final DateTime now = DateTime.now();
     db.execute(
-      'UPDATE notes SET content = ?, plain_text = ?, content_hash = ?, revised_at = ? WHERE id = ?',
-      <Object?>[content, plainText, hash, now.millisecondsSinceEpoch, noteId],
+      'UPDATE notes SET content = ?, plain_text = ?, summary = ?, '
+      'content_hash = ?, revised_at = ? WHERE id = ?',
+      <Object?>[
+        content,
+        plainText,
+        Note.summarize(plainText),
+        hash,
+        now.millisecondsSinceEpoch,
+        noteId,
+      ],
     );
     // 双写：把新的块树投影进 blocks（旧列仍是真相源，见 [BlockStore]）。
     // 画布同理投影进 canvas_items / canvas_meta / ink_shards（见 [CanvasStore]）——
@@ -119,18 +131,17 @@ class NoteStore {
     );
   }
 
-  /// 全部笔记（**列表快照，不含正文**）：**收藏的排在最前**（按收藏时间
-  /// 倒序），其余按最近修改倒序。
+  /// 全部笔记（**列表快照**：元数据 + 摘要，**不含块树正文、不含整篇纯文本**）：
+  /// **收藏的排在最前**（按收藏时间倒序），其余按最近修改倒序。
   ///
   /// ⚠️ 查询刻意**不带 `content` 列**：正文是块树 JSON，单篇可达几百 KB，
   /// 全表读入是保存热路径最贵的一步。列表只需要元数据（标题/时间）；
   /// 正文按 id 单行另取，见 [noteById]。
   ///
-  /// ⚠️ **也不带 `plain_text`**（2026-09-27 量完摘掉）：它是这条查询里唯一
-  /// 随语料**线性增长**的字段——200 篇时把列表查询从 0.17ms 抬到 0.99ms
-  /// （≈6 倍）。而快照侧**没有消费方读它**（`Note.plainText` 全仓只在
-  /// [restore] 的写回里用到，那条走 [noteById] 的 `SELECT *`，不受影响）
-  /// ⇒ 真要用时按 id 单行取，见 [plainTextOf]。
+  /// 纯文本只带 **`summary` 投影**（v13，`plain_text` 前 160 字符，见
+  /// [Note.summarize]）：卡片 4 行摘要 / 无标题借首行这两个消费方够用，
+  /// 万篇级快照内存比带整篇 `plain_text` 降一个量级。整篇纯文本仍可经
+  /// [plainTextOf] / [noteById] 单行取。
   ///
   /// 用 `promoted_at IS NULL` 做分组键（SQLite 里 false=0 排在 true=1 前）。
   /// 收藏项内部不跟着 revised_at 走：否则编辑一条收藏会把它的位置也抖一下。
@@ -142,7 +153,7 @@ class NoteStore {
   /// 与"最近修改倒序"的直觉一致）→ `id ASC`（id 唯一 ⇒ 全序，一定稳定）。
   List<Note> allNotes() {
     final ResultSet rs = db.select(
-      'SELECT id, kind, title, content_hash, tags, '
+      'SELECT id, kind, title, content_hash, tags, summary, '
       'created_at, revised_at, promoted_at FROM notes '
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
@@ -150,11 +161,10 @@ class NoteStore {
     return <Note>[for (final Map<String, Object?> row in rs) _noteFrom(row)];
   }
 
-  /// 按 id 取**纯文本**（懒取）：列表快照不背 `plain_text`，需要时单行取。
+  /// 按 id 取**整篇纯文本**（懒取）：`noteById` 之外的窄查询。
   ///
-  /// 为什么值得单开一个窄查询：`plain_text` 是启动列表查询里唯一随语料线性
-  /// 增长的大字段（200 篇 ≈ 0.82ms，见 [allNotes] 的注释），而单行主键查询
-  /// 是 0.01ms 级——**按需取一次，比每条快照都背着它便宜两个数量级**。
+  /// 列表快照只带 160 字的 `summary` 投影（v13，见 [allNotes]）；本方法
+  /// 留给"需要整篇 plain_text"的调用方（字数统计 / 导出 / 检索兜底）。
   ///
   /// 不存在 / 该列为空时返回空串（与 [_noteFrom] 的口径一致）。
   String plainTextOf(String noteId) {
@@ -248,14 +258,18 @@ class NoteStore {
   Future<void> restore(Note note) async {
     db.execute(
       'INSERT OR REPLACE INTO notes '
-      '(id, kind, title, content, plain_text, content_hash, created_at, revised_at, promoted_at, tags) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      '(id, kind, title, content, plain_text, summary, content_hash, '
+      'created_at, revised_at, promoted_at, tags) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
         note.id,
         note.kind.name,
         note.title,
         note.content,
         note.plainText,
+        // 撤销来源是删除前的列表快照（只带 summary）。INSERT OR REPLACE
+        // 后首次保存会把两列一起刷新；这里为空也不影响卡片显示之外的东西。
+        note.summary,
         note.contentHash,
         note.createdAt.millisecondsSinceEpoch,
         note.revisedAt.millisecondsSinceEpoch,
@@ -785,12 +799,13 @@ class NoteStore {
     id: row['id'] as String,
     kind: NoteKind.fromName(row['kind'] as String),
     title: row['title'] as String,
-    // 列表查询不带 content 列（大字段）→ 这里是 null；只有 [noteById]
-    // 的完整行查询才有值。列表侧一律空串，正文永远走单行查询。
+    // 列表查询不带 content 列（块树大字段）→ 这里是 null；只有 [noteById]
+    // 的完整行查询才有值。列表侧一律空串，块树正文永远走单行查询。
     content: content ?? (row['content'] as String?) ?? '',
-    // 同理：列表查询也不带 plain_text（2026-09-27，见 [allNotes]）→ null ⇒
-    // 空串。需要纯文本时用 [plainTextOf] 按 id 单行取。
+    // 列表快照只 SELECT summary（不带 plain_text 列 ⇒ 缺失取 ''）；
+    // noteById 走 SELECT *，两列都有。
     plainText: row['plain_text'] as String? ?? '',
+    summary: row['summary'] as String? ?? '',
     contentHash: row['content_hash'] as String,
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int),
     revisedAt: DateTime.fromMillisecondsSinceEpoch(row['revised_at'] as int),

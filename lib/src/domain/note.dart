@@ -37,6 +37,7 @@ class Note {
     required this.title,
     required this.content,
     required this.plainText,
+    required this.summary,
     required this.contentHash,
     required this.createdAt,
     required this.revisedAt,
@@ -56,8 +57,27 @@ class Note {
   /// `NoteContent.decode`（三形态通吃，不依赖编辑器库）。
   final String content;
 
-  /// 从正文提取的纯文本（列表预览 / Tooltip / 搜索用）。
+  /// 从正文提取的纯文本（全文搜索 / 字数统计用；**列表快照不再带它**，
+  /// 见 [summary] 与 v13 迁移）。
   final String plainText;
+
+  /// 列表快照专用投影：[plainText] 的前 [summaryLength] 个字符（v13 迁移）。
+  ///
+  /// 主页卡片 4 行摘要 / 无标题借首行只读它——`allNotes()` 全表快照只 SELECT
+  /// 这一列而非整篇 `plain_text`，万篇级笔记的快照内存降一个量级（行也更窄、
+  /// 查询更快）。与 [plainText] 在每次保存时同步写入；存量数据由 v13
+  /// `substr(plain_text, 1, n)` 一次性回填。
+  final String summary;
+
+  /// 摘要截断长度（字符）。卡片内容区 4 行约 60 个中文字，160 留足
+  /// 「无标题笔记借走首行后还要有 3 行余料」的余量。
+  static const int summaryLength = 160;
+
+  /// 摘要截断：超过 [summaryLength] 取前缀，否则原样返回。
+  /// 写路径（[NoteStore]）与迁移回填的 SQL `substr(…,1,n)` 同一口径。
+  static String summarize(String plainText) => plainText.length <= summaryLength
+      ? plainText
+      : plainText.substring(0, summaryLength);
 
   /// 内容 SHA-256。用于判定「是否真的改了」，没改就不落盘。
   final String contentHash;

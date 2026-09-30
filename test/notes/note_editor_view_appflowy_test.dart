@@ -1050,6 +1050,7 @@ Note _note({String? content}) => Note(
   title: '标题',
   content: content ?? _kDelta,
   plainText: '你好世界',
+  summary: '你好世界',
   contentHash: 'h',
   createdAt: DateTime(2026),
   revisedAt: DateTime(2026),

@@ -7,7 +7,8 @@ import 'providers.dart';
 
 /// 一条全局搜索命中（已归并到**笔记**粒度）。
 ///
-/// 检索命中单元是 block（[RetrievalHit]），但搜索结果列表以笔记为单位——
+/// 检索命中单元是 block（内容路返回的 `ContentRetrievalHit`），但搜索结果列表
+/// 以笔记为单位——
 /// 一篇笔记多个块命中只保留最优一条，否则"切了 5 段"会刷屏（同一篇
 /// 笔记占掉整屏结果，是切块策略的副作用，不是相关性）。
 typedef SearchHit = ({
@@ -55,16 +56,13 @@ class SearchState {
 /// 语义路（配了 Ollama 时）每个键一次 HTTP。
 const Duration kSearchDebounce = Duration(milliseconds: 250);
 
-/// 内容路取回的 block 命中数上限（给"归并到笔记"留余地，同 Retriever 的
-/// `_candidateFactor` 思路——一篇笔记的多个块可能占掉好几个名次）。
-const int _contentLimit = 30;
-
 /// 全局搜索（标题 + 内容）。
 ///
 /// ## 两条路，一次合并
 /// - **标题路**：内存里做——[notesProvider] 本来就装着全部笔记的标题，
 ///   `contains` 即可，零 SQL、零索引依赖（新建未索引的笔记标题也能搜到）；
-/// - **内容路**：复用 [Retriever]（FTS5 关键词路 + 可选语义路 → RRF），
+/// - **内容路**：经注入的 `ContentRetriever` 端口（FTS5 关键词路 + 可选语义
+///   路 → RRF，实现在 data 层、由 providers 适配），
 ///   命中后再按笔记归并、按 RRF 分取最优摘要。
 ///
 /// ## 竞态
@@ -193,66 +191,96 @@ class SearchNotifier extends Notifier<SearchState> {
   Future<void> _search(String q) async {
     final int seq = ++_seq;
     final List<Note> notes = ref.read(notesProvider).value ?? const <Note>[];
-    final Map<String, Note> byId = <String, Note>{
-      for (final Note n in notes) n.id: n,
-    };
 
-    // 标题路（大小写不敏感；中文 contains 天然成立）。
-    final String needle = q.toLowerCase();
-    final Map<String, SearchHit> merged = <String, SearchHit>{
-      for (final Note n in notes)
-        if (n.title.toLowerCase().contains(needle))
-          n.id: (note: n, titleMatch: true, snippet: null, score: null),
-    };
-
-    // 内容路。检索的任何失败都不能让搜索整体失败（与 Retriever 同一原则）。
-    String? fallback;
-    try {
-      final result = await ref
-          .read(retrieverProvider)
-          .search(q, limit: _contentLimit);
-      for (final hit in result.hits) {
-        final Note? n = byId[hit.noteId];
-        if (n == null) continue; // 已删除 / 尚未装载
-        final SearchHit? existing = merged[n.id];
-        merged[n.id] = (
-          note: n,
-          titleMatch: existing?.titleMatch ?? false,
-          snippet: hit.snippet,
-          score: hit.score,
+    // 检索本体（标题路 + 内容路、归并、排序）抽成了**纯函数**
+    // [searchAllNotes]：页内搜索与 Ctrl+K 全局浮层共用同一条相关性口径，
+    // 这里只补竞态序号与标签过滤两件 SearchNotifier 自己的事。
+    final ({List<SearchHit> hits, String? fallback}) outcome =
+        await searchAllNotes(
+          notes: notes,
+          retrieve: ref.read(contentRetrieverProvider),
+          query: q,
         );
-      }
-      fallback = result.vectorFallbackReason;
-    } on Object catch (e) {
-      fallback = '检索不可用（$e）：本次只用标题';
-    }
 
     if (seq != _seq) return; // 过期结果：用户已经又输入了
-
-    final List<SearchHit> sorted = merged.values.toList()
-      ..sort((SearchHit a, SearchHit b) {
-        // 标题命中置顶（最强信号），组内按 RRF 分，最后按修改时间兜底。
-        final int byTitle = (a.titleMatch ? 0 : 1).compareTo(
-          b.titleMatch ? 0 : 1,
-        );
-        if (byTitle != 0) return byTitle;
-        if (a.score != null && b.score != null) {
-          return b.score!.compareTo(a.score!);
-        }
-        if (a.score != null) return -1;
-        if (b.score != null) return 1;
-        return b.note.revisedAt.compareTo(a.note.revisedAt);
-      });
 
     // 标签筛选在**落地时**统一套（读此刻的 state.activeTag）：覆盖"筛选选中
     // 期间输入新词 / 在途检索"两种时序，筛选逻辑只有 [_filterByTag] 一份。
     state = SearchState(
       query: q,
       activeTag: state.activeTag,
-      hits: _filterByTag(sorted, state.activeTag),
-      vectorFallbackReason: fallback,
+      hits: _filterByTag(outcome.hits, state.activeTag),
+      vectorFallbackReason: outcome.fallback,
     );
   }
+}
+
+/// 全局检索的**纯算法核心**（无 Riverpod、无竞态状态、不依赖 data 层）：
+/// 标题路（内存 contains，新建未索引的笔记也搜得到）＋ 内容路
+/// （[ContentRetriever] 端口：FTS5 关键词路 + 可选语义路 → RRF），
+/// 归并到**笔记粒度**、标题命中置顶、组内按 RRF 分、最后修改时间兜底。
+///
+/// 两个消费方共用它，相关性口径因此只有一份：
+/// - 页内搜索 [SearchNotifier]（在外面套竞态序号 + 标签过滤）；
+/// - Ctrl+K 全局搜索浮层（在外面套自己的去抖与 mounted 守卫）。
+Future<({List<SearchHit> hits, String? fallback})> searchAllNotes({
+  required List<Note> notes,
+  required ContentRetriever retrieve,
+  required String query,
+  int contentLimit = 30,
+}) async {
+  final Map<String, Note> byId = <String, Note>{
+    for (final Note n in notes) n.id: n,
+  };
+
+  // 标题路（大小写不敏感；中文 contains 天然成立）。
+  final String needle = query.toLowerCase();
+  final Map<String, SearchHit> merged = <String, SearchHit>{
+    for (final Note n in notes)
+      if (n.title.toLowerCase().contains(needle))
+        n.id: (note: n, titleMatch: true, snippet: null, score: null),
+  };
+
+  // 内容路。检索的任何失败都不能让搜索整体失败（与 data 层 Retriever
+  // 同一原则）。
+  String? fallback;
+  try {
+    final ContentRetrievalOutcome result = await retrieve(
+      query,
+      limit: contentLimit,
+    );
+    for (final ContentRetrievalHit hit in result.hits) {
+      final Note? n = byId[hit.noteId];
+      if (n == null) continue; // 已删除 / 尚未装载
+      final SearchHit? existing = merged[n.id];
+      merged[n.id] = (
+        note: n,
+        titleMatch: existing?.titleMatch ?? false,
+        snippet: hit.snippet,
+        score: hit.score,
+      );
+    }
+    fallback = result.vectorFallbackReason;
+  } on Object catch (e) {
+    fallback = '检索不可用（$e）：本次只用标题';
+  }
+
+  final List<SearchHit> sorted = merged.values.toList()
+    ..sort((SearchHit a, SearchHit b) {
+      // 标题命中置顶（最强信号），组内按 RRF 分，最后按修改时间兜底。
+      final int byTitle = (a.titleMatch ? 0 : 1).compareTo(
+        b.titleMatch ? 0 : 1,
+      );
+      if (byTitle != 0) return byTitle;
+      if (a.score != null && b.score != null) {
+        return b.score!.compareTo(a.score!);
+      }
+      if (a.score != null) return -1;
+      if (b.score != null) return 1;
+      return b.note.revisedAt.compareTo(a.note.revisedAt);
+    });
+
+  return (hits: sorted, fallback: fallback);
 }
 
 final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(

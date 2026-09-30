@@ -235,6 +235,41 @@ final retrieverProvider = Provider<Retriever>(
   ),
 );
 
+/// 内容命中的 **app 层形状**（只留搜索核心用得到的三个字段）。
+///
+/// 架构边界：app 层不许 import `data/`（见 `architecture_test.dart` 白名单，
+/// 只有本文件与 main.dart 合法），而搜索纯核心 [searchAllNotes] 又需要一条
+/// "内容命中"来源。data 层的 [RetrievalHit] 在此裁一道，app 层就只依赖这个
+/// record——检索实现怎么换，算法签名不动。
+typedef ContentRetrievalHit = ({String noteId, String snippet, double score});
+
+/// 一次内容检索的 app 层结果（降级原因照传：UI 当提示而非错误）。
+typedef ContentRetrievalOutcome = ({
+  List<ContentRetrievalHit> hits,
+  String? vectorFallbackReason,
+});
+
+/// 内容检索端口：查询词 → 至多 [limit] 条命中。
+typedef ContentRetriever =
+    Future<ContentRetrievalOutcome> Function(String query, {int limit});
+
+/// [retrieverProvider] 的 app 层适配器：把 data 层 [RetrievalResult] 裁成
+/// [ContentRetrievalOutcome]。app 层一律读这个，不直接碰 [Retriever]。
+final contentRetrieverProvider = Provider<ContentRetriever>(
+  (Ref ref) => (String query, {int limit = 30}) async {
+    final RetrievalResult result = await ref
+        .read(retrieverProvider)
+        .search(query, limit: limit);
+    return (
+      vectorFallbackReason: result.vectorFallbackReason,
+      hits: <ContentRetrievalHit>[
+        for (final RetrievalHit hit in result.hits)
+          (noteId: hit.noteId, snippet: hit.snippet, score: hit.score),
+      ],
+    );
+  },
+);
+
 /// 问答（检索 → 带编号资料 → 生成 → 引用还原）。
 final answerServiceProvider = Provider<AnswerService>(
   (Ref ref) => AnswerService(

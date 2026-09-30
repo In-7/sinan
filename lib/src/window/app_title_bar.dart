@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
@@ -24,13 +24,26 @@ import 'window_service.dart';
 /// 宽屏布局下只放拖拽与窗控；窄屏兜底布局（整宽一条）可通过
 /// [leading]/[title] 放动作与应用名。
 class WindowStrip extends StatefulWidget {
-  const WindowStrip({super.key, this.leading, this.title, this.trailing});
+  const WindowStrip({
+    super.key,
+    this.leading,
+    this.title,
+    this.center,
+    this.trailing,
+  });
 
   /// 窄屏兜底布局的左侧动作区（宽屏分栏时为 null——按钮在侧栏头部）。
   final List<Widget>? leading;
 
   /// 窄屏兜底布局的应用名。
   final String? title;
+
+  /// 拖拽带**正中**的控件（2026-09-30：全局搜索胶囊）。
+  ///
+  /// 实现上它是盖在拖拽带之上的**外层 Stack 兄弟**，不活在 [DragToMoveArea]
+  /// 内：否则双击最大化与拖窗两个手势识别器会和它的点击同处一个竞技场，
+  /// 双击识别器要等 300ms 才认输——胶囊点击被凭空拖慢半拍，测试里则永不触发。
+  final Widget? center;
 
   /// 右侧紧贴窗控按钮前的动作区（如主菜单）。宽屏分栏时用来把主菜单
   /// 放在「最小化」左侧，与窗控成组。
@@ -80,43 +93,54 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
     return Container(
       height: Tokens.titleBarHeightMain,
       color: Colors.transparent,
-      child: Row(
+      child: Stack(
         children: <Widget>[
-          ...?widget.leading?.map(
-            (Widget action) => chromeActionButton(context, action),
-          ),
-          // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖一层
-          // `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的说明）。
-          // 这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
-          Expanded(
-            child: DragToMoveArea(
-              child: GestureDetector(
-                behavior: .translucent,
-                onDoubleTap: WindowService.toggleMaximize,
-                child: Container(
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Tokens.spaceMd,
-                  ),
-                  child: DefaultTextStyle(
-                    style: TextStyle(
-                      color: _focused
-                          ? theme.colorScheme.onSurface
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontSize: Tokens.fontSizeSm,
+          // 底层：动作区 + 拖拽带 + 窗控。
+          Row(
+            children: <Widget>[
+              ...?widget.leading?.map(
+                (Widget action) => chromeActionButton(context, action),
+              ),
+              // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖
+              // 一层 `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的
+              // 说明）。这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
+              Expanded(
+                child: DragToMoveArea(
+                  child: GestureDetector(
+                    behavior: .translucent,
+                    onDoubleTap: WindowService.toggleMaximize,
+                    // 窄屏兜底的应用名（宽屏为空盒，拖拽照常吃事件）。
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Tokens.spaceMd,
+                      ),
+                      child: DefaultTextStyle(
+                        style: TextStyle(
+                          color: _focused
+                              ? theme.colorScheme.onSurface
+                              : theme.colorScheme.onSurfaceVariant,
+                          fontSize: Tokens.fontSizeSm,
+                        ),
+                        child: widget.title != null
+                            ? Text(widget.title!)
+                            : const SizedBox.shrink(),
+                      ),
                     ),
-                    child: widget.title != null
-                        ? Text(widget.title!)
-                        : const SizedBox.shrink(),
                   ),
                 ),
               ),
-            ),
+              ...?widget.trailing?.map(
+                (Widget action) => chromeActionButton(context, action),
+              ),
+              const _CaptionButtons(),
+            ],
           ),
-          ...?widget.trailing?.map(
-            (Widget action) => chromeActionButton(context, action),
-          ),
-          const _CaptionButtons(),
+          // 正中控件（全局搜索胶囊）：盖在拖拽带**之上**的兄弟层，不进
+          // DragToMoveArea 的手势竞技场（见 [center] 字段注释）。Center 自身
+          // 不吃事件，胶囊之外的点击照常落到底层拖拽带。
+          if (widget.center != null)
+            Positioned.fill(child: Center(child: widget.center)),
         ],
       ),
     );

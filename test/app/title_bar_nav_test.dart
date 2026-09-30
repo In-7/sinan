@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/home_screen.dart';
 import 'package:sinan/src/app/providers.dart';
+import 'package:sinan/src/app/search_palette.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
@@ -186,9 +187,7 @@ void main() {
     expect(container.read(navHistoryProvider).view, HomeView.canvas);
   });
 
-  testWidgets('编辑器在统一历史栈里：主页→上一步=回笔记，再上一步=回画布', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('编辑器在统一历史栈里：主页→上一步=回笔记，再上一步=回画布', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
     // 与真实点击路径一致：三点菜单进「画布」（整页切换），再走 locateProvider
@@ -237,5 +236,35 @@ void main() {
     expect(container.read(selectedNoteIdProvider), isNull);
     expect(container.read(navHistoryProvider).view, HomeView.all);
     expect(buttonOf(tester, '下一步').onPressed, isNull, reason: '进到底了');
+  });
+
+  testWidgets('全局搜索胶囊：拖拽带正中，主页/编辑器都在；点击开 Ctrl+K 浮层', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await pump(tester);
+
+    // 主页分支：胶囊只有一枚（WindowStrip 正中），文案 + 键位徽标。
+    final Finder capsuleTip = find.byTooltip('搜索全部笔记与画布（Ctrl+K）');
+    expect(capsuleTip, findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
+    expect(find.text('Ctrl+K'), findsOneWidget);
+
+    // 点击走 search.open 命令 ⇒ 全局浮层。
+    await tester.tap(capsuleTip);
+    // ⚠️ 浮层输入框聚焦后光标周期性闪烁，pumpAndSettle 会永久挂起，只能 pump。
+    await tester.pump();
+    expect(find.byType(SearchPalette), findsOneWidget);
+    expect(find.text('搜索全部笔记与画布'), findsOneWidget, reason: '浮层输入框 hint');
+    // 收尾：Esc 关掉，避免单例浮层泄漏给后续用例。
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(SearchPalette), findsNothing);
+
+    // 编辑器分支：胶囊仍在（写笔记时不回主页也能搜）。
+    final Note note = await container.read(notesProvider.notifier).createNote();
+    container.read(locateProvider.notifier).locate(noteId: note.id);
+    await tester.pumpAndSettle();
+    expect(capsuleTip, findsOneWidget, reason: '编辑器顶条同构，胶囊不消失');
   });
 }

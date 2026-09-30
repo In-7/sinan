@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
@@ -15,6 +16,7 @@ import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
+import 'search_palette.dart';
 import 'settings_panel.dart' show showSettingsPanel;
 import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
@@ -170,6 +172,9 @@ class HomeScreen extends ConsumerWidget {
                             HomeNavButton(),
                             NavHistoryButton(forward: true),
                           ],
+                          // 拖拽带正中：全局搜索胶囊（主页 / 编辑器同构，
+                          // Ctrl+K 也走这里开浮层，2026-09-30 用户定）。
+                          center: GlobalSearchCapsule(),
                           trailing: <Widget>[
                             SettingsNavButton(),
                             AiRailToggleButton(),
@@ -232,6 +237,9 @@ class HomeScreen extends ConsumerWidget {
                                   HomeNavButton(),
                                   NavHistoryButton(forward: true),
                                 ],
+                                // 拖拽带正中：全局搜索胶囊（与主页分支同构——
+                                // 写笔记时不用先回主页就能搜，2026-09-30）。
+                                center: GlobalSearchCapsule(),
                                 // 右端：设置 + AI 轨开关（紧贴「最小化」左侧）。
                                 trailing: <Widget>[
                                   SettingsNavButton(),
@@ -703,6 +711,125 @@ class SettingsNavButton extends ConsumerWidget {
       ),
       tooltip: '设置',
       onPressed: showSettingsPanel,
+    );
+  }
+}
+
+/// 标题栏拖拽带**正中**的全局搜索胶囊（2026-09-30 用户定）。
+///
+/// 与主页内搜索框是同一台引擎的两个入口（[showSearchPalette]）：这里负责
+/// "不在主页时也能搜"（编辑器里 `Ctrl+K` 同效），结果是即用即走的浮层，
+/// 不接管页面。
+///
+/// 视觉：幽灵胶囊（放大镜 + 「搜索」+ `Ctrl+K` 键位徽标），hover 才铺一层
+/// 浅底——平时安静，不与左右两簇动作抢注意力。
+///
+/// ⚠️ 外层 [GestureDetector] 是 **opaque + 空 onPanStart** 的双保险：
+/// 胶囊在 [WindowStrip] 里是盖在 [DragToMoveArea] 之上的兄弟层，opaque 已让
+/// 命中在胶囊自身截止（拖窗识别器收不到事件）；再自己识别 pan 是防止将来
+/// 有人把它塞回拖拽带——子级在竞技场里赢过父级，窗口也不会跟着跑。
+class GlobalSearchCapsule extends ConsumerStatefulWidget {
+  const GlobalSearchCapsule({super.key});
+
+  @override
+  ConsumerState<GlobalSearchCapsule> createState() =>
+      _GlobalSearchCapsuleState();
+}
+
+class _GlobalSearchCapsuleState extends ConsumerState<GlobalSearchCapsule> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: (_) {}, // 吞掉拖窗，见类注释。
+      child: Tooltip(
+        message: '搜索全部笔记与画布（Ctrl+K）',
+        waitDuration: const Duration(milliseconds: 600),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+          onTap: () => unawaited(runCommandById(ref, 'search.open')),
+          onHover: (bool v) => setState(() => _hover = v),
+          child: AnimatedContainer(
+            duration: Tokens.durationFast,
+            height: 24,
+            padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
+            decoration: BoxDecoration(
+              color: _hover
+                  ? scheme.onSurface.withValues(alpha: 0.07)
+                  : scheme.onSurface.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(Tokens.radiusLg),
+              border: Border.all(
+                color: scheme.onSurface.withValues(alpha: 0.10),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                tabler.Search(
+                  height: Tokens.iconSm,
+                  width: Tokens.iconSm,
+                  strokeWidth: 1.5,
+                  colorFilter: ui.ColorFilter.mode(
+                    scheme.onSurfaceVariant,
+                    ui.BlendMode.srcIn,
+                  ),
+                ),
+                const SizedBox(width: Tokens.spaceXs),
+                Text(
+                  '搜索',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: Tokens.spaceSm),
+                _CapsuleKeyBadge(
+                  label: 'Ctrl+K',
+                  onSurface: scheme.onSurface,
+                  outline: scheme.outlineVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 胶囊里的键位徽标（弱一档，不抢"搜索"二字）。
+class _CapsuleKeyBadge extends StatelessWidget {
+  const _CapsuleKeyBadge({
+    required this.label,
+    required this.onSurface,
+    required this.outline,
+  });
+
+  final String label;
+  final Color onSurface;
+  final Color outline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: onSurface.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+        border: Border.all(color: outline),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontSize: 9.5,
+          color: onSurface.withValues(alpha: 0.55),
+          height: 1.2,
+        ),
+      ),
     );
   }
 }

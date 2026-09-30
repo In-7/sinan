@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../app/search_palette.dart';
 import '../app/settings_panel.dart';
 import '../domain/note.dart';
 import 'command.dart';
@@ -131,6 +132,21 @@ List<Command> buildCommands(Ref ref) => <Command>[
   ),
 
   // ── 应用 ──────────────────────────────────────────────────────────────
+  Command(
+    id: 'search.open',
+    title: '搜索笔记',
+    hint: '跨笔记与画布全局搜索',
+    group: CommandGroup.navigate,
+    scope: CommandScope.global,
+    keys: <KeyBinding>[
+      // ⌘K 范式（Raycast / Linear / Notion）。Ctrl+K 原是编辑器的"插入链接"，
+      // 2026-09-30 用户定全局让位：官方 showLinkMenuCommand 已从编辑器命令表
+      // 摘除（链接改走工具栏「链接」钮，见 link_toolbar_item.dart），占用图与
+      // 空闲区表已同步——它现在是合法的全局空闲键。
+      const KeyBinding(key: LogicalKeyboardKey.keyK, control: true),
+    ],
+    run: (CommandContext _) => showSearchPalette(),
+  ),
   Command(
     id: 'palette.open',
     title: '命令面板',
