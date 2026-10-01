@@ -201,13 +201,20 @@ const int _kThumbnailIsolateBytes = 128 * 1024;
 ///
 /// 列表快照刻意不背画布正文（JSON 可能很大）；网格里每张可见的画布卡各取
 /// 一次，划走即释放。监听该笔记的 `contentHash`：保存后哈希一变，本 family
-/// 条目自动作废重解析（重新读 content + parse），无需手动失效。
-/// 解析为纯同步 Isolate 外操作（只几十个 item），FutureProvider 仅为统一
-/// loading/error 态；返回 null = 空画布，卡片落图标占位。
+/// 条目自动作废重取，无需手动失效。
+///
+/// ## 两条取数路径（2026-10-01）
+/// 1. **关系表快路径**（闸门通过时）：直接从 `canvas_items` 逆投影取几何，
+///    不读 MB 级 `notes.content`（笔迹点全在里面）、不做全文 jsonDecode、
+///    不需要 Isolate——纯笔迹重画布（0 个 item）也命中、直接落水印。
+/// 2. **降落伞**（闸门缺失 / 哈希不符 / 行数不符）：读 content 全文解析；
+///    超过 128KB 走后台 Isolate。任何行落后于 content 的状态都单向退回旧路径，
+///    缩略图正确性不因影子表而回退。
 final canvasThumbnailProvider = FutureProvider.autoDispose
     .family<CanvasThumbnail?, String>((Ref ref, String noteId) async {
-      // 依赖锚点：该笔记 contentHash 变化（保存 / 撤销）即自动作废重解析；
-      // select 只锚这一条，其余笔记变动不重建本卡。
+      // 依赖锚点：该笔记 contentHash 变化（保存 / 撤销）即自动作废重取；
+      // select 只锚这一条，其余笔记变动不重建本卡。快路径也正是拿这个哈希
+      // 与 srcfp 闸门比对。
       ref.watch(
         notesProvider.select((AsyncValue<List<Note>> v) {
           for (final Note n in v.value ?? const <Note>[]) {
@@ -216,12 +223,23 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
           return null;
         }),
       );
-      final String content = ref
-          .read(noteStoreProvider)
-          .canvasContentOf(noteId);
-      // 重画布（笔迹点多）后台解析，避免 jsonDecode 卡住 UI 帧；轻画布同步解析。
-      // 解析产物是纯数据对象图（fromJson 不解码图片、不建 TextPainter），可安全
-      // 跨 Isolate 回传。
+      // 类型留作推断：home_hub 不经白名单不能直接 import data/（架构边界），
+      // 具体 store 类型经 app/providers 的 noteStoreProvider 传入即可。
+      final noteStore = ref.read(noteStoreProvider);
+
+      // ① 关系表快路径：行 ⇄ content 由 srcfp 闸门（hash + item 行数）担保。
+      final List<Map<String, dynamic>>? rowItems = noteStore
+          .canvasThumbnailItemJson(noteId);
+      if (rowItems != null) {
+        final CanvasThumbnail? thumb = thumbnailFromItemJson(rowItems);
+        if (thumb != null) ref.onDispose(thumb.dispose);
+        return thumb;
+      }
+
+      // ② 降落伞：读 content 全文。重画布（笔迹点多）后台解析，避免 jsonDecode
+      // 卡住 UI 帧；轻画布同步解析。产物是纯数据对象图（fromJson 不解码图片、
+      // 不建 TextPainter），可安全跨 Isolate 回传。
+      final String content = noteStore.canvasContentOf(noteId);
       final CanvasThumbnail? thumb = content.length > _kThumbnailIsolateBytes
           ? await compute(parseCanvasThumbnail, content)
           : parseCanvasThumbnail(content);

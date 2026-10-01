@@ -115,6 +115,9 @@ class CanvasStore {
         removedShards.isEmpty &&
         changedShards.isEmpty &&
         !metaChanged) {
+      // 差量为 0（含「纯笔迹 / 相机编辑后几何指纹不变」）：行已与新 content
+      // 等价，只需把缩略图快路径的新鲜度闸门刷新到新哈希（值没变就 0 写入）。
+      _touchSourceStamp(noteId, content, items.length);
       return 0;
     }
 
@@ -240,6 +243,15 @@ class CanvasStore {
         'INSERT INTO rag_meta (key, value) VALUES (?, ?) '
         'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
         <Object?>['canvas.meta.fp.$noteId', metaFingerprint],
+      );
+      // 缩略图快路径新鲜度闸门：与行投影**同一事务**落盘（见 [_sourceStampKey]）。
+      db.execute(
+        'INSERT INTO rag_meta (key, value) VALUES (?, ?) '
+        'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        <Object?>[
+          _sourceStampKey(noteId),
+          '${contentFingerprint(content)}#${items.length}',
+        ],
       );
       db.execute('COMMIT;');
     } on Object {
@@ -368,6 +380,95 @@ class CanvasStore {
         : null;
   }
 
+  // ── 缩略图关系表快路径（2026-10-01）────────────────────────────────
+
+  /// 缩略图快路径**新鲜度闸门**的键：`canvas.srcfp.<noteId>`（rag_meta KV，
+  /// 无需 DDL 迁移）。值 = `<contentFingerprint(content)>#<投影 item 行数>`。
+  ///
+  /// - 哈希锚 `notes.content_hash`（笔记列表快照本就带着它，缩略图 provider
+  ///   零额外查询就能比对）；
+  /// - 行数兜底「meta 在、行空」的历史空洞：纯笔迹画布 item 行数为 **0** 也能
+  ///   命中快路径（它恰恰是 content 最重、最不该读的那类，应直接落空水印）；
+  ///   而任何行被 DROP 的损坏状态都会因数量不符被拦回降落伞。
+  ///
+  /// 与行投影**同一事务**写入：投影失败整笔回滚时闸门绝不提前出现。
+  static String _sourceStampKey(String noteId) => 'canvas.srcfp.$noteId';
+
+  /// 差量为 0 的早返回路径上刷新闸门（见 [replaceCanvasRows]）。
+  ///
+  /// 这条路径没有任何行变更（含纯笔迹 / 相机编辑后几何指纹不变），但 content
+  /// 哈希可能已经换了——不刷闸门，重笔迹画布会永远停在降落伞路径。值没变就
+  /// 一行不写，保住自动保存 0 写入红线。行既未变，串行同步模型下不存在
+  /// 「闸门与行之间插入故障」的窗口，故无需另开事务。
+  void _touchSourceStamp(String noteId, String content, int itemCount) {
+    final String stamp = '${contentFingerprint(content)}#$itemCount';
+    final ResultSet rs = db.select(
+      'SELECT 1 FROM rag_meta WHERE key = ? AND value = ?',
+      <Object?>[_sourceStampKey(noteId), stamp],
+    );
+    if (rs.isNotEmpty) return;
+    db.execute(
+      'INSERT INTO rag_meta (key, value) VALUES (?, ?) '
+      'ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      <Object?>[_sourceStampKey(noteId), stamp],
+    );
+  }
+
+  /// 主页画布缩略图的**关系表快路径**：闸门通过时直接返回按 z 序的 item JSON
+  /// （canvas_items 逆投影 + blocks 拼回卡片文本），**不读 `notes.content`、
+  /// 不碰 ink_shards**——MB 级笔迹 JSON 整条绕开，也不再需要后台 Isolate。
+  ///
+  /// [expectedHash] 传该笔记当前的 `notes.content_hash`。返回 null（调用方
+  /// 降落伞回退 content 全文解析）的情形：
+  /// 1. 没有闸门（回填未跑到 / 投影失败回滚 / 空画布从未落行）；
+  /// 2. 哈希不匹配（行落后于 content——第 1 步双写的非对称写盘窗口）；
+  /// 3. item 行数不符（历史空洞 / 手工损库）；
+  /// 4. 出现存储层不认识的 kind（宁回退，不盲画）。
+  ///
+  /// 返回空列表是**合法命中**：该画布只有笔迹 / 相机，没有几何 item，
+  /// 卡片应落空水印，而不是去读数 MB 的 content。
+  List<Map<String, dynamic>>? thumbnailItemJson(
+    String noteId,
+    String expectedHash,
+  ) {
+    final ResultSet stampRows = db.select(
+      'SELECT value FROM rag_meta WHERE key = ?',
+      <Object?>[_sourceStampKey(noteId)],
+    );
+    if (stampRows.isEmpty) return null;
+    final String stamp = stampRows.single['value'] as String;
+    final int sep = stamp.lastIndexOf('#');
+    if (sep <= 0) return null;
+    final int? itemCount = int.tryParse(stamp.substring(sep + 1));
+    if (itemCount == null || stamp.substring(0, sep) != expectedHash) {
+      return null;
+    }
+
+    // LEFT JOIN blocks：卡片文本真身可能在**别的笔记**（引用卡片，块可迁移
+    // #5），故按 block_id 而非 blocks.note_id 关联（同 [_cardTexts] 口径）。
+    final ResultSet rs = db.select(
+      'SELECT i.id, i.kind, i.x1, i.y1, i.x2, i.y2, i.angle, i.color, '
+      'i.filled, i.stroke_width, i.src, i.block_id, i.props_json, '
+      "b.props_json AS block_props FROM canvas_items i "
+      'LEFT JOIN blocks b ON b.id = i.block_id '
+      'WHERE i.note_id = ? ORDER BY i.z',
+      <Object?>[noteId],
+    );
+    if (rs.length != itemCount) return null;
+
+    final List<Map<String, dynamic>> out = <Map<String, dynamic>>[];
+    for (final Row r in rs) {
+      final _ItemRowRead row = _itemRowReadOf(r);
+      final Map<String, dynamic>? json = _itemJsonOf(
+        row,
+        row.kind == _cardType ? textOfProps(r['block_props'] as String?) : '',
+      );
+      if (json == null) return null;
+      out.add(json);
+    }
+    return out;
+  }
+
   _MetaRow? _readMeta(String noteId) {
     final ResultSet rs = db.select(
       'SELECT camera_json, schema_version FROM canvas_meta WHERE note_id = ?',
@@ -388,24 +489,28 @@ class CanvasStore {
       'WHERE note_id = ? ORDER BY z',
       <Object?>[noteId],
     ))
-      _ItemRowRead(
-        id: r['id'] as String,
-        kind: r['kind'] as String,
-        rect: <double>[
-          (r['x1'] as num).toDouble(),
-          (r['y1'] as num).toDouble(),
-          (r['x2'] as num).toDouble(),
-          (r['y2'] as num).toDouble(),
-        ],
-        angle: (r['angle'] as num).toDouble(),
-        color: (r['color'] as num?)?.toInt(),
-        filled: (r['filled'] as num?)?.toInt(),
-        strokeWidth: (r['stroke_width'] as num?)?.toDouble(),
-        src: r['src'] as String?,
-        blockId: r['block_id'] as String?,
-        propsJson: r['props_json'] as String,
-      ),
+      _itemRowReadOf(r),
   ];
+
+  /// SELECT 行 → [_ItemRowRead]（[thumbnailItemJson] 的窄查列集是这个的超集，
+  /// 多出的 `block_props` 在这里被自然忽略）。
+  static _ItemRowRead _itemRowReadOf(Row r) => _ItemRowRead(
+    id: r['id'] as String,
+    kind: r['kind'] as String,
+    rect: <double>[
+      (r['x1'] as num).toDouble(),
+      (r['y1'] as num).toDouble(),
+      (r['x2'] as num).toDouble(),
+      (r['y2'] as num).toDouble(),
+    ],
+    angle: (r['angle'] as num).toDouble(),
+    color: (r['color'] as num?)?.toInt(),
+    filled: (r['filled'] as num?)?.toInt(),
+    strokeWidth: (r['stroke_width'] as num?)?.toDouble(),
+    src: r['src'] as String?,
+    blockId: r['block_id'] as String?,
+    propsJson: r['props_json'] as String,
+  );
 
   List<_ShardRowRead> _readShards(String noteId) => <_ShardRowRead>[
     for (final Row r in db.select(

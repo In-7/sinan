@@ -191,6 +191,22 @@ class NoteStore {
     return rs.first['content'] as String? ?? '';
   }
 
+  /// 画布缩略图的**关系表快路径**：闸门通过时返回 `canvas_items` 逆投影的
+  /// item JSON（不读 MB 级 content、不解析笔迹，无需 Isolate）；闸门不过
+  /// （回填未到 / 行落后 / 行数不符）返回 null，调用方降落伞走
+  /// [canvasContentOf] + 全文解析。不存在 / 非画布也返回 null。
+  List<Map<String, dynamic>>? canvasThumbnailItemJson(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT content_hash FROM notes WHERE id = ? AND kind = ?',
+      <Object?>[noteId, NoteKind.canvas.name],
+    );
+    if (rs.isEmpty) return null;
+    return _canvas.thumbnailItemJson(
+      noteId,
+      rs.first['content_hash'] as String,
+    );
+  }
+
   /// 所有**画布**笔记的正文（画布 JSON 原文）。
   ///
   /// 用途是**媒体引用扫描**：画布里的图片与 AI 生成层把本地路径写在 JSON 里
@@ -262,6 +278,12 @@ class NoteStore {
     // blocks 靠 CASCADE 清，它的行没人替 ⇒ 必须在这里手工清，否则已删笔记
     // 的块永远留在检索索引里（"幽灵命中"）。
     db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[noteId]);
+    // rag_meta 是无外键 KV：画布投影的两把指纹键（meta 指纹 + 缩略图快路径
+    // 闸门）没人随笔记级联，顺手清掉，避免删笔记后留下永久孤儿键。
+    db.execute(
+      'DELETE FROM rag_meta WHERE key = ? OR key = ?',
+      <Object?>['canvas.meta.fp.$noteId', 'canvas.srcfp.$noteId'],
+    );
     db.execute('DELETE FROM notes WHERE id = ?', <Object?>[noteId]);
   }
 

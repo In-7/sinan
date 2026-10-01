@@ -26,6 +26,10 @@ class AppDatabase {
   /// 召回路。R4 的查询侧以它为闸。
   static bool vectorExtensionAvailable = false;
 
+  /// 文件库是否成功切到 WAL（网络盘等不支持的环境会静默回退 delete，
+  /// 此时此值为 false，诊断用；功能不受影响）。
+  static bool walEnabled = false;
+
   /// 异步只发生在「定位存储目录」这一步；打开与之后所有查询都是本地同步。
   static Future<AppDatabase> open() async {
     final Directory dir = await getApplicationSupportDirectory();
@@ -40,10 +44,42 @@ class AppDatabase {
       vectorExtensionAvailable = false;
     }
     final Database db = sqlite3.open(file.path);
-    // 外键开启后才能让快照随笔记删除而级联清理。
-    db.execute('PRAGMA foreign_keys = ON;');
+    walEnabled = applyConnectionPragmas(db, requestWal: true) == 'wal';
     _migrate(db);
     return AppDatabase._(db);
+  }
+
+  /// 每个新连接都必须执行的 PRAGMA 配置（连接级属性不会随 db 文件继承，
+  /// 将来若开第二连接/后台 isolate 也要调它）。
+  ///
+  /// - `busy_timeout=5000`：第二连接出现时防 SQLITE_BUSY（单连接下无副作用）。
+  /// - `foreign_keys=ON`：级联删除的前提。
+  /// - `journal_mode=WAL`（仅 [requestWal]，文件级持久属性）：写只追加
+  ///   `-wal`、读不阻塞写；也为将来多连接（后台 isolate）铺路。不支持的
+  ///   文件系统（如 SMB 重定向的 AppData）会**静默回退** `delete` 而非报错，
+  ///   返回值如实反映，调用方按现状继续跑即可。
+  /// - `synchronous`：**仅 WAL 成功时降 NORMAL**——WAL 下掉电最多丢最后一个
+  ///   事务而库不损坏，本项目保存幂等（contentHash 判变 + 下次编辑补写）可接受；
+  ///   DELETE 回滚模式必须保持 FULL，NORMAL 在该模式下有掉电损坏风险。
+  ///
+  /// 返回实际生效的 journal_mode（`wal` 或回退值 `delete`；内存库请求时
+  /// SQLite 原样返回 `memory`）。未传 [requestWal] 时不读回，固定按 `delete`
+  /// 口径返回（即保守使用 FULL 同步）。
+  @visibleForTesting
+  static String applyConnectionPragmas(Database db, {bool requestWal = false}) {
+    db.execute('PRAGMA busy_timeout = 5000;');
+    db.execute('PRAGMA foreign_keys = ON;');
+    String journal = 'delete';
+    if (requestWal) {
+      final Row row = db.select('PRAGMA journal_mode = WAL;').single;
+      journal = (row.values.first as String).toLowerCase();
+    }
+    db.execute(
+      journal == 'wal'
+          ? 'PRAGMA synchronous = NORMAL;'
+          : 'PRAGMA synchronous = FULL;',
+    );
+    return journal;
   }
 
   /// 让测试能在**内存库**上建出同一份 schema（单一来源，避免测试里

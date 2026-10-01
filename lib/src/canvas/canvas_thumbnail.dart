@@ -82,3 +82,29 @@ CanvasThumbnail? parseCanvasThumbnail(String content) {
   if (items.isEmpty || bounds == null || bounds.isEmpty) return null;
   return CanvasThumbnail(items: items, bounds: bounds);
 }
+
+/// 从**关系表快路径**的 item JSON 构造缩略图快照（2026-10-01）。
+///
+/// 入参是 `CanvasStore.thumbnailItemJson` 的产物——`canvas_items` 行逆投影、
+/// 已经过 srcfp 闸门（hash + item 行数）校验。这里与 [parseCanvasThumbnail]
+/// **走同一个入口** [CanvasItem.fromJson]、同一个 bounds 并集口径，所以两条
+/// 路径的渲染结果天然一致，不存在「第三套映射漂移」。
+///
+/// 不接受 null（闸门不过应由调用方直接走 content 解析）；空列表（纯笔迹 /
+/// 相机画布）与不可解析的行同 [parseCanvasThumbnail] 口径返回 null。
+CanvasThumbnail? thumbnailFromItemJson(List<Map<String, dynamic>> itemJsonRows) {
+  Rect? bounds;
+  final List<CanvasItem> items = <CanvasItem>[];
+  for (final Map<String, dynamic> raw in itemJsonRows) {
+    final CanvasItem item;
+    try {
+      item = CanvasItem.fromJson(raw);
+    } on Object {
+      continue;
+    }
+    items.add(item);
+    bounds = bounds == null ? item.bounds : bounds.expandToInclude(item.bounds);
+  }
+  if (items.isEmpty || bounds == null || bounds.isEmpty) return null;
+  return CanvasThumbnail(items: items, bounds: bounds);
+}
