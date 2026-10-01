@@ -11,11 +11,13 @@ import '../theme/app_custom_icons.dart';
 import '../theme/app_float_surface.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'hub_nav.dart';
 import 'providers.dart';
 import 'search_provider.dart';
 import 'settings_panel.dart' show appNavigatorKey;
 
-/// **全局搜索浮层**（2026-09-30 用户定，`Ctrl+K` / 标题栏胶囊唤起）。
+/// **全局搜索浮层**（2026-09-30 用户定，`Ctrl+K` / 编辑器标题栏图标唤起；
+/// 2026-10-01 起主页不再放入口，避免与页内搜索框重复）。
 ///
 /// 与主页**页内搜索框**是同一台引擎（[searchAllNotes]），两种形态回答两种
 /// 意图（VS Code 的侧边栏搜索 vs `Ctrl+P` 同构）：
@@ -23,9 +25,9 @@ import 'settings_panel.dart' show appNavigatorKey;
 /// - **本浮层**：任何界面（尤其编辑器写到一半）"抓一篇就走"，顶部居中、
 ///   紧凑行、全程键盘（↑↓ 选、Enter 跳、Esc 关）。
 ///
-/// 浮层刻意**不写** [searchNotifierProvider]：它是"即用即走"的临时动作，
-/// 不该把主页的浏览态（查询词、标签筛选）带走或污染。去抖与结果都是浮层
-/// 自己的局部状态，关掉即清空。
+/// 查询词是浮层的局部状态，浏览过程**不写** [searchNotifierProvider]；唯一
+/// 例外是底部交接行 / Shift+Enter——用户明确要"去主页看全部结果"时，才把
+/// 词灌进页内搜索（[SearchNotifier.submit]），见 [_SearchPaletteState]。
 const double _paletteWidth = 600;
 const double _topGap = 96;
 const double _maxHeightFactor = 0.6;
@@ -123,8 +125,9 @@ class _SearchPaletteOverlay extends StatelessWidget {
 
 /// 全局搜索浮层本体（公开仅为 widget 测试可直接 pump）。
 ///
-/// 状态全部局部：查询词、去抖、命中、键盘选中。不碰 [searchNotifierProvider]
-/// （见文件头注释）。
+/// 状态默认全部局部：查询词、去抖、命中、键盘选中，不碰
+/// [searchNotifierProvider]（见文件头注释）；只有"交接去主页"这一个明确
+/// 动作会写它。
 class SearchPalette extends ConsumerStatefulWidget {
   const SearchPalette({super.key, required this.onClose});
 
@@ -142,6 +145,9 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
 
   String _query = '';
   List<SearchHit> _hits = const <SearchHit>[];
+
+  /// **全部**命中数（[_hits] 只留前 8 行；"显示全部结果"交接行要展示总数）。
+  int _total = 0;
   bool _searching = false;
   int _selected = 0;
 
@@ -180,8 +186,21 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
     if (event is! KeyDownEvent) return false;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       _move(1);
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      return false;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       _move(-1);
+      return false;
+    }
+    // Shift+Enter = **交接给页内搜索**（见 [_handoffToPage]）。这里必须
+    // **消费事件**（return true）：单行 TextField 收到 Shift+Enter 会插换行 /
+    // 触发别的默认行为，HardwareKeyboard 处理器返回 true 后事件不再下发焦点
+    // 树（方向键刻意不消费，让输入框保持默认，见下方 SDK 引文）。
+    if ((event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+        HardwareKeyboard.instance.isShiftPressed) {
+      _handoffToPage();
+      return true;
     }
     return false; // 旁观，不消费（见 command/bindings.dart 的 SDK 引文）
   }
@@ -204,6 +223,7 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
       _seq++; // 作废在途检索
       setState(() {
         _hits = _recentNotes();
+        _total = 0; // 空查询没有"全部结果"可交接
         _searching = false;
       });
       return;
@@ -219,6 +239,7 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
           );
       if (!mounted || seq != _seq) return;
       setState(() {
+        _total = outcome.hits.length;
         _hits = outcome.hits.take(_maxRows).toList(growable: false);
         _searching = false;
         _selected = 0;
@@ -234,6 +255,23 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
   void _openSelected() {
     if (_hits.isEmpty) return;
     _open(_hits[_selected.clamp(0, _hits.length - 1)]);
+  }
+
+  /// **交接**给主页的页内搜索（底部「显示全部 N 条结果」/ Shift+Enter）：
+  /// 浮层回答"抓一篇就走"，当 8 行不够、要慢慢翻全部结果时，把查询词灌进
+  /// 页内搜索、回主页让卡片网格铺开——两个搜索因此是一条链路而非竞争入口
+  /// （2026-10-01 用户定）。
+  void _handoffToPage() {
+    final String q = _query.trim();
+    if (q.isEmpty) return;
+    widget.onClose();
+    // 若在编辑器 / 画布页，先走与主页钮**同一条路**回主页（导航历史照栈），
+    // 否则直接灌词。
+    if (ref.read(selectedNoteIdProvider) != null) {
+      ref.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+      ref.read(hubNavSelectionProvider.notifier).select(0);
+    }
+    ref.read(searchNotifierProvider.notifier).submit(q);
   }
 
   @override
@@ -289,7 +327,7 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           isDense: true,
-                          hintText: _searching ? '正在搜索…' : '搜索全部笔记与画布',
+                          hintText: _searching ? '正在搜索…' : '快速跳转：搜索笔记或画布',
                         ),
                       ),
                     ),
@@ -334,6 +372,65 @@ class _SearchPaletteState extends ConsumerState<SearchPalette> {
                     },
                   ),
                 ),
+              // 交接行：8 行看不全时，把查询词灌进主页页内搜索，铺开全部
+              // 结果（鼠标点 / Shift+Enter 同效）。空查询 / 无结果时不出现。
+              if (trimmed.isNotEmpty && _total > 0)
+                _HandoffToPageFooter(total: _total, onTap: _handoffToPage),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 浮层底部的**交接行**：去主页看全部结果（Shift+Enter）。
+class _HandoffToPageFooter extends StatelessWidget {
+  const _HandoffToPageFooter({required this.total, required this.onTap});
+
+  final int total;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: theme.dividerColor)),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Tokens.spaceMd,
+            vertical: Tokens.spaceXs + 1,
+          ),
+          child: Row(
+            children: <Widget>[
+              tabler.ListSearch(
+                height: Tokens.iconSm,
+                width: Tokens.iconSm,
+                strokeWidth: 1.5,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.onSurfaceVariant,
+                  ui.BlendMode.srcIn,
+                ),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              Expanded(
+                child: Text(
+                  '在主页显示全部 $total 条结果',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const _KbdBadge('Shift'),
+              const SizedBox(width: Tokens.spaceXs),
+              const _KbdBadge('Enter'),
             ],
           ),
         ),

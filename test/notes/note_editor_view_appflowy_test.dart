@@ -71,14 +71,11 @@ void main() {
     expect(
       panelRect.right,
       closeTo(buttonRect.right, 1),
-      reason: '面板右边缘没对齐按钮——多半是 `_backlinkButtonKey` 漏挂，'
+      reason:
+          '面板右边缘没对齐按钮——多半是 `_backlinkButtonKey` 漏挂，'
           '定位回落到兜底坐标飞到左上角',
     );
-    expect(
-      panelRect.top,
-      closeTo(buttonRect.bottom, 1),
-      reason: '面板顶边没接住按钮底边',
-    );
+    expect(panelRect.top, closeTo(buttonRect.bottom, 1), reason: '面板顶边没接住按钮底边');
   });
 
   testWidgets('卸载兜底落盘：不碰 ref，且防抖里的编辑真的写下去', (WidgetTester tester) async {
@@ -186,6 +183,74 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('closeButton')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('查找：计数 / 下一处 / 上一处（回绕）；Esc 关闭且不抛异常', (WidgetTester tester) async {
+    // 2026-10-01 实测修复：面板里 TextField 的 Esc 默认快捷键会 invoke
+    // DismissIntent，而官方面板没挂对应 Action ⇒ Esc 关不掉面板还抛
+    // "Unable to find an action for DismissIntent"。外壳（_buildFindMenu）
+    // 现在接住了它。
+    const String content = '{"ops":[{"insert":"苹果香蕉苹果橘子苹果\\n"}]}';
+    final _FakeNotes notes = _FakeNotes(<Note>[_note(content: content)]);
+    await _pumpView(tester, notes);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('closeButton')), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('findTextField')), '苹果');
+    // 200ms 防抖（vendored 补丁 9）：显式推进，不能 settle（光标闪烁）。
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(find.text('1 / 3'), findsOneWidget, reason: '三处"苹果"，初始定位在第一处');
+
+    await tester.tap(find.byKey(const Key('nextMatchButton')));
+    await tester.pump();
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('previousMatchButton')));
+    await tester.pump();
+    expect(find.text('1 / 3'), findsOneWidget);
+
+    // 回绕：第一处再按"上一处"跳到最后一处。
+    await tester.tap(find.byKey(const Key('previousMatchButton')));
+    await tester.pump();
+    expect(find.text('3 / 3'), findsOneWidget);
+
+    // Esc：面板关闭（修前：面板纹丝不动且抛 DismissIntent 异常）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.byKey(const Key('closeButton')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Ctrl+H：打开替换行；Esc 同样能关', (WidgetTester tester) async {
+    final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
+    await _pumpView(tester, notes);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('closeButton')), findsOneWidget);
+    expect(
+      find.byKey(const Key('replaceTextField')),
+      findsOneWidget,
+      reason: 'Ctrl+H 要展开"替换为"输入行',
+    );
+    expect(
+      find.byKey(const Key('replaceAllButton')),
+      findsOneWidget,
+      reason: '替换全部按钮随替换行一起出现',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(find.byKey(const Key('closeButton')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

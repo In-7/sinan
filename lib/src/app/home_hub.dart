@@ -5,10 +5,14 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 // 键盘事件类型（搜索框 Esc / Enter）：KeyDownEvent / LogicalKeyboardKey
 // 在 `services.dart`，不由 material 转出。
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../canvas/canvas_thumbnail.dart';
+import '../canvas/kernel/canvas_camera.dart';
+import '../canvas/kernel/canvas_painters.dart';
 import '../domain/note.dart';
 import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
@@ -186,6 +190,45 @@ final homeItemsProvider = Provider.autoDispose
           : scope.where((Note n) => n.tags.contains(args.tag)).toList();
     });
 
+/// 超过该体积的画布 content 才把解析丢到后台 Isolate（[compute]）。
+///
+/// 画布 JSON 内联**全部笔迹点**（一页几千条笔迹时 content 可达数 MB），整串
+/// jsonDecode 会在 UI 线程阻塞数帧；但轻画布（绝大多数）解析是亚毫秒级，
+/// Isolate 往返反而更慢。故按字节数分档：阈值取 128KB（约合 1–2 万点）。
+const int _kThumbnailIsolateBytes = 128 * 1024;
+
+/// 单篇画布的**缩略图快照**（懒取 + autoDispose 缓存，键 = noteId）。
+///
+/// 列表快照刻意不背画布正文（JSON 可能很大）；网格里每张可见的画布卡各取
+/// 一次，划走即释放。监听该笔记的 `contentHash`：保存后哈希一变，本 family
+/// 条目自动作废重解析（重新读 content + parse），无需手动失效。
+/// 解析为纯同步 Isolate 外操作（只几十个 item），FutureProvider 仅为统一
+/// loading/error 态；返回 null = 空画布，卡片落图标占位。
+final canvasThumbnailProvider = FutureProvider.autoDispose
+    .family<CanvasThumbnail?, String>((Ref ref, String noteId) async {
+      // 依赖锚点：该笔记 contentHash 变化（保存 / 撤销）即自动作废重解析；
+      // select 只锚这一条，其余笔记变动不重建本卡。
+      ref.watch(
+        notesProvider.select((AsyncValue<List<Note>> v) {
+          for (final Note n in v.value ?? const <Note>[]) {
+            if (n.id == noteId) return n.contentHash;
+          }
+          return null;
+        }),
+      );
+      final String content = ref
+          .read(noteStoreProvider)
+          .canvasContentOf(noteId);
+      // 重画布（笔迹点多）后台解析，避免 jsonDecode 卡住 UI 帧；轻画布同步解析。
+      // 解析产物是纯数据对象图（fromJson 不解码图片、不建 TextPainter），可安全
+      // 跨 Isolate 回传。
+      final CanvasThumbnail? thumb = content.length > _kThumbnailIsolateBytes
+          ? await compute(parseCanvasThumbnail, content)
+          : parseCanvasThumbnail(content);
+      if (thumb != null) ref.onDispose(thumb.dispose);
+      return thumb;
+    });
+
 /// **主页**：顶栏（视图切换 + 常驻搜索）+ 内容区（卡片网格 / 日历）。
 ///
 /// ## 为什么从"单列一页纸"改成这个（2026-09-29 用户定）
@@ -279,6 +322,26 @@ class _HomeHubState extends ConsumerState<HomeHub> {
   Widget build(BuildContext context) {
     final HomeView view = ref.watch(navHistoryProvider).view;
     final SearchState s = ref.watch(searchNotifierProvider);
+
+    // **外部灌词**同步：Ctrl+K 浮层的"在主页显示全部结果"（Shift+Enter）会
+    // 在本页之外（甚至编辑器里）直接写 searchNotifierProvider。这里把词灌进
+    // 输入框并聚焦，让"浮层 → 页内"的交接肉眼可见、可立刻继续细化。
+    // 打字路径不会回灌：submit 存的是 trim 后的词，与控制器原文一致（含尾部
+    // 空格）时跳过——否则每个空格都会把光标拽回行尾。
+    ref.listen<String>(
+      searchNotifierProvider.select((SearchState st) => st.query),
+      (String? prev, String next) {
+        if (_searchController.text == next ||
+            _searchController.text.trim() == next) {
+          return;
+        }
+        _searchController.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: next.length),
+        );
+        _searchFocus.requestFocus();
+      },
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -382,10 +445,24 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                   child: TextField(
                     controller: _searchController,
                     focusNode: _searchFocus,
+                    // 单行在 32 高定框里垂直居中（不依赖平台默认值）。
+                    textAlignVertical: TextAlignVertical.center,
+                    // 与 hint 同号（bodyMedium 14/行高20）：M3 默认输入样式是
+                    // titleMedium 16/24，hint 字形在 24 行盒里会偏上；且 24+
+                    // densePadding 16=40 超出 32 紧约束，装饰层被压缩整体上移。
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: scheme.onSurface,
+                    ),
                     onChanged: (String v) =>
                         ref.read(searchNotifierProvider.notifier).submit(v),
                     decoration: InputDecoration(
                       isDense: true,
+                      // 20 行高 + 上下各 6 = 32，恰好等于定高，内容不再被
+                      // 压缩，图标与文字一起真正垂直居中。
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       hintText: '搜索标题与内容',
                       hintStyle: theme.textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -919,21 +996,39 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
     final List<(String, int)> tags = ref.read(allTagsProvider);
     final String? activeTag = ref.read(searchNotifierProvider).activeTag;
 
-    Offset position = Offset.zero;
+    // **锚点矩形**（Flutter 官方 PopupMenu 口径，别再手算零宽度点）：
+    // 此前用 `RelativeRect.fromLTRB(dx, dy, dx, dy)`（锚点 = 按钮左下角的
+    // 零宽度矩形）⇒ 菜单默认从按钮左缘**向右**展开；而漏斗钮贴着搜索框
+    // 右端、离窗口右缘很近，放不下时被框架"吸"到屏幕边缘，菜单整体甩到
+    // 按钮右边很远（用户实测"面板离搜索按钮很远"）。改成按钮相对屏幕的
+    // **四边缘矩形**后，框架按 left/right 哪边空间大决定展开方向——按钮
+    // 靠右 ⇒ **右缘对齐、向左展开**。
+    //
+    // ⚠️ 坐标必须用**全局坐标**（plain localToGlobal，不传 ancestor）：
+    // 本应用菜单走 material_ui 的 Navigator，其 overlay renderBox 不是这个
+    // 按钮的祖先，传 `localToGlobal(ancestor: overlay)` 会做跨坐标系换算，
+    // 实测得到 8~40px 的垃圾偏移；而 overlay 全屏铺在 (0,0)，全局坐标即
+    // overlay 坐标（项目内其他 showMenu 也全是这个口径）。
     final RenderBox? box =
         _key.currentContext?.findRenderObject() as RenderBox?;
+    final Size screen = MediaQuery.sizeOf(context);
+    RelativeRect position = RelativeRect.fill;
     if (box != null) {
-      position = box.localToGlobal(Offset(0, box.size.height));
+      final Offset topLeftGlobal = box.localToGlobal(Offset.zero);
+      final Offset bottomRightGlobal = box.localToGlobal(
+        box.size.bottomRight(Offset.zero),
+      );
+      position = RelativeRect.fromLTRB(
+        topLeftGlobal.dx,
+        bottomRightGlobal.dy,
+        screen.width - bottomRightGlobal.dx,
+        screen.height - bottomRightGlobal.dy,
+      );
     }
 
     await showMenu<void>(
       context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx,
-        position.dy,
-      ),
+      position: position,
       items: <PopupMenuEntry<void>>[
         _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
@@ -1013,20 +1108,31 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
     );
     final bool active = sort != NoteSort.revised || activeTag != null;
 
-    return IconButton(
+    // ⚠️ 锚点 key 挂在 **32×32 外壳**上，不能挂 IconButton：material_ui 的
+    // M3 IconButton 外层包了 48×48 的点击热区（_InputPadding），元素根
+    // RenderBox 是热区而非可视按钮（实测落在按钮左下方，菜单因此整体
+    // 错位 8~40px）。外壳尺寸与位置就是可视按钮的真实矩形。
+    return SizedBox(
       key: _key,
-      constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-      padding: EdgeInsets.zero,
-      icon: tabler.Filter(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: active
-            ? ui.ColorFilter.mode(theme.colorScheme.primary, ui.BlendMode.srcIn)
-            : null,
+      width: 32,
+      height: 32,
+      child: IconButton(
+        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        padding: EdgeInsets.zero,
+        icon: tabler.Filter(
+          height: Tokens.iconMdSm,
+          width: Tokens.iconMdSm,
+          strokeWidth: Tokens.iconStroke,
+          colorFilter: active
+              ? ui.ColorFilter.mode(
+                  theme.colorScheme.primary,
+                  ui.BlendMode.srcIn,
+                )
+              : null,
+        ),
+        tooltip: '筛选与排序',
+        onPressed: _openMenu,
       ),
-      tooltip: '筛选与排序',
-      onPressed: _openMenu,
     );
   }
 }
@@ -1078,20 +1184,22 @@ class _CardsGrid extends StatelessWidget {
       shrinkWrap: shrinkWrap,
       physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        // 2026-09-30 用户定：**圆角正方形便签砖**，每行 6 个（取代此前
-        // 260×148 的扁卡）。列数公式是 ceil((可用宽−12)/(extent+12))，
-        // 240 是按默认 1340 窗宽（网格可用 1302）反解的：
-        // ceil((1302−12)/252) = 6、每块正好 207×207；最大化到 1529 逻辑宽
-        // 仍是 6 列（≈239 见方），逻辑窗宽 >1562（更大显示器）才自动升 7 列，
-        // 720 最小窗宽降到 3 列——**列数随窗宽自适应，绝不硬挤**。
-        // （200 是错档：ceil(1290/212)=7，默认窗宽就会排 7 个、每块只有 176。）
-        maxCrossAxisExtent: 240,
-        // 正方形：childAspectRatio 取默认 1.0（写出来会被 lint 判冗余，意图
-        // 钉在这里）。高度随列宽走正是想要的（与此前扁卡"宽卡下半截空白"的
-        // 担心相反）——摘要 4 行 + Expanded 吃余高，砖内有便签般的呼吸空间；
-        // 摘要不足 4 行时空白落在摘要与底行之间。
-        crossAxisSpacing: Tokens.spaceMd,
-        mainAxisSpacing: Tokens.spaceMd,
+        // 2026-10-01 用户定：每行 **5** 个、加大留白（取代 2026-09-30 的
+        // 每行 6 个/间距 12——6 块白砖阵列在空白卡多时显挤）。列数公式仍是
+        // ceil((可用宽−间距)/(extent+间距))，264/间距 20 按默认 1340 窗宽
+        // （网格可用 ≈1302）反解：ceil((1302−20)/284) = 5、每块 ≈244×203；
+        // 逻辑窗宽到 ≈1440 才自动升 6 列，720 最小窗宽仍降 3 列（≈216×180），
+        // 更大显示器才会到 6–7 列——**列数随窗宽自适应，绝不硬挤**。
+        // （256/20 是错档：升 6 列临界只有 ≈1400，默认窗稍拖宽就破 5 列。）
+        maxCrossAxisExtent: 264,
+        // 2026-10-01 用户定：**6:5 矮卡**（宽/高 = 1.2）取代正方形——5 列后
+        // 248 见方偏高、纵向信息密度低；244×203 与最小窗 216×180 都仍高于
+        // 卡内容下限（标题+4 行摘要+底行 ≈145），摘要行数不变，空白变少。
+        childAspectRatio: 1.2,
+        // 间距 20px（2026-10-01 用户定，试 macOS 20pt 边距档；Tokens 无
+        // 20 档，spaceLg=16/spaceXl=24，故写字面量）：卡更大、缝更宽，整墙透气。
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
       ),
       itemCount: items.length,
       itemBuilder: (BuildContext _, int i) => _NoteCard(
@@ -1110,12 +1218,15 @@ class _CardsGrid extends StatelessWidget {
   }
 }
 
-/// 一张**笔记卡片**（2026-09-30 起为**正方形便签砖**，默认窗宽每行 6 个）：
-/// 标题 + 摘要（≤4 行）+ 标签 + 相对时间。
+/// 一张**笔记卡片**（2026-10-01 起为 6:5 矮卡，默认窗宽每行 5 个）。
+/// 两种形态同尺寸、同标题/底行语言，中段不同：
+/// - 笔记：标题 + 摘要（≤3 行）+ 标签 + 相对时间；
+/// - 画布：**几何缩略图**（[_CanvasThumbnail]，真实 item 几何 fit 绘制）
+///   + 标题 + 标签 + 相对时间，标题仍带 [CustomIcons.canvas] 角标。
 ///
 /// 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] / [cardFillHover]）——
 /// 静止态**有底色**（与列表行"显式透明"相反：卡片是一块浮起的板子，透明就没了
-/// 卡片的样子）。画布卡片用 [CustomIcons.canvas] 角标区分形态（无缩略图渲染管线）。
+/// 卡片的样子）。
 class _NoteCard extends StatefulWidget {
   const _NoteCard({
     super.key,
@@ -1203,111 +1314,223 @@ class _NoteCardState extends State<_NoteCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                // 标题行：左 = 形态角标（仅画布）+ 标题，右 = 取消收藏星（仅收藏视图）。
-                Row(
-                  children: <Widget>[
-                    if (isCanvas) ...<Widget>[
-                      CustomIcons.canvas(size: Tokens.iconXs + 4),
-                      const SizedBox(width: Tokens.spaceXs),
-                    ],
-                    Expanded(
-                      child: _matchRich(
-                        title,
-                        query: highlight,
-                        base:
-                            theme.textTheme.titleSmall?.copyWith(
-                              color: scheme.onSurface,
-                              fontWeight: FontWeight.w600,
-                            ) ??
-                            const TextStyle(),
-                        matchColor: scheme.primary,
-                        maxLines: 1,
-                      ),
-                    ),
-                    if (widget.onUnfavorite != null) ...<Widget>[
-                      const SizedBox(width: Tokens.spaceXs),
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          tooltip: '取消收藏',
-                          icon: tabler.StarFilled(
-                            height: Tokens.iconSm,
-                            width: Tokens.iconSm,
-                            strokeWidth: Tokens.iconStroke,
-                            colorFilter: ui.ColorFilter.mode(
-                              scheme.onSurfaceVariant,
-                              ui.BlendMode.srcIn,
+                if (isCanvas) ...<Widget>[
+                  // 画布卡：**上图下文**——缩略图吃余高，下方标题 + meta 行，
+                  // 与笔记卡同尺寸、同标题/底行语言，只是中段从文字换成画面。
+                  Expanded(child: _CanvasThumbnail(noteId: n.id)),
+                  const SizedBox(height: Tokens.spaceSm),
+                  _titleRow(
+                    context,
+                    theme,
+                    scheme,
+                    isCanvas: true,
+                    title: title,
+                    highlight: highlight,
+                  ),
+                  const SizedBox(height: Tokens.spaceSm),
+                  _metaRow(theme, scheme, n, tags),
+                ] else ...<Widget>[
+                  _titleRow(
+                    context,
+                    theme,
+                    scheme,
+                    isCanvas: false,
+                    title: title,
+                    highlight: highlight,
+                  ),
+                  const SizedBox(height: Tokens.spaceSm),
+                  // 摘要：搜索态 = 命中块片段（命中词高亮）；浏览态 = ≤3 行
+                  // 真实正文（无标题笔记的标题借走了首行，摘要从余下行起，不
+                  // 重复）。6:5 矮卡（默认 203 高）下 3 行 + Expanded 吃余高，
+                  // 短笔记的空白落在摘要与底行之间，像便签留白而非坏版。
+                  // 标题不是借的又没有正文时才落「（空白）」；借了标题但没余行的，
+                  // 中段留白即可——假斜体填充比空白更吵。
+                  Expanded(
+                    child: displaySummary != null
+                        ? _matchRich(
+                            displaySummary,
+                            query: highlight,
+                            base:
+                                theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ) ??
+                                const TextStyle(),
+                            matchColor: scheme.primary,
+                            maxLines: 3,
+                          )
+                        : borrowedTitle
+                        ? const SizedBox.shrink()
+                        : Text(
+                            '（空白）',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                              fontStyle: FontStyle.italic,
                             ),
                           ),
-                          onPressed: widget.onUnfavorite,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: Tokens.spaceXs),
-                // 摘要：搜索态 = 命中块片段（命中词高亮）；浏览态 = ≤4 行
-                // 真实正文（无标题笔记的标题借走了首行，摘要从余下行起，不
-                // 重复）。正方形砖（207 高）比旧扁卡多出纵向空间，4 行 + Expanded
-                // 吃余高，短笔记的空白落在摘要与底行之间，像便签留白而非坏版。
-                // 标题不是借的又没有正文时才落「（空白）」；借了标题但没余行的，
-                // 中段留白即可——假斜体填充比空白更吵。
-                Expanded(
-                  child: displaySummary != null
-                      ? _matchRich(
-                          displaySummary,
-                          query: highlight,
-                          base:
-                              theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ) ??
-                              const TextStyle(),
-                          matchColor: scheme.primary,
-                          maxLines: 4,
-                        )
-                      : borrowedTitle
-                      ? const SizedBox.shrink()
-                      : Text(
-                          '（空白）',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant.withValues(
-                              alpha: 0.6,
-                            ),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                ),
-                const SizedBox(height: Tokens.spaceSm),
-                // 底行：标签（最多 3 枚 + `+n`）+ 右对齐相对时间。
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Wrap(
-                        spacing: Tokens.spaceXs,
-                        runSpacing: Tokens.spaceXs,
-                        children: <Widget>[
-                          for (final String t in tags.take(3))
-                            _CardTag(label: t),
-                          if (tags.length > 3)
-                            _CardTag(label: '+${tags.length - 3}'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: Tokens.spaceSm),
-                    Text(
-                      _relativeTime(n.revisedAt),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: Tokens.spaceSm),
+                  _metaRow(theme, scheme, n, tags),
+                ],
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 标题行：左 = 形态角标（仅画布）+ 标题，右 = 取消收藏星（仅收藏视图）。
+  /// 笔记卡与画布卡共用，保证两种形态标题语言一致。
+  Widget _titleRow(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme scheme, {
+    required bool isCanvas,
+    required String title,
+    required String? highlight,
+  }) {
+    return Row(
+      children: <Widget>[
+        if (isCanvas) ...<Widget>[
+          CustomIcons.canvas(size: Tokens.iconXs + 4),
+          const SizedBox(width: Tokens.spaceXs),
+        ],
+        Expanded(
+          child: _matchRich(
+            title,
+            query: highlight,
+            base:
+                theme.textTheme.titleSmall?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ) ??
+                const TextStyle(),
+            matchColor: scheme.primary,
+            maxLines: 1,
+          ),
+        ),
+        if (widget.onUnfavorite != null) ...<Widget>[
+          const SizedBox(width: Tokens.spaceXs),
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: IconButton(
+              padding: EdgeInsets.zero,
+              tooltip: '取消收藏',
+              icon: tabler.StarFilled(
+                height: Tokens.iconSm,
+                width: Tokens.iconSm,
+                strokeWidth: Tokens.iconStroke,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.onSurfaceVariant,
+                  ui.BlendMode.srcIn,
+                ),
+              ),
+              onPressed: widget.onUnfavorite,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// 底行：标签（最多 3 枚 + `+n`）+ 右对齐相对时间。
+  Widget _metaRow(
+    ThemeData theme,
+    ColorScheme scheme,
+    Note n,
+    List<String> tags,
+  ) {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Wrap(
+            spacing: Tokens.spaceXs,
+            runSpacing: Tokens.spaceXs,
+            children: <Widget>[
+              for (final String t in tags.take(3)) _CardTag(label: t),
+              if (tags.length > 3) _CardTag(label: '+${tags.length - 3}'),
+            ],
+          ),
+        ),
+        const SizedBox(width: Tokens.spaceSm),
+        Text(
+          _relativeTime(n.revisedAt),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 画布卡的**几何缩略图**：懒读 [canvasThumbnailProvider]，用内核现成的
+/// [ItemPainter] + 一台 fit 到内容包围盒的相机绘制（不画笔迹、不解码图片）。
+///
+/// 三态：解析中 / 空画布 ⇒ 淡形状图标水印居中（卡片永远不留白成"坏卡"）；
+/// 有 item ⇒ 全量 item 几何 fit 绘制。
+class _CanvasThumbnail extends ConsumerWidget {
+  const _CanvasThumbnail({required this.noteId});
+
+  final String noteId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final CanvasThumbnail? thumb = ref
+        .watch(canvasThumbnailProvider(noteId))
+        .value;
+
+    // 衬编辑器同源纸面色（AppTheme.contentCanvas）：缩略图是"画布的俯视
+    // 小图"而非卡面上的裸线条——暗色主题下用户画的黑墨在深纸面上才可见，
+    // 也与笔记卡文字区形成材质区分。圆角 Sm 收在卡片 padding 内。
+    final BorderRadius previewRadius = BorderRadius.circular(Tokens.radiusSm);
+    final Widget watermark = Center(
+      child: tabler.Shape2(
+        height: Tokens.iconXl,
+        width: Tokens.iconXl,
+        strokeWidth: Tokens.iconStroke,
+        colorFilter: ui.ColorFilter.mode(
+          scheme.onSurfaceVariant.withValues(alpha: 0.28),
+          ui.BlendMode.srcIn,
+        ),
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppTheme.contentCanvas(theme.brightness),
+        borderRadius: previewRadius,
+      ),
+      child: ClipRRect(
+        borderRadius: previewRadius,
+        child: thumb == null
+            ? watermark
+            // 每帧按当前尺寸现造相机：缩略图不响应交互，没有相机状态要维护，
+            // fit 是纯算术，比监听 resize 存状态更省。
+            : LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final CanvasCamera camera = CanvasCamera()
+                    ..fit(thumb.bounds, constraints.biggest, padding: 6);
+                  return CustomPaint(
+                    size: constraints.biggest,
+                    painter: ItemPainter(
+                      camera: camera,
+                      items: thumb.items,
+                      inkColor: AppTheme.canvasInk(theme.brightness),
+                      // 缩略图专用：屏幕短边 <20px 的卡片/导图退化成单色块，
+                      // 跳过文本排版与图片采样（缩到这个尺寸字早已不可辨）。
+                      // 形状不参与代理（单次 drawRect，且空心变实心会改语义）。
+                      lod: true,
+                      lodScale: camera.scale,
+                    ),
+                  );
+                },
+              ),
       ),
     );
   }

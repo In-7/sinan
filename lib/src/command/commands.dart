@@ -134,7 +134,7 @@ List<Command> buildCommands(Ref ref) => <Command>[
   // ── 应用 ──────────────────────────────────────────────────────────────
   Command(
     id: 'search.open',
-    title: '搜索笔记',
+    title: '快速跳转',
     hint: '跨笔记与画布全局搜索',
     group: CommandGroup.navigate,
     scope: CommandScope.global,

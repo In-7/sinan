@@ -1,8 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/providers.dart';
+import 'package:sinan/src/canvas/kernel/canvas_controller.dart';
+import 'package:sinan/src/canvas/kernel/canvas_item.dart';
+import 'package:sinan/src/canvas/kernel/canvas_painters.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
@@ -57,12 +62,16 @@ void main() {
   );
 
   /// 先建好笔记（[titles] = 普通笔记，[canvasTitles] = 画布）再挂主页。
+  /// [canvasContentByTitle]：标题 → 画布存档 JSON，建完直接写 content
+  /// （缩略图 provider 按 content 懒解析）；空画布不用传。
   Future<ProviderContainer> pumpHub(
     WidgetTester tester, {
     List<String> titles = const <String>[],
     List<String> canvasTitles = const <String>[],
+    Map<String, String> canvasContentByTitle = const <String, String>{},
   }) async {
     final ProviderContainer container = newContainer();
+    bool touchedCanvasContent = false;
     for (final String t in titles) {
       final Note n = await container.read(notesProvider.notifier).createNote();
       await container.read(notesProvider.notifier).saveTitle(n.id, t);
@@ -72,7 +81,17 @@ void main() {
           .read(notesProvider.notifier)
           .createNote(kind: NoteKind.canvas);
       await container.read(notesProvider.notifier).saveTitle(n.id, t);
+      final String? content = canvasContentByTitle[t];
+      if (content != null) {
+        db.execute('UPDATE notes SET content = ? WHERE id = ?', <Object?>[
+          content,
+          n.id,
+        ]);
+        touchedCanvasContent = true;
+      }
     }
+    // 建完笔记后才补的 content 要让列表快照重读一次（contentHash 随之变）。
+    if (touchedCanvasContent) container.invalidate(notesProvider);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -204,6 +223,45 @@ void main() {
     expect(container.read(navHistoryProvider).view, HomeView.all);
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙画布'), findsOneWidget, reason: '全部不分笔记与画布');
+  });
+
+  testWidgets('画布卡：有内容渲染几何缩略图，空画布落形状水印（不再显示「空白」）', (WidgetTester tester) async {
+    final CanvasController controller = CanvasController();
+    controller.document.addItem(
+      ShapeItem(
+        id: 'sh1',
+        rect: const Rect.fromLTRB(0, 0, 100, 80),
+        kind: CanvasShapeKind.rectangle,
+        color: const Color(0xFF1F1F1F),
+      ),
+    );
+    final String content = jsonEncode(controller.toJson());
+    controller.dispose();
+
+    await pumpHub(
+      tester,
+      canvasTitles: <String>['图形画布', '空画布'],
+      canvasContentByTitle: <String, String>{'图形画布': content},
+    );
+
+    // 有 item 的画布卡：内核 ItemPainter 上台（真实几何 fit 绘制）。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is CustomPaint && w.painter is ItemPainter,
+      ),
+      findsOneWidget,
+      reason: '有 item 的画布卡必须渲染几何缩略图',
+    );
+    // 空画布：淡形状水印居中（tabler Shape2），不是一片死白。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w.runtimeType.toString() == 'Shape2',
+      ),
+      findsOneWidget,
+      reason: '空画布落形状图标水印',
+    );
+    // 两种画布卡都不再借笔记卡的「（空白）」文案。
+    expect(find.text('（空白）'), findsNothing);
   });
 
   testWidgets('点卡片进入该笔记：走 locateProvider（唯一跳转通道）', (WidgetTester tester) async {
@@ -453,6 +511,23 @@ void main() {
     expect(find.text('最近编辑'), findsOneWidget);
     expect(find.text('最近创建'), findsOneWidget);
     expect(find.text('标题 A–Z'), findsOneWidget);
+
+    // 落位（2026-10-01 修复）：菜单**右缘对齐漏斗钮、顶边贴按钮底边**。
+    // 旧锚点是按钮左下角的零宽度矩形，菜单向右放不下时被框架吸到屏幕右缘，
+    // 整体甩开按钮很远（用户实测"面板离搜索按钮很远"）。
+    // showMenu 的内容是框架私有 _PopupMenu<void>，按运行时类型名定位。
+    final Rect btnRect = tester.getRect(filterButton);
+    final Finder popup = find.byWidgetPredicate(
+      (Widget w) => w.runtimeType.toString() == '_PopupMenu<void>',
+    );
+    expect(popup, findsOneWidget);
+    final Rect menuRect = tester.getRect(popup);
+    expect(
+      menuRect.right,
+      closeTo(btnRect.right, 2),
+      reason: '菜单右缘应与漏斗钮对齐，而不是甩到窗口边缘',
+    );
+    expect(menuRect.top, closeTo(btnRect.bottom, 2), reason: '菜单顶边应贴着按钮底边');
     // 点一枚排序（选默认的，不改变排序）⇒ 菜单关闭。
     await tester.tap(menuItem('最近编辑'));
     await tester.pumpAndSettle();

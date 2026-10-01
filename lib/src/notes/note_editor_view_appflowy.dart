@@ -346,6 +346,19 @@ class _NoteEditorViewAppFlowyState
   /// 官方 `FindReplaceMenu` 用 `style.findMenuBuilder?.call(...) ?? Material(...)`
   /// 选择外壳，所以这是官方留给宿主的正式口子（不是 hack）。
   ///
+  /// ⚠️ 必须用 **official 前缀**的框架组件（Actions / Material）：面板内容来自
+  /// vendored appflowy，它 import 的是 `package:flutter/material.dart`，其
+  /// EditableText 的快捷键分发找的是**框架**的 Actions；material_ui 那套同名类
+  /// 是另一份 Type，接不住（TextField 的 Material 祖先问题同理，见下）。
+  ///
+  /// ## Esc 关闭（2026-10-01 实测补丁，应用侧）
+  /// 官方面板里查找 / 替换两个 TextField 的默认快捷键把 Esc 映射成
+  /// `DismissIntent`，但**官方没在任何祖先处挂这个 Intent 的 Action** ⇒
+  /// Esc 既关不掉面板，debug 下还直接抛
+  /// "Unable to find an action for an Intent with type DismissIntent"
+  /// （与我们自己 Ctrl+K 浮层曾踩的坑同源）。在这里接住它：Esc 走与关闭钮
+  /// **同一个** `onDismiss`，和命令面板 / 搜索浮层的全局约定一致。
+  ///
   /// ⚠️ `showRegexButton` / `showCaseSensitiveButton` 与官方默认**保持一致**
   /// （都是 true）——不传就等于悄悄去掉正则/大小写两个按钮。
   static Widget _buildFindMenu(
@@ -356,21 +369,31 @@ class _NoteEditorViewAppFlowyState
     bool showReplaceMenu,
     VoidCallback onDismiss,
   ) => AppFloatSurface(
-    child: official.Material(
-      // ⚠️ 必须是**官方 material** 的 `Material`（所以带 `official.` 前缀）：
-      // 面板内容 `FindAndReplaceMenuWidget` 来自 vendored appflowy，内部 import
-      // 的是 `package:flutter/material.dart` ⇒ 它的 `TextField` 找**官方**
-      // `Material` 祖先；`AppFloatSurface` 里那层是 material_ui 的同名类，
-      // 在这条查找链上**不算数**（官方默认面板正是为此自己包了一层官方
-      // Material，见 `find_menu_service.dart` 的 `?? Material(...)`）。
-      // 这里只要"祖先"这层语义，视觉仍是外层 AppFloatSurface 的浮层三件套。
-      type: official.MaterialType.transparency,
-      child: FindAndReplaceMenuWidget(
-        onDismiss: onDismiss,
-        editorState: editorState,
-        showReplaceMenu: showReplaceMenu,
-        localizations: localizations,
-        style: style,
+    child: official.Actions(
+      actions: <Type, official.Action<official.Intent>>{
+        official.DismissIntent: official.CallbackAction<official.DismissIntent>(
+          onInvoke: (official.DismissIntent _) {
+            onDismiss();
+            return null;
+          },
+        ),
+      },
+      child: official.Material(
+        // ⚠️ 必须是**官方 material** 的 `Material`（所以带 `official.` 前缀）：
+        // 面板内容 `FindAndReplaceMenuWidget` 来自 vendored appflowy，内部 import
+        // 的是 `package:flutter/material.dart` ⇒ 它的 `TextField` 找**官方**
+        // `Material` 祖先；`AppFloatSurface` 里那层是 material_ui 的同名类，
+        // 在这条查找链上**不算数**（官方默认面板正是为此自己包了一层官方
+        // Material，见 `find_menu_service.dart` 的 `?? Material(...)`）。
+        // 这里只要"祖先"这层语义，视觉仍是外层 AppFloatSurface 的浮层三件套。
+        type: official.MaterialType.transparency,
+        child: FindAndReplaceMenuWidget(
+          onDismiss: onDismiss,
+          editorState: editorState,
+          showReplaceMenu: showReplaceMenu,
+          localizations: localizations,
+          style: style,
+        ),
       ),
     ),
   );

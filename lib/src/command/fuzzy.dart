@@ -54,7 +54,11 @@ const Map<int, String> _initialByRune = <int, String>{
   0x9A7B: 'z', // 驻
   0x7B54: 'd', // 答
   0x8F68: 'g', // 轨
-  // ── `search.open`：hint「跨笔记与画布全局搜索」（2026-09-30）─────────
+  // ── `search.open`：title「快速跳转」/ hint「跨笔记与画布全局搜索」──────
+  0x5FEB: 'k', // 快
+  0x901F: 's', // 速
+  0x8DF3: 't', // 跳
+  0x8F6C: 'z', // 转
   0x8DE8: 'k', // 跨
   0x4E0E: 'y', // 与
   0x5168: 'q', // 全

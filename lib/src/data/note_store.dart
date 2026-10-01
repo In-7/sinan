@@ -176,6 +176,21 @@ class NoteStore {
     return rs.first['plain_text'] as String? ?? '';
   }
 
+  /// 按 id 取**单篇画布的 JSON 原文**（懒取）：主页画布卡片缩略图专用窄查询。
+  ///
+  /// 与 [canvasContents] 同口径（直接读 `notes.content`，双写阶段它仍是画布
+  /// 读路径的权威），但按 id 只取一行——网格里每张可见画布卡各取一次，结果
+  /// 由调用方的 autoDispose provider 缓存，不背进列表快照。
+  /// 不存在 / 非画布 / 空串都返回空串，调用方按空串渲染空画布占位。
+  String canvasContentOf(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT content FROM notes WHERE id = ? AND kind = ?',
+      <Object?>[noteId, NoteKind.canvas.name],
+    );
+    if (rs.isEmpty) return '';
+    return rs.first['content'] as String? ?? '';
+  }
+
   /// 所有**画布**笔记的正文（画布 JSON 原文）。
   ///
   /// 用途是**媒体引用扫描**：画布里的图片与 AI 生成层把本地路径写在 JSON 里
