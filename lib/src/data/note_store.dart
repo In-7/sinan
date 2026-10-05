@@ -161,6 +161,42 @@ class NoteStore {
     return <Note>[for (final Map<String, Object?> row in rs) _noteFrom(row)];
   }
 
+  /// **列表快照的排序**：Dart 侧等价于 [allNotes] 的 `ORDER BY`。
+  ///
+  /// 保存后只换一行的**增量补丁**（见 `NotesNotifier._replaceRow`）用它重排，
+  /// 免去整表重查 + 全量 `Row → Note` 映射（万篇级 ≈ 百毫秒，全在 UI 线程）。
+  /// 但消费者是**按索引渲染**的（左侧列表 / 空间内联列表），顺序必须与
+  /// [allNotes] **逐字等价**——两处口径由测试钉死，改一处漏另一处会立刻红。
+  static int compareForList(Note a, Note b) {
+    // (promoted_at IS NULL) ASC：已收藏（非空）在前。
+    final DateTime? ap = a.promotedAt;
+    final DateTime? bp = b.promotedAt;
+    if ((ap == null) != (bp == null)) return ap == null ? 1 : -1;
+    if (ap != null && bp != null) {
+      final int byPromoted = bp.compareTo(ap); // promoted_at DESC
+      if (byPromoted != 0) return byPromoted;
+    }
+    final int byRevised = b.revisedAt.compareTo(a.revisedAt); // revised_at DESC
+    if (byRevised != 0) return byRevised;
+    final int byCreated = b.createdAt.compareTo(a.createdAt); // created_at DESC
+    if (byCreated != 0) return byCreated;
+    return a.id.compareTo(b.id); // id ASC（兜底全序，稳）
+  }
+
+  /// 按 id 取**列表快照形态**的单行（**不含正文 / 整篇纯文本**）。
+  ///
+  /// 与 [allNotes] 同一列投影，但只取一行——保存后的增量补丁用它拿"换行后"
+  /// 的最新值（新 `revised_at` / `summary` / `content_hash`）。不存在返回 null。
+  Note? noteListRow(String id) {
+    final ResultSet rs = db.select(
+      'SELECT id, kind, title, content_hash, tags, summary, '
+      'created_at, revised_at, promoted_at FROM notes WHERE id = ?',
+      <Object?>[id],
+    );
+    if (rs.isEmpty) return null;
+    return _noteFrom(rs.first);
+  }
+
   /// 按 id 取**整篇纯文本**（懒取）：`noteById` 之外的窄查询。
   ///
   /// 列表快照只带 160 字的 `summary` 投影（v13，见 [allNotes]）；本方法

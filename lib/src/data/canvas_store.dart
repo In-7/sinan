@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'block_props.dart';
@@ -278,21 +279,45 @@ class CanvasStore {
   /// "待回填"，不该每次启动都占 [limit] 名额——这正是 blocks 侧 `kind != 'canvas'`
   /// 修掉的同一类问题（见 `BlockStore.backfill` 的注释）。
   int backfill({int limit = 50}) {
+    // 候选只取 **id**：回填在后台 isolate 与 UI 保存并发，content 必须逐篇
+    // 重读（见 [pendingBackfillContent]），不能用名单时刻的旧快照。
     final ResultSet rs = db.select(
       // 候选 = 画布笔记、正文非空、且还没有 meta 行（meta 行是"已落表"的标记）。
-      "SELECT id, content FROM notes WHERE kind = 'canvas' AND content <> '' "
+      "SELECT id FROM notes WHERE kind = 'canvas' AND content <> '' "
       'AND NOT EXISTS (SELECT 1 FROM canvas_meta WHERE note_id = notes.id) '
       'LIMIT ?',
       <Object?>[limit],
     );
     int done = 0;
     for (final Row row in rs) {
-      if (replaceCanvasRows(row['id'] as String, row['content'] as String) >
-          0) {
+      final String noteId = row['id'] as String;
+      // 并发守卫：重读标记 + 取最新正文。用户若刚保存过此篇，保存路径的双写
+      // 已建 meta 行 ⇒ 返回 null 跳过（srcfp 闸门也以新 content 为准）。
+      final String? content = pendingBackfillContent(noteId);
+      if (content == null) continue;
+      if (replaceCanvasRows(noteId, content) > 0) {
         done++;
       }
     }
     return done;
+  }
+
+  /// 逐篇投影前的**并发守卫**：仅当该画布此刻仍无 `canvas_meta` 行时返回它
+  /// **最新**的非空 content；已被保存路径双写（或被删）则返回 null。
+  ///
+  /// 与 [BlockStore.pendingBackfillContent] 同口径，把竞态窗口压到亚毫秒；
+  /// 残留窗口撞上时覆盖的也只是派生表——srcfp 闸门会让旧投影直接落降落伞，
+  /// 下一次保存自愈，真源 `notes.content` 永不受影响。
+  @visibleForTesting
+  String? pendingBackfillContent(String noteId) {
+    final ResultSet rs = db.select(
+      "SELECT content FROM notes WHERE id = ? AND kind = 'canvas' "
+      "AND content <> '' AND NOT EXISTS "
+      '(SELECT 1 FROM canvas_meta WHERE note_id = notes.id) LIMIT 1',
+      <Object?>[noteId],
+    );
+    if (rs.isEmpty) return null;
+    return rs.single['content'] as String;
   }
 
   /// 这篇笔记当前有没有画布行（第 2 步回填、第 3 步校验的判据）。

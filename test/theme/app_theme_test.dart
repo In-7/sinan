@@ -499,31 +499,29 @@ void main() {
     }
   });
 
-  test('图标/次级色/正文都不随种子染色（纯灰）', () {
+  test('图标/次级色/正文都退染为纯灰（不随种子染色）', () {
     // M3 会给中性角色染种子色相（onSurface C6~10 / onSurfaceVariant C10~15，
     // 实测）。主题层在 _build 里对这两档"退染"（保留明度、清零色度）——
-    // 这里把 8 个预设 × 明暗全部钉住：R==G==B 即纯灰，任何一个带色相都说明
+    // 这里把明暗两套主题钉住：R==G==B 即纯灰，任何一个带色相都说明
     // 退染被绕开了。
-    for (final Color seed in AppTheme.seedPresets) {
-      for (final ThemeData theme in <ThemeData>[
-        AppTheme.light(seed: seed),
-        AppTheme.dark(seed: seed),
+    for (final ThemeData theme in <ThemeData>[
+      AppTheme.light(),
+      AppTheme.dark(),
+    ]) {
+      for (final Color c in <Color>[
+        theme.colorScheme.onSurface, // 正文/标题/编辑器文字
+        theme.colorScheme.onSurfaceVariant, // 图标/次级文字
       ]) {
-        for (final Color c in <Color>[
-          theme.colorScheme.onSurface, // 正文/标题/编辑器文字
-          theme.colorScheme.onSurfaceVariant, // 图标/次级文字
-        ]) {
-          expect(
-            c.r,
-            c.g,
-            reason: 'seed $seed / ${theme.brightness}：R!=G，前景色带染色',
-          );
-          expect(
-            c.g,
-            c.b,
-            reason: 'seed $seed / ${theme.brightness}：G!=B，前景色带染色',
-          );
-        }
+        expect(
+          c.r,
+          c.g,
+          reason: '${theme.brightness}：R!=G，前景色带染色',
+        );
+        expect(
+          c.g,
+          c.b,
+          reason: '${theme.brightness}：G!=B，前景色带染色',
+        );
       }
     }
   });

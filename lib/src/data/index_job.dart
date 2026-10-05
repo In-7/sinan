@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 
 import '../ai/embedding_client.dart';
@@ -247,9 +248,23 @@ class IndexJob {
       'AND NOT EXISTS (SELECT 1 FROM chunks_fts c WHERE c.note_id = n.id)',
     );
     for (final Row row in rs) {
-      indexNoteKeywordPath(row['id'] as String);
+      final String noteId = row['id'] as String;
+      // 并发守卫：名单是旧快照，后台回填期间用户保存该篇会经保存路径实时建
+      // FTS 行（见 [indexNoteKeywordPath]）；已有行就不重跑，避免无谓的整篇清写。
+      if (!isKeywordIndexPending(noteId)) continue;
+      indexNoteKeywordPath(noteId);
     }
   }
+
+  /// 该笔记的关键词路是否**仍待建**（无任何 `chunks_fts` 行）。
+  ///
+  /// 注意：只有空文本块（分隔线 / 图片）的笔记合法地永远没有 FTS 行，会一直
+  /// 被判为待建——与历史行为一致，重跑成本仅一条 SELECT + 空事务。
+  @visibleForTesting
+  bool isKeywordIndexPending(String noteId) => db.select(
+    'SELECT 1 FROM chunks_fts WHERE note_id = ? LIMIT 1',
+    <Object?>[noteId],
+  ).isEmpty;
 
   /// 写关键词路（**不含事务**，事务由调用点包——批量跑与整篇重跑共用同一写法）。
   void _writeKeywordRows(List<_WorkBlock> batch) {

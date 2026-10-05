@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'fingerprint.dart';
@@ -222,6 +223,8 @@ class BlockStore {
   /// 非 v2 格式的笔记会被跳过且**不计数**——它们要等被编辑、写成块树后
   /// 才轮得到，于是每次启动都会重新成为候选（成本低：只读到 limit 篇为止）。
   int backfill({int limit = 50}) {
+    // 候选只取 **id**：回填已挪到后台 isolate（与 UI 保存并发），名单是查询
+    // 瞬间的旧快照，content 必须在投影前逐篇重读（见 [pendingBackfillContent]）。
     final ResultSet rs = db.select(
       // ⚠️ `kind != 'canvas'`：判断候选的判据是"这篇还没有 blocks 行"，而画布
       // 笔记**永远**没有 blocks 行（正文是画布 JSON）⇒ 不加这个条件，它们每次启动
@@ -229,7 +232,7 @@ class BlockStore {
       //
       // 条件是**排除 canvas**，不是白名单 `kind = 'note'`：`spark`（新建笔记的默认
       // 形态）同样是块树文档，用白名单会把整类灵感卡片漏掉（测试两种 kind 都钉了）。
-      'SELECT id, content FROM notes '
+      'SELECT id FROM notes '
       "WHERE kind != 'canvas' "
       'AND NOT EXISTS (SELECT 1 FROM blocks WHERE note_id = notes.id) '
       'LIMIT ?',
@@ -237,13 +240,36 @@ class BlockStore {
     );
     int done = 0;
     for (final Row row in rs) {
-      final String content = row['content'] as String;
+      final String noteId = row['id'] as String;
+      // 并发守卫：重读标记 + 取最新正文。名单选出后用户可能已保存该篇
+      // （保存路径的双写已把 blocks 补齐）⇒ 此刻返回 null，跳过，绝不用
+      // 名单时刻的旧正文覆盖新投影。
+      final String? content = pendingBackfillContent(noteId);
+      if (content == null) continue;
       // 先判格式：不是 v2 就不算"处理过"，下次还会再试（届时可能已被编辑成 v2）。
       if (_parseBlocksDocument(content) == null) continue;
-      replaceNoteBlocks(row['id'] as String, content);
+      replaceNoteBlocks(noteId, content);
       done++;
     }
     return done;
+  }
+
+  /// 逐篇投影前的**并发守卫**：仅当该笔记此刻仍无 blocks 行时，返回它**最新**的
+  /// `notes.content`；已被保存路径双写（或笔记已删）则返回 null。
+  ///
+  /// 把"候选名单 ⇒ 投影"之间的竞态窗口从整批时长压到这一条 SELECT 与紧随的
+  /// 投影事务之间（亚毫秒）；残留窗口即便撞上，覆盖的也只是派生表、真源
+  /// `notes.content` 不动，读侧 verify/降落伞会在下一次保存自愈。
+  @visibleForTesting
+  String? pendingBackfillContent(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT content FROM notes WHERE id = ? '
+      'AND NOT EXISTS (SELECT 1 FROM blocks WHERE note_id = notes.id) '
+      'LIMIT 1',
+      <Object?>[noteId],
+    );
+    if (rs.isEmpty) return null;
+    return rs.single['content'] as String;
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────

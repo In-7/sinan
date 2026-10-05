@@ -17,6 +17,7 @@ import 'src/app/settings_panel.dart';
 import 'src/data/database.dart';
 import 'src/data/note_store.dart';
 import 'src/data/settings_store.dart';
+import 'src/data/startup_backfill.dart';
 import 'src/dev/frame_probe.dart';
 import 'src/dev/startup_probe.dart';
 import 'src/domain/settings.dart';
@@ -91,34 +92,24 @@ Future<void> main() async {
 
   // 块表回填（迁移第 3 步）：把存量笔记的块树补进 blocks。
   //
-  // ⚠️ **必须在首帧之后**：它是**同步**的 SQLite 工作，放在 `runApp` 之前会
-  // 同步卡住首帧——旧注释写的"在 runApp 之前但不阻塞首帧"是错的，同步调用
-  // 必然推迟首帧。实测冷启动到首帧 1.18s，其中 ~76%（897ms）在 `runApp` 之前。
+  // ⚠️ **必须在首帧之后**：它是 SQLite + JSON 解析的重活，放在 `runApp` 之前
+  // 会推迟首帧。实测冷启动到首帧 1.18s，其中 ~76%（897ms）在 `runApp` 之前。
   //
-  // 挪到首帧后**是安全的**：`NoteStore.noteById` 在 blocks 缺失时会回退到旧的
-  // content 列（`rebuilt ?? legacy`），本轮还没轮到的笔记照常能打开；量由
-  // `backfillBlocks` 的 limit 封顶（50 篇/次），未做完下次启动接着来。
+  // 2026-10-01 起再进一步：三件存量回填（blocks / 画布投影 / 关键词索引）
+  // 丢进**后台 isolate**（runStartupBackfill）——首帧之后界面立即可交互，
+  // 不再被首批 50 篇老笔记的解析卡住。安全性见该文件头注释：只写派生表、
+  // 每篇独立事务幂等可续跑、WAL 支持第二连接、投影前逐篇重读守卫；未回填的
+  // 笔记照常打开（读侧在 blocks 缺失时回退 content 列）。
   WidgetsBinding.instance.addPostFrameCallback((_) {
     // 首帧已上屏 ⇒ 冷启动计时到此为止。回填是**首帧之后**才做的活，
-    // 不该算进冷启动（它本来就刻意挪到了这里，见下方注释）。
+    // 不该算进冷启动（它本来就刻意挪到了这里，见上方注释）。
     StartupProbe.mark('firstFrame');
     StartupProbe.report();
-    try {
-      final NoteStore store = NoteStore(db.db);
-      store.backfillBlocks();
-      // 画布落点的回填（五步纪律第 2 步，见 docs/canvas_architecture.md 第七章）：
-      // 把存量画布的 JSON 拆进 canvas_items / canvas_meta / ink_shards。
-      // 与块回填同一节奏：同步 SQLite、**只写不读**（画布仍从 notes.content 读）、
-      // 50 篇/次可续跑；失败也不影响使用——写路径的双写会把这幅补齐。
-      store.backfillCanvas();
-      // 补关键词索引：把还没进 `chunks_fts` 的笔记整篇索引进去（幂等、纯 SQL）。
-      // 覆盖存量 AppFlowy 笔记——它们之前因块 data 内文本在 `delta` 里（非顶层
-      // `text`）而漏索引，全局搜索正文搜不到（2026-09-25 修）。只补缺的，已索引
-      // 的笔记不动；失败也不影响使用。
-      store.ensureKeywordIndex();
-    } on Object catch (_) {
-      // 回填失败不影响使用：写路径的双写会在下次编辑时把这篇补齐。
-    }
+    // fire-and-forget：派生数据回填失败不影响使用——保存路径的双写会在
+    // 用户下次编辑时把该篇补齐（与旧实现的静默 catch 同一语义）。
+    unawaited(
+      runStartupBackfill(db.path).catchError((Object _, StackTrace _) {}),
+    );
   });
 }
 

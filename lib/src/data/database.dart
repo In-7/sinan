@@ -16,7 +16,11 @@ import '../domain/note.dart';
 /// 存储位置用 [getApplicationSupportDirectory]，跟着当前用户走，
 /// 不污染可执行文件目录。
 class AppDatabase {
-  AppDatabase._(this.db);
+  AppDatabase._(this.path, this.db);
+
+  /// 数据库文件的绝对路径（后台 isolate 要用同一文件**另开连接**，不能发送
+  /// [Database] 句柄本身——它绑定创建它的 isolate）。
+  final String path;
 
   final Database db;
 
@@ -45,8 +49,8 @@ class AppDatabase {
     }
     final Database db = sqlite3.open(file.path);
     walEnabled = applyConnectionPragmas(db, requestWal: true) == 'wal';
-    _migrate(db);
-    return AppDatabase._(db);
+    ensureSchema(db);
+    return AppDatabase._(file.path, db);
   }
 
   /// 每个新连接都必须执行的 PRAGMA 配置（连接级属性不会随 db 文件继承，
@@ -65,7 +69,6 @@ class AppDatabase {
   /// 返回实际生效的 journal_mode（`wal` 或回退值 `delete`；内存库请求时
   /// SQLite 原样返回 `memory`）。未传 [requestWal] 时不读回，固定按 `delete`
   /// 口径返回（即保守使用 FULL 同步）。
-  @visibleForTesting
   static String applyConnectionPragmas(Database db, {bool requestWal = false}) {
     db.execute('PRAGMA busy_timeout = 5000;');
     db.execute('PRAGMA foreign_keys = ON;');
@@ -81,6 +84,12 @@ class AppDatabase {
     );
     return journal;
   }
+
+  /// 确保连接背后的库具备最新 schema（增量迁移；已是最新时为空操作）。
+  ///
+  /// 生产侧的第二个连接（启动回填后台 isolate）打开同一文件后也要调一次：
+  /// 正常时序下主连接早已迁完、这里秒退，但不能假设 worker 永远晚于迁移。
+  static void ensureSchema(Database db) => _migrate(db);
 
   /// 让测试能在**内存库**上建出同一份 schema（单一来源，避免测试里
   /// 抄一份 schema 后与真实迁移漂移）。

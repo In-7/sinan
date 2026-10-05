@@ -250,8 +250,10 @@ typedef ContentRetrievalOutcome = ({
 });
 
 /// 内容检索端口：查询词 → 至多 [limit] 条命中。
-typedef ContentRetriever =
-    Future<ContentRetrievalOutcome> Function(String query, {int limit});
+typedef ContentRetriever = Future<ContentRetrievalOutcome> Function(
+  String query, {
+  int limit,
+});
 
 /// [retrieverProvider] 的 app 层适配器：把 data 层 [RetrievalResult] 裁成
 /// [ContentRetrievalOutcome]。app 层一律读这个，不直接碰 [Retriever]。
@@ -472,9 +474,10 @@ class NavHistoryNotifier extends Notifier<NavHistoryState> {
   );
 }
 
-final navHistoryProvider = NotifierProvider<NavHistoryNotifier, NavHistoryState>(
-  NavHistoryNotifier.new,
-);
+final navHistoryProvider =
+    NotifierProvider<NavHistoryNotifier, NavHistoryState>(
+      NavHistoryNotifier.new,
+    );
 
 /// 一次「要到哪里」的请求（`docs/ui_rewrite_plan.md` §4 的 `locateProvider` 载荷）。
 ///
@@ -588,6 +591,28 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   /// 冷启动后立刻点「新建」正好能撞上。
   Future<void> _settled() => future;
 
+  /// **增量换行**：保存类操作改的只是**一条**笔记，没必要把整表重查一遍 +
+  /// 全量 `Row → Note` 映射（万篇级约百毫秒，全卡在 UI 线程）。
+  ///
+  /// 只取这一行的**列表形态**最新值，替换进当前快照，再按 [allNotes] 的同一
+  /// 排序（[NoteStore.compareForList]）重排——顺序与整表重查**逐字等价**。
+  ///
+  /// 兜底单向退回整表重查：快照尚未装载、或该行已不在快照（并发删除）时，
+  /// 语义与旧路径完全一致，绝不弄丢 / 弄错一行。
+  void _replaceRow(String id) {
+    final List<Note>? before = state.value;
+    final Note? updated = _store.noteListRow(id);
+    if (updated == null) return; // 行不存在（已被删）：保持现状，等删除路径收敛
+    final int at = before?.indexWhere((Note n) => n.id == id) ?? -1;
+    if (before == null || at < 0) {
+      state = AsyncData(_store.allNotes());
+      return;
+    }
+    final List<Note> next = List<Note>.of(before)..[at] = updated;
+    next.sort(NoteStore.compareForList);
+    state = AsyncData(next);
+  }
+
   Future<Note> createNote({NoteKind kind = NoteKind.spark}) async {
     await _settled();
     final Note n = _store.create(kind: kind);
@@ -616,7 +641,8 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   /// 保存正文（格式随当前编辑器，见 NoteDocumentAdapter）+ 纯文本，刷新列表。
   ///
   /// 哈希判变没写库时**直接跳过刷新**——连快照都不换，所有监听者零重建。
-  /// 列表查询不含正文大字段（见 [NoteStore.allNotes]），写库后的重读很便宜。
+  /// 真改了则走 [_replaceRow] **增量换行**（只查这一行的列表形态并重排），
+  /// 不再整表重查 + 全量映射（那是保存热路径上最贵的一段，见该方法注释）。
   Future<void> saveContent(
     String id,
     String content, {
@@ -628,7 +654,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
       plainText: plainText,
     );
     if (changed) {
-      state = AsyncData(_store.allNotes());
+      _replaceRow(id);
       // **保存即索引**（关键词路）：blocks 双写刚落定 ⇒ 立刻同步 FTS 行，
       // 保证"刚写完就能搜到"（全局搜索的底线，2026-09-25 用户定）。
       // 关键词路是纯 SQL、毫秒级；语义路仍走设置面板的手动索引（要模型）。
@@ -640,7 +666,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   /// 保存标题并刷新列表（标题显示在列表条目上）。
   Future<void> saveTitle(String id, String title) async {
     await _store.updateTitle(id, title);
-    state = AsyncData(_store.allNotes());
+    _replaceRow(id);
   }
 
   /// 删除一条笔记，返回被删的那条（供「撤销」用；id 不存在则 null）。
@@ -692,7 +718,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   Future<void> togglePromoted(Note note) async {
     await _settled();
     await _store.setPromoted(note.id, note.promotedAt == null);
-    state = AsyncData(_store.allNotes());
+    _replaceRow(note.id);
   }
 
   /// 保存标签并刷新列表。标签是整理元数据：不动 revised_at
@@ -700,7 +726,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   Future<void> saveTags(String id, List<String> tags) async {
     await _settled();
     await _store.updateTags(id, tags);
-    state = AsyncData(_store.allNotes());
+    _replaceRow(id);
   }
 }
 
