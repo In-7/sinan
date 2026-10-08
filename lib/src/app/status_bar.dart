@@ -33,7 +33,7 @@ class StatusBar extends ConsumerWidget {
         border: Border(top: AppTheme.menuBorder(scheme)),
       ),
       child: SizedBox(
-        height: 26,
+        height: Tokens.statusBarHeight,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
           child: Row(

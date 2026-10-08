@@ -559,7 +559,7 @@ void main() {
       }
     });
 
-    test('「当前项」令牌与分段控件（§5.1）', () {
+    test('「当前项」令牌与分段控件（2026-10-08 强调色药丸换装）', () {
       for (final ThemeData theme in <ThemeData>[
         AppTheme.light(),
         AppTheme.dark(),
@@ -567,24 +567,25 @@ void main() {
         final ColorScheme scheme = theme.colorScheme;
         final String label = '${theme.brightness}';
 
-        // 两个语义令牌：底是中性 tint，指示条是 primary（形状信号）。
+        // 两个语义令牌：「当前项」选中 = primary 12% 药丸（用户拍板全局统一）；
+        // 开关态 tint = onSurface 10%（开/关如实显示，仍留用）。
+        expect(
+          AppTheme.selectedPill(scheme),
+          scheme.primary.withValues(alpha: 0.12),
+          reason: '$label：selectedPill 必须是 primary @12%（拍板比例）',
+        );
         expect(
           AppTheme.navSelectedTint(scheme.onSurface).a,
           closeTo(0.10, 0.001),
-          reason: '$label：navSelectedTint 的比例变了（10% 是实测下限）',
-        );
-        expect(
-          AppTheme.navIndicator(scheme),
-          scheme.primary,
-          reason: '$label：navIndicator 应取 primary',
+          reason: '$label：navSelectedTint 的比例变了（开关态 10% 是实测下限）',
         );
 
-        // 分段控件：选中底 = 中性 tint（不是 M3 默认的 secondaryContainer），
+        // 分段控件：选中底 = 强调色药丸（不是 M3 默认的 secondaryContainer），
         // 且选中态加粗——"当前项"的第二支（形状上没有左侧 ⇒ 不配左条）。
         final ButtonStyle? style = theme.segmentedButtonTheme.style;
         expect(
           style?.backgroundColor?.resolve(<WidgetState>{WidgetState.selected}),
-          AppTheme.navSelectedTint(scheme.onSurface),
+          AppTheme.selectedPill(scheme),
           reason: '$label：分段控件选中底退回了 secondaryContainer？',
         );
         expect(

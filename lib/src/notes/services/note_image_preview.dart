@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -143,7 +143,7 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(Tokens.radiusMd),
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,

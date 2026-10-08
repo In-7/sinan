@@ -463,7 +463,6 @@ class _KbdBadge extends StatelessWidget {
         label,
         style: theme.textTheme.labelSmall?.copyWith(
           color: scheme.onSurfaceVariant,
-          fontSize: 10,
         ),
       ),
     );
@@ -507,7 +506,8 @@ class _PaletteResultRow extends StatelessWidget {
         if (v) onHoverSelect();
       },
       child: Container(
-        color: selected ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+        // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装，取代中性 tint）。
+        color: selected ? AppTheme.selectedPill(scheme) : null,
         padding: const EdgeInsets.symmetric(
           horizontal: Tokens.spaceMd,
           vertical: Tokens.spaceXs + 1,

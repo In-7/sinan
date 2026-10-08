@@ -29,7 +29,7 @@ void main() {
       home: const Scaffold(
         body: Center(
           child: SizedBox(
-            width: kAskRailWidth,
+            width: Tokens.askRailWidth,
             height: 640,
             child: Padding(
               padding: EdgeInsets.all(Tokens.spaceLg),

@@ -371,11 +371,10 @@ class _PaletteRow extends StatelessWidget {
     return InkWell(
       onTap: enabled ? onTap : null,
       child: Container(
-        // 选中态 = 「当前项」的统一读法（§5.1）：中性 tint 底。
-        // **不在此画左指示条**：这一行的"选中"由键盘驱动、且要随 ↑↓ 高频移动，
-        // 条子会跟着闪；面板里 `w600` 也已由行标题承担区分。这是族内的合法例外
-        // （与分段控件同理：形状上没有"左侧"可言）。
-        color: selected ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+        // 选中态 = 「当前项」的统一读法：**强调色药丸**（[AppTheme.selectedPill]
+        // primary 12%，2026-10-08 全局换装）。**不画左指示条**：这一行的"选中"
+        // 由键盘驱动、随 ↑↓ 高频移动，条子会跟着闪；药丸一种形状信号就够。
+        color: selected ? AppTheme.selectedPill(scheme) : null,
         // 行高 ≈ 13×1.4 + 2×4 ≈ 26：Apple 口径的菜单行高（§9.2 的密度）。
         // 之前用 spaceSm(8) ⇒ 34px，是 M3 触控档——在 560 宽的面板里显得松散。
         padding: const EdgeInsets.symmetric(

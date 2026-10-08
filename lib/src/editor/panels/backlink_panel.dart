@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'dart:ui' as ui;
 
@@ -81,9 +81,7 @@ class BacklinkPanel extends ConsumerWidget {
                     ),
                     child: Text(
                       '还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接',
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.5,
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
@@ -134,16 +132,14 @@ class BacklinkPanel extends ConsumerWidget {
                     b.sourceTitle.trim().isEmpty ? '未命名笔记' : b.sourceTitle,
                     maxLines: 1,
                     overflow: .ellipsis,
-                    style: const TextStyle(fontSize: 14),
+                    style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   // 说清"怎么引用的"：画布卡片 / 文档里的引用块 —— 两者的后续
                   // 操作完全不同（前者去画布上找卡片，后者去正文里找那一行）。
                   Text(
                     b.viaCanvasCard ? '画布卡片' : '引用',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   // 上下文：光有来源标题看不出"它为什么引用我"，这一句是判断
                   // 要不要点进去的唯一依据（Roam / Logseq 的反链都带它）。
@@ -154,9 +150,7 @@ class BacklinkPanel extends ConsumerWidget {
                         b.context,
                         maxLines: 2,
                         overflow: .ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.4,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                         ),
                       ),

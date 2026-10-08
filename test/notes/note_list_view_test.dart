@@ -71,36 +71,36 @@ void main() {
     await settle(tester);
   }
 
-  /// §5.1 的「当前项」三件齐——任何一件被改回去，这条都会红：
-  /// 底色退回纸面色 / 指示条退回 `onSurface` / 字重退回 w400。
-  testWidgets('选中的列表项：中性 tint 底 + primary 左条 + w600（§5.1）', (tester) async {
+  /// 「当前项」两件齐（2026-10-08 强调色药丸换装）——任何一件被改回去，
+  /// 这条都会红：底色退回纸面色 / 中性 tint，或左指示条复活（混搭回潮）。
+  testWidgets('选中的列表项：强调色药丸底 + w600（2026-10-08 换装）', (tester) async {
     await pumpList(tester);
     final ColorScheme scheme = AppTheme.light().colorScheme;
 
     expect(
       find.byWidgetPredicate(
         (Widget w) =>
-            w is Container &&
-            w.color == AppTheme.navSelectedTint(scheme.onSurface),
+            w is Container && w.color == AppTheme.selectedPill(scheme),
       ),
       findsWidgets,
-      reason: '选中项底色不是 navSelectedTint（退回纸面色或 secondaryContainer？）',
+      reason: '选中项底色不是 selectedPill（退回纸面色/中性 tint/secondaryContainer？）',
     );
     expect(
-      find.byWidgetPredicate(
-        (Widget w) =>
-            w is AnimatedContainer &&
-            (w.decoration as BoxDecoration?)?.color ==
-                AppTheme.navIndicator(scheme),
-      ),
-      findsWidgets,
-      reason: '左指示条不是 primary（navIndicator）',
+      find.byWidgetPredicate((Widget w) {
+        if (w is! Container) return false;
+        final Decoration? d = w.decoration;
+        if (d is! BoxDecoration) return false;
+        final BoxBorder? border = d.border;
+        return border is Border && border.left.color == scheme.primary;
+      }),
+      findsNothing,
+      reason: '3px 左指示条已随换装撤掉——药丸一种形状信号，不许复活',
     );
     final Text title = tester.widget<Text>(find.text('原始标题'));
     expect(
       title.style?.fontWeight,
       FontWeight.w600,
-      reason: '选中项标题应是 w600（三件里的第三件）',
+      reason: '选中项标题应是 w600（两件里的第二件）',
     );
   });
 

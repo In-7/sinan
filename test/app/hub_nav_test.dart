@@ -119,9 +119,9 @@ void main() {
   });
 
   /// **hover 背景闸门**（2026-09-25 回归）：行 hover 必须真的把底色从透明换成
-  /// [AppTheme.boardFillHover]——否则"悬浮背景没有了"的回归就抓不到。
+  /// [AppTheme.hoverOverlay]——否则"悬浮背景没有了"的回归就抓不到。
   /// 此 Flutter 版本无 `tester.hover`，手动派发一个鼠标 hover 事件。
-  testWidgets('行 hover ⇒ 底色变 boardFillHover（非透明）', (WidgetTester tester) async {
+  testWidgets('行 hover ⇒ 底色变 hoverOverlay（非透明）', (WidgetTester tester) async {
     await tester.pumpWidget(scope());
     await tester.pumpAndSettle();
 
@@ -146,7 +146,7 @@ void main() {
     expect(
       tester.widget<Material>(rowMaterial.first).color,
       isNot(equals(Colors.transparent)),
-      reason: 'hover 后底色应变成 boardFillHover，不能还是透明',
+      reason: 'hover 后底色应变成 hoverOverlay，不能还是透明',
     );
   });
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'package:flutter/services.dart';
@@ -64,12 +65,7 @@ const double _panelHeight = 560;
 
 /// 左侧目录导航的分区。**加功能的入口**：枚举加一项 +
 /// [_SettingsCardState._rowsFor] 加一个分支（行表照抄既有 Row 组件）。
-enum _SettingsSection {
-  appearance,
-  editor,
-  ai,
-  about,
-}
+enum _SettingsSection { appearance, editor, ai, about }
 
 extension _SettingsSectionSpec on _SettingsSection {
   String get label => switch (this) {
@@ -80,10 +76,26 @@ extension _SettingsSectionSpec on _SettingsSection {
   };
 
   Widget get icon => switch (this) {
-    _SettingsSection.appearance => const tabler.Palette(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-    _SettingsSection.editor => const tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-    _SettingsSection.ai => const tabler.Sparkles(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
-    _SettingsSection.about => const tabler.InfoCircle(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+    _SettingsSection.appearance => const tabler.Palette(
+      height: Tokens.iconMd,
+      width: Tokens.iconMd,
+      strokeWidth: 1.5,
+    ),
+    _SettingsSection.editor => const tabler.Pencil(
+      height: Tokens.iconMd,
+      width: Tokens.iconMd,
+      strokeWidth: 1.5,
+    ),
+    _SettingsSection.ai => const tabler.Sparkles(
+      height: Tokens.iconMd,
+      width: Tokens.iconMd,
+      strokeWidth: 1.5,
+    ),
+    _SettingsSection.about => const tabler.InfoCircle(
+      height: Tokens.iconMd,
+      width: Tokens.iconMd,
+      strokeWidth: 1.5,
+    ),
   };
 }
 
@@ -145,8 +157,7 @@ Future<void> showSettingsPanel() {
   HardwareKeyboard.instance.addHandler(handleEscKey);
 
   entry = OverlayEntry(
-    builder: (BuildContext overlayContext) =>
-        _SettingsOverlay(onClose: close),
+    builder: (BuildContext overlayContext) => _SettingsOverlay(onClose: close),
   );
   overlay.insert(entry!);
   return closed.future;
@@ -294,9 +305,7 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
   /// 各分区的设置行。**加功能的入口**（与 [_SettingsSectionSpec] 配套）：
   /// 照抄既有 Row 组件往对应分支里加即可，导航与标题自动生成。
   List<Widget> _rowsFor(_SettingsSection section) => switch (section) {
-    _SettingsSection.appearance => <Widget>[
-      const _BrightnessRow(),
-    ],
+    _SettingsSection.appearance => <Widget>[const _BrightnessRow()],
     _SettingsSection.editor => <Widget>[
       const _WidthRow(),
       const _FontSizeRow(),
@@ -374,7 +383,11 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const tabler.X(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                    icon: const tabler.X(
+                      height: Tokens.iconMd,
+                      width: Tokens.iconMd,
+                      strokeWidth: 1.5,
+                    ),
                     tooltip: '关闭（Esc）',
                     onPressed: widget.onClose,
                   ),
@@ -417,7 +430,7 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
                     child: Scrollbar(
                       controller: _scroll,
                       thumbVisibility: true,
-                      child:                       SingleChildScrollView(
+                      child: SingleChildScrollView(
                         controller: _scroll,
                         padding: const EdgeInsets.all(Tokens.spaceLg),
                         child: Column(
@@ -516,31 +529,15 @@ class _NavTileState extends State<_NavTile> {
               focusNode: _focus,
               onTap: widget.onTap,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Tokens.spaceMd,
-                  vertical: Tokens.spaceSm + 2,
-                ),
+                duration: Tokens.durationFast,
+                height: Tokens.sidebarRowHeight,
+                padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
                 decoration: BoxDecoration(
-                  color: widget.selected
-                      ? AppTheme.navSelectedTint(scheme.onSurface)
-                      : null,
+                  // 「当前项」统一读法（2026-10-08 全局换装）：强调色药丸底，
+                  // 取代旧的"中性 tint + 3px 左指示条"混搭（形状信号一种就够）。
+                  color: widget.selected ? AppTheme.selectedPill(scheme) : null,
                   borderRadius: BorderRadius.circular(Tokens.radiusSm),
                 ),
-                // 左指示条走 `foregroundDecoration`（**不占位**）：写进 `border`
-                // 会让内容在选中/未选中之间横移 3px——"文字跳一下"是最容易被忽略的
-                // 粗糙感（编辑器跳转闪烁块用同一个手法）。
-                foregroundDecoration: widget.selected
-                    ? BoxDecoration(
-                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                        border: Border(
-                          left: BorderSide(
-                            color: AppTheme.navIndicator(scheme),
-                            width: Tokens.indicatorWidth,
-                          ),
-                        ),
-                      )
-                    : null,
                 child: Row(
                   children: <Widget>[
                     widget.section.icon,
@@ -590,9 +587,8 @@ class _BrightnessRow extends ConsumerWidget {
         ],
         selected: <ThemeBrightnessMode>{settings.brightnessMode},
         showSelectedIcon: false,
-        onSelectionChanged: (Set<ThemeBrightnessMode> next) => ref
-            .read(settingsProvider.notifier)
-            .setBrightnessMode(next.first),
+        onSelectionChanged: (Set<ThemeBrightnessMode> next) =>
+            ref.read(settingsProvider.notifier).setBrightnessMode(next.first),
       ),
     );
   }
@@ -607,7 +603,8 @@ class _WidthRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _SettingTile(
       label: '正文宽度',
-      description: '三档约 38 / 42 / 55 字每行（中文）。列宽不随窗口变宽 —— '
+      description:
+          '三档约 38 / 42 / 55 字每行（中文）。列宽不随窗口变宽 —— '
           '超过 45 字/行阅读会累，最宽档适合写稿。',
       control: SegmentedButton<EditorWidthMode>(
         segments: const <ButtonSegment<EditorWidthMode>>[
@@ -642,7 +639,8 @@ class _FontSizeRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _SliderSetting(
       label: '正文字号',
-      description: '${_minFontSize.round()}–${_maxFontSize.round()} px，整数档。'
+      description:
+          '${_minFontSize.round()}–${_maxFontSize.round()} px，整数档。'
           '行盒按它吸附到整像素 —— 每一档都是锐利的。',
       valueLabel: _formatFontSize(settings.fontSize),
       valueWidth: 32,
@@ -671,7 +669,8 @@ class _LineHeightRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _SliderSetting(
       label: '行高（正文）',
-      description: '$_minLineHeight–$_maxLineHeight 倍，步长 0.125 —— 每档都落在'
+      description:
+          '$_minLineHeight–$_maxLineHeight 倍，步长 0.125 —— 每档都落在'
           '整像素上。标题行高固定 1.4，不跟随这个滑杆。',
       // 宽到能放下 "2.375"（步长 0.125 后最长的显示值）。
       valueLabel: _formatLineHeight(settings.lineHeight),
@@ -684,7 +683,8 @@ class _LineHeightRow extends ConsumerWidget {
         min: _minLineHeight,
         max: _maxLineHeight,
         // 格数由"范围 / 步长"推出（= 8），不再写一遍数字。
-        divisions: ((_maxLineHeight - _minLineHeight) / _lineHeightStep).round(),
+        divisions: ((_maxLineHeight - _minLineHeight) / _lineHeightStep)
+            .round(),
         label: _formatLineHeight(settings.lineHeight),
         onChanged: (double value) =>
             ref.read(settingsProvider.notifier).setLineHeight(value),
@@ -872,7 +872,15 @@ class _AboutPanel extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+              tabler.Pencil(
+                height: Tokens.iconMd,
+                width: Tokens.iconMd,
+                strokeWidth: 1.5,
+                colorFilter: ui.ColorFilter.mode(
+                  scheme.primary,
+                  ui.BlendMode.srcIn,
+                ),
+              ),
               const SizedBox(width: Tokens.spaceMd),
               Expanded(
                 child: Text(
@@ -927,7 +935,12 @@ class _AboutPanel extends StatelessWidget {
           builder: (BuildContext _) => LicensePage(
             applicationName: AppInfo.name,
             applicationVersion: AppInfo.version,
-            applicationIcon: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(primary, ui.BlendMode.srcIn)),
+            applicationIcon: tabler.Pencil(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              strokeWidth: 1.5,
+              colorFilter: ui.ColorFilter.mode(primary, ui.BlendMode.srcIn),
+            ),
           ),
         ),
       ),
@@ -961,27 +974,63 @@ class _AboutSection extends ConsumerWidget {
       children: <Widget>[
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.primary, ui.BlendMode.srcIn)),
+          leading: tabler.Pencil(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              scheme.primary,
+              ui.BlendMode.srcIn,
+            ),
+          ),
           title: const Text('${AppInfo.name} ${AppInfo.version}'),
           subtitle: Text(AppInfo.tagline, style: hint),
           isThreeLine: true,
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.Article(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          leading: tabler.Article(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              scheme.onSurfaceVariant,
+              ui.BlendMode.srcIn,
+            ),
+          ),
           title: const Text('开源许可'),
           subtitle: Text('第三方依赖的许可清单（由框架自动收集）', style: hint),
-          trailing: tabler.ChevronRight(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          trailing: tabler.ChevronRight(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              scheme.onSurfaceVariant,
+              ui.BlendMode.srcIn,
+            ),
+          ),
           onTap: () => _openLicenses(context),
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: tabler.FolderOpen(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(scheme.onSurfaceVariant, ui.BlendMode.srcIn)),
+          leading: tabler.FolderOpen(
+            height: Tokens.iconMd,
+            width: Tokens.iconMd,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              scheme.onSurfaceVariant,
+              ui.BlendMode.srcIn,
+            ),
+          ),
           title: const Text('数据目录'),
           // 可选中：路径以 AppData 开头、肉眼抄不下。
           subtitle: SelectableText(dataDir, style: hint),
           trailing: IconButton(
-            icon: const tabler.Copy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+            icon: const tabler.Copy(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              strokeWidth: 1.5,
+            ),
             tooltip: '复制路径',
             onPressed: () => _copyDataDir(context, dataDir),
           ),
@@ -1002,7 +1051,15 @@ class _AboutSection extends ConsumerWidget {
     final Widget page = LicensePage(
       applicationName: AppInfo.name,
       applicationVersion: AppInfo.version,
-      applicationIcon: tabler.Pencil(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5, colorFilter: ui.ColorFilter.mode(Theme.of(context).colorScheme.primary, ui.BlendMode.srcIn)),
+      applicationIcon: tabler.Pencil(
+        height: Tokens.iconMd,
+        width: Tokens.iconMd,
+        strokeWidth: 1.5,
+        colorFilter: ui.ColorFilter.mode(
+          Theme.of(context).colorScheme.primary,
+          ui.BlendMode.srcIn,
+        ),
+      ),
     );
     onClose();
     unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => page)));
@@ -1013,9 +1070,8 @@ class _AboutSection extends ConsumerWidget {
     if (!context.mounted) return;
     // MaterialApp 在 Navigator **之上**提供了根 ScaffoldMessenger，
     // 所以从浮层里也能弹 SnackBar。
-    ScaffoldMessenger.maybeOf(
-      context,
-    )?.showSnackBar(const SnackBar(content: Text('已复制数据目录路径')));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(const SnackBar(content: Text('已复制数据目录路径')));
   }
 }
 
@@ -1030,7 +1086,8 @@ class _AiEnabledRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _SettingTile(
       label: '启用画布 AI',
-      description: '在画布工具条上露出「AI」按钮：用一句中文指令让模型摆放卡片、'
+      description:
+          '在画布工具条上露出「AI」按钮：用一句中文指令让模型摆放卡片、'
           '连线、加形状。需要本机运行 Ollama。',
       control: Switch(
         value: settings.aiEnabled,
@@ -1050,7 +1107,8 @@ class _AiEndpointRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _TextSettingRow(
       label: '服务地址',
-      description: 'Ollama 的**根**地址，不带 /v1 或 /api —— '
+      description:
+          'Ollama 的**根**地址，不带 /v1 或 /api —— '
           '结构化输出要用 /api/chat 的 format 参数。',
       value: settings.aiEndpoint,
       hint: AppSettings.defaultAiEndpoint,
@@ -1069,7 +1127,8 @@ class _AiModelRow extends ConsumerWidget {
     final AppSettings settings = ref.watch(settingsProvider);
     return _TextSettingRow(
       label: '模型',
-      description: 'Ollama 里的模型 tag（`ollama list` 可查），如 qwen3.5。'
+      description:
+          'Ollama 里的模型 tag（`ollama list` 可查），如 qwen3.5。'
           '留空则点 AI 按钮时会提示先来这里填写。',
       value: settings.aiModel,
       hint: 'qwen3.5',

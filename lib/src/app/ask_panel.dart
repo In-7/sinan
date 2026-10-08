@@ -15,25 +15,18 @@ import '../window/window_service.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show appNavigatorKey;
 
-/// 右侧常驻 **AI 问答轨**的宽度（逻辑 px）。
-///
-/// 320–360 是右聊天栏的行业档（Notion AI / Heptabase Ask）：放得下一条
-/// 答案 + 引用角标，又不过度挤占编辑区（1280 窗宽下主区仍有 ~600）。
-const double kAskRailWidth = 340;
+// 右侧常驻 **AI 问答轨**的宽度（逻辑 px）已收编进 [Tokens.askRailWidth]。
+// 320–360 是右聊天栏的行业档（Notion AI / Heptabase Ask）：放得下一条
+// 答案 + 引用角标，又不过度挤占编辑区（1280 窗宽下主区仍有 ~600）。
 
-/// 右轨布局的**断点**：窗口宽度低于它时，AI 不再以常驻栏出现，
-/// 而是降级为 [showAskPanel] 的居中浮层（`docs/ui_rewrite_plan.md` §2.4：
-/// 断点重排，不是等比缩小）。
-///
-/// 账：左导航 275 + 右轨 340 = 615；1000 以下主区不足 385，
-/// 编辑器已经失去意义，此时"问一句就关"的浮层才是正确形态。
-const double kAskRailBreakpoint = 1000;
+// 右轨布局的**断点**（2026-10-08 收编进 [Tokens.askRailBreakpoint]）：
+// 窗口宽度低于它时 AI 不以常驻栏出现，降级为 [showAskPanel] 的居中浮层。
 
 /// **问笔记 · 浮层态**（窄窗 / 移动端）：遮罩 + 居中卡片 + Esc 关闭。
 ///
 /// 宽窗桌面端默认不走这里——问答是常驻右栏（[AskRail]），答案能与正文
 /// 同屏对照、引用角标点了不关面板。窗口窄到放不下右轨时（见
-/// [kAskRailBreakpoint]），`HomeScreen` 再把同一份问答体降级回本浮层。
+/// [Tokens.askRailBreakpoint]），`HomeScreen` 再把同一份问答体降级回本浮层。
 ///
 /// ## 引用角标是这层的灵魂
 /// 答案里每个 `[n]` 都能跳回原文块——所以问答体是一个**导航动作**，
@@ -205,7 +198,7 @@ class _AskRailState extends ConsumerState<AskRail> {
     });
 
     return SizedBox(
-      width: kAskRailWidth,
+      width: Tokens.askRailWidth,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppTheme.windowBackground(theme.brightness),
@@ -649,9 +642,9 @@ class _SendButton extends StatelessWidget {
       message: '发送（Enter）',
       child: Material(
         color: active ? scheme.primary : scheme.primary.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(Tokens.radiusFull),
         child: InkWell(
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(Tokens.radiusFull),
           onTap: active ? onSend : null,
           child: SizedBox(
             width: 32,

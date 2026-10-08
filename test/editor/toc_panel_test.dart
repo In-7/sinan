@@ -305,12 +305,12 @@ void main() {
       expect(find.text('第一章'), findsOneWidget);
       expect(find.text('小节'), findsOneWidget);
       expect(find.text('末节'), findsOneWidget);
-      // 激活项：中性 onSurface 文字 + onSurface @10% 底色（navSelectedTint 令牌；
-      // 2026-09-11 统一中性后不再染 primary，测试口径同步）。
+      // 激活项：中性 onSurface 文字 + 强调色药丸底（selectedPill = primary @12%；
+      // 2026-10-08 全局统一换装，旧的中性 navSelectedTint 底已撤）。
       expect(_colorOf(tester, '第一章'), theme.colorScheme.onSurface);
       expect(
         _containerColorOf(tester, '第一章'),
-        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
+        AppTheme.selectedPill(theme.colorScheme),
       );
       expect(_colorOf(tester, '小节'), theme.colorScheme.onSurfaceVariant);
       expect(_containerColorOf(tester, '小节'), isNull);
@@ -455,7 +455,7 @@ void main() {
       expect(_colorOf(tester, '第一章'), theme.colorScheme.onSurface);
       expect(
         _containerColorOf(tester, '第一章'),
-        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
+        AppTheme.selectedPill(theme.colorScheme),
       );
 
       // 标题变化 → 目录实时更新（直接监听标题控制器）。
@@ -465,12 +465,12 @@ void main() {
       expect(find.text('我的笔记'), findsNothing);
 
       // 视口回到文档最顶（首个可见块 = 0）→ 首条高亮。首条文字色本就是
-      // 实色 onSurface，激活的可见差异在底色（navSelectedTint）。
+      // 实色 onSurface，激活的可见差异在底色（selectedPill 药丸）。
       scroll.visibleRangeNotifier.value = (0, 3);
       await tester.pump();
       expect(
         _containerColorOf(tester, '改过的标题'),
-        AppTheme.navSelectedTint(theme.colorScheme.onSurface),
+        AppTheme.selectedPill(theme.colorScheme),
       );
 
       // 点击首条（滚动器未挂载时安全退出，不抛）。
@@ -638,7 +638,7 @@ void main() {
 Color? _colorOf(WidgetTester tester, String text) =>
     tester.widget<Text>(find.text(text)).style?.color;
 
-/// 条目容器的底色（激活项是 navSelectedTint，非激活为 null）。
+/// 条目容器的底色（激活项是 selectedPill 强调色药丸，非激活为 null）。
 Color? _containerColorOf(WidgetTester tester, String text) {
   final Container container = tester.widget<Container>(
     find.ancestor(of: find.text(text), matching: find.byType(Container)).first,

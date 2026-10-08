@@ -333,28 +333,18 @@ class _NoteTileState extends State<_NoteTile> {
                 final bool active = hovered || _menuOpen;
                 return Container(
                   height: Tokens.noteTileHeight,
-                  // 三种态各有其色（§5.1 的「当前项」读法）：
-                  // - **选中**：中性 tint 底 + 左指示条 + w600（三件齐）；
+                  // 三种态各有其色（「当前项」读法，2026-10-08 全局换装）：
+                  // - **选中**：强调色药丸底（[AppTheme.selectedPill]）+ w600；
                   // - **悬浮 / 菜单开着**：纸面色（条目"浮起"即纸面，与右栏同源）；
                   // - 其余：透明。
                   // 此前两者同色（都是纸面色）⇒ 指针一移上来就分不清"已选"与"正悬停"。
                   color: widget.selected
-                      ? AppTheme.navSelectedTint(scheme.onSurface)
+                      ? AppTheme.selectedPill(scheme)
                       : (active
                             ? AppTheme.contentCanvas(theme.brightness)
                             : Colors.transparent),
                   child: Row(
                     children: <Widget>[
-                      // 选中指示条：位置固定，不随文字跳动。
-                      AnimatedContainer(
-                        duration: Tokens.durationFast,
-                        width: Tokens.indicatorWidth,
-                        // 指示条取 primary（`navIndicator`）：颜色随种子换，但
-                        // "有这么一根条子"不变——形状信号比色相耐换肤（§5.1）。
-                        color: widget.selected
-                            ? AppTheme.navIndicator(scheme)
-                            : Colors.transparent,
-                      ),
                       const SizedBox(width: Tokens.spaceMd),
                       // 收藏标记：星标紧贴标题（不占额外宽度，无收藏时不显示）。
                       if (widget.note.promotedAt != null) ...<Widget>[

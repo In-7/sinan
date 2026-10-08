@@ -483,23 +483,11 @@ class _AppFlowyTocPanelState extends State<AppFlowyTocPanel> {
           end: Tokens.spaceXs,
         ),
         decoration: BoxDecoration(
-          // 「当前项」的统一读法（§5.1）：中性 tint 底，不染种子色。
-          color: isActive ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+          // 「当前项」统一读法（2026-10-08 全局换装）：强调色药丸底，
+          // 取代旧的"中性 tint + 3px 左指示条"混搭。
+          color: isActive ? AppTheme.selectedPill(scheme) : null,
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
         ),
-        // 3px primary 左指示条——与笔记列表项、设置左导航同一读法。
-        // 走 `foregroundDecoration`：**不占位**，激活与否文字都不横移。
-        foregroundDecoration: isActive
-            ? BoxDecoration(
-                borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                border: Border(
-                  left: BorderSide(
-                    color: AppTheme.navIndicator(scheme),
-                    width: Tokens.indicatorWidth,
-                  ),
-                ),
-              )
-            : null,
         child: Text(
           entry.text,
           maxLines: 1,

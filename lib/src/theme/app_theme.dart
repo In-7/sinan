@@ -298,19 +298,13 @@ class AppTheme {
   /// 纸面、板底、卡片底等任何底上，不必为每种底各配一档。
   /// 量：亮 = 黑 4%，暗 = 白 12%（暗色要更大量才看得出）。
   ///
-  /// ⚠️ 与 [boardFillHover] 的关系：后者是**板底专用**的历史口径，新代码一律用
-  /// 本函数；两者**不要叠加**（叠了会比设计档重一倍）。
+  /// ⚠️ 历史口径 boardFillHover（板底专用，亮黑 5% / 暗白 6%）已于 2026-10-08
+  /// 退役收口到本函数——全应用 hover 一个口径，两种叠加色**不要**共存/叠加
+  /// （叠了会比设计档重一倍）。
   static Color hoverOverlay(Brightness brightness) =>
       brightness == Brightness.dark
       ? Colors.white.withValues(alpha: 0.12)
       : Colors.black.withValues(alpha: 0.04);
-
-  /// [boardFill] 之上的**叠加档**（导航项悬停）：暗 = 白 6%，亮 = 黑 5%。
-  /// 是**叠在近实板底上的量**，不是从零算的绝对值。
-  static Color boardFillHover(Brightness brightness) =>
-      brightness == Brightness.dark
-      ? Colors.white.withValues(alpha: 0.06)
-      : Colors.black.withValues(alpha: 0.05);
 
   /// **凸面填充**（新拟态里"抬起来的那块"：切换器滑块 / 「+」方格）。
   ///
@@ -318,7 +312,7 @@ class AppTheme {
   /// - **亮色**："同色挖空"。凸块 = [windowBackground]（列底那档浅），井
   ///   （[boardFill]）比它深一档 ⇒ 滑块读作"从页面上切下来的一块"。
   /// - **暗色**："叠档浮起"。全家抬起都靠**在下一层上叠一档白**（[cardFill]
-  ///   白 5%、[boardFillHover] 白 6%、[cardFillHover] 白 8%），没有"比底深的
+  ///   白 5%、历史 boardFillHover 白 6%、[cardFillHover] 白 8%），没有"比底深的
   ///   井"可挖——暗色 [boardFill] 本身就是比底亮的浮起 sheet。⇒ 凸块 =
   ///   **井上再叠一档白**（8%，与 [cardFillHover] 同档）。
   ///
@@ -349,7 +343,7 @@ class AppTheme {
       ? Colors.white.withValues(alpha: 0.05)
       : Colors.white.withValues(alpha: 0.70);
 
-  /// [cardFill] 的悬停/选中态：**叠在 [cardFill] 上的量**（与 [boardFillHover]
+  /// [cardFill] 的悬停/选中态：**叠在 [cardFill] 上的量**（与 [hoverOverlay]
   /// 同构——交互态一律是"再叠一档"，不是换色）。
   static Color cardFillHover(Brightness brightness) =>
       brightness == Brightness.dark
@@ -637,27 +631,29 @@ class AppTheme {
   /// 两者同为 12% 时按下几乎看不出变化。
   static Color stateLayerPressed(Color base) => base.withValues(alpha: 0.18);
 
-  /// **「当前项」的底**（`docs/ui_rewrite_plan.md` §5.1 的统一出口）：
-  /// `onSurface @ 10%`。
+  /// **「当前项」选中药丸的底**（2026-10-08 用户拍板：全局统一换装）：
+  /// `primary @ 12%`——强调色药丸，替代旧的"中性 tint + 3px 左指示条"混搭。
   ///
-  /// ## 为什么中性、而不是 M3 的 `secondaryContainer`
-  /// **种子色用户可换**（克莱因蓝 / 绛红 / 蒂芙尼 / 紫罗兰），染色会随种子飘，
-  /// 而"我在哪"的**读法必须恒定**——中性 tint 在任何种子下都是同一个灰阶。
-  /// （§2.2 允许强调色出现在"我在哪"，但"**能**用"与"**该**用"是两件事：
-  /// 形状信号比色相更耐换肤。）
+  /// ## 为什么换掉中性读法（历史决策的翻案，用户拍板）
+  /// 旧方案 §5.1 用 `onSurface @10%` 中性底 + 左指示条双形状信号，理由是
+  /// "种子色用户可换、'我在哪'的读法必须恒定"。实机对比后用户定：选中态
+  /// **该**带强调色（药丸一种形状就够，指示条撤掉）——12% 是叠加在任意面
+  /// （纸面 / 卡片 / 板底）上都抬得出来、又不压 onSurface 文字对比度的量。
   ///
-  /// 比例 10% 是实测下限：8% 在浅色下几乎看不出选中态。
+  /// 用于：nav_rail 目的地行、笔记列表项、目录激活项、设置左导航、命令/
+  /// 搜索面板行、视图 tab、日历选中日、跳转闪烁块、分段控件选中段
+  /// ——**「当前项」选中一律用它**，不要自己挑比例（分叉的根因）。
+  /// ⚠️ **开关态（开/关如实显示）不在此列**，仍走 [navSelectedTint]。
+  static Color selectedPill(ColorScheme scheme) =>
+      scheme.primary.withValues(alpha: 0.12);
+
+  /// **开关态的底**（开 = `onSurface @ 10%`）：AI 轨开关这类"开/关如实显示"
+  /// 的控件用它——那是状态镜像，不是"我在哪"的选中读法。
   ///
-  /// 用于：笔记列表项、目录面板激活项、设置面板左导航、命令面板行、跳转闪烁块
-  /// ——**新代码一律用它**，不要自己挑比例（分叉的根因）。
+  /// 2026-10-08 起「当前项」选中已全部改走 [selectedPill]（用户拍板全局统一），
+  /// 新代码别再拿它当选中底（旧口径的分叉根因）。
   static Color navSelectedTint(Color onSurface) =>
       onSurface.withValues(alpha: 0.10);
-
-  /// **「当前项」的左指示条色**（§5.1 的第二件）：取 `primary`。
-  ///
-  /// 它是**形状信号**（一根 `Tokens.indicatorWidth` 宽的竖条）：换种子只换色相、
-  /// 不改读法——这正是"形状为主、颜色为辅"的落点。
-  static Color navIndicator(ColorScheme scheme) => scheme.primary;
 
   /// 当前主题的**明度序**（`surface_ladder.dart`）：应用里每一块"面"的底色都从它取。
   ///
@@ -1215,9 +1211,10 @@ class AppTheme {
       segmentedButtonTheme: SegmentedButtonThemeData(
         // 设置项（明暗 / 正文宽度 / 连线端点形状）的分段选择。
         //
-        // 选中态走 §5.1 的「当前项」读法：**中性 tint 底 + 字重 w600**，
-        // **不加左指示条**——分段控件在形状上没有"左侧"可言（族内的合法例外）。
-        // 此前走 M3 默认的 `secondaryContainer`，那是第三种"选中"画法。
+        // 选中态走「当前项」统一读法（2026-10-08 换装）：**强调色药丸
+        // [selectedPill] + 字重 w600**——分段控件形状上没有"左侧"可言，
+        // 旧的 3px 指示条本就不在此族；此前还走过中性 tint 与 M3
+        // `secondaryContainer`，都是历史分叉。
         // 不用 `SegmentedButton.styleFrom`：它的 `textStyle` 参数收的是**单个**
         // `TextStyle`、表达不了"选中加粗"，所以这里直接给 `ButtonStyle`
         // （`WidgetStateProperty` 才能按态取值）。
@@ -1225,7 +1222,7 @@ class AppTheme {
           shape: WidgetStatePropertyAll<OutlinedBorder>(shapeSm),
           backgroundColor: WidgetStateProperty.resolveWith<Color?>(
             (Set<WidgetState> states) => states.contains(WidgetState.selected)
-                ? navSelectedTint(scheme.onSurface)
+                ? selectedPill(scheme)
                 : Colors.transparent,
           ),
           foregroundColor: WidgetStateProperty.resolveWith<Color>(

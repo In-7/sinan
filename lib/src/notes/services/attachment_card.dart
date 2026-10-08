@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -76,14 +76,13 @@ class AttachmentCard extends StatelessWidget {
                         meta.name,
                         maxLines: 1,
                         overflow: .ellipsis,
-                        style: TextStyle(fontSize: 13, color: scheme.onSurface),
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: scheme.onSurface),
                       ),
                       Text(
                         meta.sizeLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),

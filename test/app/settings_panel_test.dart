@@ -26,9 +26,9 @@ void main() {
   /// 焦点环是否存在。
   ///
   /// ⚠️ 两个"别拿它当判据"的坑（都踩过）：
-  /// 1. 面板里到处都有带 `foregroundDecoration` 的容器 —— 导航项的**左指示条**
-  ///    （§5.1）就在 [FocusRing] **子树内部**（它是导航项自己的装饰）⇒ 必须按
-  ///    **形状**区分：环是 `Border.all`（四边都画），指示条只有左边。
+  /// 1. 面板里可能有别的带 `foregroundDecoration` 的容器 ⇒ 必须按**形状**区分：
+  ///    环是 `Border.all`（四边都画）。注：导航项的 3px 左指示条已随 2026-10-08
+  ///    强调色药丸换装撤掉，这里仍保留形状校验（防未来单边装饰混进来）。
   /// 2. 只限定在 [FocusRing] 子树还不够（见上），要两者一起用。
   Finder ringFinder() => find.descendant(
     of: find.byType(FocusRing),

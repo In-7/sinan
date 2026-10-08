@@ -29,10 +29,7 @@ import 'settings_panel.dart' show showSettingsPanel;
 /// - 折叠：56px 纯图标轨；展开：图标 + 文字（默认 248，可拖拽记忆 200–340）。
 /// - 复用既有 [navCollapsedProvider]；`Ctrl+\` 接上折叠 / 展开。
 /// - **空间轴**（去哪）放这里；**时间轴**（上一步 / 下一步）留在 [WindowStrip] 左簇。
-const double kRailCollapsed = 56;
-const double kRailExpandedDefault = 248;
-const double kRailMin = 200;
-const double kRailMax = 340;
+// 度量收编（2026-10-08）：宽高/区间见 [Tokens.navRailCollapsedWidth] 等。
 
 /// tile 的左右 inset：圆角块离 rail 侧边的距离。
 ///
@@ -60,14 +57,14 @@ class NavRail extends ConsumerStatefulWidget {
 }
 
 class _NavRailState extends ConsumerState<NavRail> {
-  double _width = kRailExpandedDefault;
+  double _width = Tokens.navRailExpandedWidth;
 
   @override
   void initState() {
     super.initState();
     // 展开宽度记忆（持久化到 AppSettings.navRailWidth，拖拽结束时写回）。
     final double saved = ref.read(settingsProvider).navRailWidth;
-    _width = saved.clamp(kRailMin, kRailMax);
+    _width = saved.clamp(Tokens.navRailMinWidth, Tokens.navRailMaxWidth);
   }
 
   @override
@@ -75,7 +72,7 @@ class _NavRailState extends ConsumerState<NavRail> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool collapsed = ref.watch(navCollapsedProvider);
-    final double w = collapsed ? kRailCollapsed : _width;
+    final double w = collapsed ? Tokens.navRailCollapsedWidth : _width;
 
     final bool onHome = ref.watch(selectedNoteIdProvider) == null;
     final HomeView view = ref.watch(navHistoryProvider).view;
@@ -102,7 +99,9 @@ class _NavRailState extends ConsumerState<NavRail> {
                 (Color c) => CustomIcons.home(size: Tokens.iconMdSm, color: c),
                 onHome,
                 () {
-                  ref.read(navHistoryProvider.notifier).selectHome(HomeView.timeline);
+                  ref
+                      .read(navHistoryProvider.notifier)
+                      .selectHome(HomeView.timeline);
                   ref.read(hubNavSelectionProvider.notifier).select(0);
                 },
                 collapsed,
@@ -111,37 +110,39 @@ class _NavRailState extends ConsumerState<NavRail> {
                 '心流',
                 _timelineIcon,
                 activeFor(HomeView.timeline),
-                () => ref.read(navHistoryProvider.notifier).selectHome(HomeView.timeline),
+                () => ref
+                    .read(navHistoryProvider.notifier)
+                    .selectHome(HomeView.timeline),
                 collapsed,
               ),
               _tile(
                 '全部',
                 _allIcon,
                 activeFor(HomeView.all),
-                () => ref.read(navHistoryProvider.notifier).selectHome(HomeView.all),
+                () => ref
+                    .read(navHistoryProvider.notifier)
+                    .selectHome(HomeView.all),
                 collapsed,
               ),
               _tile(
                 '日历',
                 _calendarIcon,
                 activeFor(HomeView.calendar),
-                () => ref.read(navHistoryProvider.notifier).selectHome(HomeView.calendar),
+                () => ref
+                    .read(navHistoryProvider.notifier)
+                    .selectHome(HomeView.calendar),
                 collapsed,
               ),
               _tile(
                 '收藏',
                 _starIcon,
                 activeFor(HomeView.favorites),
-                () => ref.read(navHistoryProvider.notifier).selectHome(HomeView.favorites),
+                () => ref
+                    .read(navHistoryProvider.notifier)
+                    .selectHome(HomeView.favorites),
                 collapsed,
               ),
-              _tile(
-                '搜索',
-                _searchIcon,
-                false,
-                showSearchPalette,
-                collapsed,
-              ),
+              _tile('搜索', _searchIcon, false, showSearchPalette, collapsed),
               const Spacer(),
               const Padding(
                 padding: EdgeInsets.fromLTRB(
@@ -152,13 +153,7 @@ class _NavRailState extends ConsumerState<NavRail> {
                 ),
                 child: Divider(height: 1),
               ),
-              _tile(
-                '设置',
-                _settingsIcon,
-                false,
-                showSettingsPanel,
-                collapsed,
-              ),
+              _tile('设置', _settingsIcon, false, showSettingsPanel, collapsed),
               _tile(
                 '问笔记',
                 _aiIcon,
@@ -182,7 +177,10 @@ class _NavRailState extends ConsumerState<NavRail> {
                   behavior: HitTestBehavior.deferToChild,
                   onHorizontalDragUpdate: (DragUpdateDetails d) {
                     setState(() {
-                      _width = (_width + d.delta.dx).clamp(kRailMin, kRailMax);
+                      _width = (_width + d.delta.dx).clamp(
+                        Tokens.navRailMinWidth,
+                        Tokens.navRailMaxWidth,
+                      );
                     });
                   },
                   onHorizontalDragEnd: (_) {
@@ -191,7 +189,7 @@ class _NavRailState extends ConsumerState<NavRail> {
                         .read(settingsProvider.notifier)
                         .update(s.copyWith(navRailWidth: _width));
                   },
-                  child: const SizedBox(width: 4),
+                  child: const SizedBox(width: Tokens.navRailSplitterWidth),
                 ),
               ),
             ),
@@ -206,94 +204,94 @@ class _NavRailState extends ConsumerState<NavRail> {
     bool active,
     VoidCallback onTap,
     bool collapsed,
-  ) =>
-      Padding(
-        // 按钮之间留 2px 呼吸：Padding 不吃 hit 测试 ⇒ 缝里点不到，
-        // 正好把「可点区域」和「视觉行」都收在各自 36px 里。
-        padding: const EdgeInsets.only(bottom: 2),
-        child: _NavRailTile(
-          label: label,
-          icon: icon,
-          active: active,
-          collapsed: collapsed,
-          onTap: onTap,
-        ),
-      );
+  ) => Padding(
+    // 按钮之间留 2px 呼吸：Padding 不吃 hit 测试 ⇒ 缝里点不到，
+    // 正好把「可点区域」和「视觉行」都收在各自 28px（[Tokens.sidebarRowHeight]）里。
+    padding: const EdgeInsets.only(bottom: 2),
+    child: _NavRailTile(
+      label: label,
+      icon: icon,
+      active: active,
+      collapsed: collapsed,
+      onTap: onTap,
+    ),
+  );
 
   Widget _collapseButton(bool collapsed) => IconButton(
-        icon: collapsed
-            ? const tabler.ChevronsRight(
-                height: Tokens.iconMdSm,
-                width: Tokens.iconMdSm,
-                strokeWidth: Tokens.iconStroke,
-              )
-            : const tabler.ChevronsLeft(
-                height: Tokens.iconMdSm,
-                width: Tokens.iconMdSm,
-                strokeWidth: Tokens.iconStroke,
-              ),
-        tooltip: collapsed ? '展开导航栏' : '折叠导航栏',
-        onPressed: ref.read(navCollapsedProvider.notifier).toggle,
-      );
+    icon: collapsed
+        ? const tabler.ChevronsRight(
+            height: Tokens.iconMdSm,
+            width: Tokens.iconMdSm,
+            strokeWidth: Tokens.iconStroke,
+          )
+        : const tabler.ChevronsLeft(
+            height: Tokens.iconMdSm,
+            width: Tokens.iconMdSm,
+            strokeWidth: Tokens.iconStroke,
+          ),
+    tooltip: collapsed ? '展开导航栏' : '折叠导航栏',
+    onPressed: ref.read(navCollapsedProvider.notifier).toggle,
+  );
 
   static Widget _timelineIcon(Color c) => tabler.Clock(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _allIcon(Color c) => tabler.LayoutGrid(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _calendarIcon(Color c) => tabler.Calendar(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _starIcon(Color c) => tabler.Star(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _searchIcon(Color c) => tabler.Search(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _settingsIcon(Color c) => tabler.Settings(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 
   static Widget _aiIcon(Color c) => tabler.Sparkles(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: Tokens.iconStroke,
-        colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
-      );
+    height: Tokens.iconMdSm,
+    width: Tokens.iconMdSm,
+    strokeWidth: Tokens.iconStroke,
+    colorFilter: ui.ColorFilter.mode(c, ui.BlendMode.srcIn),
+  );
 }
 
 /// 导航栏内的一行（图标，或图标 + 文字）。
 ///
-/// 选中态 = 中性 `navSelectedTint` 圆角底 + **3px `primary` 左条**（不占布局，
-/// 走 `foregroundDecoration`，避免文字横跳，见 §5.1）；hover 叠 `boardFillHover`。
+/// 选中态 = **强调色药丸** [AppTheme.selectedPill]（primary 12%，2026-10-08
+/// 用户拍板全局统一）；hover 叠 `hoverOverlay`。旧的"中性 tint + 3px 左条"
+/// 混搭已撤——药丸一种形状信号就够，两根信号并存反而打架。
 ///
 /// hover 形状刻意对齐 macOS 侧栏（2026-10-08）：左右 `_kTileInset` 内缩、
 /// 与选中**同半径**、底色经 `durationHover` 淡入淡出。三者缺一就会从
-/// "精致"掉回"方角灰块"。
+/// "精致"掉回"方角灰块"。行高 [Tokens.sidebarRowHeight]（28，Apple 口径）。
 ///
 /// 交互由 [FocusableActionDetector] 承担（hover / 按下 / 焦点 / Enter·Space），
 /// 焦点环用全项目统一的 [FocusRing]（§5.2），按压档用 [AppTheme.stateLayerPressed]。
@@ -343,33 +341,25 @@ class _NavRailTileState extends State<_NavRailTile> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    final Color iconColor = widget.active ? scheme.onSurface : scheme.onSurfaceVariant;
+    final Color iconColor = widget.active
+        ? scheme.onSurface
+        : scheme.onSurfaceVariant;
 
     // 三档底色 + 按压叠一档。按下用 [Color.alphaBlend] 叠在**当前底色**之上，
     // 而不是三选一 —— 否则选中项按下时 `base` 已经是选中底色、没有更重的一档，
     // 按压会"没反应"。
     final Color base = widget.active
-        ? AppTheme.navSelectedTint(scheme.onSurface)
-        : (_hover ? AppTheme.boardFillHover(brightness) : Colors.transparent);
+        ? AppTheme.selectedPill(scheme)
+        : (_hover ? AppTheme.hoverOverlay(brightness) : Colors.transparent);
     final Color bg = _pressed
         ? Color.alphaBlend(AppTheme.stateLayerPressed(scheme.onSurface), base)
         : base;
 
     return Container(
-      // inset 放在**外层**是关键：foregroundDecoration 画在 padding 之外，
-      // 所以 3px 选中左条依旧贴 rail 左缘（指示形状读法不变），只是圆角底
-      // 往里收了两侧各 6px。
+      // inset 放在**外层**：圆角底往里收了两侧各 6px（macOS 侧栏的内缩行）。
+      // 2026-10-08 换装后不再有贴 rail 左缘的 3px 指示条（药丸一种信号），
+      // inset 纯为行的呼吸服务。
       padding: const EdgeInsets.symmetric(horizontal: _kTileInset),
-      foregroundDecoration: widget.active
-          ? BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: scheme.primary,
-                  width: Tokens.indicatorWidth,
-                ),
-              ),
-            )
-          : null,
       // [FocusRing] 放在 inset **之内**：它要画在和圆角底同宽、同半径的盒子上，
       // 放到外层就会"错位一个圆角"（见 [FocusRing] 的 borderRadius 说明）。
       child: FocusRing(
@@ -403,7 +393,7 @@ class _NavRailTileState extends State<_NavRailTile> {
               },
               child: AnimatedContainer(
                 duration: Tokens.durationHover,
-                height: 36,
+                height: Tokens.sidebarRowHeight,
                 padding: widget.collapsed
                     ? EdgeInsets.zero
                     : const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),

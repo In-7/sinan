@@ -117,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
       // 2026-09-30 整列暂撤（用户要换形态重做）；折叠按钮保留在顶条左簇。
       //
       // 2026-09-28 加第三列 **AI 问答轨**（[AskRail]）：宽窗常驻右缘，窄窗
-      // （< [kAskRailBreakpoint]）降级回 [showAskPanel] 浮层——状态只有
+      // （< [Tokens.askRailBreakpoint]）降级回 [showAskPanel] 浮层——状态只有
       // [aiPanelOpenProvider] 一个布尔，呈现形态归外壳按宽度选。
       //
       // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder` 统一铺一层
@@ -125,7 +125,7 @@ class HomeScreen extends ConsumerWidget {
 
       final bool aiWanted = ref.watch(aiPanelOpenProvider);
       final bool railFits =
-          MediaQuery.sizeOf(context).width >= kAskRailBreakpoint;
+          MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
       final bool aiInline = aiWanted && railFits;
 
       // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
@@ -499,7 +499,7 @@ class _EmptyDetail extends StatelessWidget {
       const Center(child: Text('选择左侧笔记，或新建一篇'));
 }
 
-/// 右侧 **AI 问答轨**的动画槽：打开 [kAskRailWidth]、关闭收为 0。
+/// 右侧 **AI 问答轨**的动画槽：打开 [Tokens.askRailWidth]、关闭收为 0。
 ///
 /// 与左导航槽**同一套做法**（[AnimatedContainer] 布局插值 + [ClipRect] 裁切 +
 /// [OverflowBox] 固定满宽布局）：纯 layout 动画、不触发 saveLayer；
@@ -518,13 +518,13 @@ class _AiRailSlot extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
-      width: open ? kAskRailWidth : 0,
+      width: open ? Tokens.askRailWidth : 0,
       child: ExcludeFocus(
         excluding: !open,
         child: const ClipRect(
           child: OverflowBox(
             alignment: Alignment.topLeft,
-            maxWidth: kAskRailWidth,
+            maxWidth: Tokens.askRailWidth,
             child: AskRail(),
           ),
         ),
@@ -595,8 +595,9 @@ class NavDestinationButton extends ConsumerWidget {
     return IconButton(
       tooltip: view.label,
       style: IconButton.styleFrom(
+        // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装）。
         backgroundColor: active
-            ? AppTheme.navSelectedTint(scheme.onSurface)
+            ? AppTheme.selectedPill(scheme)
             : Colors.transparent,
       ),
       icon: icon(active ? scheme.onSurface : scheme.onSurfaceVariant),

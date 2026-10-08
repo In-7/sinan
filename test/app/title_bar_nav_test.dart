@@ -294,11 +294,11 @@ void main() {
 
     final Color pressed = tileBg(tester, '设置');
     expect(pressed, isNot(Colors.transparent), reason: '按下 ⇒ 有反馈');
-    // 按下档 = stateLayerPressed(18%) 叠在静止底上，不是 hover 那档(6%)。
+    // 按下档 = stateLayerPressed(18%) 叠在静止底上，不是 hover 那档(4%)。
     expect(
       pressed.a,
-      greaterThan(AppTheme.boardFillHover(Brightness.light).a),
-      reason: '按下必须比 hover 更实（stateLayer 18% > hover 6%）',
+      greaterThan(AppTheme.hoverOverlay(Brightness.light).a),
+      reason: '按下必须比 hover 更实（stateLayer 18% > hover 4%）',
     );
 
     await g.up();

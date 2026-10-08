@@ -27,6 +27,9 @@ class Tokens {
   static const double radiusMd = 8;
   static const double radiusLg = 12;
 
+  /// 全圆（胶囊按钮 / 圆点 / 圆形发送钮）。
+  static const double radiusFull = 999;
+
   // 控件尺寸
   // 主区顶条高度 == 窗控按钮高度，二者始终相等（按钮永远铺满，无留白）。
   //
@@ -40,6 +43,35 @@ class Tokens {
   // 要求比导航板顶行更宽松）。窗控按钮自身 minHeight 下限 32，36 时居中留
   // 2px 上下余量，不溢出；[chromeActionButton] 的按钮尺寸也以它为准。
   static const double titleBarHeightMain = 36;
+
+  // ── 桌面外壳 chrome 度量（2026-10-08 令牌收口：从各外壳文件的 k 级私有
+  // 常量收编到此，与 [titleBarHeightMain] 同一档）────────────────
+  /// 状态栏高（贴窗底那一行）。
+  static const double statusBarHeight = 26;
+
+  /// 左侧栏折叠后的纯图标轨宽。
+  static const double navRailCollapsedWidth = 56;
+
+  /// 左侧栏展开后的默认宽。
+  static const double navRailExpandedWidth = 248;
+
+  /// 左侧栏拖拽记忆的宽度区间。
+  static const double navRailMinWidth = 200;
+  static const double navRailMaxWidth = 340;
+
+  /// 左侧栏右缘拖宽把手的命中宽。
+  static const double navRailSplitterWidth = 4;
+
+  /// AI 问答轨常驻右缘的最小窗宽，低于它降级为居中浮层。
+  /// （账：外壳 ≈615 ⇒ 1000 以下主区不足 385，编辑器失去意义。）
+  static const double askRailBreakpoint = 1000;
+
+  /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
+  static const double askRailWidth = 340;
+
+  /// 卡片网格行列距（2026-10-01 用户定的 20 档：间距表 16/24 之间的定值，
+  /// 不在 t 恤码表上，收编为命名几何量）。
+  static const double cardGridSpacing = 20;
 
   // ── 图标 ────────────────────────────────────────────────────────
   // ⚠️ 先记住一条：Tabler 的尺寸是**画板框**，不是视觉大小。它的图形画在
@@ -101,13 +133,15 @@ class Tokens {
   // ⚠️ 这是本表里**最该用眼睛确认**的一个值（它决定列表的"手感密度"），
   // 觉得挤就调回 30/32——只动这一个数，不牵动别处。
   static const double noteTileHeight = 28;
+  // 侧栏行高（nav_rail 目的地行、hub_nav 内联行、设置左导航等单行侧栏项）。
+  // 与 [noteTileHeight] 同档——2026-10-08 用户拍板"行高 28"，正落在上面
+  // Apple 口径 24–28 的上沿：比 M3 触控档 32/36 紧凑，一屏多放两三行。
+  static const double sidebarRowHeight = 28;
   // 格式工具栏按钮（自绘 NoteFormatToolbar）
   // 工具栏按钮：24×30，18px 图标四周各有 3px/6px 呼吸，
   // 悬浮高亮不贴字形，热区也稳。
   static const double formatButtonWidth = 24;
   static const double formatButtonHeight = 30;
-  // 选中项左侧的强调色指示条
-  static const double indicatorWidth = 3;
 
   // 焦点环粗细（`docs/ui_rewrite_plan.md` §5.2）。
   // ⚠️ 计划原文是"primary 2px + 1px offset（外间隙）"，实现取**画在边界内侧**：

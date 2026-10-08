@@ -375,7 +375,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       _tocRowTint(tester, '第 150 节'),
-      AppTheme.navSelectedTint(AppTheme.light().colorScheme.onSurface),
+      AppTheme.selectedPill(AppTheme.light().colorScheme),
       reason: '末尾条目应当显示激活底色',
     );
 
@@ -431,7 +431,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       _tocRowTint(tester, '第 5 节'),
-      AppTheme.navSelectedTint(AppTheme.light().colorScheme.onSurface),
+      AppTheme.selectedPill(AppTheme.light().colorScheme),
       reason: '跳转后「第 5 节」应当成为当前章节（页面确实动了）',
     );
   });
@@ -1194,8 +1194,8 @@ bool _hasFlashingBlock(WidgetTester tester) => tester
       return d is BoxDecoration && d.color != null;
     });
 
-/// 目录里某条目的行底色（激活态 = `AppTheme.navSelectedTint`，见 toc_panel 的
-/// `_itemOf`：条目 Container 的 decoration）。
+/// 目录里某条目的行底色（激活态 = `AppTheme.selectedPill` 强调色药丸，见
+/// toc_panel 的 `_itemOf`：条目 Container 的 decoration）。
 Color? _tocRowTint(WidgetTester tester, String label) {
   final Finder container = find
       .ancestor(

@@ -288,7 +288,7 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// 从第一列图标挪到**顶部中间的常驻输入框**。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：左 = 3 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.navSelectedTint]）
+/// 1. **顶栏**：左 = 3 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.selectedPill]）
 ///    + 形态 / 排序 / 标签合住一枚漏斗钮（[_FilterMenuButton]），右 = 常驻搜索框
 ///    （点击直接输入，走 [searchNotifierProvider]）。上一步 / 下一步（视图历史）
 ///    与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
@@ -331,7 +331,8 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     // 空库（心流视图在无搜索词时为空）：顶栏捕获条**隐藏**，改由心流空态里的
     // 居中大捕获条接管（见 [StreamView]）——避免两个捕获框同时抢焦点、也把
     // "第一眼能打字的地方"推到视觉中心。
-    final bool timelineEmpty = view == HomeView.timeline &&
+    final bool timelineEmpty =
+        view == HomeView.timeline &&
         s.query.trim().isEmpty &&
         ref
             .watch(
@@ -400,9 +401,8 @@ class _HomeHubState extends ConsumerState<HomeHub> {
                       child: _ViewTab(
                         view: v,
                         active: v == view,
-                        onTap: () => ref
-                            .read(navHistoryProvider.notifier)
-                            .selectHome(v),
+                        onTap: () =>
+                            ref.read(navHistoryProvider.notifier).selectHome(v),
                       ),
                     ),
                   // （2026-10-05 决策 E）三点溢出菜单已退役：笔记 / 画布
@@ -655,10 +655,10 @@ class _SearchResultBar extends StatelessWidget {
   }
 }
 
-/// 顶栏的一枚**视图 tab**：图标 + 文字，选中披 [AppTheme.navSelectedTint]。
+/// 顶栏的一枚**视图 tab**：图标 + 文字，选中披 [AppTheme.selectedPill]。
 ///
 /// 静止态显式透明（防 Material 落 canvasColor 变黑块，全仓统一教训）；hover
-/// 叠 [AppTheme.boardFillHover]；自带 [FocusRing]（§5.2）。
+/// 叠 [AppTheme.hoverOverlay]；自带 [FocusRing]（§5.2）。
 class _ViewTab extends StatefulWidget {
   const _ViewTab({
     required this.view,
@@ -689,10 +689,11 @@ class _ViewTabState extends State<_ViewTab> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
+    // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装，取代中性 tint）。
     final Color fill = widget.active
-        ? AppTheme.navSelectedTint(scheme.onSurface)
+        ? AppTheme.selectedPill(scheme)
         : _hover
-        ? AppTheme.boardFillHover(theme.brightness)
+        ? AppTheme.hoverOverlay(theme.brightness)
         : Colors.transparent;
     final Color iconColor = widget.active
         ? scheme.onSurface
@@ -989,10 +990,10 @@ class _CardsGrid extends StatelessWidget {
         // 248 见方偏高、纵向信息密度低；244×203 与最小窗 216×180 都仍高于
         // 卡内容下限（标题+4 行摘要+底行 ≈145），摘要行数不变，空白变少。
         childAspectRatio: 1.2,
-        // 间距 20px（2026-10-01 用户定，试 macOS 20pt 边距档；Tokens 无
-        // 20 档，spaceLg=16/spaceXl=24，故写字面量）：卡更大、缝更宽，整墙透气。
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
+        // 间距 20px（2026-10-01 用户定，试 macOS 20pt 边距档）：卡更大、
+        // 缝更宽，整墙透气。值收编为 [Tokens.cardGridSpacing]。
+        crossAxisSpacing: Tokens.cardGridSpacing,
+        mainAxisSpacing: Tokens.cardGridSpacing,
       ),
       itemCount: items.length,
       itemBuilder: (BuildContext _, int i) => _NoteCard(
@@ -1731,7 +1732,8 @@ class _CalendarView extends StatelessWidget {
                 height: 30,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: AppTheme.navSelectedTint(scheme.onSurface),
+                    // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装）。
+                    color: AppTheme.selectedPill(scheme),
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -1888,7 +1890,7 @@ class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
         borderRadius: radius,
         child: Material(
           color: _hover
-              ? AppTheme.boardFillHover(theme.brightness)
+              ? AppTheme.hoverOverlay(theme.brightness)
               : Colors.transparent,
           borderRadius: radius,
           clipBehavior: Clip.antiAlias,
@@ -1974,11 +1976,11 @@ class _CalCellState extends State<_CalCell> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool dim = !widget.inMonth;
-    // 状态底：选中 = 玻璃 tint（与导航选中同语言）；hover = 再叠一档。
+    // 状态底：选中 = 强调色药丸（与导航选中同语言，2026-10-08 换装）；hover = 再叠一档。
     final Color? fill = widget.isSelected
-        ? AppTheme.navSelectedTint(scheme.onSurface)
+        ? AppTheme.selectedPill(scheme)
         : (_hover && widget.onTap != null)
-        ? AppTheme.boardFillHover(theme.brightness)
+        ? AppTheme.hoverOverlay(theme.brightness)
         : null;
     final Color textColor = dim
         ? scheme.onSurface.withValues(alpha: 0.3)
@@ -2108,7 +2110,7 @@ class _CalNavButtonState extends State<_CalNavButton> {
             height: 28,
             child: Material(
               color: _hover
-                  ? AppTheme.boardFillHover(brightness)
+                  ? AppTheme.hoverOverlay(brightness)
                   : Colors.transparent,
               shape: const CircleBorder(),
               clipBehavior: Clip.antiAlias,
@@ -2150,7 +2152,7 @@ class _CalGhostButtonState extends State<_CalGhostButton> {
         onTap: widget.onTap,
         child: Material(
           color: _hover
-              ? AppTheme.boardFillHover(theme.brightness)
+              ? AppTheme.hoverOverlay(theme.brightness)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
           clipBehavior: Clip.antiAlias,

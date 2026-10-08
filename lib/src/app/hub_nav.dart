@@ -626,20 +626,6 @@ class _NewButtonState extends State<_NewButton> {
   }
 }
 
-/// 导航板里的一行：图标 + 标签，高 36，圆角 8。
-///
-/// 状态：
-/// - **选中 = 玻璃片**（2026-09-24 用户定，取代裸 tint pill）：底仍是
-///   [AppTheme.navSelectedTint]（onSurface 10%，"我在哪"的中性读法不变），
-///   之上叠三层**纯绘制的光**——内光泽 + 顶沿光边 + **底沿厚度边**
-///   （[AppTheme.glassBaseEdge]）：顶沿吃光、底沿投影，一对方位边读出
-///   "一块薄玻璃片躺在板上"。无 saveLayer、不随重绘付费（Liquid Glass 的
-///   低配釉面版；透光/折射那件只有模糊能给，见 [AppTheme] 玻璃档说明）。
-/// - 悬停 = [AppTheme.boardFillHover]（刻意轻，与全应用"再叠一档"同语言）。
-///
-/// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
-/// 会落到 canvasColor（= `surface` = 近黑的窗口底色）⇒ 每个未选中项都自己画一块
-/// 黑方块，把板底盖住（2026-09-22 用户实报"还是黑色显示"）。
 /// 切换器下面的**内联列表**：读 [notesProvider]，按当前空间（[navSpaceProvider]）
 /// 过滤——笔记空间 = 除画布外的笔记，画布空间 = [NoteKind.canvas]。
 ///
@@ -709,24 +695,17 @@ class _SpaceItemList extends ConsumerWidget {
   }
 }
 
-/// 内联列表里的一行：标题 + 行尾相对时间，高 34（比导航项略紧，因为它是
-/// "一页纸"里的文本行，不是按钮）。
+/// 内联列表里的一行：标题 + 行尾相对时间，高 [Tokens.sidebarRowHeight]（28，
+/// 2026-10-08 拍板与 nav_rail 行高同档）。
 ///
 /// 状态（与全列同语言）：
-/// - **正在打开的那篇** = 玻璃片（[AppTheme.navSelectedTint] + [_GlassSheet]
-///   三层光）——与顶行主页图标的选中态完全同款；
-/// - 悬停 = [AppTheme.boardFillHover]（再叠一层）
+/// - **正在打开的那篇** = 强调色药丸（[AppTheme.selectedPill] primary 12% +
+///   [_GlassSheet] 三层光，2026-10-08 换装取代中性 tint）；
+/// - 悬停 = [AppTheme.hoverOverlay]（再叠一层）
 ///
 /// ⚠️ 静止态**必须显式 `Colors.transparent`**，不能传 null：`Material(color: null)`
 /// 会落进 canvasColor（近黑的窗口底色）——每行自己画一块黑方块盖住板底
-/// 2026-09-22 用户实报"还是黑色显示"）
-/// 内联列表里的一行：标题 + 行尾相对时间，高 34（比导航项略紧，因为它是
-/// "一页纸"里的文本行，不是按钮）。
-///
-/// 状态（与全列同语言）：
-/// - **正在打开的那篇** = 玻璃片（[AppTheme.navSelectedTint] + [_GlassSheet]
-///   三层光）——与顶行主页图标的选中态完全同款；
-/// - 悬停 = [AppTheme.boardFillHover]（再叠一层）
+/// （2026-09-22 用户实报"还是黑色显示"）。
 ///
 /// ## 操作入口（与 [NoteListView] 的条目同款）
 /// 两条入口、同一个菜单：**右键条目** 与 **悬停时右侧浮出的「···」**。
@@ -918,9 +897,9 @@ class SpaceItemRowState extends State<SpaceItemRow> {
     // "本条正被交互"：指针在行上，**或**本条的菜单开着。
     final bool active = _hover || _menuOpen;
     final Color fill = widget.open
-        ? AppTheme.navSelectedTint(scheme.onSurface)
+        ? AppTheme.selectedPill(scheme)
         : active
-        ? AppTheme.boardFillHover(brightness)
+        ? AppTheme.hoverOverlay(brightness)
         : Colors.transparent;
 
     // 悬浮跟踪用**外层 MouseRegion**（与左侧 [NoteListView] 的条目同款）：
@@ -945,14 +924,14 @@ class SpaceItemRowState extends State<SpaceItemRow> {
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: FocusRing(
             focusNode: _focus,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(Tokens.radiusMd),
             child: Material(
               color: fill,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(Tokens.radiusMd),
               clipBehavior: .antiAlias,
               // 命中区透明：整行可点，背景填色全靠上面的 fill。
               child: SizedBox(
-                height: 34,
+                height: Tokens.sidebarRowHeight,
                 width: double.infinity,
                 child: Stack(
                   // ⚠️ 必须显式居中（同 [HubNav] 那个已修过的坑：Stack 默认

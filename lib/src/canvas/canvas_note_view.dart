@@ -541,10 +541,8 @@ class _LoadFailedNotice extends StatelessWidget {
             child: Text(
               '这份画布的内容无法读取（格式异常），已暂停自动保存以保护原文。'
               '当前显示的是空白画布，在这里的编辑不会被保存。',
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: scheme.onErrorContainer,
-                fontSize: 12,
-                height: 1.4,
               ),
             ),
           ),

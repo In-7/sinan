@@ -998,17 +998,10 @@ class _NoteEditorViewAppFlowyState
             curve: Curves.easeOut,
             decoration: BoxDecoration(
               // 与目录面板的激活底色**同一个令牌**：点哪一条、落在哪一块，
-              // 两处的色是同一族。
-              color: on ? AppTheme.navSelectedTint(scheme.onSurface) : null,
+              // 两处的色是同一族（2026-10-08 随全局换装走强调色药丸，
+              // 旧的 3px 左条一并撤掉——药丸一种形状信号就够）。
+              color: on ? AppTheme.selectedPill(scheme) : null,
               borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            ),
-            foregroundDecoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: on ? scheme.primary : Colors.transparent,
-                  width: 3,
-                ),
-              ),
             ),
             child: child,
           );
