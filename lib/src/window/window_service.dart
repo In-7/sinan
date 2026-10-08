@@ -23,18 +23,6 @@ abstract final class WindowService {
   static bool get isSupported =>
       !kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
-  /// 是否 **Win11 及以上**（build ≥ 22000）。
-  ///
-  /// 这个门槛一次带来两项我们依赖的 DWM 能力（同批 Win11 能力）：
-  /// **Mica 背板** 与 **窗口原生圆角**。
-  ///
-  /// ⚠️ 不能靠版本名字符串判断：Win11 的 `operatingSystemVersion` 仍写着
-  /// "Windows 10"（微软没改版本名），只能看 build 号。
-  static bool get isWindows11 {
-    final int? build = _windowsBuild();
-    return build != null && build >= _win11MinBuild;
-  }
-
   /// 窗口圆角政策（2026-09-10 定）：**Win11 交给系统，Win10 保持直角**。
   ///
   /// 试过并**否决**的做法：Win10 上把窗口改透明（`WindowEffect.transparent`）
@@ -46,22 +34,8 @@ abstract final class WindowService {
   /// **没有抗锯齿**，弧线带锯齿。权衡后不采用：**Win10 直角 + Win11 系统圆角**
   /// 是问题最少的组合。
   ///
-  /// Win11 的窗口圆角与 Mica 背板是同一批 DWM 能力（见 [isWindows11]），
-  /// 系统会把两者一起裁好，我们不需要做任何事。
-
-  /// Win11 首个正式版的 build 号。
-  static const int _win11MinBuild = 22000;
-
-  /// 解析 Windows build 号；非 Windows 平台或解析失败返回 null。
-  ///
-  /// `Platform.operatingSystemVersion` 形如
-  /// `"Windows 10 Home China" 10.0 (Build 26200)`（Win11 也写 "Windows 10"）。
-  static int? _windowsBuild() {
-    if (!Platform.isWindows) return null;
-    final RegExpMatch? match = RegExp(r'Build (\d+)')
-        .firstMatch(Platform.operatingSystemVersion);
-    return match == null ? null : int.tryParse(match.group(1)!);
-  }
+  /// Win11 的窗口圆角由系统**强制**裁好，我们不需要做任何事。因此本类不再探测
+  /// Windows 版本号——曾经那套探测只为窗口材质（Mica）存在，材质已取消。
 
   /// 必须在 runApp 之前调用；非桌面平台自动跳过。
   static Future<void> init() async {
@@ -76,7 +50,6 @@ abstract final class WindowService {
       // ⚠️ **首帧之前仍是透明**：此刻还读不到设置里的明暗（要等 provider 就绪），
       // 写死一个不透明色会在暗色下闪一下亮色。主题一确定，
       // [applyWindowBackground] 就把它切成**不透明**（见那里的说明）。
-      // 与材质时代一致（`setEffect` 也是首帧后才应用），观感不比从前差。
       backgroundColor: Color(0x00000000),
       titleBarStyle: TitleBarStyle.hidden,
     );
@@ -101,13 +74,9 @@ abstract final class WindowService {
   /// 把**窗口自身**的底色设成 [AppTheme.windowBackground] 的**不透明**值。
   ///
   /// ## 为什么（2026-09-23）
-  /// 此前窗口是**全透明**的（`Color(0x00000000)`，Mica 时代留下的），底色靠 Flutter
-  /// 侧自绘 ⇒ 只要窗口透明，DWM 就得每帧把**整扇窗与桌面**做一次合成/混合
-  /// （它不知道我们的内容其实是实心的）。改成不透明后这笔就省了。
-  ///
-  /// ⚠️ **与 Mica 互斥**：Mica 要求窗口客户区**透明**（旧 `_applyWindowMaterial` 的
-  /// 注释原话："flutter_acrylic 会处理 DWM 属性与窗口透明 surface"）⇒ 哪天要上 Mica，
-  /// 这里必须改回 `Color(0x00000000)`，并让 [WindowBase] 那层重新担起"除左栏外铺底"。
+  /// 此前窗口是**全透明**的（`Color(0x00000000)`），底色靠 Flutter 侧自绘 ⇒
+  /// 只要窗口透明，DWM 就得每帧把**整扇窗与桌面**做一次合成/混合（它不知道我们
+  /// 的内容其实是实心的）。改成不透明后这笔就省了。
   ///
   /// ⚠️ **Windows 的落点是未公开 API**：window_manager 在
   /// `windows/window_manager.cpp:706` 用的是 `SetWindowCompositionAttribute` +

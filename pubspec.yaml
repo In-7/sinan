@@ -22,6 +22,8 @@ dependencies:
   uuid: ^4.6.0
   window_manager: ^0.5.2
   flutter_riverpod: 3.4.3
+  # 仅用它的 `Window.initialize` + `hideWindowControls`（自绘标题栏要摘掉系统窗控）；
+  # **不做窗口材质**（Mica / Acrylic 一律否决，见 `docs/ui_rewrite_plan.md` §5.6）。
   flutter_acrylic: ^1.1.4
   # 公式渲染（KaTeX 的纯 Dart 实现，无 WebView）：编辑器公式嵌入用。
   flutter_math_fork: ^0.7.2

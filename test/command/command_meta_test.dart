@@ -81,6 +81,11 @@ void main() {
       // 2026-09-30：全局搜索浮层 search.open（⌘K 范式）。编辑器已摘除官方
       // 插入链接命令（note_editor_view 的命令表过滤），Ctrl+K 正式进入空闲区。
       'Ctrl+K',
+      // 2026-10-06：nav.back / nav.forward（统一导航历史的键盘路）。Alt+←/→
+      // 是 Windows 资源管理器 / 浏览器的"后退 / 前进"惯例，桌面用户零学习。
+      // 编辑器不占这两个键（Alt+方向键在 appflowy 键表里无绑定）。
+      'Alt+Arrow Left',
+      'Alt+Arrow Right',
     };
     final RegExp functionKeys = RegExp(r'^F([1-9]|1[0-2])$');
     bool isFree(String label) =>

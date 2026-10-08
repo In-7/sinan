@@ -138,24 +138,24 @@ void main() {
       }
     });
 
-    test('$brightness：surface 与窗口底色同源（Mica 回退不跳色）', () {
+    test('$brightness：surface 与窗口底色同源（边界不跳色）', () {
       expect(theme.colorScheme.surface, AppTheme.windowBackground(brightness));
     });
 
     // ── §5.6 底色契约：纸面 = 窗口底（2026-09-22 用户定） ────────────────
-    // 两层都必须**不透明**（否则 Mica / 桌面壁纸从底下透上来）；而"纸面比窗口底
-    // 更亮"那条序**已被用户取消**（合并成同色）⇒ 分层改由描边 + 浮层承担。
+    // 两层都必须**不透明**（否则桌面壁纸从底下透上来）；而"纸面比窗口底更亮"那条序
+    // **已被用户取消**（合并成同色）⇒ 分层改由描边 + 浮层承担。
     // 合上"浮层 > 纸面"那一条，剩下的序是：**浮层 > 底**。
-    test('$brightness：纸面与窗口底都**不透明**（Mica / 壁纸不许从底下透上来）', () {
+    test('$brightness：纸面与窗口底都**不透明**（壁纸不许从底下透上来）', () {
       expect(
         AppTheme.contentCanvas(brightness).a,
         1.0,
-        reason: '$brightness：纸面透明 ⇒ 二级页面会透出 Mica / 桌面壁纸',
+        reason: '$brightness：纸面透明 ⇒ 二级页面会透出桌面壁纸',
       );
       expect(
         AppTheme.windowBackground(brightness).a,
         1.0,
-        reason: '$brightness：无 Mica 的回退底透明 ⇒ 直接露出锐利的桌面壁纸',
+        reason: '$brightness：窗口底透明 ⇒ 直接露出锐利的桌面壁纸',
       );
     });
 
@@ -176,7 +176,7 @@ void main() {
       );
     });
 
-    // §5.6：导航**板底**（boardFill 叠在窗口底上 = Mica 等效）上的文字对比度。
+    // §5.6：导航**板底**（boardFill 叠在窗口底上）上的文字对比度。
     // Craft 式侧栏靠字重与灰度分层 ⇒ 未选中项（次文字）也不能糊。
     test('$brightness：导航板底上，主/次文字都过 AA', () {
       final Color board = Color.alphaBlend(

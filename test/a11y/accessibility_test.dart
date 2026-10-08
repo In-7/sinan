@@ -38,8 +38,8 @@ import 'package:sqlite3/sqlite3.dart';
 ///   `tester.ensureSemantics()`。
 ///
 /// ## ⚠️ 两条"不能当真"的边界
-/// 1. **Mica 不可复现**：生产里侧栏/标题栏浮在半透明 Mica 上（背景是桌面壁纸），
-///    测试进程没有 DWM，只能用主题近似色 ⇒ 对比度结果**只有参考价值**，最终要人眼复核；
+/// 1. **生产底色不可完全复现**：测试进程没有平台窗口合成，只能用主题令牌近似
+///    ⇒ 对比度结果**只有参考价值**，最终要人眼复核；
 /// 2. 断言跑在**桌面口径**（24×24），不是移动端的 48 —— 我们最小窗宽 720，属高密度桌面 UI。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -96,7 +96,7 @@ void main() {
         settings: settings,
         dataDir: tempDir.path,
         brightness: b,
-        // 生产里列表浮在 Mica 上（不可复现，见文件头 ⚠️）。
+        // 生产里列表浮在窗口底上（不可复现，见文件头 ⚠️）。
         background: AppTheme.windowBackground(b),
         child: NoteListView(selectedId: note.id, onPick: (String _) {}),
         surface: '笔记列表[ $mode ]',

@@ -23,7 +23,7 @@ import 'package:sinan/src/theme/app_theme.dart';
 ///   `updateEditingValueWithDeltas`），而 Flutter 测试框架的 `TestTextInput`
 ///   **没有** delta 通道（`flutter_test/lib/src/test_text_input.dart` 无该方法），
 ///   且 appflowy 的 `updateEditingValue` 是空实现——测试框架无法驱动组合串。
-/// - ④ 的视觉部分：窗口 Mica 与编辑器底色的融合观感。
+/// - ④ 的视觉部分：窗口底与编辑器底色的融合观感。
 void main() {
   group('spike ②：官方块组件清单（含"无代码块"这一事实）', () {
     testWidgets('官方自带 9 类块组件；代码块不在注册表内', (WidgetTester tester) async {

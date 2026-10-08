@@ -117,8 +117,8 @@ Future<void> main() async {
 /// **只能成功调用一次**（重复调用抛 "Future already completed"）——用 Future
 /// 缓存保证全程只初始化一次，且并发调用共享同一个 Future（无竞态）。
 ///
-/// ⚠️ 窗口材质已取消（2026-09-22：窗口底改为 Flutter 自绘的渐变，三端统一），
-/// 但这一步**仍然需要**：[acrylic.Window.hideWindowControls] 要求先 initialize。
+/// 本应用**不做窗口材质**，这一步仍然需要：[acrylic.Window.hideWindowControls]
+/// 要求先 initialize。
 Future<void>? _acrylicInit;
 
 /// 隐藏系统窗控只需**一次**（幂等）。
@@ -131,9 +131,8 @@ bool _windowControlsHidden = false;
 
 /// 窗口侧的一次性准备：初始化 flutter_acrylic + 隐藏系统窗控（幂等）。
 ///
-/// **窗口材质取消后，这是启动时唯一要做的窗口侧动作**——不再有"先定窗口样式、
-/// 再设 backdrop"的顺序约束，也没有 DWM 合成的时序问题（原先那套延迟重试／幂等
-/// 短路／焦点重应用全是为 Mica 的偶发失效准备的，已一并删除）。
+/// 这是启动时唯一的窗口侧动作。窗口材质不做 ⇒ 没有"先定窗口样式、再设 backdrop"
+/// 的顺序约束，也没有 DWM 合成的时序问题。
 Future<void> _hideWindowControlsOnce() async {
   if (_windowControlsHidden) return;
   await (_acrylicInit ??= acrylic.Window.initialize());
@@ -167,9 +166,8 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
     // 接管（`WidgetsFlutterBinding` 初始化时会发 `System.initializationComplete`），
     // 我们只需登记观察者，**不要**自己去拦窗口消息。
     WidgetsBinding.instance.addObserver(this);
-    // 自绘标题栏：隐藏系统窗控（幂等）。**窗口材质已取消**（窗口底 = Flutter
-    // 自绘的渐变，三端统一，见 [AppTheme.windowGradient]）⇒ 这是启动时唯一的
-    // 窗口侧动作，不再有"先定窗口样式、再设 backdrop"的顺序约束。
+    // 自绘标题栏：隐藏系统窗控（幂等）。窗口材质不做 ⇒ 这是启动时唯一的窗口侧
+    // 动作，没有"先定窗口样式、再设 backdrop"的顺序约束。
     unawaited(_hideWindowControlsOnce());
     // 全局快捷键分发（`docs/ui_rewrite_plan.md` §3.2 的①面）：命令层注册的键位
     // 在这里落地。装载点选外壳 State 而不是 `main()`：它需要 `ref`（命令要读写
@@ -258,28 +256,24 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
       // 桥已标记 deprecated（material_ui 未来版本会移除），当前无替代，
       // 移除前提是 quill 生态适配 material_ui——遥遥无期。
       builder: (BuildContext context, Widget? child) {
-        // **窗口底 = 纯色**（§5.6；2026-09-22 定案）。
-        //
-        // 挂在 **builder 层**（Theme 之内、路由之外）⇒ 主页的 6px 缝、笔记页的
-        // 侧栏区共用同一层底；笔记/画布页整块铺纸面时它被盖住，无感知。
+        // **窗口底 = 纯色**（§5.6；2026-09-22 定案）。它由**平台窗口**铺
+        // （[WindowService.applyWindowBackground]），不在 Flutter 侧自绘 ⇒ 免掉
+        // 每帧一次全屏 fill。下面几句只解释"为什么是纯色而不是渐变"。
         //
         // ⚠️ **2026-09-22 由「微渐变」改成纯色**（用户实报色带后量化出来的账）：
         // 那条渐变两端只差 **6~7 个 8-bit 台阶**（`#0D0C0A → #141310`，亮色同量级），
         // 铺满全屏对角线 ⇒ **每 ~420px 一条**能看见的带。**台阶数 = 色带数**，所以只有
         // 三条路：接受色带 / 抖动掉它 / 把台阶压到 1（= 纯色）。
-        // 这层是**窗口底**、不承载任何信息 ⇒ 取纯色。Windows 11 的 Mica 底本身也是
-        // 纯色（它的"层次"来自壁纸，不是自绘渐变）——想再要渐变的味道，见 §5.6：
-        // 必须**同时**把它做成同 pass 抖动（`FragmentShader` 有序抖动），
-        // ⛔ 独立噪点层治不了（已实测：摘掉它色带仍在，加回它色带更重）。
-        // 渐变令牌 `AppTheme.windowGradient` 与它的测试都留着，随时可回来。
+        // 窗口底不承载任何信息 ⇒ 取纯色。想再要渐变的味道，见 §5.6：必须**同时**
+        // 把它做成同 pass 抖动（`FragmentShader` 有序抖动），⛔ 独立噪点层治不了
+        // （已实测：摘掉它色带仍在，加回它色带更重）。渐变令牌
+        // `AppTheme.windowGradient` 与它的测试都留着，随时可回来。
         //
-        // ⚠️ **窗口材质（Mica / Win10 回退纯色）已取消**：三端（Win/mac/Linux）
-        // 都用这一层自绘底，观感完全一致，也不再依赖 DWM 合成是否成功。
-        // 首帧之前的那一小段窗口仍是透明的（窗口材质本来也是首帧后才应用，
-        // 所以观感不比从前差）；要恢复材质见 git 历史里的 `_applyWindowMaterial`。
+        // ⚠️ **窗口材质不做**：三端（Win/mac/Linux）观感完全一致，也不依赖 DWM
+        // 合成是否成功。首帧之前的那一小段窗口仍是透明的。
         final Brightness brightness = Theme.of(context).brightness;
         // ⚡ **窗口自身切成不透明**（2026-09-23）：省掉"透明窗口 ⇒ DWM 每帧把整扇窗与
-        // 桌面混合"那笔。幂等（明暗没变不会重设），且与 Mica 互斥 —— 详见
+        // 桌面混合"那笔。幂等（明暗没变不会重设）—— 详见
         // [WindowService.applyWindowBackground] 的说明。
         unawaited(WindowService.applyWindowBackground(brightness));
         // 窗口底 + 顶边/顶角缩放手柄都在 [WindowBase] 里——**一处管全窗口**，且它抽成

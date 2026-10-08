@@ -14,6 +14,9 @@ import 'command.dart';
 /// ⚠️ 表只收汉字，**不收多音字**：这里的用途是"检索键"而不是"读音"，
 /// 一个字固定一个首字母即可（`行` 取 `x`）。
 const Map<int, String> _initialByRune = <int, String>{
+  0x4E0A: 's', // 上
+  0x4E0B: 'x', // 下
+  0x6B65: 'b', // 步
   0x547D: 'm', // 命
   0x4EE4: 'l', // 令
   0x9762: 'm', // 面
@@ -63,6 +66,14 @@ const Map<int, String> _initialByRune = <int, String>{
   0x4E0E: 'y', // 与
   0x5168: 'q', // 全
   0x5C40: 'j', // 局
+  // ── `nav.collapse`：title「折叠 / 展开导航栏」────────
+  0x6298: 'z', // 折
+  0x53E0: 'd', // 叠
+  0x5C55: 'z', // 展
+  0x5F00: 'k', // 开
+  0x5BFC: 'd', // 导
+  0x822A: 'h', // 航
+  0x680F: 'l', // 栏
 };
 
 /// **检索键**：汉字取首字母，ASCII 字母/数字原样小写，其余（空格、标点）丢弃。

@@ -14,7 +14,7 @@ import 'window_service.dart';
 /// - [WindowStrip]：**主区顶条**——拖拽区（+ 可选窄屏动作/标题）+
 ///   最小化/最大化/关闭。左侧导航板的顶行由 [HubNav] 自己承载，不在这里。
 ///
-/// 顶条不铺底色（底 = 窗口 Mica 材质），承担 DragToMoveArea 与双击
+/// 顶条不铺底色（底 = 窗口底纯色），承担 DragToMoveArea 与双击
 /// 最大化；失焦时文字降一级颜色（与系统应用的非焦点窗口行为一致）。
 ///
 /// 已知取舍：自绘按钮拿不到 Windows 11 的 Snap Layouts 悬停菜单。

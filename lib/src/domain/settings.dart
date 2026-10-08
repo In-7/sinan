@@ -43,6 +43,8 @@ class AppSettings {
     this.aiEndpoint = defaultAiEndpoint,
     this.aiModel = '',
     this.aiEmbeddingModel = '',
+    this.navCollapsed = false,
+    this.navRailWidth = 248.0,
   });
 
   /// 本地 LLM 的默认基址（Ollama 的约定端口）。
@@ -105,6 +107,14 @@ class AppSettings {
   /// 换了就全量重算。留空时索引/检索**自动降级为纯关键词**（6.4）。
   final String aiEmbeddingModel;
 
+  /// 左导航栏（[NavRail]）的折叠态：true = 收到 56px 图标轨。
+  ///
+  /// 默认 **false**（展开、图标 + 文字），第一眼能看见有什么。
+  final bool navCollapsed;
+
+  /// 左导航栏展开态宽度（px，可拖拽记忆 200–340）。
+  final double navRailWidth;
+
   /// 正文列宽（固定像素，不随窗口放大而变）。
   double get contentWidth => switch (widthMode) {
     // 三档都含块手柄的 48px（见 [EditorWidthMode] 的说明）。
@@ -125,6 +135,8 @@ class AppSettings {
     String? aiEndpoint,
     String? aiModel,
     String? aiEmbeddingModel,
+    bool? navCollapsed,
+    double? navRailWidth,
   }) => AppSettings(
     brightnessMode: brightnessMode ?? this.brightnessMode,
     widthMode: widthMode ?? this.widthMode,
@@ -134,6 +146,8 @@ class AppSettings {
     aiEndpoint: aiEndpoint ?? this.aiEndpoint,
     aiModel: aiModel ?? this.aiModel,
     aiEmbeddingModel: aiEmbeddingModel ?? this.aiEmbeddingModel,
+    navCollapsed: navCollapsed ?? this.navCollapsed,
+    navRailWidth: navRailWidth ?? this.navRailWidth,
   );
 
   // ── 持久化：key-value 与 store 的边界 ────────────────────
@@ -147,6 +161,8 @@ class AppSettings {
   static const String _kAiEndpoint = 'ai.endpoint';
   static const String _kAiModel = 'ai.model';
   static const String _kAiEmbeddingModel = 'ai.embeddingModel';
+  static const String _kNavCollapsed = 'nav.collapsed';
+  static const String _kNavRailWidth = 'nav.railWidth';
 
   /// 从 store 还原；任何键缺失或解析失败都回落到默认值
   /// （升级/降级/手工改库都不会崩）。
@@ -170,6 +186,8 @@ class AppSettings {
       aiEndpoint: store.get(_kAiEndpoint) ?? defaultAiEndpoint,
       aiModel: store.get(_kAiModel) ?? '',
       aiEmbeddingModel: store.get(_kAiEmbeddingModel) ?? '',
+      navCollapsed: store.get(_kNavCollapsed) == 'true',
+      navRailWidth: double.tryParse(store.get(_kNavRailWidth) ?? '') ?? 248.0,
     );
   }
 
@@ -183,6 +201,8 @@ class AppSettings {
       ..set(_kAiEnabled, aiEnabled.toString())
       ..set(_kAiEndpoint, aiEndpoint)
       ..set(_kAiModel, aiModel)
-      ..set(_kAiEmbeddingModel, aiEmbeddingModel);
+      ..set(_kAiEmbeddingModel, aiEmbeddingModel)
+      ..set(_kNavCollapsed, navCollapsed.toString())
+      ..set(_kNavRailWidth, navRailWidth.toString());
   }
 }

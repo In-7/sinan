@@ -51,6 +51,7 @@ class SurfaceLadder {
     required this.floatingDelta,
     required this.boardDelta,
     this.boardOverride,
+    this.railDelta = -3.0,
   });
 
   /// **亮色**一套：底 L\* 97.5 → 浮层 100（纯白）→ **板底向下 3.1**（一列下沉的导航列）。
@@ -64,6 +65,7 @@ class SurfaceLadder {
     // ⚠️ **破例：板底是向下的那一档**（2026-09-23 用户定）——详注见 [boardOverride]。
     boardDelta: -3.1,
     boardOverride: const Color(0xFFEFEFED),
+    // railDelta 走默认（−3.0）：亮色侧栏与板底**同档**（"比纸面深一档"）。
   );
 
   /// **暗色**一套：底 L\* 7.67 → 板底 17.6 → 浮层 19.4。
@@ -75,6 +77,9 @@ class SurfaceLadder {
     baseLstar: 7.67,
     floatingDelta: 11.7, // 暗色浮层要比亮色跨得大得多（投影更弱，靠底色差撑）
     boardDelta: 9.9, // 板底必须比底亮（板是"浮在底上的 sheet"）
+    // ⚠️ 侧轨与 board **反向**：rail 是"凹进窗体的列"，暗色也往下沉
+    // （暗底 L\* 7.67 已经很暗，再深就糊成一片 ⇒ 幅度比亮色小）。
+    railDelta: -2.2,
   );
 
   /// 底的 L\*（**唯一的手定数字**）。
@@ -89,14 +94,12 @@ class SurfaceLadder {
   /// 板底不走明度序时的**直接取值**（目前只有亮色用它）。
   ///
   /// ## 亮色的板底为什么是`#EFEFED`——而且**比底更深**（2026-09-23 用户定）
-  /// 它是**非 Mica 平台**（macOS / Linux / Win10）那条路上的导航列实色：
-  /// Win11 将来开了 Mica 之后，左栏会改成"系统材质 + 不透明下限叠色"，而 macOS /
-  /// Linux 拿不到材质 ⇒ 必须有一档**实色**让那一列仍然读得出"这是一列"。
+  /// 它是导航列那一列的**实色**（三端一致）：必须有一档实色，让左栏仍然读得出
+  /// "这是一列"。
   ///
   /// **为什么向下而不是向上**：此前它是"叠白 95%"（`0xF2FFFFFF`，合成后 `#FFFFFF`，
-  /// 比主区 `#F8F8F6` 亮 2.35 ΔL\*）；而 Win11 的 Mica 在亮色下**比内容区更沉**
-  /// （它是壁纸的均色，通常不是纯白）⇒ 回退档往下沉才与 Mica 那一侧同向，
-  /// 也正是 Notion 侧栏 / macOS Source List 的方向（**侧栏比内容区更沉**）。
+  /// 比主区 `#F8F8F6` 亮 2.35 ΔL\*）⇒ 列比主区更亮，读作"白面板压白底"、分不出列。
+  /// 往下沉则正是 Notion 侧栏 / macOS Source List 的方向（**侧栏比内容区更沉**）。
   ///
   /// 📌 取值是**量出来的**，不是挑的：候选按 ΔL\* 与文字 Lc 两个轴扫过一轮 ——
   /// | 候选 | ΔL\*（对底） | 正文 Lc | 次文字 Lc |
@@ -111,8 +114,18 @@ class SurfaceLadder {
   /// 直接把 `WindowBase` 那层掺进来 ⇒ 颜色不确定。
   final Color? boardOverride;
 
+  /// **侧轨**比纸面沉多少 ΔL\*（阶段 0 新增；AppRail / StatusBar / AI 轨共用）。
+  ///
+  /// 方向是**两个模式一致地往下沉**（rail 读作"凹进窗体的那一列"，与
+  /// [boardDelta] 在暗色那端**相反**——board 是"浮起的 sheet"，rail 不是）。
+  ///
+  /// ⚠️ 这两个数是**要实机 eyeball 的**，不是推导结论：改 `light` / `dark` 里
+  /// 各一个数即可，**别在调用点各自叠透明度**（那等于把刚拆掉的东西装回去）。
+  final double railDelta;
+
   double get floatingLstar => baseLstar + floatingDelta;
   double get boardLstar => baseLstar + boardDelta;
+  double get railLstar => baseLstar + railDelta;
 
   /// 底（**= 纸面**：`contentCanvas` 直接复用它，两处不许再漂开）。
   late final Color base = _derive(baseLstar, SurfaceShape.warm);
@@ -124,6 +137,12 @@ class SurfaceLadder {
   late final Color board =
       boardOverride ??
       _derive(boardLstar, SurfaceShape.cool).withValues(alpha: 0.95);
+
+  /// **侧轨**（AppRail / StatusBar / AI 轨那一列）：比纸面**沉一档**。
+  ///
+  /// 形状取 [SurfaceShape.warm]（与底**同族**）——读作"同一材质深一档"，
+  /// 而不是另一种材质的色块（[board] 那端才有冷灰的 sheet 语义）。
+  late final Color rail = _derive(railLstar, SurfaceShape.warm);
 }
 
 /// 按 **L\*** 反解出色值（尽量保住 [shape]）。

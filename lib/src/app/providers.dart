@@ -126,16 +126,19 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
   SelectedNoteNotifier.new,
 );
 
-/// 左侧 [HubNav] 导航面板的折叠态（桌面双栏布局）。
+/// 左侧 [NavRail] 导航栏的折叠态（桌面布局，2026-10-08 修订）。
 ///
-/// 折叠后整窗只留主区。默认展开。
-/// ⚠️ 2026-09-30：消费方（左侧第一列的 [HubNav] 导航板）已整列暂撤——用户要
-/// 换个形态重做；顶条折叠按钮保留，新形态接上即可用。
+/// 折叠 = 56px 图标轨；展开 = 图标 + 文字。默认展开（第一眼能看见有什么）。
+/// 状态持久化到 [AppSettings.navCollapsed]（重启恢复）。
 class NavCollapsedNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() => ref.watch(settingsProvider).navCollapsed;
 
-  void toggle() => state = !state;
+  void toggle() {
+    final bool next = !state;
+    final AppSettings s = ref.read(settingsProvider);
+    ref.read(settingsProvider.notifier).update(s.copyWith(navCollapsed: next));
+  }
 }
 
 final navCollapsedProvider = NotifierProvider<NavCollapsedNotifier, bool>(
@@ -286,7 +289,12 @@ final answerServiceProvider = Provider<AnswerService>(
 // 画布页一律入栈，严格按点击顺序进退。此前历史只记主页视图（编辑器不在栈
 // 里），"进笔记后按上一步"因此失效。
 
-/// 主页内的视图（顶栏 tab / 三点溢出菜单的目的地）。
+/// 主页内的**视图**（顶栏 tab 的目的地）——只表达**投影**，不表达类型。
+///
+/// ⚠️ 2026-10-05 决策 E：原先的 `notes` / `canvas` 两值**已移除**。笔记 /
+/// 画布答的是"它是什么"（类型），与"我怎么看"（投影）是两个维度，混进一排
+/// tab 就是类别错误。类型现在走筛选器的「形态」facet（`home_hub.dart` 的
+/// [NoteKindFacet]），三点溢出菜单随之退役。
 ///
 /// ⚠️ 从 `home_hub.dart` 迁来（2026-09-30）：统一导航历史要同时表达"主页
 /// 视图"与"某篇笔记页"两种目的地，而它必须与 `locateProvider` 同住本文件
@@ -294,9 +302,10 @@ final answerServiceProvider = Provider<AnswerService>(
 /// 扫描）。视图的 `icon()` 扩展仍在 home_hub.dart——要引用 tabler /
 /// CustomIcons，不进 DI 层。
 enum HomeView {
+  /// **心流**：按 `revisedAt` 分组的时间流（今天 / 昨天 / 本周…）。
+  /// **启动默认视图**（2026-10-05 决策 C），也是 tab 行第一枚。
+  timeline('心流'),
   all('全部'),
-  notes('笔记'),
-  canvas('画布'),
   calendar('日历'),
   favorites('收藏');
 
@@ -383,7 +392,8 @@ class NavHistoryNotifier extends Notifier<NavHistoryState> {
 
   @override
   NavHistoryState build() => const NavHistoryState(
-    view: HomeView.all,
+    // 启动默认落「心流」（2026-10-05 决策 C）——与 [kHomeTabs] 首枚保持一致。
+    view: HomeView.timeline,
     canGoBack: false,
     canGoForward: false,
   );

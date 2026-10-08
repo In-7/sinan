@@ -46,7 +46,7 @@ class AppTheme {
   /// 内容画布色：浮在窗口底色之上的编辑区实底面板。
   ///
   /// ## 亮色：中性微降白（不纯白）
-  /// `#FAFAFA`——纯白降一档亮度，与冷灰 Mica 同色系，读感是白纸又不眩光
+  /// `#FAFAFA`——纯白降一档亮度，读感是白纸又不眩光
   /// （要更"纯"可改 `0xFFFFFFFF`，要更柔可降到 `0xFFF2F2F2`）。
   ///
   /// ## ⚠️ 2026-09-22 用户定：**与窗口底同色**（不再单独一档）
@@ -278,12 +278,32 @@ class AppTheme {
   /// - **暗色**：板是"浮在窗口底上的 sheet" ⇒ **必须比底亮**。`#2A2B2F` = L\* 17.6，比抬档
   ///   后的底 `#171715`（7.7）高 **+9.9**，与抬档前的关系一致。2026-09-22 暗底抬档时**它是
   ///   跟着抬的**（`#1E1F23` 只有 L\* 11.7 ⇒ 不抬就比底还暗、整块陷进去）。
-  /// - **亮色**：板底是**下沉的一列**（非 Mica 平台的导航列实色 `#EFEFED`，比主区
+  /// - **亮色**：板底是**下沉的一列**（导航列实色 `#EFEFED`，比主区
   ///   `#F8F8F6` 深 **3.1 ΔL\***）——亮色那端已贴到白，往上提就是"白面板压白底"。
   ///   完整理由与候选表见 `surface_ladder.dart` 的 [boardOverride]（**值改那里，别改这里**）。
   /// 📌 暗色板底的**冷灰形状**（R, R+1, R+5）是刻意的（Craft 那种"中性 sheet"），与底的暖调不同，
   /// 别把它也改成 `R=G, B=R−2`。亮色回退档则是**与底同族**（暖调），读作"同一材质深一档"。
   static Color boardFill(Brightness brightness) => ladder(brightness).board;
+
+  /// **侧轨**（AppRail / StatusBar / AI 轨那一列）的底色（阶段 0 新增）。
+  ///
+  /// 与 [boardFill] 的区别在于**方向**：board 是"浮在底上的 sheet"（暗色那端
+  /// 比底**亮**），rail 是"凹进窗体的列"（**两个模式都比纸面沉**）——两者语义
+  /// 相反，不要混用。值来自 `surface_ladder.dart` 的 `railDelta`（改那里）。
+  static Color railFill(Brightness brightness) => ladder(brightness).rail;
+
+  /// **通用 hover 微镀**（阶段 0 新增）：列表行 / 卡片 / 按钮 hover 的**统一入口**。
+  ///
+  /// 返回**半透明叠加色**（画在原有底色之上），不是绝对色 ⇒ 同一个 hover 能用在
+  /// 纸面、板底、卡片底等任何底上，不必为每种底各配一档。
+  /// 量：亮 = 黑 4%，暗 = 白 12%（暗色要更大量才看得出）。
+  ///
+  /// ⚠️ 与 [boardFillHover] 的关系：后者是**板底专用**的历史口径，新代码一律用
+  /// 本函数；两者**不要叠加**（叠了会比设计档重一倍）。
+  static Color hoverOverlay(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.12)
+      : Colors.black.withValues(alpha: 0.04);
 
   /// [boardFill] 之上的**叠加档**（导航项悬停）：暗 = 白 6%，亮 = 黑 5%。
   /// 是**叠在近实板底上的量**，不是从零算的绝对值。
@@ -303,7 +323,7 @@ class AppTheme {
   ///   **井上再叠一档白**（8%，与 [cardFillHover] 同档）。
   ///
   /// ⚠️ 用 `Color.lerp` 烤成**不透明色**而不是半透明填充："发脏"教训针对的是
-  /// alpha 直铺在 Mica 上混进壁纸色相；这里是叠在近实中性井上再烤实，不透底。
+  /// alpha 直铺会混进下层色相；这里是叠在近实中性井上再烤实，不透底。
   /// 且向中性白 lerp 会保住板底 (R, R+1, R+5) 的冷灰形状（#2A2B2F → #3B3C40）。
   ///
   /// ⚠️ 不能无脑用 [windowBackground]：暗色窗口底 `#171715` 比井**还暗**，
@@ -316,15 +336,15 @@ class AppTheme {
       : windowBackground(brightness);
 
   /// **卡片/导航项的填充**（WinUI `CardBackgroundFillColorDefault` 同款）：
-  /// 直接坐在 Mica 上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
+  /// 直接坐在窗口底上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
   ///
   /// 半透明**纯色** ⇒ 每像素一次混合、**不产生 saveLayer**（成本 ≈ 不透明纯色）。
   /// ⚠️ 想调透感就改这里的 alpha，**不要**用 `Opacity`/`AnimatedOpacity` widget
   /// （那才强制 saveLayer），也**不要**碰 `BackdropFilter`（模糊是红线）。
   ///
   /// ⚠️ **不要**给常驻内容加"面板底"：曾按 WinUI `LayerFillColorDefault` 铺过
-  /// `#3A3A3A`@30%——灰罩在壁纸染色的 Mica 上显"脏"（2026-09-22 与系统设置并排
-  /// 对比后否决，记录在 `docs/ui_rewrite_plan.md` §5.6）。
+  /// `#3A3A3A`@30%——灰罩在窗口底上显"脏"（2026-09-22 与系统设置并排对比后否决，
+  /// 记录在 `docs/ui_rewrite_plan.md` §5.6）。
   static Color cardFill(Brightness brightness) => brightness == Brightness.dark
       ? Colors.white.withValues(alpha: 0.05)
       : Colors.white.withValues(alpha: 0.70);
@@ -355,8 +375,7 @@ class AppTheme {
   ///   **每 ~420px 一条**能看见的色带（2026-09-22 用户实报）——**台阶数 = 色带数**，
   ///   这就是它被撤掉的原因。
   /// ⚠️ **铁律：两端每通道差 ≤ 10/255（≈4% 明度）**——淡到说不出哪里变了才对，
-  /// 能看出"这是个渐变"就廉价了（有测试钉着）。它曾替代 DWM 的 Mica（渐变不透明
-  /// ⇒ 盖住材质），窗口材质已取消，这条历史留着。
+  /// 能看出"这是个渐变"就廉价了（有测试钉着）。窗口材质不做，这条历史留着。
   static LinearGradient windowGradient(Brightness brightness) =>
       brightness == Brightness.dark
       ? const LinearGradient(
@@ -925,9 +944,11 @@ class AppTheme {
   static Color _desaturate(Color c) =>
       HSLColor.fromColor(c).withSaturation(0).toColor();
 
-  /// 亮色默认种子 **#00B5B5**（2026-09-13）：同色相轴上的高彩度档，
-  /// "种子即主色"后 primary 就是它本色——电光青、比 Tone 40 派生档鲜。
-  static ThemeData light({Color seed = const Color(0xFF00B5B5)}) =>
+  /// 亮色默认种子 **#0D9488**（2026-10-05 由 #00B5B5 换入，决策 A）：
+  /// 原档偏荧光（电光青），长时间注视刺眼；换成 Tailwind Teal 600 这一档——
+  /// **同色相轴、彩度降一档、明度略低**，与暗色种子的"身份"仍一致。
+  /// 只动这一处默认值（换主题 = 换种子），APCA 体检表兜底。
+  static ThemeData light({Color seed = const Color(0xFF0D9488)}) =>
       _build(seed, Brightness.light);
 
   /// 暗色默认用专用种子 **#00CED1**（[defaultDarkSeed]）：亮青在暗画布上

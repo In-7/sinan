@@ -107,6 +107,45 @@ List<Command> buildCommands(Ref ref) => <Command>[
     ],
     run: (CommandContext _) => runCreateNote(ref, NoteKind.canvas),
   ),
+  // ── 导航（2026-10-06 决策 D）：Alt+←/→ 是「上一步 / 下一步」的键盘路，
+  // 与顶条按钮**同一条路**（都走 navHistoryProvider）。栈空时 goBack /
+  // goForward 自身就是 no-op ⇒ 不用 enabled 置灰。
+  Command(
+    id: 'nav.back',
+    title: '上一步',
+    group: CommandGroup.navigate,
+    scope: CommandScope.global,
+    keys: <KeyBinding>[
+      const KeyBinding(key: LogicalKeyboardKey.arrowLeft, alt: true),
+    ],
+    run: (CommandContext _) async =>
+        ref.read(navHistoryProvider.notifier).goBack(),
+  ),
+  Command(
+    id: 'nav.forward',
+    title: '下一步',
+    group: CommandGroup.navigate,
+    scope: CommandScope.global,
+    keys: <KeyBinding>[
+      const KeyBinding(key: LogicalKeyboardKey.arrowRight, alt: true),
+    ],
+    run: (CommandContext _) async =>
+        ref.read(navHistoryProvider.notifier).goForward(),
+  ),
+  // 折叠 / 展开左导航栏（2026-10-08）：`Ctrl+\` 接上——原 `ui_rewrite_plan.md`
+  // §3.4 已登记、此前卡在"侧栏不可折叠"；现在 [NavRail] 落地，卡点消除。
+  Command(
+    id: 'nav.collapse',
+    title: '折叠 / 展开导航栏',
+    group: CommandGroup.navigate,
+    scope: CommandScope.global,
+    keys: <KeyBinding>[
+      const KeyBinding(key: LogicalKeyboardKey.backslash, control: true),
+    ],
+    run: (CommandContext _) async {
+      ref.read(navCollapsedProvider.notifier).toggle();
+    },
+  ),
   Command(
     id: 'note.promote',
     title: '收藏 / 取消收藏',
@@ -197,11 +236,35 @@ List<Command> buildCommands(Ref ref) => <Command>[
 ///
 /// 选中新笔记这一步不能省：不选中的话，用户按了 Ctrl+N 只看到列表多一条，
 /// 光标还在原处——"新建"的心理预期是**立刻开始写**。
-Future<void> runCreateNote(Ref ref, NoteKind kind) async {
+/// [title]：捕获条（[OmniBar]）把用户刚敲的那句话当标题带进来；命令
+/// `note.new` / `canvas.new` 不传（"新建"就是一篇空白）。
+///
+/// ⚠️ 两条入口**共用这一条写路径**——捕获条若自己 create+saveTitle，迟早与
+/// 命令漂移成两套创建逻辑。
+Future<void> runCreateNote(Ref ref, NoteKind kind, {String? title}) async {
   final Note note = await ref
       .read(notesProvider.notifier)
       .createNote(kind: kind);
+  final String t = title?.trim() ?? '';
+  if (t.isNotEmpty) {
+    await ref.read(notesProvider.notifier).saveTitle(note.id, t);
+  }
   // 经 `locateProvider` 而不是直接写选中态（§4：换笔记就是跳转，只此一条路）。
   // `focus: true`：新建之后就该能直接打字——这正是"新建"的心理预期。
+  ref.read(locateProvider.notifier).locate(noteId: note.id, focus: true);
+}
+
+/// 捕获条（[OmniBar]）专用入口：把刚敲的那句话当标题新建一篇 spark。
+///
+/// ⚠️ 为什么不是直接复用 [runCreateNote]：Riverpod 的 [WidgetRef] **不是**
+/// [Ref] 的子类型，两者无法共用同一个签名（改任一端都会让另一端编译不过）。
+/// 所以这里是**同一条管线的第二份签名**（create → saveTitle → locate），
+/// 不是第二套逻辑——改管线请把两处一起改。
+Future<void> runCaptureNote(WidgetRef ref, String title) async {
+  final Note note = await ref.read(notesProvider.notifier).createNote();
+  final String t = title.trim();
+  if (t.isNotEmpty) {
+    await ref.read(notesProvider.notifier).saveTitle(note.id, t);
+  }
   ref.read(locateProvider.notifier).locate(noteId: note.id, focus: true);
 }

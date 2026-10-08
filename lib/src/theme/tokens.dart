@@ -137,4 +137,12 @@ class Tokens {
   // Apple 口径（§9.2）：比 M3 略长、收尾更缓——"精致"有一半在节奏。
   static const Duration durationFast = Duration(milliseconds: 150);
   static const Duration durationNormal = Duration(milliseconds: 250);
+
+  /// **hover / 按压**的过渡（阶段 0 新增，≤120ms 档）。
+  ///
+  /// 与上面两档**分工不同**：[durationFast] / [durationNormal] 是"内容变化"
+  /// （展开、切换、浮层进出）的节奏，要**看得见过程**；hover 是**跟随指针的
+  /// 反馈**，慢了会黏手——指针已经移开、底色还在追。桌面端 hover 是高频动作，
+  /// 故单列一档而不复用 150。
+  static const Duration durationHover = Duration(milliseconds: 100);
 }

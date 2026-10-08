@@ -11,11 +11,13 @@ import '../command/commands.dart';
 import '../domain/note.dart';
 import 'home_hub.dart';
 import 'hub_nav.dart';
+import 'nav_rail.dart';
 import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show showSettingsPanel;
+import 'status_bar.dart';
 import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
@@ -56,7 +58,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final String? selectedId = ref.watch(selectedNoteIdProvider);
 
-    // ★ §5.6 阶段 2：**未选中 = 主页**（全窗口 Mica + 卡片入口分区）；选中 = 笔记 /
+    // ★ §5.6 阶段 2：**未选中 = 主页**（窗口底 + 卡片入口分区）；选中 = 笔记 /
     // 画布页。同一个 `selectedNoteIdProvider` 驱动，不新增页面栈——切换，不是叠加。
     //
     // 2026-09-25 统一桌面布局：右栏随 `selectedId` 在主页 / 编辑器之间切换——
@@ -144,11 +146,9 @@ class HomeScreen extends ConsumerWidget {
         body: Row(
           crossAxisAlignment: .stretch,
           children: <Widget>[
-            // 左侧第一列的列表「折叠面板」（导航板 [HubNav]，原宽 275）已于
-            // 2026-09-30 **整列暂撤**——用户要换个形态重做。折叠按钮保留在
-            // 顶条左簇，[navCollapsedProvider] 折叠机制也保留，新形态接上即可用。
-            // ⚠️ 第一列总导航栏（50px AppRail）已于 2026-09-29 撤掉：主页 /
-            // 设置 / 上一步 / 下一步都搬进主区顶条（[WindowStrip]）。
+            // 可折叠左导航栏（2026-10-08 修订：撤销决策 B，目的地从 WindowStrip 迁回
+            // 左栏）。折叠 = 56px 图标轨，展开 = 248px 图标 + 文字；`Ctrl+\` 折叠/展开。
+            const NavRail(),
             // 右栏：**全程与窗口底同色**（2026-09-29 用户定）。选中态曾经铺过
             // 一层"编辑器画布底 + 纸面噪点"想跟左栏形成硬分区，但画布底早已并入
             // 窗口底、噪点又把笔记页染得和主页不一样（用户实报"点进笔记会变色"）
@@ -158,25 +158,19 @@ class HomeScreen extends ConsumerWidget {
               child: selectedId == null
                   ? Column(
                       children: <Widget>[
-                        // 主页分支的顶条（2026-09-29 用户定）：左簇自左向右 =
-                        // 折叠面板（整栏开关，钉最左）+ 上一步 + **主页** +
-                        // 下一步（主页夹在两个历史箭头中间）；右簇 = 设置
-                        // （紧挨 AI 开关）+ AI 轨开关。全局动作靠右、页面
-                        // 导航靠左。
+                        // 主页分支的顶条：左簇自左向右 = 上一步 + **主页** +
+                        // 下一步（主页夹在两个历史箭头中间）+ 目的地（日历 /
+                        // 收藏，2026-10-06 决策 B）；右簇 = 设置（紧挨 AI 开关）
+                        // + AI 轨开关。全局动作靠右、页面导航靠左。
                         const WindowStrip(
                           leading: <Widget>[
-                            NavCollapseButton(),
                             NavHistoryButton(),
-                            HomeNavButton(),
                             NavHistoryButton(forward: true),
                           ],
                           // 主页拖拽带正中**不放**搜索入口（2026-10-01 用户定）：
                           // 主页已有页内搜索框，再放一枚胶囊会出现"两个搜索框"
                           // 的选择负担。全局浮层靠 Ctrl+K 唤起。
-                          trailing: <Widget>[
-                            SettingsNavButton(),
-                            AiRailToggleButton(),
-                          ],
+                          trailing: <Widget>[],
                         ),
                         Expanded(
                           child: Row(
@@ -201,6 +195,9 @@ class HomeScreen extends ConsumerWidget {
                             ],
                           ),
                         ),
+                        // **状态栏**（阶段 2）：只放状态不放动作（库规模 +
+                        // 键位提示），贴窗底。
+                        const StatusBar(),
                       ],
                     )
                   : DecoratedBox(
@@ -224,24 +221,19 @@ class HomeScreen extends ConsumerWidget {
                           Column(
                             children: <Widget>[
                               const WindowStrip(
-                                // 左簇与主页分支**同一簇、同一顺序**：折叠面板
-                                // （最左）+ 上一步 + 主页 + 下一步
-                                // （2026-09-29 用户定：替换旧的「上一页」单钮
-                                // ——编辑器不在视图历史栈里，所以箭头按下时
-                                // 先回主页再走历史）。
+                                // 左簇与主页分支**同一簇、同一顺序**：
+                                // 上一步 + 主页 + 下一步 + 目的地（日历 / 收藏）
+                                // （2026-09-29 用户定：替换旧的「上一页」单钮；
+                                // 2026-10-06 决策 B：目的地并入标题栏后，编辑器
+                                // 里也能直达日历 / 收藏）。
                                 leading: <Widget>[
-                                  NavCollapseButton(),
                                   NavHistoryButton(),
-                                  HomeNavButton(),
                                   NavHistoryButton(forward: true),
                                 ],
                                 // 拖拽带正中**不放**搜索入口（2026-10-01 用户定）：
                                 // 主页有页内搜索框、编辑器内有 Ctrl+F 内容查找、
                                 // 全局快速跳转统一走 Ctrl+K——标题栏不再放图标。
-                                trailing: <Widget>[
-                                  SettingsNavButton(),
-                                  AiRailToggleButton(),
-                                ],
+                                trailing: <Widget>[],
                               ),
                               // 顶条与内容之间的分隔线（2026-09-14 用户定案）：
                               // 右列因此分成"标题带（拖拽 + 窗控）"与"内容"两段。
@@ -272,6 +264,8 @@ class HomeScreen extends ConsumerWidget {
                                   ],
                                 ),
                               ),
+                              // **状态栏**（阶段 2）：只放状态不放动作。
+                              const StatusBar(),
                             ],
                           ),
                         ],
@@ -541,8 +535,8 @@ class _AiRailSlot extends StatelessWidget {
 
 /// **AI 问答轨开关**（桌面顶条右端，紧贴「最小化」左侧）。
 ///
-/// 与左端的 [NavCollapseButton] **左右对称**：一边管左栏、一边管右轨，两枚都
-/// 钉在窗控条上——位置固定，不随"现在哪个分栏在显示"变（AI 轨在主页时同样能开）。
+/// 钉在窗控条上——位置固定，不随"现在哪个分栏在显示"变（AI 轨在主页时同样
+/// 能开）。
 ///
 /// - 走命令层 `ai.ask`：按钮与 `Ctrl+J` 必须是**同一条路**（§3.2 命令是权威面）；
 /// - 开态披一档中性 tint（[AppTheme.navSelectedTint]）——它是个开/关，得如实
@@ -574,35 +568,39 @@ class AiRailToggleButton extends ConsumerWidget {
   }
 }
 
-/// **折叠 / 展开左栏**（2026-09-29 用户定：钉在左簇**最左端**，排在上一步 /
-/// 主页 / 下一步**之前**——它是"整栏开关"，语义上不属于页面导航那一簇）。
+/// **目的地钮**（阶段 2，2026-10-06 决策 B）：日历 / 收藏并入标题栏，**不再建
+/// 48px 左 rail**——rail 的目的地与视图 tab / 右端钮高度重复，净增量只有
+/// "编辑器内直达"，用一整列 48px 买它不值。
 ///
-/// 展开态可随时折叠；折叠态（此时 [HubNav] 不渲染）靠它重新展开。
-/// 图标随状态切换：展开 → `LayoutSidebarLeftCollapse`（提示可收起），
-/// 折叠 → `LayoutSidebarLeftExpand`。
-///
-/// ⚠️ 2026-09-30：左侧第一列的 [HubNav] 面板本体已整列暂撤（用户要换形态
-/// 重做），本按钮保留——当前切换暂无可见效果，新形态接上即可用。
-class NavCollapseButton extends ConsumerWidget {
-  const NavCollapseButton({super.key});
+/// 行为与视图 tab **同源**（[NavHistoryNotifier.selectHome]）⇒ 在编辑器里
+/// 按下 = 离开编辑器去那个视图，且进统一导航历史。主页态高亮当前视图
+/// （"我在哪"），编辑态全灰（"在笔记里"不属于任何目的地）。
+class NavDestinationButton extends ConsumerWidget {
+  const NavDestinationButton({
+    super.key,
+    required this.view,
+    required this.icon,
+  });
+
+  final HomeView view;
+
+  /// 图标按**当前色**现画（tabler 是自绘 widget，不读 IconTheme）。
+  final Widget Function(Color color) icon;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bool collapsed = ref.watch(navCollapsedProvider);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool onHome = ref.watch(selectedNoteIdProvider) == null;
+    final bool active = onHome && ref.watch(navHistoryProvider).view == view;
     return IconButton(
-      icon: collapsed
-          ? const tabler.LayoutSidebarLeftExpand(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-              strokeWidth: 1.5,
-            )
-          : const tabler.LayoutSidebarLeftCollapse(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-              strokeWidth: 1.5,
-            ),
-      tooltip: collapsed ? '展开面板' : '折叠面板',
-      onPressed: () => ref.read(navCollapsedProvider.notifier).toggle(),
+      tooltip: view.label,
+      style: IconButton.styleFrom(
+        backgroundColor: active
+            ? AppTheme.navSelectedTint(scheme.onSurface)
+            : Colors.transparent,
+      ),
+      icon: icon(active ? scheme.onSurface : scheme.onSurfaceVariant),
+      onPressed: () => ref.read(navHistoryProvider.notifier).selectHome(view),
     );
   }
 }
@@ -637,10 +635,10 @@ class HomeNavButton extends ConsumerWidget {
       tooltip: '主页',
       onPressed: () {
         // 回主页：统一走导航历史——[NavHistoryNotifier.selectHome] 会把当前
-        // 位置（编辑器里 = 这篇笔记）压入 back、离开编辑器并落回「全部」
-        // （2026-09-30 用户定：主页默认全部）；「上一步」即按点击顺序回到
-        // 进主页前的笔记。
-        ref.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+        // 位置（编辑器里 = 这篇笔记）压入 back、离开编辑器并落回**默认落地页
+        // 「心流」**（2026-10-05 决策 C：主页默认视图改心流，主页钮随之指向
+        // 它）；「上一步」即按点击顺序回到进主页前的位置。
+        ref.read(navHistoryProvider.notifier).selectHome(HomeView.timeline);
         ref.read(hubNavSelectionProvider.notifier).select(0);
       },
     );

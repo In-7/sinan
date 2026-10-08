@@ -139,6 +139,16 @@ class SearchNotifier extends Notifier<SearchState> {
     _timer = Timer(kSearchDebounce, () => _search(q));
   }
 
+  /// 撤词 / 退出搜索态：回到初始空态（主页恢复该视图原表）。
+  ///
+  /// 2026-10-08：捕获框不再做搜索，搜索态的唯一入口是 Ctrl+K 浮层；此方法是
+  /// "退出搜索态"的显式出口（浮层关闭后主页搜索态的回退）。
+  void reset() {
+    _timer?.cancel();
+    _seq++;
+    state = const SearchState();
+  }
+
   /// 选中 / 取消一个标签筛选（点已选中的 = 取消，传 null）。
   ///
   /// 三种情形：

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/ask_panel.dart';
 import 'package:sinan/src/app/home_screen.dart';
+import 'package:sinan/src/app/nav_rail.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
@@ -88,7 +89,7 @@ void main() {
 
   /// 顶条右端那枚开关的**位置闸门**：它必须紧贴「最小化」左侧，而不是跑到
   /// 别处（用户明确指定："位置放在最小化左边"）。
-  testWidgets('宽窗：顶条右端有「问笔记」按钮，紧贴最小化左侧（左栏按钮的镜像）', (WidgetTester tester) async {
+  testWidgets('宽窗：左栏底部有「问笔记」开关，点开右轨', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -96,26 +97,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    final Finder toggle = find.byTooltip('问笔记（Ctrl+J）');
-    expect(toggle, findsOneWidget, reason: '顶条必须有可见的开关按钮');
+    // 2026-10-08 修订：撤销决策 B，AI 开关与目的地一起迁回左导航栏底部
+    //（不再在顶条右端、也不再带「（Ctrl+J）」tooltip——左栏 tile 用 GestureDetector）。
+    final Finder ai =
+        find.descendant(of: find.byType(NavRail), matching: find.text('问笔记'));
+    expect(ai, findsOneWidget, reason: '左栏必须有可见的 AI 开关');
 
-    final Rect ai = tester.getRect(toggle);
-    final Rect minimize = tester.getRect(find.byTooltip('最小化'));
-    expect(
-      ai.right,
-      lessThanOrEqualTo(minimize.left + 0.5),
-      reason: '开关应在最小化**左边**（主角：${ai.right} vs 最小化左缘 ${minimize.left}）',
-    );
-    // 与左端折叠按钮同一条窗控带（同一水平中线）。
-    final Rect collapse = tester.getRect(find.byTooltip('折叠面板'));
-    expect(
-      (ai.center.dy - collapse.center.dy).abs(),
-      lessThan(0.5),
-      reason: '两枚开关应在同一条顶条上左右对称，而不是错开高度',
-    );
+    // 它落在左导航栏内（贴窗左缘），而不是顶条右端。
+    final Rect rail = tester.getRect(find.byType(NavRail));
+    final Rect aiRect = tester.getRect(ai);
+    expect(rail.left, closeTo(0, 0.5), reason: '导航栏贴窗左缘');
+    expect(aiRect.left, greaterThanOrEqualTo(rail.left - 0.5));
+    expect(aiRect.right, lessThanOrEqualTo(rail.right + 0.5),
+        reason: 'AI 开关应落在左导航栏内');
+
+    // 默认未开。
+    expect(container.read(aiPanelOpenProvider), isFalse);
   });
 
-  testWidgets('宽窗：顶条按钮开合右轨；关闭时轨收为 0 宽、开态披 tint', (WidgetTester tester) async {
+  testWidgets('宽窗：左栏「问笔记」开合右轨；关闭收 0 宽、开态披 tint', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -132,22 +132,20 @@ void main() {
         .first;
     expect(tester.getSize(slot).width, 0, reason: '默认收起 ⇒ 槽宽 0（内容被裁掉、点不着）');
 
-    final Finder toggle = find.byTooltip('问笔记（Ctrl+J）');
-    // `byTooltip` 命中的是按钮**内部**的 Tooltip ⇒ 样式要去它的祖先 IconButton 上取。
-    final Finder toggleButton = find
-        .ancestor(of: toggle, matching: find.byType(IconButton))
+    final Finder ai =
+        find.descendant(of: find.byType(NavRail), matching: find.text('问笔记'));
+    // 左栏 tile 用 GestureDetector + AnimatedContainer，底色走 decoration。
+    // ⚠️ 内层是 AnimatedContainer（**不是** Container 子类），finder 必须换。
+    final Finder tile = find
+        .ancestor(of: ai, matching: find.byType(AnimatedContainer))
         .first;
-    // 关闭态底色必须透明（不能落到 surface 的近黑 ⇒ 黑方块）。
+    // 关闭态底色透明（不能落到 surface 的近黑 ⇒ 黑方块）。
     expect(
-      tester
-          .widget<IconButton>(toggleButton)
-          .style
-          ?.backgroundColor
-          ?.resolve(const <WidgetState>{}),
-      Colors.transparent,
+      tester.widget<AnimatedContainer>(tile).decoration,
+      isA<BoxDecoration>().having((BoxDecoration d) => d.color, 'color', Colors.transparent),
     );
 
-    await tester.tap(toggle);
+    await tester.tap(ai);
     await tester.pumpAndSettle(); // 200ms 宽度动画走完
 
     expect(container.read(aiPanelOpenProvider), isTrue);
@@ -167,16 +165,12 @@ void main() {
     );
     // 开态披一档中性 tint：它是个开/关，得如实显示现在开着。
     expect(
-      tester
-          .widget<IconButton>(toggleButton)
-          .style
-          ?.backgroundColor
-          ?.resolve(const <WidgetState>{}),
-      isNot(Colors.transparent),
+      tester.widget<AnimatedContainer>(tile).decoration,
+      isA<BoxDecoration>().having((BoxDecoration d) => d.color, 'color', isNot(Colors.transparent)),
     );
 
     // 再点一次 ⇒ 收起（同一个按钮管开也管关）。
-    await tester.tap(toggle);
+    await tester.tap(ai);
     await tester.pumpAndSettle();
     expect(container.read(aiPanelOpenProvider), isFalse);
     expect(tester.getSize(slot).width, 0);

@@ -3,10 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-// 键盘事件类型（搜索框 Esc / Enter）：KeyDownEvent / LogicalKeyboardKey
-// 在 `services.dart`，不由 material 转出。
 import 'package:flutter/foundation.dart' show compute;
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -19,33 +16,34 @@ import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
+import 'note_display.dart';
+import 'omni_bar.dart';
 import 'providers.dart';
 import 'search_provider.dart';
+import 'stream_view.dart';
 
 /// 主页顶部的**视图切换**（2026-09-29 用户定，取代 Things 式单列一页纸）。
 ///
 /// 五个视图各答一个问题，浏览时**正交于搜索框**（[searchNotifierProvider]）；
 /// 一旦输入查询词，内容区统一切到**全局搜索结果态**（[_SearchResultsView]），
 /// 与当前 tab 无关——搜索跨笔记/画布、覆盖日历（2026-09-30 用户定）。
+/// - [HomeView.timeline]：**心流**——按 `revisedAt` 分组的时间流（今天 /
+///   昨天 / 本周…），**启动默认视图**且是 tab 行第一枚（2026-10-05 决策 C）。
 /// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
 ///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
 ///   什么直接看前几张卡即可（2026-09-29 用户定：不单设「最近」视图）。
-/// - [HomeView.notes]：文档类笔记（spark + note）的卡片网格。**低频**，
-///   顶栏无常驻 tab——入口在顶栏三点溢出菜单（[kLowFreqViews]）。
-/// - [HomeView.canvas]：画布类（canvas）的卡片网格。同上。
 /// - [HomeView.calendar]：按新建日期回看（日历网格成一张卡片，卡片底部
 ///   「写日记」**只写今天**——点选日只管回看；选中日的篇目列在卡片**之外**
 ///   的页面背景上）。
 /// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
 ///
-/// ⚠️ 全部 / 日历 / 收藏**不分笔记与画布**（用户 2026-09-29 明确）；
-/// 只有笔记、画布两个视图按形态各自过滤。常驻 tab 只挂高频三枚
-/// （[kHomeTabs]）；低频页面经三点菜单进入，进入后顶栏**临时长出该页的
-/// tab 并高亮**（否则"我现在在哪个视图"没有着落）。
+/// ⚠️ **四个视图都不分笔记与画布**（用户 2026-09-29 明确）：形态是**筛选
+/// 维度**而不是视图（2026-10-05 决策 E）⇒ 走顶栏漏斗钮里的「形态」facet
+/// （[NoteKindFacet]），不再占用 tab 位，三点溢出菜单随之退役。
 ///
-/// ⚠️ **排序方案与标签筛选不是页面**：它们是全局控件，2026-09-30 起合住
-/// 顶栏右侧一枚「筛选与排序」漏斗钮（[_FilterMenuButton]：一个菜单、上半
-/// 排序下半标签），对全部 / 笔记 / 画布 / 收藏同时生效。
+/// ⚠️ **排序 / 标签 / 形态都不是页面**：它们是全局控件，合住顶栏右侧一枚
+/// 「筛选与排序」漏斗钮（[_FilterMenuButton]：一个菜单、三段——形态 / 排序 /
+/// 标签），对所有视图同时生效。
 /// [HomeView] 的**图标**扩展。
 ///
 /// 枚举本体在 `providers.dart`：统一导航历史（[NavHistoryNotifier]）要同时
@@ -53,24 +51,22 @@ import 'search_provider.dart';
 /// （唯一获准写"当前笔记"的文件，见 architecture_test 的源码扫描）。图标要
 /// 引用 tabler / [CustomIcons]，不进 DI 层，故留在这里。
 extension HomeViewIcon on HomeView {
-  /// 顶栏 tab 的图标（Remix 单色线形，与第一列 [AppRail] 同族）。
-  ///
-  /// 画布用 `CustomIcons.canvas`（彩色插画）——它是"空间"不是"工具"，与
-  /// 第二列切换器里的画布格同源；其余走 tabler 单色线形。
+  /// 顶栏 tab 的图标（tabler 单色线形；形态 facet 里的「画布」才用
+  /// `CustomIcons.canvas` 彩色插画）。
   Widget icon(Color color) => switch (this) {
+    // 心流 = 时间流 ⇒ 时钟（分组键是 `revisedAt`）。
+    HomeView.timeline => tabler.Clock(
+      height: Tokens.iconMdSm,
+      width: Tokens.iconMdSm,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
     HomeView.all => tabler.LayoutGrid(
       height: Tokens.iconMdSm,
       width: Tokens.iconMdSm,
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
-    HomeView.notes => tabler.FileText(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
-      strokeWidth: Tokens.iconStroke,
-      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
-    ),
-    HomeView.canvas => CustomIcons.canvas(size: Tokens.iconMdSm),
     HomeView.calendar => tabler.Calendar(
       height: Tokens.iconMdSm,
       width: Tokens.iconMdSm,
@@ -86,26 +82,58 @@ extension HomeViewIcon on HomeView {
   };
 }
 
-/// 顶栏**常驻 tab**（2026-09-29 用户定：只放高频三枚——全部 / 日历 / 收藏）。
-/// [HomeView] 枚举里**没有**"「更多」视图"这一项：低频页面的入口走顶栏三点
-/// 溢出菜单（[_MoreOverflowButton]），「更多」是**容器**不是页面。
+/// 顶栏**常驻 tab**（2026-10-05 决策 C）：**心流 | 全部 | 日历 | 收藏**，
+/// 心流首位且为启动默认（与 [NavHistoryNotifier.build] 的默认值一致）。
+///
+/// ⚠️ 笔记 / 画布**不在这里**（决策 E）——它们是形态筛选，走漏斗钮的
+/// [NoteKindFacet]；三点溢出菜单已随之退役。
 const List<HomeView> kHomeTabs = <HomeView>[
+  HomeView.timeline,
   HomeView.all,
   HomeView.calendar,
   HomeView.favorites,
 ];
 
-/// **低频页面**（三点溢出菜单里列出的整页入口）：笔记 / 画布。
+/// **形态筛选 facet**（2026-10-05 决策 E 新增）：全部 / 笔记 / 画布。
 ///
-/// 它们与 [kHomeTabs] 那三枚是**同一种东西**（都是视图 / 整页），只是使用
-/// 频率低 ⇒ 收进溢出菜单、不占常驻 tab 位（2026-09-29 用户定）。
-/// 点选照旧 [NavHistoryNotifier.selectHome] **整页切换** ⇒ 历史栈照旧，主区顶条的
-/// 上一步 / 下一步仍然可用；进入后顶栏会临时长出该页的 tab（见
-/// [_HomeHubState._buildTopBar]）。
-const List<HomeView> kLowFreqViews = <HomeView>[
-  HomeView.notes,
-  HomeView.canvas,
-];
+/// ## 为什么它不是 [HomeView] 的值
+/// 视图答的是"我怎么看"（投影：心流 / 全部 / 日历 / 收藏），形态答的是
+/// "它是什么"（类型：文档类 spark+note / 画布 canvas）。两个维度塞进一排
+/// tab 就是类别错误——本项目上一次是以"空间切换器"的形式解决它的（只过滤
+/// 列表、不切主区），这里沿用同一个结论：**只做筛选，不做视图**。
+///
+/// ## 为什么它不入统一导航历史
+/// 切形态只是"换个看法"，不是"去了一个地方" ⇒ 不写 [navHistoryProvider]，
+/// 上一步 / 下一步不该被它打断（否则在列表里筛一下就毁掉前进栈）。
+enum NoteKindFacet {
+  all('全部'),
+  docs('笔记'),
+  canvas('画布');
+
+  const NoteKindFacet(this.label);
+
+  /// 菜单里显示的名字（也是测试 find 的锚点）。
+  final String label;
+
+  /// 该形态是否收下这篇（文档类 = 非画布）。
+  bool matches(NoteKind kind) => switch (this) {
+    NoteKindFacet.all => true,
+    NoteKindFacet.docs => kind != NoteKind.canvas,
+    NoteKindFacet.canvas => kind == NoteKind.canvas,
+  };
+}
+
+/// 当前形态筛选（顶栏漏斗钮的「形态」段）。默认 [NoteKindFacet.all]。
+final homeKindFacetProvider = NotifierProvider<HomeKindFacet, NoteKindFacet>(
+  HomeKindFacet.new,
+);
+
+class HomeKindFacet extends Notifier<NoteKindFacet> {
+  @override
+  NoteKindFacet build() => NoteKindFacet.all;
+
+  void select(NoteKindFacet facet) => state = facet;
+}
 
 /// 卡片网格的**排序方案**（2026-09-29 用户定，在「更多」视图里选）。
 ///
@@ -152,7 +180,9 @@ class HomeSortNotifier extends Notifier<NoteSort> {
 }
 
 /// [homeItemsProvider] 的入参（record：结构相等即命中缓存）。
-typedef HomeItemsArgs = ({HomeView view, String? tag});
+///
+/// `kind` 是 2026-10-05 决策 E 加的**形态 facet**（笔记 / 画布不再是视图）。
+typedef HomeItemsArgs = ({HomeView view, String? tag, NoteKindFacet kind});
 
 /// 主页卡片网格的取数：**视图范围 + 标签过滤 + 排序**（2026-09-30 从
 /// `_HomeBody._itemsFor` 抽出）。
@@ -169,25 +199,27 @@ final homeItemsProvider = Provider.autoDispose
       final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
       final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
       final List<Note> scope = switch (args.view) {
+        // 心流与"全部"同为跨形态统一池、跟随全局排序（心流的时间分组在
+        // stream_view 里按 revisedAt 做，这里仍给一份排好序的全集）。
+        HomeView.timeline => all.toList()..sort(order),
         // 全部：跨形态统一池，跟随全局排序。
         HomeView.all => all.toList()..sort(order),
-        HomeView.notes =>
-          all.where((Note n) => n.kind != NoteKind.canvas).toList()
-            ..sort(order),
-        HomeView.canvas =>
-          all.where((Note n) => n.kind == NoteKind.canvas).toList()
-            ..sort(order),
         // 收藏不读全局排序：最近收藏的排前面。
         HomeView.favorites => <Note>[
           ...all.where((Note n) => n.promotedAt != null),
         ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
         HomeView.calendar => const <Note>[],
       };
+      // 形态筛选（决策 E）：先按类型收一遍，再按标签收一遍——两者都是顶栏
+      // 全局控件 ⇒ 对当前视图生效。
+      final List<Note> byKind = args.kind == NoteKindFacet.all
+          ? scope
+          : scope.where((Note n) => args.kind.matches(n.kind)).toList();
       // 标签筛选是顶栏全局控件 ⇒ 对当前视图生效；未选标签时原样返回。
       // 有搜索词时不走这里（搜索态由 _SearchResultsView 跨形态渲染）。
       return args.tag == null
-          ? scope
-          : scope.where((Note n) => n.tags.contains(args.tag)).toList();
+          ? byKind
+          : byKind.where((Note n) => n.tags.contains(args.tag)).toList();
     });
 
 /// 超过该体积的画布 content 才把解析丢到后台 Isolate（[compute]）。
@@ -257,7 +289,7 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 ///
 /// ## 三条结构事实
 /// 1. **顶栏**：左 = 3 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.navSelectedTint]）
-///    + 三点溢出菜单钮（[kLowFreqViews]：笔记 / 画布的入口），右 = 常驻搜索框
+///    + 形态 / 排序 / 标签合住一枚漏斗钮（[_FilterMenuButton]），右 = 常驻搜索框
 ///    （点击直接输入，走 [searchNotifierProvider]）。上一步 / 下一步（视图历史）
 ///    与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
@@ -276,10 +308,6 @@ class HomeHub extends ConsumerStatefulWidget {
 }
 
 class _HomeHubState extends ConsumerState<HomeHub> {
-  /// 常驻搜索框：文本控制器 + 焦点（Esc 清词 / Enter 跳首条，沿用旧搜索分区键位）。
-  final TextEditingController _searchController = TextEditingController();
-  late final FocusNode _searchFocus;
-
   /// 日历视图的浏览态：显示月份与选中日。只放本地 State（纯浏览节奏，
   /// 不进 provider 不落盘，重启回今天）。
   DateTime _calMonth = _todayMonth();
@@ -296,74 +324,33 @@ class _HomeHubState extends ConsumerState<HomeHub> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    // 回填上次的查询词（状态在 provider，不在本 widget）：进笔记再回来，词还在。
-    _searchController.text = ref.read(searchNotifierProvider).query;
-    _searchFocus = FocusNode(onKeyEvent: _onSearchKey);
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocus.dispose();
-    super.dispose();
-  }
-
-  /// 搜索框键位：`Esc` 有词 = 清空（保留焦点），无词 = 失焦；`Enter` = 跳第一个命中。
-  KeyEventResult _onSearchKey(FocusNode _, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final SearchState s = ref.read(searchNotifierProvider);
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      if (s.query.isNotEmpty) {
-        _searchController.clear();
-        ref.read(searchNotifierProvider.notifier).submit('');
-        _searchFocus.requestFocus();
-      } else {
-        _searchFocus.unfocus();
-      }
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      if (s.hits.isNotEmpty) {
-        ref
-            .read(locateProvider.notifier)
-            .locate(noteId: s.hits.first.note.id, focus: true);
-      }
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  @override
   Widget build(BuildContext context) {
     final HomeView view = ref.watch(navHistoryProvider).view;
     final SearchState s = ref.watch(searchNotifierProvider);
 
-    // **外部灌词**同步：Ctrl+K 浮层的"在主页显示全部结果"（Shift+Enter）会
-    // 在本页之外（甚至编辑器里）直接写 searchNotifierProvider。这里把词灌进
-    // 输入框并聚焦，让"浮层 → 页内"的交接肉眼可见、可立刻继续细化。
-    // 打字路径不会回灌：submit 存的是 trim 后的词，与控制器原文一致（含尾部
-    // 空格）时跳过——否则每个空格都会把光标拽回行尾。
-    ref.listen<String>(
-      searchNotifierProvider.select((SearchState st) => st.query),
-      (String? prev, String next) {
-        if (_searchController.text == next ||
-            _searchController.text.trim() == next) {
-          return;
-        }
-        _searchController.value = TextEditingValue(
-          text: next,
-          selection: TextSelection.collapsed(offset: next.length),
-        );
-        _searchFocus.requestFocus();
-      },
-    );
+    // 空库（心流视图在无搜索词时为空）：顶栏捕获条**隐藏**，改由心流空态里的
+    // 居中大捕获条接管（见 [StreamView]）——避免两个捕获框同时抢焦点、也把
+    // "第一眼能打字的地方"推到视觉中心。
+    final bool timelineEmpty = view == HomeView.timeline &&
+        s.query.trim().isEmpty &&
+        ref
+            .watch(
+              homeItemsProvider((
+                view: HomeView.timeline,
+                tag: s.activeTag,
+                kind: ref.watch(homeKindFacetProvider),
+              )),
+            )
+            .isEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // **捕获条**（2026-10-06，阶段 1 ②C）：主页**唯一的捕获入口**，视觉
+        // 权重压倒性最大——"打开应用第一眼就知道点哪里"靠的就是这个对比。
+        // 空库时此处隐藏、交给心流空态的居中条（[timelineEmpty]）。
+        if (!timelineEmpty) const OmniBar(),
+        const SizedBox(height: Tokens.spaceSm),
         _buildTopBar(context, view),
         Expanded(
           child: _HomeBody(
@@ -382,20 +369,14 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     );
   }
 
-  /// 顶栏：左 = 常驻视图 tab（[kHomeTabs] 三枚；经三点菜单进入低频页时**临时
-  /// 多出一枚**并高亮，窄窗可横滚）+ 三点溢出菜单；右 = 常驻搜索框（定宽）
-  /// + 一枚「筛选与排序」漏斗钮（排序 / 标签合住）。
+  /// 顶栏：左 = 常驻视图 tab（[kHomeTabs] 四枚，窄窗可横滚），右端一枚
+  /// 「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
   /// 上一步 / 下一步在主区顶条（[NavHistoryButton]），不在这里。
+  ///
+  /// ⚠️ 2026-10-06（阶段 1 ②B）：**页内搜索框已退役**——搜索 / 捕获的唯一
+  /// 入口是顶上的 [OmniBar]；`searchNotifierProvider` 的写入口只剩它与
+  /// Ctrl+K 浮层两处，殊途同归。
   Widget _buildTopBar(BuildContext context, HomeView view) {
-    // 右侧筛选器（32）与它前面的间隙：搜索框的可分宽度要先扣掉，否则窄窗下
-    // 顶栏会被撑破。
-    const double controlsWidth = 32 + Tokens.spaceXs;
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final bool hasQuery = ref.watch(
-      searchNotifierProvider.select((SearchState s) => s.query.isNotEmpty),
-    );
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         Tokens.spaceLg,
@@ -403,140 +384,37 @@ class _HomeHubState extends ConsumerState<HomeHub> {
         Tokens.spaceLg,
         Tokens.spaceSm,
       ),
-      // LayoutBuilder：搜索框**贴右定宽 260**，但主区被挤窄（开右轨 /
-      // 拖窗过断点的过渡帧）时随剩余空间收缩，左侧 tab 区（`Expanded`
-      // 横向滚动）吃掉其余 ⇒ 任何宽度都不撑破顶栏。
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final double searchWidth =
-              (constraints.maxWidth - Tokens.spaceMd - controlsWidth)
-                  .clamp(0.0, 260.0)
-                  .toDouble();
-          return Row(
-            children: <Widget>[
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: <Widget>[
-                      // 常驻 tab = 高频三枚（[kHomeTabs]）。上一步 / 下一步
-                      // 不在这里——它们是全局导航，2026-09-29 用户定挪去主区
-                      // 顶条（home_screen.dart 的 [NavHistoryButton]）。
-                      for (final HomeView v in kHomeTabs)
-                        Padding(
-                          padding: const EdgeInsets.only(right: Tokens.spaceXs),
-                          child: _ViewTab(
-                            view: v,
-                            active: v == view,
-                            onTap: () => ref
-                                .read(navHistoryProvider.notifier)
-                                .selectHome(v),
-                          ),
-                        ),
-                      // 经三点菜单进入**低频页面**后，顶栏**临时长出**该页的
-                      // tab 并高亮（2026-09-29 定）：三点只是入口，进去了必须
-                      // 让"我现在在哪个视图"有着落，不能三枚常驻 tab 全灭。
-                      if (kLowFreqViews.contains(view))
-                        Padding(
-                          padding: const EdgeInsets.only(right: Tokens.spaceXs),
-                          child: _ViewTab(
-                            view: view,
-                            active: true,
-                            // 已在当前页 ⇒ 点它无副作用；留着只为看得见的落点。
-                            onTap: () {},
-                          ),
-                        ),
-                      // 三点溢出菜单：低频页面的入口（「更多」**不是**视图）。
-                      const Padding(
-                        padding: EdgeInsets.only(right: Tokens.spaceXs),
-                        child: _MoreOverflowButton(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: Tokens.spaceMd),
-              SizedBox(
-                width: searchWidth,
-                child: SizedBox(
-                  height: 32,
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _searchFocus,
-                    // 单行在 32 高定框里垂直居中（不依赖平台默认值）。
-                    textAlignVertical: TextAlignVertical.center,
-                    // 与 hint 同号（bodyMedium 14/行高20）：M3 默认输入样式是
-                    // titleMedium 16/24，hint 字形在 24 行盒里会偏上；且 24+
-                    // densePadding 16=40 超出 32 紧约束，装饰层被压缩整体上移。
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurface,
-                    ),
-                    onChanged: (String v) =>
-                        ref.read(searchNotifierProvider.notifier).submit(v),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      // 20 行高 + 上下各 6 = 32，恰好等于定高，内容不再被
-                      // 压缩，图标与文字一起真正垂直居中。
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      hintText: '搜索标题与内容',
-                      hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      // tabler 图标是自绘 widget ⇒ 直接放（同旧搜索分区）。
-                      prefixIcon: Center(
-                        widthFactor: 1,
-                        child: tabler.Search(
-                          height: Tokens.iconSm,
-                          width: Tokens.iconSm,
-                          strokeWidth: Tokens.iconStroke,
-                          colorFilter: ui.ColorFilter.mode(
-                            hasQuery
-                                ? scheme.onSurface
-                                : scheme.onSurfaceVariant,
-                            ui.BlendMode.srcIn,
-                          ),
-                        ),
-                      ),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 34,
-                        minHeight: 32,
-                      ),
-                      suffixIcon: hasQuery
-                          ? IconButton(
-                              icon: const tabler.CircleX(
-                                height: Tokens.iconSm,
-                                width: Tokens.iconSm,
-                                strokeWidth: Tokens.iconStroke,
-                              ),
-                              tooltip: '清空（Esc）',
-                              onPressed: () {
-                                _searchController.clear();
-                                ref
-                                    .read(searchNotifierProvider.notifier)
-                                    .submit('');
-                                _searchFocus.requestFocus();
-                              },
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  // 常驻 tab = 四枚（[kHomeTabs]）。上一步 / 下一步
+                  // 不在这里——它们是全局导航，2026-09-29 用户定挪去主区
+                  // 顶条（home_screen.dart 的 [NavHistoryButton]）。
+                  for (final HomeView v in kHomeTabs)
+                    Padding(
+                      padding: const EdgeInsets.only(right: Tokens.spaceXs),
+                      child: _ViewTab(
+                        view: v,
+                        active: v == view,
+                        onTap: () => ref
+                            .read(navHistoryProvider.notifier)
+                            .selectHome(v),
                       ),
                     ),
-                  ),
-                ),
+                  // （2026-10-05 决策 E）三点溢出菜单已退役：笔记 / 画布
+                  // 不再是视图，改走漏斗钮的「形态」facet ⇒ 顶栏只剩
+                  // [kHomeTabs] 四枚常驻 tab，不再有"临时长出的 tab"。
+                ],
               ),
-              // **筛选器**（2026-09-30 用户定）：排序方案与标签筛选同属"对
-              // 当前池子做整理"的元控件，合并为一枚钮、一个菜单（上半排序、
-              // 下半标签）。它不是页面，不进「更多」。
-              const SizedBox(width: Tokens.spaceXs),
-              const _FilterMenuButton(),
-            ],
-          );
-        },
+            ),
+          ),
+          const SizedBox(width: Tokens.spaceXs),
+          const _FilterMenuButton(),
+        ],
       ),
     );
   }
@@ -576,6 +454,13 @@ class _HomeBody extends ConsumerWidget {
       return _SearchResultsView(search: search);
     }
 
+    // 心流视图：按 `revisedAt` 分组的时间流（2026-10-06，阶段 1 ②A）。
+    // 与卡片网格**同一池子**（同一 homeItemsProvider 入参，形态 / 标签 facet
+    // 同样生效）、同一种显示口径，只是换了一种排布。
+    if (view == HomeView.timeline) {
+      return StreamView(tag: search.activeTag);
+    }
+
     // 日历视图：日历卡片 + 卡片外下方的选中日篇目。
     if (view == HomeView.calendar) {
       return SingleChildScrollView(
@@ -607,7 +492,11 @@ class _HomeBody extends ConsumerWidget {
     // 其余视图：卡片网格。取数走 [homeItemsProvider]（记忆化：无关 rebuild
     // 不重排；语义见 provider 文档）。
     final List<Note> items = ref.watch(
-      homeItemsProvider((view: view, tag: search.activeTag)),
+      homeItemsProvider((
+        view: view,
+        tag: search.activeTag,
+        kind: ref.watch(homeKindFacetProvider),
+      )),
     );
 
     if (items.isEmpty) {
@@ -850,147 +739,10 @@ class _ViewTabState extends State<_ViewTab> {
   }
 }
 
-/// 顶栏**三点溢出菜单**：低频页面（[kLowFreqViews]：笔记 / 画布）的入口。
-///
-/// ⚠️ 「更多」**不再是视图**（2026-09-29 用户定）：它只是低频页面的收纳处，
-/// [HomeView] 里没有"「更多」"这个页面。菜单里每一项都是**和日历 / 收藏同级
-/// 的整页**，点选走 [NavHistoryNotifier.selectHome] 整页切换 ⇒ 历史栈照旧，主区
-/// 顶条的「上一步 / 下一步」仍然可用。
-///
-/// 图标 = [tabler.Dots]（**横向**三点 ⋯，2026-09-30 用户定）。
-/// ⚠️ 与行内「更多」菜单**刻意不同**：列表行 / 导航条目的那枚是竖三点
-/// [tabler.DotsVertical]（⋮，`note_list_view.dart` / `hub_nav.dart`）——那里是
-/// 挂在行尾的**单独一枚**，竖排更贴行高；这里是**水平顶栏**里的一枚，横三点
-/// 才与左右并排的其它控件同向。
-class _MoreOverflowButton extends ConsumerStatefulWidget {
-  const _MoreOverflowButton();
-
-  @override
-  ConsumerState<_MoreOverflowButton> createState() =>
-      _MoreOverflowButtonState();
-}
-
-class _MoreOverflowButtonState extends ConsumerState<_MoreOverflowButton> {
-  /// 菜单锚点（GlobalKey）：不挂的话 `currentContext` 为 null ⇒ position 落
-  /// Offset.zero ⇒ 菜单弹到屏幕左上角（hub_nav 踩过同款）。
-  final GlobalKey _key = GlobalKey();
-  final FocusNode _focus = FocusNode();
-  bool _hover = false;
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  Future<void> _openMenu() async {
-    final HomeView current = ref.read(navHistoryProvider).view;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    Offset position = Offset.zero;
-    final RenderBox? box =
-        _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      position = box.localToGlobal(Offset(0, box.size.height));
-    }
-    await showMenu<void>(
-      context: context,
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        position.dx,
-        position.dy,
-      ),
-      items: <PopupMenuEntry<void>>[
-        for (final HomeView v in kLowFreqViews)
-          PopupMenuItem<void>(
-            onTap: () => ref.read(navHistoryProvider.notifier).selectHome(v),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                v.icon(scheme.onSurface),
-                const SizedBox(width: Tokens.spaceSm),
-                Text(v.label),
-                // 当前就在这页 ⇒ 打勾（替代旧版"「更多」tab 高亮"的指示）。
-                if (v == current) ...<Widget>[
-                  const SizedBox(width: Tokens.spaceSm),
-                  const tabler.Check(
-                    height: Tokens.iconMdSm,
-                    width: Tokens.iconMdSm,
-                    strokeWidth: Tokens.iconStroke,
-                  ),
-                ],
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
-    // **图标 + 文字的标签钮**（2026-09-30 用户定）：光一个图标读不出"笔记 /
-    // 画布收在这里"——可发现性不行。视觉与三枚 tab 同语言（同字号同 hover），
-    // 但它不是页面，没有选中态；当前恰在低频页时，指示走菜单里的打勾。
-    // 图标用右向双箭头（chevrons-right，2026-09-30 用户定）："还有下一层"
-    // 的语感比三点强。
-    return FocusRing(
-      focusNode: _focus,
-      borderRadius: radius,
-      child: Tooltip(
-        message: '更多页面',
-        child: Material(
-          key: _key,
-          color: _hover
-              ? AppTheme.boardFillHover(theme.brightness)
-              : Colors.transparent,
-          borderRadius: radius,
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            focusNode: _focus,
-            borderRadius: radius,
-            hoverColor: Colors.transparent,
-            splashColor: Colors.transparent,
-            highlightColor: Colors.transparent,
-            onHover: (bool v) => setState(() => _hover = v),
-            onTap: _openMenu,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
-              child: SizedBox(
-                // 顶栏行高由搜索框定（32）⇒ 同高，不把它撑高。
-                height: 32,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const tabler.ChevronsRight(
-                      height: Tokens.iconMdSm,
-                      width: Tokens.iconMdSm,
-                      strokeWidth: Tokens.iconStroke,
-                    ),
-                    const SizedBox(width: Tokens.spaceXs),
-                    Text(
-                      '更多',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 顶栏**筛选器**控件钮（2026-09-30 用户定）：排序方案（[homeSortProvider]）
 /// 与标签筛选（[SearchState.activeTag]）同属"整理当前池子"的元操作，合住一枚
 /// 漏斗钮、一个菜单——上半段排序、下半段标签。对 [kHomeTabs] /
-/// [kLowFreqViews] 所有视图全局生效（收藏的排序语义除外，见 [_HomeHubState]）。
+/// [kHomeTabs] 所有视图全局生效（收藏的排序语义除外，见 [_HomeHubState]）。
 ///
 /// 标签段在全库无标签时**整段消失**，但钮本身常驻（排序永远可用，
 /// 2026-09-30 之前排序 / 标签是两枚钮，无标签时只剩排序，用户找不到入口）。
@@ -1011,6 +763,7 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
 
   Future<void> _openMenu() async {
     final NoteSort currentSort = ref.read(homeSortProvider);
+    final NoteKindFacet currentKind = ref.read(homeKindFacetProvider);
     final List<(String, int)> tags = ref.read(allTagsProvider);
     final String? activeTag = ref.read(searchNotifierProvider).activeTag;
 
@@ -1048,6 +801,28 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
       context: context,
       position: position,
       items: <PopupMenuEntry<void>>[
+        // 形态（2026-10-05 决策 E）：笔记 / 画布从"视图"降为**筛选维度**，
+        // 与排序 / 标签同级。切它不入导航历史（见 [NoteKindFacet] 的说明）。
+        _menuHeader('形态'),
+        for (final NoteKindFacet f in NoteKindFacet.values)
+          PopupMenuItem<void>(
+            onTap: () => ref.read(homeKindFacetProvider.notifier).select(f),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(f.label),
+                if (f == currentKind) ...<Widget>[
+                  const SizedBox(width: Tokens.spaceSm),
+                  const tabler.Check(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    strokeWidth: Tokens.iconStroke,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
         _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
           PopupMenuItem<void>(
@@ -1289,7 +1064,7 @@ class _NoteCardState extends State<_NoteCard> {
     final Note n = widget.note;
     final bool isCanvas = n.kind == NoteKind.canvas;
 
-    final String title = _cardTitleOf(n);
+    final String title = noteDisplayTitle(n);
     final String? summary = _cardSummaryOf(n);
     // 标题是不是借来的（无标题但正文非空）：借了且没余行 ⇒ 中段留白即可；
     // 不是借的又没摘要（真空白 / 有标题无正文）⇒「（空白）」兜底。
@@ -1475,7 +1250,7 @@ class _NoteCardState extends State<_NoteCard> {
         ),
         const SizedBox(width: Tokens.spaceSm),
         Text(
-          _relativeTime(n.revisedAt),
+          relativeTime(n.revisedAt),
           style: theme.textTheme.labelSmall?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
@@ -1608,8 +1383,7 @@ class _EmptyView extends ConsumerWidget {
       text = '「$activeTag」标签下还没有内容';
     } else {
       text = switch (view) {
-        HomeView.notes => '还没有笔记',
-        HomeView.canvas => '还没有画布',
+        HomeView.timeline => '还没有笔记或画布',
         HomeView.all => '还没有笔记或画布',
         HomeView.favorites => '还没有收藏',
         HomeView.calendar => '', // 不会走到。
@@ -1629,19 +1403,6 @@ class _EmptyView extends ConsumerWidget {
 // ─────────────────────────── 公共小料 ───────────────────────────
 
 String _titleOf(Note note) => note.title.isEmpty ? '无标题' : note.title;
-
-/// 卡片**显示标题**：用户标题优先；无标题时借**正文第一个非空行**（Notion
-/// 惯例——一排「无标题」长得一模一样，扫读时等于没有信息）。正文也空才落
-/// 「无标题」。排序仍用 [_titleOf]（无标题常量成组，语义稳定）。
-String _cardTitleOf(Note note) {
-  final String t = note.title.trim();
-  if (t.isNotEmpty) return t;
-  for (final String line in note.summary.split('\n')) {
-    final String l = line.trim();
-    if (l.isNotEmpty) return l;
-  }
-  return '无标题';
-}
 
 /// 卡片**显示摘要**：自己写了标题 ⇒ 摘要 = 全部正文；标题是借的 ⇒ 摘要从
 /// 余下行起（首行已经站在标题位上，不重复展示）。没有可显示的 ⇒ `null`
@@ -1724,16 +1485,6 @@ String _escapeRegExp(String s) => s.replaceAllMapped(
   RegExp(r'[.*+?^${}()|[\]\\]'),
   (Match m) => '\\${m.group(0)}',
 );
-
-/// 相对时间：关心的是"多久没碰了"，不是精确时刻。
-String _relativeTime(DateTime at) {
-  final Duration d = DateTime.now().difference(at);
-  if (d.inMinutes < 1) return '刚刚';
-  if (d.inHours < 1) return '${d.inMinutes} 分钟前';
-  if (d.inDays < 1) return '${d.inHours} 小时前';
-  if (d.inDays < 7) return '${d.inDays} 天前';
-  return '${at.month}-${at.day.toString().padLeft(2, '0')}';
-}
 
 // ─────────────────────────── 日历分区 ───────────────────────────
 

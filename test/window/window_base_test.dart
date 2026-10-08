@@ -14,7 +14,6 @@ import 'package:window_manager/window_manager.dart';
 /// 1. **不再自绘窗口底**（2026-09-23）：底色改由平台窗口铺
 ///    （[WindowService.applyWindowBackground]，同一个 [AppTheme.windowBackground] 令牌）
 ///    ⇒ 这里再留一层 `ColoredBox` 就是每帧一次全屏 fill 白付，还会与平台那层打架。
-///    ⚠️ 将来**上 Mica** 时这层必须回来（窗口重新透明 + 除左栏外铺），见类文档；
 /// 2. **顶边/顶角缩放手柄**只在最外层圈一次，且**只圈顶边**（圈了右边会吃掉滚动条
 ///    抓取区）。它同时保证"顶边 8px = 缩放、顶边之下 = 拖动窗口"这个**一个手势一个
 ///    归宿**的分工——历史上"顶边拖不动"就是这层断掉（见 `window_base.dart` 文档）。
