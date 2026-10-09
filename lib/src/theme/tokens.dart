@@ -69,6 +69,8 @@ class Tokens {
   /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
   static const double askRailWidth = 340;
 
+
+
   /// 卡片网格行列距（2026-10-01 用户定的 20 档：间距表 16/24 之间的定值，
   /// 不在 t 恤码表上，收编为命名几何量）。
   static const double cardGridSpacing = 20;

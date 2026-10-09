@@ -85,7 +85,13 @@ class _NavRailState extends ConsumerState<NavRail> {
       curve: Curves.easeInOut,
       width: w,
       decoration: BoxDecoration(
-        color: AppTheme.boardFill(theme.brightness),
+        // ⚠️ 这里是**侧轨**（[AppTheme.railFill]），不是"板底"（[boardFill]）
+        // ——两者方向相反：board 是"浮在底上的 sheet"（暗色比底**亮** 9.9），
+        // rail 是"凹进窗体的列"（两个模式都比纸面沉，暗 −2.2 / 亮 −3.0）。
+        // 此前误用 boardFill ⇒ 暗色下侧栏成了浮起的亮板，而 [StatusBar] 用
+        // 的是 railFill ⇒ 同一窗口里两套材质语言。且暗色 board 带 alpha 0.95，
+        // 色值本就不确定。
+        color: AppTheme.railFill(theme.brightness),
         border: Border(right: BorderSide(color: AppTheme.divider(scheme))),
       ),
       child: Stack(
