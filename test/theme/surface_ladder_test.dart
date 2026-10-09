@@ -25,14 +25,18 @@ void main() {
       // 色值是从 L* 反解出来的（256 次搜索），所以量到的东西必须与声称值吻合；
       // 不吻合 = 反解或形状实现坏了，而"档差"会因此悄悄失真。
       expect(_lstar(ladder.base), closeTo(ladder.baseLstar, 0.3));
+      expect(_lstar(ladder.panel), closeTo(ladder.panelLstar, 0.3));
       expect(_lstar(ladder.board), closeTo(ladder.boardLstar, 0.3));
       expect(_lstar(ladder.floating), closeTo(ladder.floatingLstar, 0.3));
     });
 
-    test('$name：三档的形状（暖底 / 中性浮层 / 冷板底）', () {
+    test('$name：四档的形状（暖底 / 中性浮面 / 中性浮层 / 冷板底）', () {
       // 底：H=60° 的极淡暖调（R=G、B 低 2）——"明暗同色相"那条决定的机器形式。
       expect(ladder.base.r, ladder.base.g);
       expect(ladder.base.b, closeTo(ladder.base.r - 2 / 255, 0.005));
+      // 内嵌浮面：纯中性（R=G=B）——大面积常驻面不染种子色。
+      expect(ladder.panel.r, ladder.panel.g);
+      expect(ladder.panel.g, ladder.panel.b);
       // 浮层：纯中性（R=G=B）——"大面不染种子色"。
       expect(ladder.floating.r, ladder.floating.g);
       expect(ladder.floating.g, ladder.floating.b);
@@ -99,6 +103,7 @@ void main() {
       baseLstar: 13.65,
       floatingDelta: 11.7,
       boardDelta: 9.9,
+      panelDelta: 5.5,
     );
     expect(_lstar(raised.base), closeTo(13.65, 0.3));
     expect(
@@ -112,36 +117,113 @@ void main() {
   test('暗色的浮层档差要比亮色大得多（投影更弱，只能靠底色差撑）', () {
     expect(
       SurfaceLadder.dark.floatingDelta,
-      greaterThan(SurfaceLadder.light.floatingDelta * 3),
-      reason: '亮色纸面在白端只能让 2.5；暗色若也用这一点差，浮层会"浮不起来"',
+      greaterThan(SurfaceLadder.light.floatingDelta * 1.5),
+      reason: '亮面有软投影撑高度，档差让到 11.9；暗色无投影，档差 19.7 仍需约 1.7 倍',
     );
   });
 
   // ── **结构闸门**：四个"面"必须真的取自明度序 ────────────────────────────
   // 这条是"以后别再写死 hex"的机器形式：谁把值抄回去，这里立刻报。
+  //（2026-09-26 亮色 #F7F7F5 的破例已于 2026-10-09 随镜像重排作废，
+  // 明暗两档重新统一走 ladder。）
   for (final (String name, Brightness brightness) in <(String, Brightness)>[
     ('亮色', Brightness.light),
     ('暗色', Brightness.dark),
   ]) {
-    // ⚠️ 亮色的窗口底是**刻意的例外**（2026-09-26 用户定）：直接落 `#F7F7F5`，
-    // 不再走 `ladder.light.base`（`#F8F8F6` / L*97.5）——见 [AppTheme.windowBackground]
-    // 的注释。所以这里不要求它等于 `ladder.base`，但**仍然钉住具体值**（防止它
-    // 再悄悄漂）；浮层 / 板底两条仍严格取自明度序，本闸门的主体没被削弱。
     test('$name：四个面都取自明度序（谁写死 hex 就报）', () {
       final SurfaceLadder ladder = AppTheme.ladder(brightness);
-      final Color expectedBase = brightness == Brightness.light
-          ? const Color(0xFFF7F7F5)
-          : ladder.base;
-      expect(AppTheme.windowBackground(brightness), expectedBase);
+      expect(AppTheme.windowBackground(brightness), ladder.base);
       expect(
         AppTheme.contentCanvas(brightness),
-        expectedBase,
+        ladder.base,
         reason: '纸面必须与底同色（两处共用一个令牌，2026-09-22 用户定）',
       );
       expect(AppTheme.floatSurface(brightness), ladder.floating);
       expect(AppTheme.boardFill(brightness), ladder.board);
+      expect(
+        AppTheme.panelFill(brightness),
+        ladder.panel,
+        reason: '内嵌浮面必须取自明度序 panel 档（谁写死 hex 就报）',
+      );
     });
   }
+
+  test('内嵌浮面夹在底与浮层之间（暗亮都成立）：base < panel ≤ floating', () {
+    for (final (String name, SurfaceLadder ladder) in <(String, SurfaceLadder)>[
+      ('亮色', SurfaceLadder.light),
+      ('暗色', SurfaceLadder.dark),
+    ]) {
+      expect(
+        ladder.panelLstar,
+        greaterThan(ladder.baseLstar),
+        reason: '$name：浮面必须比窗口底亮，否则缝隙分层失效',
+      );
+      expect(
+        ladder.panelLstar,
+        lessThanOrEqualTo(ladder.floatingLstar),
+        reason: '$name：菜单等浮层压在浮面上仍要有一档差',
+      );
+    }
+  });
+
+  test('暗色底 / 浮面精确锚定 opencode 值（2026-10-09 用户拍板）', () {
+    final SurfaceLadder dark = SurfaceLadder.dark;
+    // 底 #080808（暖形 B 低 2 ⇒ #080806，与纯中性差不可见）；浮面 #161616。
+    expect((dark.base.r * 255).round(), 8);
+    expect((dark.base.g * 255).round(), 8);
+    expect((dark.base.b * 255).round(), 6);
+    expect((dark.panel.r * 255).round(), 22);
+    expect((dark.panel.g * 255).round(), 22);
+    expect((dark.panel.b * 255).round(), 22);
+    // 浮层与板底**绝对**明度钉死，不跟底一起沉。
+    expect(_lstar(dark.floating), closeTo(19.4, 0.3));
+    expect(_lstar(dark.board), closeTo(17.6, 0.3));
+  });
+
+  test('亮色：chrome 深灰 #DDDDDB 托纯白浮面 + 软投影（2026-10-09 晚定案）', () {
+    final SurfaceLadder light = SurfaceLadder.light;
+    // chrome（暖形 B 低 2 ⇒ #DDDDDB）；工作区浮面 = 纯白卡片。
+    expect((light.base.r * 255).round(), 221);
+    expect((light.base.g * 255).round(), 221);
+    expect((light.base.b * 255).round(), 219);
+    expect((light.panel.r * 255).round(), 255);
+    expect((light.panel.g * 255).round(), 255);
+    expect((light.panel.b * 255).round(), 255);
+    // 浮层同白（菜单靠描边 + 投影分层）；板底比灰底再沉 3.1 档。
+    expect(light.floating, light.panel);
+    expect(light.board, const Color(0xFFD5D5D3));
+    // sRGB 221→255 = 34 级色阶；白端 L* 差 11.9（比暗端 5.0 大，亮端靠
+    // 软投影 AppTheme.panelShadow 补足悬浮感）。
+    expect(_lstar(light.base), closeTo(88.1, 0.3));
+    expect(light.panelDelta, closeTo(11.9, 0.05));
+  });
+
+  test('亮色浮面有软投影、暗色没有（两种高度语言各走各的）', () {
+    expect(AppTheme.panelShadow(Brightness.light), isNotEmpty);
+    expect(AppTheme.panelShadow(Brightness.dark), isEmpty);
+    for (final BoxShadow s in AppTheme.panelShadow(Brightness.light)) {
+      expect(s.color.a, lessThanOrEqualTo(0.09), reason: '软投影必须轻，不允许脏边');
+      expect(s.blurRadius, greaterThanOrEqualTo(4));
+    }
+  });
+
+  test('浮面光边 panelEdge：暗=白半透 / 亮=黑半透，压在面上有可辨提亮', () {
+    final Color darkEdge = AppTheme.panelEdge(Brightness.dark);
+    final Color lightEdge = AppTheme.panelEdge(Brightness.light);
+    expect(darkEdge.r, closeTo(1, 0.001));
+    expect(darkEdge.a, closeTo(0.08, 0.001));
+    expect(lightEdge.r, closeTo(0, 0.001));
+    expect(lightEdge.a, closeTo(0.06, 0.001));
+    final Color darkBlended = Color.alphaBlend(
+      darkEdge,
+      AppTheme.panelFill(Brightness.dark),
+    );
+    expect(
+      _lstar(darkBlended),
+      greaterThan(_lstar(AppTheme.panelFill(Brightness.dark)) + 1.0),
+      reason: '1px 光边必须真的比填充亮（新拟态受光边），不能退化成隐形线',
+    );
+  });
 
   test('呼出块 = 浮层档（它是"纸面上的一个记号"，一直与浮层同值）', () {
     expect(

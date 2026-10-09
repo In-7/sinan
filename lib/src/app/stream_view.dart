@@ -13,14 +13,13 @@ import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'home_hub.dart'
     show NoteKindFacet, homeItemsProvider, homeKindFacetProvider;
-import 'omni_bar.dart' show OmniBar;
 import 'note_display.dart';
 import 'providers.dart' show HomeView, locateProvider, notesProvider;
 
 /// 「更早」分组的**折叠阈值**：超过这么多条就折成一行计数，点开再展开。
 ///
 /// 取 200 的理由是**密度**：更早是"考古区"，一次铺几千行既无意义又拖慢首帧；
-/// 真要翻找用搜索（Ctrl+K / 捕获条），不靠滚。
+/// 真要翻找用搜索（Ctrl+K），不靠滚。
 const int kOlderCollapseThreshold = 200;
 
 /// 心流流的一个**分组**（今天 / 昨天 / 本周 / 本月 / 更早）。
@@ -99,40 +98,30 @@ class _StreamViewState extends ConsumerState<StreamView> {
     final ColorScheme scheme = theme.colorScheme;
     final NoteKindFacet kind = ref.watch(homeKindFacetProvider);
     final List<Note> items = ref.watch(
-      homeItemsProvider((
-        view: HomeView.timeline,
-        tag: widget.tag,
-        kind: kind,
-      )),
+      homeItemsProvider((view: HomeView.timeline, tag: widget.tag, kind: kind)),
     );
 
     if (items.isEmpty) {
-      // 空库：顶栏捕获条已隐藏（见 [HomeHub] 的 `timelineEmpty`），这里用
-      // 居中的大捕获条接管——"第一眼能打字的地方"就是它，不是一句灰字。
+      // 空库：纯指路文案（2026-10-09 用户定：捕获输入框 OmniBar 撤除，
+      // "这个输入方式不好用"）——新建走 Ctrl+N，命令走 Ctrl+Shift+P。
       return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                '还没有笔记或画布',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: scheme.onSurface,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              '还没有笔记或画布',
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: scheme.onSurface,
               ),
-              const SizedBox(height: Tokens.spaceXs),
-              Text(
-                '在上面输入一句话，回车即创建',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            ),
+            const SizedBox(height: Tokens.spaceXs),
+            Text(
+              '按 Ctrl+N 新建第一篇',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
               ),
-              const SizedBox(height: Tokens.spaceLg),
-              // 唯一自动聚焦的捕获条（顶栏那条已隐藏），空库首屏即聚焦。
-              const OmniBar(),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }

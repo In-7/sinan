@@ -302,18 +302,26 @@ void main() {
     expect(decoration.gradient, isNull, reason: '药丸是实色，不许挂玻璃渐变');
   });
 
-  /// **明暗对称闸门**（2026-09-29 改 M3 药丸的核心动机）：轨道取
-  /// [ColorScheme.surfaceContainer]，它与列底的**感知明度差 ΔL\*** 必须在明暗
-  /// 两档都落在同一区间（2~6）——否则就是"暗色整条轨道消失"那类不对称回归。
+  /// **明暗感知差闸门**（2026-09-29 改 M3 药丸的核心动机）：轨道取
+  /// [ColorScheme.surfaceContainer]，它与列底的**感知明度差 ΔL\*** 必须落在
+  /// 可读区间内——否则就是"整条轨道消失"或"轨道太抢戏"的回归。
   ///
-  /// 实测候选（ΔL\* 亮 / 暗）：`surfaceContainerLow` −1.1 / +2.4（亮色近乎不可
-  /// 见）、**`surfaceContainer` −3.2 / +4.4（最对称，现值）**、`surfaceContainerHigh`
-  /// −5.3 / +9.2、`surfaceContainerHighest` −7.1 / +14.3（暗色过冲）。
+  /// 2026-10-09 双色底都换掉后（暗 #080808 / 亮 #DDDDDB），M3 钉死的 tone
+  ///（暗 12 / 亮 94）对底差双双出闸 ⇒ `surfaceContainer` 在 app_theme 里
+  /// **明暗都显式钉到浮面档 panelFill**（新架构里导航列本就落在浮面卡内）。
+  /// 区间明暗**不对称是刻意的**：暗色 ΔL\* 5.0（近黑区人眼放大，2~6 足够）；
+  /// 亮色 ΔL\* 11.9——白端压缩感知，且亮面悬浮本来就靠更大色阶 + 软投影，
+  /// chrome 每往深压一档这条就跟着涨（面板钉死纯白），放到 2~13。
+  ///
+  /// 历史候选（旧底 7.7 时实测，ΔL\* 亮 / 暗）：`surfaceContainerLow` −1.1 /
+  /// +2.4（亮色近乎不可见）、**`surfaceContainer` −3.2 / +4.4（曾最对称）**、
+  /// `surfaceContainerHigh` −5.3 / +9.2、`surfaceContainerHighest` −7.1 /
+  /// +14.3（暗色过冲）。
   ///
   /// ⚠️ 必须量 **L\*** 不能用相对亮度：后者在近黑区被指数压缩，会得出
   /// "列底 0.85 vs 轨道 1.42 ≈ 没差别"的**错误结论**（实际 L\* 7.7 vs 12.1，
   /// 肉眼可见）。换种子色只要 ΔL\* 还在这档就不该红。
-  testWidgets('轨道在明暗下与列底的感知差同档（明暗对称）', (WidgetTester tester) async {
+  testWidgets('轨道在明暗下与列底的感知差都落在可读区间', (WidgetTester tester) async {
     double lStar(Color c) {
       final double y = c.computeLuminance();
       return y <= 0.008856
@@ -332,12 +340,16 @@ void main() {
           (lStar(t.colorScheme.surfaceContainer) -
                   lStar(AppTheme.windowBackground(b)))
               .abs();
+      // 暗 2~6（近黑放大）；亮 2~13（白端压缩 + 面板钉死纯白，chrome 越深差越大）。
+      final (double lo, double hi) = b == Brightness.light
+          ? (2.0, 13.0)
+          : (2.0, 6.0);
       expect(
         d,
-        inInclusiveRange(2.0, 6.0),
+        inInclusiveRange(lo, hi),
         reason:
             '${b.name} 轨道与列底 ΔL* = ${d.toStringAsFixed(1)}，'
-            '应落在 2~6（<2 看不见，>6 太抢戏，且明暗会不同档）',
+            '应落在 ${lo.toStringAsFixed(0)}~${hi.toStringAsFixed(0)}',
       );
     }
   });

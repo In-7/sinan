@@ -9,20 +9,23 @@ import 'window_service.dart';
 /// 窗口 Chrome 组件（自绘标题栏体系，原生标题栏已由 [WindowService]
 /// 隐藏）。
 ///
-/// 桌面布局为**左右分栏**（见 HomeScreen），主区是一条自绘顶条：
+/// 桌面外壳为**全宽顶条 + 内嵌浮面**（2026-10-09 用户定，opencode 风，
+/// 见 HomeScreen）：
 ///
-/// - [WindowStrip]：**主区顶条**——拖拽区（+ 可选窄屏动作/标题）+
-///   最小化/最大化/关闭。左侧导航板的顶行由 [HubNav] 自己承载，不在这里。
+/// - [WindowStrip]：44 高全宽**通栏**——左动作簇（目的地：心流 / 全部 /
+///   日历 / 收藏纯图标药丸，16 隔后接上一步 / 下一步）+ 拖拽区
+///   （+ 可选标题）+ 右动作簇（设置 / AI 开关）+ 最小化 / 最大化 / 关闭。
+/// - 条下**不画分隔线**：内容区是 8px 环缝内的圆角浮面卡，层次只靠窗口底与
+///   浮面的明度差 + 缝隙表达。
 ///
 /// 顶条不铺底色（底 = 窗口底纯色），承担 DragToMoveArea 与双击
 /// 最大化；失焦时文字降一级颜色（与系统应用的非焦点窗口行为一致）。
 ///
 /// 已知取舍：自绘按钮拿不到 Windows 11 的 Snap Layouts 悬停菜单。
 
-/// 主区顶条：拖拽区 + 窗控按钮（最小化/最大化/关闭）。
+/// 全宽顶条：左/右动作簇 + 拖拽区 + 窗控按钮（最小化/最大化/关闭）。
 ///
-/// 宽屏布局下只放拖拽与窗控；窄屏兜底布局（整宽一条）可通过
-/// [leading]/[title] 放动作与应用名。
+/// [leading]/[trailing] 放动作；[title] 可放应用名。
 class WindowStrip extends StatefulWidget {
   const WindowStrip({
     super.key,
@@ -32,10 +35,10 @@ class WindowStrip extends StatefulWidget {
     this.trailing,
   });
 
-  /// 窄屏兜底布局的左侧动作区（宽屏分栏时为 null——按钮在侧栏头部）。
+  /// 左侧动作簇（目的地图标 + 上一步 / 下一步）。
   final List<Widget>? leading;
 
-  /// 窄屏兜底布局的应用名。
+  /// 应用名（可选，渲染在拖拽带左端）。
   final String? title;
 
   /// 拖拽带**正中**的控件（2026-09-30：全局搜索胶囊）。
@@ -45,8 +48,7 @@ class WindowStrip extends StatefulWidget {
   /// 双击识别器要等 300ms 才认输——胶囊点击被凭空拖慢半拍，测试里则永不触发。
   final Widget? center;
 
-  /// 右侧紧贴窗控按钮前的动作区（如主菜单）。宽屏分栏时用来把主菜单
-  /// 放在「最小化」左侧，与窗控成组。
+  /// 右侧动作簇（通栏常驻：设置 / AI 开关），紧贴窗控按钮前——与窗控成组。
   final List<Widget>? trailing;
 
   @override
@@ -109,7 +111,7 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
                   child: GestureDetector(
                     behavior: .translucent,
                     onDoubleTap: WindowService.toggleMaximize,
-                    // 窄屏兜底的应用名（宽屏为空盒，拖拽照常吃事件）。
+                    // 应用名（未传时为空盒，拖拽照常吃事件）。
                     child: Container(
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(
@@ -230,7 +232,8 @@ class _CaptionButtonsState extends State<_CaptionButtons> with WindowListener {
 }
 
 /// Chrome 内 IconButton 的统一主题包裹：全局 iconButtonTheme 的最小
-/// 尺寸是 40×40，直接放进 48 高的顶条会溢出——收成紧凑方形。
+/// 尺寸是 40×40，直接放进 44 高的顶条会贴满全高——收成 [Tokens.chromeButtonSize]
+/// （36）固定方块，在条内垂直居中（上下各 4 呼吸）。
 Widget chromeActionButton(BuildContext context, Widget action) {
   final ThemeData theme = Theme.of(context);
   return Theme(
@@ -242,13 +245,10 @@ Widget chromeActionButton(BuildContext context, Widget action) {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
           ),
-          minimumSize: const Size(
-            Tokens.titleBarHeightMain,
-            Tokens.titleBarHeightMain,
-          ),
+          minimumSize: const Size.square(Tokens.chromeButtonSize),
           maximumSize: const Size(
-            Tokens.titleBarHeightMain + 8,
-            Tokens.titleBarHeightMain,
+            Tokens.chromeButtonSize + 8,
+            Tokens.chromeButtonSize,
           ),
           padding: EdgeInsets.zero,
           iconSize: Tokens.iconMd,

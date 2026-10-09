@@ -33,6 +33,7 @@ void main() {
       final ColorScheme s = theme.colorScheme;
       final Color paper = AppTheme.contentCanvas(b);
       final Color base = AppTheme.windowBackground(b);
+      final Color panel = AppTheme.panelFill(b);
       final Color floatSurface = AppTheme.floatSurface(b);
       final Color board = Color.alphaBlend(AppTheme.boardFill(b), base);
       final Color card = Color.alphaBlend(AppTheme.cardFill(b), base);
@@ -82,6 +83,7 @@ void main() {
       // ── 界面文字（≥60） ────────────────────────────────
       for (final (String where, Color bg) in <(String, Color)>[
         ('纸面', paper),
+        ('内嵌浮面', panel),
         ('浮层', floatSurface),
         ('导航板', board),
         ('卡片', card),

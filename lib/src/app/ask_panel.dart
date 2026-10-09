@@ -199,35 +199,46 @@ class _AskRailState extends ConsumerState<AskRail> {
 
     return SizedBox(
       width: Tokens.askRailWidth,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppTheme.windowBackground(theme.brightness),
-          border: Border(left: BorderSide(color: AppTheme.divider(scheme))),
-        ),
-        child: Focus(
-          // Esc 只在焦点位于本栏子树时触发（事件沿焦点祖先链冒泡到这里），
-          // 不会与画布 / 编辑器的 Esc 语义相撞。
-          onKeyEvent: (FocusNode _, KeyEvent event) {
-            if (event is KeyDownEvent &&
-                event.logicalKey == LogicalKeyboardKey.escape) {
-              _close();
-              return KeyEventResult.handled;
-            }
-            return KeyEventResult.ignored;
-          },
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Tokens.spaceMd,
-                  Tokens.spaceXs,
-                  Tokens.spaceXs,
-                  Tokens.spaceXs,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    tabler.Sparkles(
+      // 底色 / 圆角 / 裁切由外壳的**浮面卡**统一给（home_screen.dart 的
+      // _AiRailSlot，2026-10-09 opencode 风）：本体透明、不再画左边线——
+      // 主卡与 AI 卡之间的 8px 缝隙（露窗口底）就是分界，不用分割线。
+      child: Focus(
+        // Esc 只在焦点位于本栏子树时触发（事件沿焦点祖先链冒泡到这里），
+        // 不会与画布 / 编辑器的 Esc 语义相撞。
+        onKeyEvent: (FocusNode _, KeyEvent event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.escape) {
+            _close();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Tokens.spaceMd,
+                Tokens.spaceXs,
+                Tokens.spaceXs,
+                Tokens.spaceXs,
+              ),
+              child: Row(
+                children: <Widget>[
+                  tabler.Sparkles(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    strokeWidth: 1.5,
+                    colorFilter: ui.ColorFilter.mode(
+                      scheme.onSurfaceVariant,
+                      ui.BlendMode.srcIn,
+                    ),
+                  ),
+                  const SizedBox(width: Tokens.spaceSm),
+                  Text('问笔记', style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  IconButton(
+                    icon: tabler.X(
                       height: Tokens.iconMdSm,
                       width: Tokens.iconMdSm,
                       strokeWidth: 1.5,
@@ -236,39 +247,25 @@ class _AskRailState extends ConsumerState<AskRail> {
                         ui.BlendMode.srcIn,
                       ),
                     ),
-                    const SizedBox(width: Tokens.spaceSm),
-                    Text('问笔记', style: theme.textTheme.titleSmall),
-                    const Spacer(),
-                    IconButton(
-                      icon: tabler.X(
-                        height: Tokens.iconMdSm,
-                        width: Tokens.iconMdSm,
-                        strokeWidth: 1.5,
-                        colorFilter: ui.ColorFilter.mode(
-                          scheme.onSurfaceVariant,
-                          ui.BlendMode.srcIn,
-                        ),
-                      ),
-                      tooltip: '关闭（Esc）',
-                      onPressed: _close,
-                    ),
-                  ],
-                ),
-              ),
-              Container(height: 1, color: AppTheme.divider(scheme)),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    Tokens.spaceLg,
-                    Tokens.spaceMd,
-                    Tokens.spaceLg,
-                    Tokens.spaceLg,
+                    tooltip: '关闭（Esc）',
+                    onPressed: _close,
                   ),
-                  child: AskPanelBody(key: _bodyKey, fillExpanded: true),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Container(height: 1, color: AppTheme.divider(scheme)),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  Tokens.spaceLg,
+                  Tokens.spaceMd,
+                  Tokens.spaceLg,
+                  Tokens.spaceLg,
+                ),
+                child: AskPanelBody(key: _bodyKey, fillExpanded: true),
+              ),
+            ),
+          ],
         ),
       ),
     );

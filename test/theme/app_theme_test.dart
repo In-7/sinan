@@ -11,7 +11,10 @@ import 'package:sinan/src/theme/tokens.dart';
 ///
 /// 背景：编辑区画布色 `AppTheme.contentCanvas()` 是**主题外的基色**——它没进
 /// `ColorScheme`，而 `scheme.surface` 装的是 `windowBackground`
-/// （亮 `#F8F8F6` / 深 `#171715`，明暗同色相的极淡暖调；暗色 2026-09-22 从近黑抬了一档）。
+/// （亮 chrome 灰 `#DDDDDB` L\*88.1 / 深近黑 `#080806`（CIE L\*2.2 /
+/// 仓内连续尺 −0.33），明暗同色相的极淡暖调；2026-10-09 晚亮色两度下压
+/// 94.5 → 91.2 → 88.1 为白卡软投影让路；暗色轨迹：近黑 1.83 → 2026-09-22 抬到 7.7
+/// → 2026-10-09 按 opencode 压回 #080808）。
 /// ⚠️ 2026-09-22 起二者**同色**（纸面直接复用窗口底，见 `contentCanvas` 的文档）。
 /// 所以画布上的文字用的 `onSurface*` 与它并非"一套配对"，只能靠对比度兜住；
 /// 这条测试把兜底变成机器可检的不变量（编辑器正文、工具栏、附件卡都铺在画布色上）。
@@ -97,24 +100,45 @@ void main() {
     // 2026-09-22 用户定：正文按 **APCA** 定档（不是 WCAG——那把尺子在深色里失灵）。
     // APCA 档位：正文首选 Lc 90（≥14px/400）/ 最低 75；**暗色上限约 −90**。
     // 取偏上值：APCA 以 Helvetica 为基准，中文笔画更细、我们正文又是 13px。
-    test('$brightness：正文对比度落在 APCA 舒适带（Lc ±90 附近）', () {
-      final double lc = apcaLc(
-        AppTheme.editorText(brightness, theme.colorScheme),
-        AppTheme.contentCanvas(brightness),
-      );
+    //
+    // 2026-10-09 浮面外壳后正文有**两块真实承面**，各自有闸：
+    // ① 桌面工作区浮面卡 [AppTheme.panelFill]（亮纯白 / 暗 #161616）——主阅读面，
+    //    守 ±90 舒适带；
+    // ② 移动端纸面 [AppTheme.contentCanvas]（亮 chrome 灰 / 暗近黑）——守 **75**
+    //    （APCA 正文最低档；两份体检表统一用这一档）。
+    //    ⚠️ 2026-10-09 晚 chrome 压到 #DDDDDB（88.1）后，亮纸正文 Lc 落到 ~76
+    //    ——刚好压在最低档上方。继续压 chrome 会**先耗尽纸面的对比预算**
+    //    （桌面不受影响：编辑区在纯白卡内）。要再深就得把移动端纸面拆成
+    //    独立令牌，别把这里的下限一路往下放。
+    test('$brightness：正文在浮面卡上落 APCA ±90 舒适带、在纸面上不低于 75', () {
+      final Color ink = AppTheme.editorText(brightness, theme.colorScheme);
+      final double lcOnPanel = apcaLc(ink, AppTheme.panelFill(brightness));
+      final double lcOnPaper = apcaLc(ink, AppTheme.contentCanvas(brightness));
       if (brightness == Brightness.light) {
         expect(
-          lc,
-          inInclusiveRange(88, 96),
-          reason: '亮色正文 Lc $lc：低于 88 偏灰、高于 96 比首选档（90）黑太多',
+          lcOnPanel,
+          inInclusiveRange(88, 98),
+          reason: '亮色浮面正文 Lc $lcOnPanel：低于 88 偏灰、高于 98 比首选档（90）黑太多',
+        );
+        expect(
+          lcOnPaper,
+          greaterThanOrEqualTo(75),
+          reason:
+              '亮色灰纸正文 Lc $lcOnPaper：灰纸面允许低于首选档，但不得低于'
+              'APCA 正文最低档 75（再低就是联调时能量出来的可读性回归）',
         );
       } else {
         expect(
-          lc,
-          inInclusiveRange(-92, -84),
+          lcOnPanel,
+          inInclusiveRange(-92, -80),
           reason:
-              '暗色正文 Lc $lc：APCA 暗色上限约 −90，越过去就是"字在发光"；'
-              '低于 −84 又比首选档保守太多',
+              '暗色浮面正文 Lc $lcOnPanel：APCA 暗色上限约 −90（越过去"字在发光"）；'
+              '#161616 承面允许比首选档保守，但不得弱于 −80',
+        );
+        expect(
+          lcOnPaper,
+          lessThanOrEqualTo(-80),
+          reason: '暗色近黑纸正文 Lc $lcOnPaper 不得弱于 −80',
         );
       }
     });
@@ -340,7 +364,8 @@ void main() {
     });
   }
 
-  // §5.6（2026-09-22 用户定）：窗口底 **亮 `#F8F8F6` / 暗同色相**——明暗只差明度。
+  // §5.6（2026-09-22 用户定，2026-10-09 晚定档）：窗口底亮 chrome 灰
+  // `#DDDDDB` / 暗近黑 `#080806`——明暗只差明度、同色相暖调。
   //
   // 这是**决定**，不是巧合：切主题时不该像"换了个应用"。它同时挡住两种回退：
   // ① 某一侧被改回**中性灰**（饱和度为 0）；② 两侧色相漂开（一暖一冷）。
@@ -512,16 +537,8 @@ void main() {
         theme.colorScheme.onSurface, // 正文/标题/编辑器文字
         theme.colorScheme.onSurfaceVariant, // 图标/次级文字
       ]) {
-        expect(
-          c.r,
-          c.g,
-          reason: '${theme.brightness}：R!=G，前景色带染色',
-        );
-        expect(
-          c.g,
-          c.b,
-          reason: '${theme.brightness}：G!=B，前景色带染色',
-        );
+        expect(c.r, c.g, reason: '${theme.brightness}：R!=G，前景色带染色');
+        expect(c.g, c.b, reason: '${theme.brightness}：G!=B，前景色带染色');
       }
     }
   });

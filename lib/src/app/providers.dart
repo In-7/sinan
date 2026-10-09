@@ -303,7 +303,7 @@ final answerServiceProvider = Provider<AnswerService>(
 /// CustomIcons，不进 DI 层。
 enum HomeView {
   /// **心流**：按 `revisedAt` 分组的时间流（今天 / 昨天 / 本周…）。
-  /// **启动默认视图**（2026-10-05 决策 C），也是 tab 行第一枚。
+  /// **启动默认视图**（2026-10-05 决策 C），也是最左图标轨第一枚。
   timeline('心流'),
   all('全部'),
   calendar('日历'),
@@ -311,7 +311,7 @@ enum HomeView {
 
   const HomeView(this.label);
 
-  /// 顶栏 tab 上显示的名字（也是测试 find 的锚点）。
+  /// 图标导航轨 tooltip 上显示的名字（也是 a11y 标签与测试 find 的锚点）。
   final String label;
 }
 

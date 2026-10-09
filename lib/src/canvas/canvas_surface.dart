@@ -80,8 +80,10 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
           Positioned.fill(
             child: CanvasView(
               controller: widget.controller,
-              // 与笔记编辑区同一块画布底色（亮/暗都跟随主题）。
-              backgroundColor: AppTheme.contentCanvas(brightness),
+              // 画布是浮面卡内的**文档面**：取浮面档（暗 #161616 / 亮纯白），
+              // 与笔记编辑区透明透出的卡底同色——不是窗口底（2026-10-09
+              // 浮面外壳后 contentCanvas 是卡外 chrome / 移动端纸面）。
+              backgroundColor: AppTheme.panelFill(brightness),
               // 墨色**必须与底色同源**：底色暗而墨色黑 = 看不见自己画了什么
               // （2026-09-17 用户反馈，见 AppTheme.canvasInk）。
               inkColor: AppTheme.canvasInk(brightness),

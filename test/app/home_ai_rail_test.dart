@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/ask_panel.dart';
 import 'package:sinan/src/app/home_screen.dart';
-import 'package:sinan/src/app/nav_rail.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
@@ -16,12 +15,14 @@ import 'package:sinan/src/theme/tokens.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// **AI 问答轨 · 外壳集成**（2026-09-28）。
+/// **AI 问答轨 · 外壳集成**（2026-09-28；2026-10-09 修订：opencode 风外壳，
+/// AI 开关在全宽顶条右端、紧贴「最小化」左侧，打开时呈现为第二张浮面卡）。
 ///
 /// 组件自身的语义在 [ask_rail_test.dart] 里钉；这里钉 [HomeScreen] 外壳对
 /// `aiPanelOpenProvider` 的**呈现选择**（`docs/ui_rewrite_plan.md` §2.4：
 /// 断点重排，不是等比缩小）：
-/// - 宽窗（≥ [Tokens.askRailBreakpoint]）：第三列常驻，关闭时收成宽 0（裁切掉、点不着）；
+/// - 宽窗（≥ [Tokens.askRailBreakpoint]）：第二张浮面卡常驻，关闭时槽收宽 0
+///   （裁切掉、点不着；打开 = 340 卡 + 8 左缝）；
 /// - 窄窗：不渲染可见轨，「打开」降级为居中浮层，开关立刻复位；
 /// - 开着轨把窗口拖过断点：同样降级，且不弹两层浮层。
 void main() {
@@ -90,7 +91,7 @@ void main() {
 
   /// 顶条右端那枚开关的**位置闸门**：它必须紧贴「最小化」左侧，而不是跑到
   /// 别处（用户明确指定："位置放在最小化左边"）。
-  testWidgets('宽窗：左栏底部有「问笔记」开关，点开右轨', (WidgetTester tester) async {
+  testWidgets('宽窗：顶条右端有「问笔记」开关，点开右轨', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -98,30 +99,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    // 2026-10-08 修订：撤销决策 B，AI 开关与目的地一起迁回左导航栏底部
-    //（不再在顶条右端、也不再带「（Ctrl+J）」tooltip——左栏 tile 用 GestureDetector）。
-    final Finder ai = find.descendant(
-      of: find.byType(NavRail),
-      matching: find.text('问笔记'),
-    );
-    expect(ai, findsOneWidget, reason: '左栏必须有可见的 AI 开关');
+    // 2026-10-09 修订：左侧栏暂撤，AI 开关回通栏顶条右端（带「（Ctrl+J）」
+    // tooltip——顶条是它唯一的图标入口）。
+    final Finder ai = find.byTooltip('问笔记（Ctrl+J）');
+    expect(ai, findsOneWidget, reason: '顶条右端必须有可见的 AI 开关');
 
-    // 它落在左导航栏内（贴窗左缘），而不是顶条右端。
-    final Rect rail = tester.getRect(find.byType(NavRail));
+    // 它落在窗控按钮左侧（紧贴「最小化」），而不是散落在别处。
+    final Rect minRect = tester.getRect(find.byTooltip('最小化'));
     final Rect aiRect = tester.getRect(ai);
-    expect(rail.left, closeTo(0, 0.5), reason: '导航栏贴窗左缘');
-    expect(aiRect.left, greaterThanOrEqualTo(rail.left - 0.5));
     expect(
-      aiRect.right,
-      lessThanOrEqualTo(rail.right + 0.5),
-      reason: 'AI 开关应落在左导航栏内',
+      minRect.left - aiRect.right,
+      inInclusiveRange(-0.5, 4),
+      reason: 'AI 开关应紧贴「最小化」左侧',
     );
 
     // 默认未开。
     expect(container.read(aiPanelOpenProvider), isFalse);
   });
 
-  testWidgets('宽窗：左栏「问笔记」开合右轨；关闭收 0 宽、开态披 tint', (WidgetTester tester) async {
+  testWidgets('宽窗：顶条「问笔记」开合右轨；关闭收 0 宽、开态披 tint', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -138,24 +134,19 @@ void main() {
         .first;
     expect(tester.getSize(slot).width, 0, reason: '默认收起 ⇒ 槽宽 0（内容被裁掉、点不着）');
 
-    final Finder ai = find.descendant(
-      of: find.byType(NavRail),
-      matching: find.text('问笔记'),
-    );
-    // 左栏 tile 用 GestureDetector + AnimatedContainer，底色走 decoration。
-    // ⚠️ 内层是 AnimatedContainer（**不是** Container 子类），finder 必须换。
-    final Finder tile = find
-        .ancestor(of: ai, matching: find.byType(AnimatedContainer))
+    final Finder ai = find.byTooltip('问笔记（Ctrl+J）');
+    final Finder button = find
+        .ancestor(of: ai, matching: find.byType(IconButton))
         .first;
-    // 关闭态底色透明（不能落到 surface 的近黑 ⇒ 黑方块）。
-    expect(
-      tester.widget<AnimatedContainer>(tile).decoration,
-      isA<BoxDecoration>().having(
-        (BoxDecoration d) => d.color,
-        'color',
-        Colors.transparent,
-      ),
-    );
+    // 顶条开关走 IconButton.styleFrom ⇒ 底色在 style 上（不是 AnimatedContainer
+    // 的 decoration），按状态集 resolve。
+    Color? bg() => tester
+        .widget<IconButton>(button)
+        .style
+        ?.backgroundColor
+        ?.resolve(<WidgetState>{});
+    // 关闭态透明（不能落到 surface 的近黑 ⇒ 黑方块）。
+    expect(bg(), Colors.transparent);
 
     await tester.tap(ai);
     await tester.pumpAndSettle(); // 200ms 宽度动画走完
@@ -163,8 +154,8 @@ void main() {
     expect(container.read(aiPanelOpenProvider), isTrue);
     expect(
       tester.getSize(slot).width,
-      Tokens.askRailWidth,
-      reason: '打开 ⇒ 恢复 340 宽',
+      Tokens.askRailWidth + Tokens.appPanelInset,
+      reason: '打开 ⇒ 340 卡 + 8 左缝（两张浮面卡之间的缝，露窗口底）',
     );
     expect(
       tester
@@ -179,14 +170,11 @@ void main() {
       isTrue,
       reason: '开轨即聚焦提问框',
     );
-    // 开态披一档中性 tint：它是个开/关，得如实显示现在开着。
+    // 开态披一档中性 tint：它是个开/关，得如实显示现在开着
+    //（[AiRailToggleButton] 写的正是 navSelectedTint）。
     expect(
-      tester.widget<AnimatedContainer>(tile).decoration,
-      isA<BoxDecoration>().having(
-        (BoxDecoration d) => d.color,
-        'color',
-        isNot(Colors.transparent),
-      ),
+      bg(),
+      AppTheme.navSelectedTint(AppTheme.light().colorScheme.onSurface),
     );
 
     // 再点一次 ⇒ 收起（同一个按钮管开也管关）。

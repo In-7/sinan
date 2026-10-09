@@ -14,7 +14,7 @@ import 'package:sinan/src/theme/app_theme.dart';
 /// 「墨色跟随主题」的回归（2026-09-17）。
 ///
 /// ## 修的是什么
-/// 画布底色**随主题**（`AppTheme.contentCanvas`：亮 `#FAFAFA` / 暗 `#161616`），
+/// 画布底色**随主题**（`AppTheme.contentCanvas`：亮 `#DDDDDB` / 暗 `#161616`），
 /// 而笔色曾是内核里写死的 `#1F1F1F`——暗色下就是"黑墨画黑纸"，用户截图里
 /// `#1F1F1F` 压在 `#161616` 上几乎不可识别。
 ///

@@ -17,7 +17,6 @@ import '../theme/focus_ring.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
 import 'note_display.dart';
-import 'omni_bar.dart';
 import 'providers.dart';
 import 'search_provider.dart';
 import 'stream_view.dart';
@@ -51,7 +50,7 @@ import 'stream_view.dart';
 /// （唯一获准写"当前笔记"的文件，见 architecture_test 的源码扫描）。图标要
 /// 引用 tabler / [CustomIcons]，不进 DI 层，故留在这里。
 extension HomeViewIcon on HomeView {
-  /// 顶栏 tab 的图标（tabler 单色线形；形态 facet 里的「画布」才用
+  /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
   Widget icon(Color color) => switch (this) {
     // 心流 = 时间流 ⇒ 时钟（分组键是 `revisedAt`）。
@@ -82,8 +81,9 @@ extension HomeViewIcon on HomeView {
   };
 }
 
-/// 顶栏**常驻 tab**（2026-10-05 决策 C）：**心流 | 全部 | 日历 | 收藏**，
-/// 心流首位且为启动默认（与 [NavHistoryNotifier.build] 的默认值一致）。
+/// 最左图标导航轨的**四个常驻目的地**（2026-10-09 用户定外移；此前是 HomeHub
+/// 顶栏横排 tab）：**心流 | 全部 | 日历 | 收藏**，心流首位且为启动默认
+///（与 [NavHistoryNotifier.build] 的默认值一致）。
 ///
 /// ⚠️ 笔记 / 画布**不在这里**（决策 E）——它们是形态筛选，走漏斗钮的
 /// [NoteKindFacet]；三点溢出菜单已随之退役。
@@ -279,19 +279,20 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
       return thumb;
     });
 
-/// **主页**：顶栏（视图切换 + 常驻搜索）+ 内容区（卡片网格 / 日历）。
+/// **主页**：顶栏（筛选）+ 内容区（心流 / 卡片网格 / 日历 / 收藏）。
 ///
 /// ## 为什么从"单列一页纸"改成这个（2026-09-29 用户定）
 /// 旧的 Things 式一页纸把日历 / 收藏 / 继续 / 最近 / 新建**串成一列**，一次只能
-/// 从上往下扫；用户要的是**空间切换**范式（对标 Craft / Bear）：顶部一排视图
-/// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容），搜索
-/// 从第一列图标挪到**顶部中间的常驻输入框**。
+/// 从上往下扫；用户要的是**空间切换**范式（对标 Craft / Bear）：目的地切换
+/// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容）。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：左 = 3 枚常驻视图 tab（[kHomeTabs]，选中披 [AppTheme.selectedPill]）
-///    + 形态 / 排序 / 标签合住一枚漏斗钮（[_FilterMenuButton]），右 = 常驻搜索框
-///    （点击直接输入，走 [searchNotifierProvider]）。上一步 / 下一步（视图历史）
-///    与主页 / 设置在更外层的主区顶条（[WindowStrip]）。
+/// 1. **顶栏**：只剩一枚漏斗钮 [_FilterMenuButton]（形态 / 排序 / 标签合住，
+///    靠右）。目的地视图（[kHomeTabs]）2026-10-09 用户定收进桌面顶条
+///    [WindowStrip] 左簇（纯图标药丸 + tooltip；当日早上的 50 最左图标轨
+///    同日撤入）；上一步 / 下一步与设置 / AI 同在顶条。
+///    常驻捕获输入框（OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"），
+///    新建统一走 Ctrl+N / Ctrl+Shift+P 命令。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
 ///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
@@ -328,31 +329,26 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     final HomeView view = ref.watch(navHistoryProvider).view;
     final SearchState s = ref.watch(searchNotifierProvider);
 
-    // 空库（心流视图在无搜索词时为空）：顶栏捕获条**隐藏**，改由心流空态里的
-    // 居中大捕获条接管（见 [StreamView]）——避免两个捕获框同时抢焦点、也把
-    // "第一眼能打字的地方"推到视觉中心。
-    final bool timelineEmpty =
-        view == HomeView.timeline &&
-        s.query.trim().isEmpty &&
-        ref
-            .watch(
-              homeItemsProvider((
-                view: HomeView.timeline,
-                tag: s.activeTag,
-                kind: ref.watch(homeKindFacetProvider),
-              )),
-            )
-            .isEmpty;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // **捕获条**（2026-10-06，阶段 1 ②C）：主页**唯一的捕获入口**，视觉
-        // 权重压倒性最大——"打开应用第一眼就知道点哪里"靠的就是这个对比。
-        // 空库时此处隐藏、交给心流空态的居中条（[timelineEmpty]）。
-        if (!timelineEmpty) const OmniBar(),
-        const SizedBox(height: Tokens.spaceSm),
-        _buildTopBar(context, view),
+        // 顶栏：只剩一枚「筛选与排序」漏斗钮（形态 / 排序 / 标签合住），靠右。
+        // 目的地（心流 / 全部 / 日历 / 收藏）2026-10-09 收在桌面顶条左簇
+        // （WindowStrip）；上一步 / 下一步也在顶条。
+        // 2026-10-09 用户定：常驻捕获输入框（OmniBar）撤除——"这个输入方式
+        // 不好用"，新建统一走 Ctrl+N / Ctrl+Shift+P 命令。
+        const Padding(
+          padding: EdgeInsets.fromLTRB(
+            Tokens.spaceLg,
+            Tokens.spaceMd,
+            Tokens.spaceLg,
+            Tokens.spaceSm,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[_FilterMenuButton()],
+          ),
+        ),
         Expanded(
           child: _HomeBody(
             view: view,
@@ -367,55 +363,6 @@ class _HomeHubState extends ConsumerState<HomeHub> {
           ),
         ),
       ],
-    );
-  }
-
-  /// 顶栏：左 = 常驻视图 tab（[kHomeTabs] 四枚，窄窗可横滚），右端一枚
-  /// 「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
-  /// 上一步 / 下一步在主区顶条（[NavHistoryButton]），不在这里。
-  ///
-  /// ⚠️ 2026-10-06（阶段 1 ②B）：**页内搜索框已退役**——搜索 / 捕获的唯一
-  /// 入口是顶上的 [OmniBar]；`searchNotifierProvider` 的写入口只剩它与
-  /// Ctrl+K 浮层两处，殊途同归。
-  Widget _buildTopBar(BuildContext context, HomeView view) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Tokens.spaceLg,
-        Tokens.spaceMd,
-        Tokens.spaceLg,
-        Tokens.spaceSm,
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  // 常驻 tab = 四枚（[kHomeTabs]）。上一步 / 下一步
-                  // 不在这里——它们是全局导航，2026-09-29 用户定挪去主区
-                  // 顶条（home_screen.dart 的 [NavHistoryButton]）。
-                  for (final HomeView v in kHomeTabs)
-                    Padding(
-                      padding: const EdgeInsets.only(right: Tokens.spaceXs),
-                      child: _ViewTab(
-                        view: v,
-                        active: v == view,
-                        onTap: () =>
-                            ref.read(navHistoryProvider.notifier).selectHome(v),
-                      ),
-                    ),
-                  // （2026-10-05 决策 E）三点溢出菜单已退役：笔记 / 画布
-                  // 不再是视图，改走漏斗钮的「形态」facet ⇒ 顶栏只剩
-                  // [kHomeTabs] 四枚常驻 tab，不再有"临时长出的 tab"。
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: Tokens.spaceXs),
-          const _FilterMenuButton(),
-        ],
-      ),
     );
   }
 }
@@ -650,91 +597,6 @@ class _SearchResultBar extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-/// 顶栏的一枚**视图 tab**：图标 + 文字，选中披 [AppTheme.selectedPill]。
-///
-/// 静止态显式透明（防 Material 落 canvasColor 变黑块，全仓统一教训）；hover
-/// 叠 [AppTheme.hoverOverlay]；自带 [FocusRing]（§5.2）。
-class _ViewTab extends StatefulWidget {
-  const _ViewTab({
-    required this.view,
-    required this.active,
-    required this.onTap,
-  });
-
-  final HomeView view;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  State<_ViewTab> createState() => _ViewTabState();
-}
-
-class _ViewTabState extends State<_ViewTab> {
-  final FocusNode _focus = FocusNode();
-  bool _hover = false;
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
-    // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装，取代中性 tint）。
-    final Color fill = widget.active
-        ? AppTheme.selectedPill(scheme)
-        : _hover
-        ? AppTheme.hoverOverlay(theme.brightness)
-        : Colors.transparent;
-    final Color iconColor = widget.active
-        ? scheme.onSurface
-        : scheme.onSurfaceVariant;
-
-    return FocusRing(
-      focusNode: _focus,
-      borderRadius: radius,
-      child: Material(
-        color: fill,
-        borderRadius: radius,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          focusNode: _focus,
-          borderRadius: radius,
-          hoverColor: Colors.transparent,
-          splashColor: Colors.transparent,
-          highlightColor: Colors.transparent,
-          onHover: (bool v) => setState(() => _hover = v),
-          onTap: widget.onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: Tokens.spaceMd,
-              vertical: Tokens.spaceSm,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                widget.view.icon(iconColor),
-                const SizedBox(width: Tokens.spaceSm),
-                Text(
-                  widget.view.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: widget.active ? scheme.onSurface : iconColor,
-                    fontWeight: widget.active ? FontWeight.w600 : null,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1592,15 +1454,16 @@ class _CalendarView extends StatelessWidget {
     // 新拟态面板（2026-09-26 用户定）：同色浮起，软阴影分区，
     // 不引入实体边框——只靠光影把「日历 + 选中日列表」整组托起。
     final bool isLight = theme.brightness == Brightness.light;
-    // 面板底色与纸面**只差一档**、两边对称（2026-09-26 用户定）：
-    // 亮色比纸面**浅一档**（boardFill）；暗色比底**深一档**（从 contentCanvas
-    // 往 board 方向取 30%）。
+    // 日历组浮在工作区**浮面卡**上（2026-10-09 起；卡色 panelFill：暗 #161616 /
+    // 亮纯白）。
+    // 面板底色两边对称：亮 = boardFill（比白卡沉一档的板底实色，靠阴影托起）；
+    // 暗 = 从浮面往 board 方向取 30%（比 #16 略亮，读作轻轻抬起）。
     // ⚠️ 两边**都不描边**：描边会让暗色那块出现一条框、与亮色无框的语言
     // 不一致（用户反馈别扭）——边界一律由「色差 + 阴影」定义。
     final Color panel = isLight
         ? AppTheme.boardFill(theme.brightness)
         : Color.lerp(
-            AppTheme.contentCanvas(theme.brightness),
+            AppTheme.panelFill(theme.brightness),
             AppTheme.boardFill(theme.brightness),
             0.3,
           )!;

@@ -39,16 +39,14 @@ class Tokens {
   // crossAxisAlignment.center）的松约束下会 expand 到父容器最大高度，
   // 所以按钮跟着标题栏一起伸缩，悬浮背景始终与标题栏等高。
   //
-  // 因此 [titleBarHeightMain] 即按钮高度与点击热区：取 36（用户 2026-09-25
-  // 要求比导航板顶行更宽松）。窗控按钮自身 minHeight 下限 32，36 时居中留
-  // 2px 上下余量，不溢出；[chromeActionButton] 的按钮尺寸也以它为准。
-  static const double titleBarHeightMain = 36;
+  // 因此 [titleBarHeightMain] 即条高（窗控按钮在 Row 里垂直居中跟着伸缩）：
+  // 2026-10-09 取 **44**（opencode 风内嵌浮面外壳：导航图标也在条内，44 给
+  // 36 按钮上下各 4 呼吸；此前 36 是按钮满格无留白的窗控条档）。
+  // [chromeActionButton] 的按钮固定 36，不以此值为准。
+  static const double titleBarHeightMain = 44;
 
   // ── 桌面外壳 chrome 度量（2026-10-08 令牌收口：从各外壳文件的 k 级私有
   // 常量收编到此，与 [titleBarHeightMain] 同一档）────────────────
-  /// 状态栏高（贴窗底那一行）。
-  static const double statusBarHeight = 26;
-
   /// 左侧栏折叠后的纯图标轨宽。
   static const double navRailCollapsedWidth = 56;
 
@@ -62,14 +60,22 @@ class Tokens {
   /// 左侧栏右缘拖宽把手的命中宽。
   static const double navRailSplitterWidth = 4;
 
+  /// **内嵌浮面**离窗缘的环缝（2026-10-09 opencode 风外壳）：内容是一张
+  /// 四角圆角的浮面卡，左 / 右 / 下与窗口底之间靠这圈缝隙分层，不用
+  /// 分割线。**顶部与 44 标题条间距为 0**（同日用户定）：卡顶紧贴条下沿，
+  /// 圆角落出的小弧露窗口底充当分缝。
+  static const double appPanelInset = 8;
+
+  /// 顶条动作按钮（目的地 / 历史 / 设置 / AI）的固定方块：36。条高 44 时
+  /// 垂直居中，上下各 4 呼吸；图标 [iconMd]=24。
+  static const double chromeButtonSize = 36;
+
   /// AI 问答轨常驻右缘的最小窗宽，低于它降级为居中浮层。
   /// （账：外壳 ≈615 ⇒ 1000 以下主区不足 385，编辑器失去意义。）
   static const double askRailBreakpoint = 1000;
 
   /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
   static const double askRailWidth = 340;
-
-
 
   /// 卡片网格行列距（2026-10-01 用户定的 20 档：间距表 16/24 之间的定值，
   /// 不在 t 恤码表上，收编为命名几何量）。

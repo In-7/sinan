@@ -50,36 +50,68 @@ class SurfaceLadder {
     required this.baseLstar,
     required this.floatingDelta,
     required this.boardDelta,
+    required this.panelDelta,
     this.boardOverride,
     this.railDelta = -3.0,
   });
 
-  /// **亮色**一套：底 L\* 97.5 → 浮层 100（纯白）→ **板底向下 3.1**（一列下沉的导航列）。
+  /// **亮色**一套（2026-10-09 晚定案第三版：chrome 沉到 L\* 88.1 `#DDDDDB` →
+  /// 纯白浮面 100；板底再向下 3.1 档）。
   ///
-  /// ⚠️ 亮色这头已经**贴到白端**：浮层就是纯白，没有可再抬的空间；底要动只能**往下压**
-  /// （那是另一个决定，见 §5.6 的"亮色侧余量"）。所以这几种 Δ 在这里更像"记录结果"
-  /// 而不是旋钮。
+  /// 轨迹（用户每轮都在实机上往上/下压一档）：94.5 grouped 灰 → 91.2 `#E6E6E4`
+  /// → **88.1 `#DDDDDB`**（用户："亮色的底色可以再暗一档吗"）——压档的动力一直是
+  /// 同一个：白端 L\* 差人眼是**压缩感知**，白卡压浅灰读不出悬浮。压到 88.1 后
+  /// 白卡与 chrome 的 sRGB 色阶从 25 级拉到 **34 级**（221→255），再叠加卡片
+  /// **软投影**（见 [AppTheme.panelShadow]，macOS / Things 3 的成熟解法），
+  /// 三个通道（色阶 / 描边 / 投影）一起托白卡。
+  ///
+  /// 镜像口径（L\* 极内档不对称是物理性的）：暗色 chrome 在黑极 2.2、卡片
+  /// 浮到 7.2（+5.0 近黑放大感知）；亮色卡片在白极 100、chrome 沉 11.9 到
+  /// 88.1，再由投影补足高度感。⚠️ 亮色的 [floatingDelta] / [panelDelta] 是
+  /// **天花板绑定的**（= 100 − baseLstar），底每沉一档它就自动涨一档——别当成
+  /// "又调大了一档档差"，它只是白极在手边。
   static final SurfaceLadder light = SurfaceLadder(
-    baseLstar: 97.5,
-    floatingDelta: 2.5, // 97.5 → 100（纯白）
-    // ⚠️ **破例：板底是向下的那一档**（2026-09-23 用户定）——详注见 [boardOverride]。
+    baseLstar: 88.1,
+    floatingDelta: 11.9, // → 100（纯白；天花板绑定）
+    // 内嵌浮面 = 纯白卡片，靠深一档灰底 + panelEdge（黑 α0.06）+ panelShadow
+    // 软投影 + 8px 环缝浮起。
+    panelDelta: 11.9, // 88.1 → 100
+    // 板底仍是"下沉的一列"：比灰底再深 3.1 档（#D5D5D3）——详注 [boardOverride]。
     boardDelta: -3.1,
-    boardOverride: const Color(0xFFEFEFED),
-    // railDelta 走默认（−3.0）：亮色侧栏与板底**同档**（"比纸面深一档"）。
+    boardOverride: const Color(0xFFD5D5D3),
+    // railDelta 走默认（−3.0）：亮色侧栏与板底**同档**（"比灰底深一档"）。
   );
 
-  /// **暗色**一套：底 L\* 7.67 → 板底 17.6 → 浮层 19.4。
+  /// **暗色**一套：底 #080808（CIE 分段尺 L\* 2.2）→ 内嵌浮面 #161616
+  /// （L\* 7.2）→ 板底 17.6 → 浮层 19.4。
   ///
-  /// ⚠️ **抬档就是改 [baseLstar] 这一个数**（2026-09-22 从近黑 1.83 抬到 7.67 一档；
-  /// 更早试过 13.65 两档，实机上"有点多"）。改完**别忘**：文字档要重验、
-  /// 体检表那张 α 扫描表要重扫（半透明浮层压在最亮内容上的余量跟着底走）。
+  /// ⚠️ **双尺注意**：本文件的 [_derive] / [_lstar] 用的是**连续式**
+  /// `116·∛Y−16`，CIE 正式版在暗端则是分段的（`903.3·Y`）。#080808 在
+  /// CIE 尺上 2.2、在本仓连续尺上是 **−0.33**；#161616 两尺都约 7.2。
+  /// 所以 [baseLstar] 配的是连续尺值 −0.33（若配 2.2 会反解出 #0D0D0D——
+  /// 2026-10-09 踩过，表面不变量闸门当场报）。
+  ///
+  /// 轨迹：近黑 1.83 → 2026-09-22 抬到 7.67（怕太黑）→ 2026-10-09 用户对照
+  /// opencode 实机拍板**压回 #080808**（"颜色完全按照 opencode 的
+  /// #080808 / #161616，同版也可以"）：工作区浮面在近黑 chrome 上才"浮"得
+  /// 起来。这次**面板与底一起重排**，不是只抬面板——面板 7.2 恰好≈上一版
+  /// 的底（7.67），编辑区在浮面卡内，观感几乎不变，变黑的只是标题栏 / 缝隙
+  /// 这圈 chrome。改完**别忘**：文字档重验、α 扫描表重扫。
   static final SurfaceLadder dark = SurfaceLadder(
-    baseLstar: 7.67,
-    floatingDelta: 11.7, // 暗色浮层要比亮色跨得大得多（投影更弱，靠底色差撑）
-    boardDelta: 9.9, // 板底必须比底亮（板是"浮在底上的 sheet"）
-    // ⚠️ 侧轨与 board **反向**：rail 是"凹进窗体的列"，暗色也往下沉
-    // （暗底 L\* 7.67 已经很暗，再深就糊成一片 ⇒ 幅度比亮色小）。
-    railDelta: -2.2,
+    // 连续尺 −0.33 = sRGB 8（#08；暖形 B 低 2 ⇒ #080806）。
+    baseLstar: -0.33,
+    // 浮层（菜单 / 面板 / 输入控件）保持**绝对** L* 19.4 不跟底下沉（delta 是
+    // 连续尺差值 19.73）：近黑底上它对底差更大，菜单反而更"亮出来"。
+    floatingDelta: 19.73,
+    // 内嵌浮面：**精确取 opencode 值** #161616 = 连续尺 7.2（delta 7.53）。
+    // 配 AppTheme.panelEdge 的 1px 白 α0.08 光边 + 8px 近黑环缝，三件套成立
+    // （量截图：顶边 #2e≈白α0.10 / 侧边 #1d）。
+    panelDelta: 7.53,
+    // 板底保持绝对 17.6（休眠的 NavRail / HubNav 用，不跟底沉）。
+    boardDelta: 17.93,
+    // 侧轨"凹进一列"：连续尺 −0.91 = #070705，比底 #08 恰好沉一级；
+    // 近黑底再深就是纯黑，只能让这 1 级。
+    railDelta: -0.58,
   );
 
   /// 底的 L\*（**唯一的手定数字**）。
@@ -91,30 +123,28 @@ class SurfaceLadder {
   /// 板底比底高多少 L\*。
   final double boardDelta;
 
+  /// **内嵌浮面**比底高多少 L\*（2026-10-09 新增；opencode 风外壳的工作区卡片）。
+  final double panelDelta;
+
   /// 板底不走明度序时的**直接取值**（目前只有亮色用它）。
   ///
-  /// ## 亮色的板底为什么是`#EFEFED`——而且**比底更深**（2026-09-23 用户定）
+  /// ## 亮色的板底是 `#D5D5D3`——比灰底再沉 3.1 档（2026-10-09 晚版）
   /// 它是导航列那一列的**实色**（三端一致）：必须有一档实色，让左栏仍然读得出
-  /// "这是一列"。
+  /// "这是一列"。方向一直是**向下沉**（Notion 侧栏 / macOS Source List 的语言：
+  /// 侧栏比内容区更沉）。
   ///
-  /// **为什么向下而不是向上**：此前它是"叠白 95%"（`0xF2FFFFFF`，合成后 `#FFFFFF`，
-  /// 比主区 `#F8F8F6` 亮 2.35 ΔL\*）⇒ 列比主区更亮，读作"白面板压白底"、分不出列。
-  /// 往下沉则正是 Notion 侧栏 / macOS Source List 的方向（**侧栏比内容区更沉**）。
-  ///
-  /// 📌 取值是**量出来的**，不是挑的：候选按 ΔL\* 与文字 Lc 两个轴扫过一轮 ——
-  /// | 候选 | ΔL\*（对底） | 正文 Lc | 次文字 Lc |
-  /// |---|---|---|---|
-  /// | `#FFFFFF`（旧） | +2.35 | 103.0 | 92.1 |
-  /// | **`#EFEFED`（现）** | **−3.13** | **94.7** | **83.8** |
-  /// | `#ECECEA` | −4.18 | 92.9 | 82.0 |
-  /// ⇒ 取它的理由：比底深 ≥2.5 ΔL\*（肉眼一定读得出分列），而文字余量仍远超门槛
-  /// （正文 75 / 次文字 60）。🔧 要更深就把这里与 [boardDelta] 一起改，别忘跑 `app_theme_test`。
+  /// 轨迹：2026-09-23 旧底 #F8F8F6 时定为 `#EFEFED`（−3.1 ΔL\*）；
+  /// 2026-10-09 下午亮色 chrome 沉到 #EFEFED，板底同步到 `#E7E7E5`；当晚
+  /// chrome 压到 `#E6E6E4`（91.2），板底同步沉到 `#DDDDDB`；**同日再压一档**：
+  /// chrome `#DDDDDB`（88.1），板底同步沉到 **`#D5D5D3`**（L\*≈85.3，对底 −3.1）
+  /// ——保持"肉眼读得出分列、文字余量远超门槛（正文 75 / 次文字 60）"。
+  /// 🔧 要更深就把这里与 [boardDelta] 一起改，别忘跑 `app_theme_test`。
   ///
   /// ⚠️ **必须不透明**（`alpha == 0xFF`）：回退档底下什么都没有，透一点就等于
   /// 直接把 `WindowBase` 那层掺进来 ⇒ 颜色不确定。
   final Color? boardOverride;
 
-  /// **侧轨**比纸面沉多少 ΔL\*（阶段 0 新增；AppRail / StatusBar / AI 轨共用）。
+  /// **侧轨**比纸面沉多少 ΔL\*（阶段 0 新增；最左图标轨 / AI 轨共用）。
   ///
   /// 方向是**两个模式一致地往下沉**（rail 读作"凹进窗体的那一列"，与
   /// [boardDelta] 在暗色那端**相反**——board 是"浮起的 sheet"，rail 不是）。
@@ -126,6 +156,7 @@ class SurfaceLadder {
   double get floatingLstar => baseLstar + floatingDelta;
   double get boardLstar => baseLstar + boardDelta;
   double get railLstar => baseLstar + railDelta;
+  double get panelLstar => baseLstar + panelDelta;
 
   /// 底（**= 纸面**：`contentCanvas` 直接复用它，两处不许再漂开）。
   late final Color base = _derive(baseLstar, SurfaceShape.warm);
@@ -133,12 +164,18 @@ class SurfaceLadder {
   /// 浮层（菜单 / 面板 / 工具条 / 卡片的底）。
   late final Color floating = _derive(floatingLstar, SurfaceShape.neutral);
 
+  /// **内嵌浮面**（2026-10-09：opencode 风外壳的工作区卡片）。
+  ///
+  /// 夹在底与浮层之间的一档**大面积常驻面**，纯中性（大面不染种子色）；
+  /// 与窗口底之间靠 `Tokens.appPanelInset` 的环缝 + 明度差分层，不画分割线。
+  late final Color panel = _derive(panelLstar, SurfaceShape.neutral);
+
   /// 板底（导航板那种"浮在底上的 sheet"）。
   late final Color board =
       boardOverride ??
       _derive(boardLstar, SurfaceShape.cool).withValues(alpha: 0.95);
 
-  /// **侧轨**（AppRail / StatusBar / AI 轨那一列）：比纸面**沉一档**。
+  /// **侧轨**（最左图标轨 / AI 轨那一列）：比纸面**沉一档**。
   ///
   /// 形状取 [SurfaceShape.warm]（与底**同族**）——读作"同一材质深一档"，
   /// 而不是另一种材质的色块（[board] 那端才有冷灰的 sheet 语义）。

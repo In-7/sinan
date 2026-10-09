@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/home_screen.dart';
 import 'package:sinan/src/app/nav_rail.dart';
 import 'package:sinan/src/app/providers.dart';
@@ -14,19 +15,23 @@ import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sinan/src/theme/tokens.dart';
+import 'package:sinan/src/window/app_title_bar.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// **主区顶条 + 左导航栏的导航结构**（2026-09-29 用户定：50px 第一列总导航栏
-/// 撤掉；2026-10-08 修订：撤销决策 B，目的地从 [WindowStrip] 迁回左 [NavRail]）。
+/// **全宽顶条 + 内嵌浮面的导航结构**（2026-10-09 用户定，opencode 风；
+/// 替代当日早上的 50 最左图标轨）。
 ///
 /// 钉的是这几条结构性事实：
-/// ① 顶条左簇只剩 **上一步 / 下一步**（统一导航历史 [navHistoryProvider] 的出口），
-///    初始禁用，导航后可用；
-/// ② 目的地（主页 / 心流 / 全部 / 日历 / 收藏 / 搜索）+ 设置 + 问笔记都在左
-///    [NavRail]（左栏 tile 用 Text，无 Tooltip）；折叠按钮在左栏底部；
-/// ③ 第一列 [AppRail] 已删——HubNav 子树与整窗里都不许再有它的位置；
-/// ④ 编辑器页同一簇替换旧「上一页」：编辑器也在统一历史栈里，箭头按点击顺序进退。
+/// ① 44 高全宽 [WindowStrip] 左簇**横排**四枚目的地
+///    （心流 / 全部 / 日历 / 收藏，36 方块 / 24 图标 + tooltip，
+///    主页 / 编辑两态**常驻**；选中披 [AppTheme.selectedPill]，编辑态全灰），
+///    16 隔后接时间轴（上一步 / 下一步）；
+/// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（HomeHub 几何即卡几何）；
+///    右簇 = 设置 + 问笔记（紧贴「最小化」左侧）；
+/// ③ 大左栏 [NavRail]（56/248 带文字版）仍不在 HomeScreen 布局里
+///   （`findsNothing`）；它的行行为由独立台架 [pumpRail] 继续钉；
+/// ④ 视图切换与进编辑器都走统一历史栈，顶条箭头按点击顺序进退。
 void main() {
   /// `WindowStrip` / 窗控按钮在 initState 里问 window_manager（isFocused /
   /// isMaximized）。测试环境没有插件，补一个返回假值的通道 mock。
@@ -102,6 +107,31 @@ void main() {
     return container;
   }
 
+  /// [NavRail] 独立台架（2026-10-09 撤出 HomeScreen 布局后）：rail 代码还在，
+  /// _NavRailTile 的按压 / 焦点回归改在这里钉——不挂主布局也能单测它的行。
+  Future<void> pumpRail(WidgetTester tester) async {
+    setSurfaceSize(tester, 400, 700);
+    final ProviderContainer container = buildContainer();
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          navigatorKey: appNavigatorKey,
+          theme: AppTheme.light(),
+          home: const Scaffold(
+            body: Row(
+              children: <Widget>[
+                NavRail(),
+                Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
   IconButton buttonOf(WidgetTester tester, String tooltip) =>
       tester.widget<IconButton>(
         find
@@ -112,61 +142,108 @@ void main() {
             .first,
       );
 
-  testWidgets('顶条只含历史箭头；左栏承载全部目的地，底部署设置/问笔记', (
+  /// 顶条左簇的四枚目的地（tooltip = 视图名）。
+  const List<String> kDestinations = <String>['心流', '全部', '日历', '收藏'];
+
+  testWidgets('44 全宽顶条：四枚目的地横排 + 16 隔 + 时间轴；条下 0 缝浮面卡', (
     WidgetTester tester,
   ) async {
-    await pump(tester);
+    final ProviderContainer container = await pump(tester);
 
-    // 顶条左簇：只剩上一步 / 下一步（统一导航历史），初始禁用。
-    // （2026-10-08 修订：撤销决策 B——主页 / 日历 / 收藏 / 设置 / 问笔记都迁回
-    // 左导航栏，顶条只留历史箭头。）
-    expect(find.byTooltip('上一步'), findsOneWidget);
-    expect(find.byTooltip('下一步'), findsOneWidget);
+    // ③ 带文字的大左栏仍撤（2026-10-09 "先去掉"），它的折叠钮也不在。
+    expect(find.byType(NavRail), findsNothing);
+    expect(find.byTooltip('折叠导航栏'), findsNothing);
+
+    // ① 四枚目的地都在顶条左簇，36 方块横排（vendored IconButton 子像素取整 ±1）：
+    // 首枚贴 x=0、垂直居中于 44 条（top≈4）；水平顺序 心流 < 全部 < 日历 < 收藏，
+    // 相邻两枚首尾相接（36 一档，不密堆也不留缝）。
+    for (final String label in kDestinations) {
+      expect(find.byTooltip(label), findsOneWidget, reason: '顶条必须有：$label');
+    }
+    final Rect first = tester.getRect(find.byTooltip('心流'));
+    expect(first.left, closeTo(0, 1.5), reason: '顶条全宽，左簇贴窗左缘');
+    expect(first.height, inInclusiveRange(35, 37), reason: '36 固定方块，上下各 4 呼吸');
+    expect(
+      first.top,
+      inInclusiveRange(3, 5),
+      reason: '36 方块在 44 条内垂直居中（top≈4）',
+    );
+    final List<Rect> destRects = <Rect>[
+      for (final String l in kDestinations) tester.getRect(find.byTooltip(l)),
+    ];
+    for (int i = 1; i < destRects.length; i++) {
+      expect(destRects[i - 1].right, closeTo(destRects[i].left, 1.5));
+      expect(destRects[i].top, closeTo(first.top, 0.5), reason: '同一水平带');
+    }
+
+    // ① 选中态：默认落心流 ⇒ 心流披 selectedPill，其余透明。
+    final ColorScheme scheme = AppTheme.light().colorScheme;
+    Color? tileFill(String label) => buttonOf(
+      tester,
+      label,
+    ).style?.backgroundColor?.resolve(<WidgetState>{});
+    expect(tileFill('心流'), AppTheme.selectedPill(scheme));
+    expect(tileFill('全部'), Colors.transparent);
+    expect(tileFill('日历'), Colors.transparent);
+    expect(tileFill('收藏'), Colors.transparent);
+
+    // 顶条几何：全宽贴顶，高 44。
+    final Rect strip = tester.getRect(find.byType(WindowStrip));
+    expect(strip.top, closeTo(0, 0.5));
+    expect(strip.left, closeTo(0, 0.5));
+    expect(strip.right, closeTo(1200, 0.5));
+    expect(strip.height, closeTo(44, 0.5));
+
+    // 时间轴（上一步 / 下一步）在目的地之后、间隔 16（spaceLg）；初始禁用。
+    expect(find.byTooltip('主页'), findsNothing, reason: '由「心流」承担');
+    final Rect back = tester.getRect(find.byTooltip('上一步'));
+    expect(
+      back.left - destRects.last.right,
+      closeTo(Tokens.spaceLg, 1.5),
+      reason: '目的地组与时间轴之间 16 隔，不用竖分割线',
+    );
+    expect(back.left, lessThan(tester.getRect(find.byTooltip('下一步')).left));
     expect(buttonOf(tester, '上一步').onPressed, isNull);
     expect(buttonOf(tester, '下一步').onPressed, isNull);
 
-    // 左导航栏的目的地（左栏 tile 用 Text，无 Tooltip）。
-    Finder railTile(String label) =>
-        find.descendant(of: find.byType(NavRail), matching: find.text(label));
-    for (final String label in <String>[
-      '主页',
-      '全部',
-      '日历',
-      '收藏',
-      '搜索',
-      '设置',
-      '问笔记',
-    ]) {
-      expect(railTile(label), findsOneWidget, reason: '左栏应有目的地：$label');
+    // ② 条下无分割线、**无间隙**（2026-10-09 用户定顶缝 0）：HomeHub 充满
+    // 浮面卡——卡顶 = 44（顶缝 0，四角圆角），左右下各 8 环缝。
+    final Rect hub = tester.getRect(find.byType(HomeHub));
+    expect(hub.top, closeTo(44, 0.5));
+    expect(hub.left, closeTo(Tokens.appPanelInset, 0.5));
+    expect(hub.right, closeTo(1200 - Tokens.appPanelInset, 0.5));
+    expect(hub.bottom, closeTo(900 - Tokens.appPanelInset, 0.5));
+
+    // 右簇：设置 + 问笔记，AI 紧贴「最小化」左侧、设置紧挨 AI 左侧。
+    final Rect minRect = tester.getRect(find.byTooltip('最小化'));
+    final Rect aiRect = tester.getRect(find.byTooltip('问笔记（Ctrl+J）'));
+    final Rect settingsRect = tester.getRect(find.byTooltip('设置'));
+    expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4));
+    expect(aiRect.left - settingsRect.right, inInclusiveRange(-0.5, 4));
+    expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
+
+    // ① 编辑态：目的地两态常驻，四枚全灰（"在笔记里"不属于任何目的地）。
+    final Note note = await container.read(notesProvider.notifier).createNote();
+    container.read(locateProvider.notifier).locate(noteId: note.id);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavRail), findsNothing);
+    for (final String label in kDestinations) {
+      expect(find.byTooltip(label), findsOneWidget, reason: '编辑态目的地仍常驻');
+      expect(tileFill(label), Colors.transparent, reason: '编辑态全灰：$label');
     }
-
-    // 折叠（展开态）按钮在左栏底部；旧的「折叠面板」已撤。
-    expect(find.byTooltip('折叠面板'), findsNothing);
-    expect(find.byTooltip('展开面板'), findsNothing);
-    expect(find.byTooltip('折叠导航栏'), findsOneWidget);
-
-    // **左栏垂直顺序闸门**：主页在上、日历 / 收藏在中、设置 / 问笔记在底——
-    // 顺序被改动这里就会红。
-    double topOf(String label) => tester.getRect(railTile(label)).top;
-    expect(topOf('主页'), lessThan(topOf('全部')));
-    expect(topOf('全部'), lessThan(topOf('日历')));
-    expect(topOf('日历'), lessThan(topOf('收藏')));
-    expect(topOf('收藏'), lessThan(topOf('设置')));
-    expect(topOf('设置'), lessThan(topOf('问笔记')));
+    // 顶条仍是同一条全宽条（编辑器不另起一条）。
+    final Rect stripInEditor = tester.getRect(find.byType(WindowStrip));
+    expect(stripInEditor.left, closeTo(0, 0.5));
+    expect(stripInEditor.right, closeTo(1200, 0.5));
+    expect(stripInEditor.height, closeTo(44, 0.5));
   });
 
-  testWidgets('上一步/下一步驱动视图历史：左栏切视图后可退回、可重做', (WidgetTester tester) async {
+  testWidgets('顶条目的地切视图驱动统一历史：切到日历后箭头可退回、可重做', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    // 起点是「心流」（2026-10-05 决策 C 的默认视图），点左栏「日历」换视图。
-    // （2026-10-08 修订：日历入口在左导航栏，用 find.descendant 锁定，避免与
-    // 主区日历视图自身的「日历」标题撞名。）
-    final Finder calendar = find.descendant(
-      of: find.byType(NavRail),
-      matching: find.text('日历'),
-    );
+    // 起点是「心流」（2026-10-05 决策 C 的默认视图），点顶条「日历」换视图。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    await tester.tap(calendar);
+    await tester.tap(find.byTooltip('日历'));
     await tester.pumpAndSettle();
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
 
@@ -182,34 +259,30 @@ void main() {
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
   });
 
-  testWidgets('编辑器在统一历史栈里：主页→上一步=回笔记，再上一步=回日历', (WidgetTester tester) async {
+  testWidgets('编辑器在统一历史栈里：顶条心流→上一步=回笔记，再上一步=回日历', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    Finder railTile(String label) =>
-        find.descendant(of: find.byType(NavRail), matching: find.text(label));
-
-    // 与真实点击路径一致：点左栏「日历」换视图，再走 locateProvider 打开笔记
+    // 与真实点击路径一致：点顶条「日历」换视图，再走 locateProvider 打开笔记
     // （卡片 / 列表的入口同路）。
-    await tester.tap(railTile('日历'));
+    await tester.tap(find.byTooltip('日历'));
     await tester.pumpAndSettle();
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
 
-    // 编辑器顶条：旧「上一页」没了，同一簇在（上一步 / 下一步）；主页在左栏。
-    expect(find.byTooltip('上一页'), findsNothing, reason: '已被左簇取代');
-    expect(railTile('主页'), findsOneWidget);
+    // 顶条：旧「上一页」没了，只有时间轴（上一步 / 下一步）。
+    expect(find.byTooltip('上一页'), findsNothing, reason: '已被时间轴取代');
     expect(find.byTooltip('上一步'), findsOneWidget);
     expect(find.byTooltip('下一步'), findsOneWidget);
 
-    // 左栏「主页」：离开编辑器、落回「心流」，并把"这篇笔记"记入统一历史。
-    await tester.tap(railTile('主页'));
+    // 顶条「心流」：离开编辑器、落回「心流」，并把"这篇笔记"记入统一历史。
+    await tester.tap(find.byTooltip('心流'));
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull, reason: '先离开编辑器');
     expect(
       container.read(navHistoryProvider).view,
       HomeView.timeline,
-      reason: '主页落回默认落地页「心流」（2026-10-05 决策 C）',
+      reason: '心流是默认落地页（2026-10-05 决策 C）',
     );
 
     // 「上一步」：按点击顺序回到刚离开的那篇笔记（重新打开编辑器）。
@@ -223,7 +296,7 @@ void main() {
     expect(container.read(selectedNoteIdProvider), isNull, reason: '离开编辑器');
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
 
-    // 「下一步」×2：原路重做——先回笔记，再回主页（心流）。
+    // 「下一步」×2：原路重做——先回笔记，再回心流。
     await tester.tap(find.byTooltip('下一步'));
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), note.id);
@@ -234,13 +307,13 @@ void main() {
     expect(buttonOf(tester, '下一步').onPressed, isNull, reason: '进到底了');
   });
 
-  testWidgets('标题栏两分支都不放搜索入口（主页页内框 / 编辑器 Ctrl+F / 全局 Ctrl+K）', (
+  testWidgets('标题栏不放搜索入口（主页页内搜索态 / 编辑器 Ctrl+F / 全局 Ctrl+K）', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 标题栏**任何分支**都不挂搜索图标 / 胶囊（2026-10-01 用户定）：
-    // 主页有页内搜索框、编辑器有 Ctrl+F 内容查找、全局跳转统一走 Ctrl+K。
+    // 标题栏不挂搜索图标 / 胶囊（2026-10-01 用户定）：主页搜索是页内状态、
+    // 编辑器有 Ctrl+F 内容查找、全局跳转统一走 Ctrl+K。
     expect(find.byTooltip('快速跳转（Ctrl+K）'), findsNothing);
     expect(find.text('Ctrl+K'), findsNothing);
 
@@ -254,7 +327,7 @@ void main() {
   });
 
   /// tile 的圆角底（AnimatedContainer）。**不是** Container 子类，finder 要用它。
-  AnimatedContainer tileOf(WidgetTester tester, String label) =>
+  AnimatedContainer railTileOf(WidgetTester tester, String label) =>
       tester.widget<AnimatedContainer>(
         find
             .ancestor(
@@ -267,23 +340,20 @@ void main() {
             .first,
       );
 
-  Color tileBg(WidgetTester tester, String label) =>
-      (tileOf(tester, label).decoration! as BoxDecoration).color!;
+  Color railTileBg(WidgetTester tester, String label) =>
+      (railTileOf(tester, label).decoration! as BoxDecoration).color!;
 
-  testWidgets('侧栏项：按住叠一档 stateLayer（比 hover 更实），松手复原', (
+  testWidgets('暂撤大栏的行（独立台架）：按住叠一档 stateLayer，松手复原', (
     WidgetTester tester,
   ) async {
-    await pump(tester);
+    await pumpRail(tester);
 
     // 用「设置」：它的 `active` 恒为 false ⇒ 静止底色**恒**透明，不受
     // aiPanelOpen / navHistory 等其它 provider 的初值影响。
-    expect(tileBg(tester, '设置'), Colors.transparent, reason: '静止态透明');
+    expect(railTileBg(tester, '设置'), Colors.transparent, reason: '静止态透明');
 
     final Offset at = tester.getCenter(
-      find.descendant(
-        of: find.byType(NavRail),
-        matching: find.text('设置'),
-      ),
+      find.descendant(of: find.byType(NavRail), matching: find.text('设置')),
     );
     // 用鼠标指针：这是桌面场景，且 hover 高亮在 touch 模式下本就不显示。
     final TestGesture g = await tester.startGesture(
@@ -292,7 +362,7 @@ void main() {
     );
     await tester.pump();
 
-    final Color pressed = tileBg(tester, '设置');
+    final Color pressed = railTileBg(tester, '设置');
     expect(pressed, isNot(Colors.transparent), reason: '按下 ⇒ 有反馈');
     // 按下档 = stateLayerPressed(18%) 叠在静止底上，不是 hover 那档(4%)。
     expect(
@@ -303,13 +373,13 @@ void main() {
 
     await g.up();
     await tester.pumpAndSettle();
-    expect(tileBg(tester, '设置'), Colors.transparent, reason: '松手复原');
+    expect(railTileBg(tester, '设置'), Colors.transparent, reason: '松手复原');
   });
 
-  testWidgets('侧栏项：键盘聚焦出现统一焦点环，且环与圆角底同半径', (
+  testWidgets('暂撤大栏的行（独立台架）：键盘聚焦出现统一焦点环，且环与圆角底同半径', (
     WidgetTester tester,
   ) async {
-    await pump(tester);
+    await pumpRail(tester);
 
     final Finder setting = find.descendant(
       of: find.byType(NavRail),
@@ -338,7 +408,8 @@ void main() {
       find.descendant(of: ring, matching: find.byType(Container)).first,
     );
     expect(box.foregroundDecoration, isNotNull);
-    final BoxDecoration ringDecoration = box.foregroundDecoration! as BoxDecoration;
+    final BoxDecoration ringDecoration =
+        box.foregroundDecoration! as BoxDecoration;
     final Border border = ringDecoration.border! as Border;
     expect(border.top.color, AppTheme.light().colorScheme.primary);
     expect(border.top.width, Tokens.focusRingWidth);
