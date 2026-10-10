@@ -117,8 +117,13 @@ class HomeScreen extends ConsumerWidget {
       // 浮面卡；窄窗（< [Tokens.askRailBreakpoint]）降级回 [showAskPanel]
       // 浮层——状态只有 [aiPanelOpenProvider] 一个布尔，呈现形态归外壳按宽度选。
       //
-      // 窗口底**不在这里铺**：它由 `main.dart` 的 `MaterialApp.builder` 统一铺一层
-      // 纯色（`AppTheme.windowBackground`）⇒ 这里保持透明让它透出来。
+      // 窗口底**不在这里铺**，而且现在也**不是** `MaterialApp.builder` 铺的
+      // ——`WindowBase` 早在 2026-09-23 就删掉了那层自绘底（省掉每帧全屏 fill）。
+      // 窗口底现在由**平台层**负责，两种互斥的走法（见 `WindowService`
+      // `applyWindowBackground`）：
+      //   · 开成 Mica ⇒ 平台窗口透明，DWM 在最底下画材质，这里透出的是**材质**；
+      //   · 没开成（Win10 等）⇒ 平台铺不透明 `AppTheme.windowBackground`。
+      // 两种都是"底下有底"，所以这里一律保持透明。
 
       final bool aiWanted = ref.watch(aiPanelOpenProvider);
       final bool railFits =
