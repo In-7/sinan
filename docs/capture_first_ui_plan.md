@@ -56,7 +56,7 @@
 | WindowStrip：参数 leading/title/center/trailing；高 36；DragToMoveArea + 双击最大化 + 窗控钮 | lib/src/window/app_title_bar.dart:25-49、88-145；lib/src/theme/tokens.dart:42 |
 | 最小窗口 720×560 | lib/src/window/window_service.dart:20（app_title_bar.dart:245 另有一处 minimumSize） |
 | 桌面布局 = 顶条 + (HomeHub ‖ 编辑器) + _AiRailSlot；AI 轨宽窗常驻断点 1000 | lib/src/app/home_screen.dart:112-241；lib/src/app/ask_panel.dart:30 |
-| 左侧整列为空：HubNav 2026-09-30 整撤、AppRail 2026-09-29 撤；navCollapsedProvider 机制保留无消费方 | lib/src/app/providers.dart:129-143 |
+| 左侧整列为空：HubNav 2026-09-30 整撤、AppRail 2026-09-29 撤 | lib/src/app/home_screen.dart |
 | **无状态栏**（全项目无匹配） | grep「状态栏」零命中 |
 
 主页与视图：
@@ -200,8 +200,7 @@
 - 目的地（拍板 B）：主页（goHome）/ 日历（selectHome(calendar)）/ 画布（selectHome(canvas)）/
   AI（runCommandById('ai.ask')，开关态点亮）/ 设置（runCommandById('app.settings')，钉底部）。
 - 选中态：主页态高亮当前 HomeView 对应项；编辑态不高亮任何项（"在笔记里"不属于任何目的地）。
-- 顶条左簇微调：NavHistoryButton 前进/后退保留；HomeNavButton 与 rail 主页重复，实机确认后移除；
-  NavCollapseButton 暂时隐藏（阶段 4 侧栏落地时复用 navCollapsedProvider 挂侧栏）。
+- 顶条左簇微调：NavHistoryButton 前进/后退保留；HomeNavButton 主页项实机确认后移除。
 - 720 最小窗宽下 48px rail 无压力（主区仍余 672）。
 
 ### 7.2 StatusBar 26px（新文件 `lib/src/app/status_bar.dart`）
@@ -231,7 +230,7 @@
 - 形态：rail 右侧 280px（240-360 拖拽记忆，Splitter 自绘）；主页态 = 分区/收藏/标签上下文列表；
   编辑态自动切「本篇大纲 + 反链」。
 - 前置 spike：vendored appflowy 编辑器的大纲数据出口（标题节点遍历）与反链数据来源盘点，
-  出结论后再立项动工。navCollapsedProvider（providers.dart:134-143）届时作为折叠开关接回。
+  出结论后再立项动工。
 
 ## 10. 阶段 5：组件表层自绘 + golden
 

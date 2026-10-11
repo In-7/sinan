@@ -132,20 +132,6 @@ List<Command> buildCommands(Ref ref) => <Command>[
     run: (CommandContext _) async =>
         ref.read(navHistoryProvider.notifier).goForward(),
   ),
-  // 折叠 / 展开左导航栏（2026-10-08）：`Ctrl+\` 接上——原 `ui_rewrite_plan.md`
-  // §3.4 已登记、此前卡在"侧栏不可折叠"；现在 [NavRail] 落地，卡点消除。
-  Command(
-    id: 'nav.collapse',
-    title: '折叠 / 展开导航栏',
-    group: CommandGroup.navigate,
-    scope: CommandScope.global,
-    keys: <KeyBinding>[
-      const KeyBinding(key: LogicalKeyboardKey.backslash, control: true),
-    ],
-    run: (CommandContext _) async {
-      ref.read(navCollapsedProvider.notifier).toggle();
-    },
-  ),
   Command(
     id: 'note.promote',
     title: '收藏 / 取消收藏',

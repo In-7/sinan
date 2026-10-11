@@ -71,6 +71,12 @@ abstract final class WindowService {
   /// 明暗没变就不必再重设一次平台窗底（每次重设都是一次 DWM / 窗口服务器往返）。
   static Brightness? _lastBaseBrightness;
 
+  /// **上次应用的底层（chrome）色**。
+  ///
+  /// 幂等短路必须**连色一起比**：换主题种子时明暗可能没变，只比 [Brightness]
+  /// 会让新主题色永远铺不上去。
+  static Color? _lastChromeColor;
+
   /// 把**窗口自身**的底色设成 [AppTheme.windowBackground] 的**不透明**值。
   ///
   /// ## 为什么（2026-09-23）
@@ -88,16 +94,24 @@ abstract final class WindowService {
   /// 🔧 **回退方案 C**（把那层自绘底加回来）**未启用**，完整配方记在
   /// `docs/ui_rewrite_plan.md` §5.6：出现"露桌面 / 黑底 / 切明暗闪 / mac-linux 异常"
   /// 任一情形就照它装回（代价是付回第二笔，第一笔不受影响）。
-  static Future<void> applyWindowBackground(Brightness brightness) async {
+  /// [chromeColor]：底层（环缝 / 标题条）的**主题色**；传 null 则回落到中性
+  /// [AppTheme.windowBackground]（旧行为）。
+  ///
+  /// 上层传的是 `scheme.primary`——`AppTheme._build` 里 `primary: seed` 已把主色
+  /// 钉成**种子本色**（所见即所选、不稀释），所以这里拿到的就是用户选的那个色。
+  static Future<void> applyWindowBackground(
+    Brightness brightness, {
+    Color? chromeColor,
+  }) async {
     if (!isSupported) return;
-    if (_lastBaseBrightness == brightness) return;
-    await windowManager.setBackgroundColor(
-      AppTheme.windowBackground(brightness),
-    );
+    final Color color = chromeColor ?? AppTheme.windowBackground(brightness);
+    if (_lastBaseBrightness == brightness && _lastChromeColor == color) return;
+    await windowManager.setBackgroundColor(color);
     // ⚠️ **只在成功之后才记**：若记在 await 之前，一次平台调用失败就会被永久记住
     // "已应用" ⇒ 之后不再重试。而自绘底已经删了，铺底失败就等于**露桌面**，
     // 且要等用户下次切换明暗才自愈。现在失败会留给下一次 build 重试。
     _lastBaseBrightness = brightness;
+    _lastChromeColor = color;
   }
 
   static Future<void> minimize() async {

@@ -696,10 +696,10 @@ class _SpaceItemList extends ConsumerWidget {
 }
 
 /// 内联列表里的一行：标题 + 行尾相对时间，高 [Tokens.sidebarRowHeight]（28，
-/// 2026-10-08 拍板与 nav_rail 行高同档）。
+/// 2026-10-08 拍板）。
 ///
 /// 状态（与全列同语言）：
-/// - **正在打开的那篇** = 强调色药丸（[AppTheme.selectedPill] primary 12% +
+/// - **正在打开的那篇** = 无底色（[AppTheme.selectedPill] 透明，靠前景色区分，不染色 +
 ///   [_GlassSheet] 三层光，2026-10-08 换装取代中性 tint）；
 /// - 悬停 = [AppTheme.hoverOverlay]（再叠一层）
 ///

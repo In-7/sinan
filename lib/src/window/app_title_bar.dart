@@ -1,8 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../app/providers.dart';
+import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'window_service.dart';
 
@@ -12,9 +15,11 @@ import 'window_service.dart';
 /// 桌面外壳为**全宽顶条 + 内嵌浮面**（2026-10-09 用户定，opencode 风，
 /// 见 HomeScreen）：
 ///
-/// - [WindowStrip]：44 高全宽**通栏**——左动作簇（目的地：心流 / 全部 /
-///   日历 / 收藏纯图标药丸，16 隔后接上一步 / 下一步）+ 拖拽区
-///   （+ 可选标题）+ 右动作簇（设置 / AI 开关）+ 最小化 / 最大化 / 关闭。
+/// - [WindowStrip]：44 高全宽**通栏**——拖拽区（+ 可选标题）+ **正中**动作组（四枚
+///   目的地图标药丸：心流 / 全部 / 日历 / 收藏，彼此 16 隔，精确几何居中；左 `Expanded`
+///   等分放历史键浮「心流」左，不挤占导航位）+ 设置钮（紧贴最小化
+///   左、与窗控成组）+ 最小化 / 最大化 / 关闭。（问笔记 2026-10-11 起移入 hub 头栏，
+///   贴「筛选与排序」右侧。）
 /// - 条下**不画分隔线**：内容区是 8px 环缝内的圆角浮面卡，层次只靠窗口底与
 ///   浮面的明度差 + 缝隙表达。
 ///
@@ -26,7 +31,7 @@ import 'window_service.dart';
 /// 全宽顶条：左/右动作簇 + 拖拽区 + 窗控按钮（最小化/最大化/关闭）。
 ///
 /// [leading]/[trailing] 放动作；[title] 可放应用名。
-class WindowStrip extends StatefulWidget {
+class WindowStrip extends ConsumerStatefulWidget {
   const WindowStrip({
     super.key,
     this.leading,
@@ -35,27 +40,30 @@ class WindowStrip extends StatefulWidget {
     this.trailing,
   });
 
-  /// 左侧动作簇（目的地图标 + 上一步 / 下一步）。
+  /// 左侧动作簇（可选扩展位；2026-10-11 起上一步 / 下一步已并入 [center] 居中组、
+  /// 紧挨心流左侧，此处通常留空）。
   final List<Widget>? leading;
 
   /// 应用名（可选，渲染在拖拽带左端）。
   final String? title;
 
-  /// 拖拽带**正中**的控件（2026-09-30：全局搜索胶囊）。
+  /// 拖拽带**正中**的控件（2026-10-11 起承载居中的目的地图标药丸：心流 / 全部 /
+  /// 日历 / 收藏；全局搜索胶囊后续也接进此槽，与导航同段或取代之）。
   ///
   /// 实现上它是盖在拖拽带之上的**外层 Stack 兄弟**，不活在 [DragToMoveArea]
   /// 内：否则双击最大化与拖窗两个手势识别器会和它的点击同处一个竞技场，
   /// 双击识别器要等 300ms 才认输——胶囊点击被凭空拖慢半拍，测试里则永不触发。
   final Widget? center;
 
-  /// 右侧动作簇（通栏常驻：设置 / AI 开关），紧贴窗控按钮前——与窗控成组。
+  /// 右侧动作簇（可选扩展位；2026-10-11 起仅放设置钮，紧贴最小化左侧、与窗控成组；
+  /// 问笔记同日移入 hub 头栏）。窗控按钮由 [_CaptionButtons] 单独渲染。
   final List<Widget>? trailing;
 
   @override
-  State<WindowStrip> createState() => _WindowStripState();
+  ConsumerState<WindowStrip> createState() => _WindowStripState();
 }
 
-class _WindowStripState extends State<WindowStrip> with WindowListener {
+class _WindowStripState extends ConsumerState<WindowStrip> with WindowListener {
   bool _focused = true;
 
   @override
@@ -91,59 +99,69 @@ class _WindowStripState extends State<WindowStrip> with WindowListener {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // 标题条是透明容器，透出平台窗色（chrome = 主题色）；其上的图标 / 文字
+    // 必须吃 onChrome（按 chrome 色明度翻转的墨色），否则在饱和主题色底上
+    // 不可读。tabler 图标经 AppIconTheme 桥接读 Material IconTheme，故套一层
+    // IconTheme 即生效。
+    final settings = ref.watch(settingsProvider);
+    final Color? seed = settings.themeSeed == 0 ? null : Color(settings.themeSeed);
+    final Color onChrome = AppTheme.onChrome(seed, theme.brightness);
 
     return Container(
       height: Tokens.titleBarHeightMain,
       color: Colors.transparent,
-      child: Stack(
-        children: <Widget>[
-          // 底层：动作区 + 拖拽带 + 窗控。
-          Row(
-            children: <Widget>[
-              ...?widget.leading?.map(
-                (Widget action) => chromeActionButton(context, action),
-              ),
-              // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖
-              // 一层 `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的
-              // 说明）。这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
-              Expanded(
-                child: DragToMoveArea(
-                  child: GestureDetector(
-                    behavior: .translucent,
-                    onDoubleTap: WindowService.toggleMaximize,
-                    // 应用名（未传时为空盒，拖拽照常吃事件）。
-                    child: Container(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Tokens.spaceMd,
-                      ),
-                      child: DefaultTextStyle(
-                        style: TextStyle(
-                          color: _focused
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                          fontSize: Tokens.fontSizeSm,
+      child: IconTheme(
+        data: IconThemeData(color: onChrome),
+        child: Stack(
+          children: <Widget>[
+            // 底层：动作区 + 拖拽带 + 窗控。
+            Row(
+              children: <Widget>[
+                ...?widget.leading?.map(
+                  (Widget action) => chromeActionButton(context, action),
+                ),
+                // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖
+                // 一层 `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的
+                // 说明）。这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
+                Expanded(
+                  child: DragToMoveArea(
+                    child: GestureDetector(
+                      behavior: .translucent,
+                      onDoubleTap: WindowService.toggleMaximize,
+                      // 应用名（未传时为空盒，拖拽照常吃事件）。
+                      child: Container(
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Tokens.spaceMd,
                         ),
-                        child: widget.title != null
-                            ? Text(widget.title!)
-                            : const SizedBox.shrink(),
+                        child: DefaultTextStyle(
+                          style: TextStyle(
+                            color: onChrome.withValues(
+                              alpha: _focused ? 1.0 : 0.62,
+                            ),
+                            fontSize: Tokens.fontSizeSm,
+                          ),
+                          child: widget.title != null
+                              ? Text(widget.title!)
+                              : const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              ...?widget.trailing?.map(
-                (Widget action) => chromeActionButton(context, action),
-              ),
-              const _CaptionButtons(),
-            ],
-          ),
-          // 正中控件（全局搜索胶囊）：盖在拖拽带**之上**的兄弟层，不进
-          // DragToMoveArea 的手势竞技场（见 [center] 字段注释）。Center 自身
-          // 不吃事件，胶囊之外的点击照常落到底层拖拽带。
-          if (widget.center != null)
-            Positioned.fill(child: Center(child: widget.center)),
-        ],
+                ...?widget.trailing?.map(
+                  (Widget action) => chromeActionButton(context, action),
+                ),
+                const _CaptionButtons(),
+              ],
+            ),
+            // 正中控件（全局搜索胶囊）：盖在拖拽带**之上**的兄弟层，不进
+            // DragToMoveArea 的手势竞技场（见 [center] 字段注释）。Center 自身
+            // 不吃事件，胶囊之外的点击照常落到底层拖拽带。
+            if (widget.center != null)
+              Positioned.fill(child: Center(child: widget.center)),
+          ],
+        ),
       ),
     );
   }
@@ -233,7 +251,8 @@ class _CaptionButtonsState extends State<_CaptionButtons> with WindowListener {
 
 /// Chrome 内 IconButton 的统一主题包裹：全局 iconButtonTheme 的最小
 /// 尺寸是 40×40，直接放进 44 高的顶条会贴满全高——收成 [Tokens.chromeButtonSize]
-/// （36）固定方块，在条内垂直居中（上下各 4 呼吸）。
+/// （32）固定方块，与居中目的地图标药丸同大（2026-10-11 用户定悬浮背景齐平），
+/// 在条内垂直居中（上下各 6 呼吸）。
 Widget chromeActionButton(BuildContext context, Widget action) {
   final ThemeData theme = Theme.of(context);
   return Theme(

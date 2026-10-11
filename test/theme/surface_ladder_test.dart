@@ -207,7 +207,7 @@ void main() {
     }
   });
 
-  test('暗色：**中性深灰**底 #222221 + 侧轨重新可辨（2026-10-10 第③步）', () {
+  test('暗色：**中性深灰**底 #222221（2026-10-10 第③步）', () {
     final SurfaceLadder dark = SurfaceLadder.dark;
     // 底：连续尺 13 ⇒ sRGB 34。暖度改为**按比例**后 B 只低 1（34×2%≈0.7）
     // ⇒ #222221，**几乎中性**——这是 Apple 暗色的语言（中性深灰、非暖黑）。
@@ -221,15 +221,6 @@ void main() {
     expect((dark.panel.r * 255).round(), 26);
     expect((dark.panel.g * 255).round(), 26);
     expect((dark.panel.b * 255).round(), 25);
-    // 侧轨：底抬回深灰后**重新有向下空间** ⇒ 沉 3 档（#1C1C17，sRGB 差 6 级）。
-    // ⚠️ 这条是第③步要治的病：近黑时 railDelta 只能给 −0.58，暖度加大后
-    // `_derive` 直接反解出与底**完全相同**的色 ⇒ 侧栏只能靠 1px 线分列。
-    expect((dark.rail.r * 255).round(), 28);
-    expect(
-      dark.baseLstar - dark.railLstar,
-      greaterThanOrEqualTo(2.5),
-      reason: '侧轨必须沉到可辨（实测门限约 2.5 ΔL*），否则分不出列',
-    );
     // 浮层 / 板底改为**相对** delta（底抬回深灰后"绝对钉死"的理由已消失），
     // 值是照原绝对值反推的 ⇒ 这两面的观感几乎不变。
     expect(_lstar(dark.floating), closeTo(19.5, 0.5));

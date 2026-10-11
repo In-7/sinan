@@ -332,21 +332,31 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 顶栏：只剩一枚「筛选与排序」漏斗钮（形态 / 排序 / 标签合住），靠右。
-        // 目的地（心流 / 全部 / 日历 / 收藏）2026-10-09 收在桌面顶条左簇
-        // （WindowStrip）；上一步 / 下一步也在顶条。
+        // 顶栏（靠右）：仅一枚「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
+        // 问笔记（AI）2026-10-11 起移出此处、改为工作区右角折叠钮（见 [HomeScreen]
+        // 工作区 [_RightRailToggleButton]），开合两态坐标不变。
+        // 目的地（心流 / 全部 / 日历 / 收藏）2026-10-09 收在桌面顶条（WindowStrip）；
+        // 上一步 / 下一步也在顶条。
         // 2026-10-09 用户定：常驻捕获输入框（OmniBar）撤除——"这个输入方式
         // 不好用"，新建统一走 Ctrl+N / Ctrl+Shift+P 命令。
         const Padding(
           padding: EdgeInsets.fromLTRB(
             Tokens.spaceLg,
-            Tokens.spaceMd,
-            Tokens.spaceLg,
+            // 顶部对齐编辑器顶栏「耳朵」按钮带（标签所在那排，见
+            // note_editor_view_appflowy 的 _kHeaderActionTopPadding +
+            // Tokens.headerActionSize）：32 高的钮取 top 4 ⇒ 中心 20 = 耳朵中心 20。
+            Tokens.spaceXs,
+            // 右内缩让开工作区右角的 AI 折叠钮（_RightRailToggleButton，占据右起
+            // spaceXs + toolbarButtonSize = 36px），再留 spaceSm 间隙——否则两者重叠
+            // （2026-10-11 用户修）。
+            Tokens.spaceXs + Tokens.toolbarButtonSize + Tokens.spaceSm,
             Tokens.spaceSm,
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[_FilterMenuButton()],
+            children: const <Widget>[
+              _FilterMenuButton(),
+            ],
           ),
         ),
         Expanded(
@@ -1839,7 +1849,8 @@ class _CalCellState extends State<_CalCell> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool dim = !widget.inMonth;
-    // 状态底：选中 = 强调色药丸（与导航选中同语言，2026-10-08 换装）；hover = 再叠一档。
+    // 状态底：选中 = [AppTheme.selectedPill]（2026-10-11 起透明无底色，与导航选中
+    // 同语言）；hover = 再叠一档。选中格靠文字 onSurface + w600 区分（见下）。
     final Color? fill = widget.isSelected
         ? AppTheme.selectedPill(scheme)
         : (_hover && widget.onTap != null)
@@ -1894,6 +1905,7 @@ class _CalCellState extends State<_CalCell> {
                       '${widget.date.day}',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: widget.isSelected ? scheme.onSurface : textColor,
+                        fontWeight: widget.isSelected ? FontWeight.w600 : null,
                       ),
                     ),
                     // 新建标记：日期下一枚小圆点；≥3 篇两枚（不显数字）。

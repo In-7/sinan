@@ -80,7 +80,6 @@ class SurfaceLadder {
     required this.boardDelta,
     required this.panelDelta,
     this.boardOverride,
-    this.railDelta = -3.0,
   });
 
   /// **亮色**一套（2026-10-09 晚定案第三版：chrome 沉到 L\* 88.1 `#DDDDDB` →
@@ -111,7 +110,6 @@ class SurfaceLadder {
     panelDelta: 3, // 96 → 99
     // 板底仍是"下沉的一列"；改走 [boardDelta] 推导（不再写死 hex）。
     boardDelta: -3,
-    // railDelta 走默认（−3.0）：亮色侧栏与板底**同档**（"比纸面深一档"）。
   );
 
   /// **暗色**一套：底 #080808（CIE 分段尺 L\* 2.2）→ 内嵌浮面 #161616
@@ -152,7 +150,6 @@ class SurfaceLadder {
     // 📌 顺带把正文余量从 1.8 拉回 7（主阅读面变暗 ⇒ 对比回来了）。
     panelDelta: -4, // 13 → 9
     boardDelta: 4.5, // 13 → 17.5
-    // railDelta 走默认（−3.0）：13 → 10，侧栏"凹进一列"——终于沉得出 3 档。
   );
 
   /// 底的 L\*（**唯一的手定数字**）。
@@ -185,18 +182,10 @@ class SurfaceLadder {
   /// 直接把 `WindowBase` 那层掺进来 ⇒ 颜色不确定。
   final Color? boardOverride;
 
-  /// **侧轨**比纸面沉多少 ΔL\*（阶段 0 新增；最左图标轨 / AI 轨共用）。
-  ///
-  /// 方向是**两个模式一致地往下沉**（rail 读作"凹进窗体的那一列"，与
-  /// [boardDelta] 在暗色那端**相反**——board 是"浮起的 sheet"，rail 不是）。
-  ///
-  /// ⚠️ 这两个数是**要实机 eyeball 的**，不是推导结论：改 `light` / `dark` 里
-  /// 各一个数即可，**别在调用点各自叠透明度**（那等于把刚拆掉的东西装回去）。
-  final double railDelta;
+
 
   double get floatingLstar => baseLstar + floatingDelta;
   double get boardLstar => baseLstar + boardDelta;
-  double get railLstar => baseLstar + railDelta;
   double get panelLstar => baseLstar + panelDelta;
 
   /// 底（**= 纸面**：`contentCanvas` 直接复用它，两处不许再漂开）。
@@ -224,7 +213,6 @@ class SurfaceLadder {
   ///
   /// 形状取 [SurfaceShape.warm]（与底**同族**）——读作"同一材质深一档"，
   /// 而不是另一种材质的色块（[board] 那端才有冷灰的 sheet 语义）。
-  late final Color rail = _derive(railLstar, SurfaceShape.warm);
 }
 
 /// 按 **L\*** 反解出色值（尽量保住 [shape]）。

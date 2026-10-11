@@ -506,7 +506,8 @@ class _PaletteResultRow extends StatelessWidget {
         if (v) onHoverSelect();
       },
       child: Container(
-        // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装，取代中性 tint）。
+        // 「当前项」统一读法（[AppTheme.selectedPill] 现透明无底色，2026-10-11 去填充）；
+        // 选中靠标题 w600 区分，不画药丸底。
         color: selected ? AppTheme.selectedPill(scheme) : null,
         padding: const EdgeInsets.symmetric(
           horizontal: Tokens.spaceMd,
@@ -537,6 +538,8 @@ class _PaletteResultRow extends StatelessWidget {
                     base:
                         theme.textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurface,
+                          // 无底色后，选中靠字重区分（与笔记列表项同一读法）。
+                          fontWeight: selected ? FontWeight.w600 : null,
                         ) ??
                         const TextStyle(),
                     context: context,

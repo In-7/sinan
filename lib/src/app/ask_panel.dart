@@ -121,8 +121,8 @@ class _AskModalCard extends StatelessWidget {
   }
 }
 
-/// 两种宿主共用的头部：Sparkles +「问笔记」+ 可选关闭钮
-///（右栏的关闭由 [AskRail] 自己提供，语义相同）。
+/// 浮层态（窄窗 / 移动端）头部：Sparkles +「问笔记」+ 关闭钮。
+/// 右栏 [AskRail] 不再自带关闭钮（2026-10-11 起其开合归工作区右角折叠钮）。
 class _AskHeader extends StatelessWidget {
   const _AskHeader({required this.onClose});
 
@@ -236,20 +236,6 @@ class _AskRailState extends ConsumerState<AskRail> {
                   ),
                   const SizedBox(width: Tokens.spaceSm),
                   Text('问笔记', style: theme.textTheme.titleSmall),
-                  const Spacer(),
-                  IconButton(
-                    icon: tabler.X(
-                      height: Tokens.iconMdSm,
-                      width: Tokens.iconMdSm,
-                      strokeWidth: 1.5,
-                      colorFilter: ui.ColorFilter.mode(
-                        scheme.onSurfaceVariant,
-                        ui.BlendMode.srcIn,
-                      ),
-                    ),
-                    tooltip: '关闭（Esc）',
-                    onPressed: _close,
-                  ),
                 ],
               ),
             ),

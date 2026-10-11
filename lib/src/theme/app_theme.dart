@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'apca.dart';
@@ -77,6 +79,53 @@ class AppTheme {
   /// 2026-09-12 由蒂芙尼青 #0ABAB5 换入：绿意更足、明度略低，
   /// 强调色的存在感更强，深浅两模式色相都不失。颜色只出现在动作点。
   static const Color defaultSeed = Color(0xFF14B8A6);
+
+  /// **主题预设**（8 个**浅色**；默认档是中性、不在此表内，见 [chromeColor]）。
+  ///
+  /// 亮色下 chrome（环缝 / 标题条）**直接取预设色本身** —— 所见即所得，**不走**
+  /// `primaryContainer`（M3 对极浅/极深的种子会钳制，钳了就不是"所选即所见"）。
+  /// 暗色由 `fromSeed(seed, dark)` 派生**同色相的暗色档**（算法给的对应值，
+  /// **不是**按百分比混合）。
+  ///
+  /// ⚠️ 预设必须挑**中等偏浅**（约 L\* 75~88）：面板卡亮色是 L\* 99 近白，
+  /// 预设越接近白 ⇒ 环缝与白卡的明度差越小 ⇒ 环缝看不出来，"跟主题"就白做了。
+  static const List<Color> themePresets = <Color>[
+    Color(0xFF7FB3D5), // 雾蓝
+    Color(0xFF8FCFC0), // 浅松石
+    Color(0xFFA8D5A2), // 浅苔绿
+    Color(0xFFE8C07D), // 浅琥珀
+    Color(0xFFD9A7C7), // 浅藕紫
+    Color(0xFFE3A9A0), // 浅陶土
+    Color(0xFFB7C4D6), // 浅雾灰蓝
+    Color(0xFFCBD5B4), // 浅橄榄
+  ];
+
+  /// **底层（环缝 / 标题条）的色**：[seed] 为 null（中性默认档）走中性 ladder，
+  /// 彩色档走主题色。
+  static Color chromeColor(Color? seed, Brightness brightness) {
+    if (seed == null) return windowBackground(brightness);
+    // 亮色：**预设色本身**（所见即所得，零钳制）。
+    if (brightness == Brightness.light) return seed;
+    // 暗色：**同色相的暗色档**。
+    // ⚠️ 不能用 fidelity 的暗色方案——它的 primaryContainer 在暗色下**仍贴近
+    // 种子本色**（实测浅种子给回浅粉，压不暗，实机截图确认过）。改走默认
+    // tonalSpot：暗色下 primaryContainer = 种子色相的 tone 30 ⇒ 真正的
+    // "同色相暗色对应值"（算法派生，不是按百分比混）。
+    return ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: Brightness.dark,
+    ).primaryContainer;
+  }
+
+  /// **底层上的墨色**（图标 / 文字）：按底色明度**翻转**深/浅，不是百分比混合。
+  ///
+  /// 亮色 chrome 是浅色 ⇒ 深墨；暗色 chrome 是暗色 ⇒ 浅墨。
+  /// （不能复用 `onPrimary`：它在 `_build` 里写死成深青，只适配青色种子。）
+  static Color onChrome(Color? seed, Brightness brightness) =>
+      ThemeData.estimateBrightnessForColor(chromeColor(seed, brightness)) ==
+              Brightness.light
+          ? const Color(0xFF1A1A18)
+          : const Color(0xFFF2F2EE);
 
   /// **暗色模式**专用种子（Dark Turquoise，2026-09-13）。
   ///
@@ -331,13 +380,6 @@ class AppTheme {
   /// 别把它也改成 `R=G, B=R−2`。亮色回退档则是**与底同族**（暖调），读作"同一材质深一档"。
   static Color boardFill(Brightness brightness) => ladder(brightness).board;
 
-  /// **侧轨**（最左图标轨 / AI 轨那一列）的底色（阶段 0 新增）。
-  ///
-  /// 与 [boardFill] 的区别在于**方向**：board 是"浮在底上的 sheet"（暗色那端
-  /// 比底**亮**），rail 是"凹进窗体的列"（**两个模式都比纸面沉**）——两者语义
-  /// 相反，不要混用。值来自 `surface_ladder.dart` 的 `railDelta`（改那里）。
-  static Color railFill(Brightness brightness) => ladder(brightness).rail;
-
   /// **内嵌浮面**：桌面外壳工作区那张圆角卡片的底色（2026-10-09 opencode 风
   /// 外壳新增，2026-10-10 晚翻转语义）。
   ///
@@ -347,7 +389,7 @@ class AppTheme {
   /// - **暗色 = 凹陷**：底 13 → 面 9，内容区比 chrome 暗 ⇒ 只有文字发光，
   ///   暗边读作"沉进去"。
   ///
-  /// 卡片左 / 右 / 下留 [Tokens.appPanelInset]（8）环缝露出窗口底、**顶部与
+  /// 卡片左 / 右 / 下留 [Tokens.appPanelInset]（4）环缝露出窗口底、**顶部与
   /// 标题条 0 间距**（四角仍圆角，2026-10-09 晚用户定：直角不好看），
   /// **不投分割线**。值改 `surface_ladder.dart` 的 `panelDelta`，别写死在这里。
   static Color panelFill(Brightness brightness) => ladder(brightness).panel;
@@ -745,20 +787,16 @@ class AppTheme {
   static Color stateLayerPressed(Color base) => base.withValues(alpha: 0.18);
 
   /// **「当前项」选中药丸的底**（2026-10-08 用户拍板：全局统一换装）：
-  /// `primary @ 12%`——强调色药丸，替代旧的"中性 tint + 3px 左指示条"混搭。
-  ///
-  /// ## 为什么换掉中性读法（历史决策的翻案，用户拍板）
-  /// 旧方案 §5.1 用 `onSurface @10%` 中性底 + 左指示条双形状信号，理由是
-  /// "种子色用户可换、'我在哪'的读法必须恒定"。实机对比后用户定：选中态
-  /// **该**带强调色（药丸一种形状就够，指示条撤掉）——12% 是叠加在任意面
-  /// （纸面 / 卡片 / 板底）上都抬得出来、又不压 onSurface 文字对比度的量。
+  /// `Colors.transparent`——**无底色**（2026-10-11 用户定：选中态去掉任何背景
+  /// 填充，和未选中按钮完全一样，只靠前景色——图标/文字 `onSurface` vs 未选中
+  /// `onSurfaceVariant`——区分"当前项"）。hover / press 由各自按钮默认叠层承担，
+  /// 与未选中按钮行为一致。
   ///
   /// 用于：nav_rail 目的地行、笔记列表项、目录激活项、设置左导航、命令/
   /// 搜索面板行、视图 tab、日历选中日、跳转闪烁块、分段控件选中段
   /// ——**「当前项」选中一律用它**，不要自己挑比例（分叉的根因）。
   /// ⚠️ **开关态（开/关如实显示）不在此列**，仍走 [navSelectedTint]。
-  static Color selectedPill(ColorScheme scheme) =>
-      scheme.primary.withValues(alpha: 0.12);
+  static Color selectedPill(ColorScheme scheme) => Colors.transparent;
 
   /// **开关态的底**（开 = `onSurface @ 10%`）：AI 轨开关这类"开/关如实显示"
   /// 的控件用它——那是状态镜像，不是"我在哪"的选中读法。
@@ -1074,6 +1112,32 @@ class AppTheme {
   static Color _desaturate(Color c) =>
       HSLColor.fromColor(c).withSaturation(0).toColor();
 
+  /// 主色上的 ink（图标 / 文字）：**按种子算**——在浅墨与深墨之间选与种子
+  /// 对比更高的一档，WCAG 相对亮度法。`primary` 被钉成种子本色（见 [_build]），
+  /// 故 ink 直接对准种子算对比即可，不用管 M3 派生的 primary。
+  static Color _onPrimaryFor(Color seed) {
+    const Color lightInk = Color(0xFFF2F2EE);
+    const Color darkInk = Color(0xFF1A1A18);
+    final double l = _relativeLuminance(seed);
+    final double cDark = (math.max(l, _relativeLuminance(darkInk)) + 0.05) /
+        (math.min(l, _relativeLuminance(darkInk)) + 0.05);
+    final double cLight = (math.max(l, _relativeLuminance(lightInk)) + 0.05) /
+        (math.min(l, _relativeLuminance(lightInk)) + 0.05);
+    return cDark >= cLight ? darkInk : lightInk;
+  }
+
+  static double _relativeLuminance(Color c) {
+    double channel(int v) {
+      final double s = v / 255;
+      return s <= 0.03928
+          ? s / 12.92
+          : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
+    }
+    return 0.2126 * channel(c.r.round()) +
+        0.7152 * channel(c.g.round()) +
+        0.0722 * channel(c.b.round());
+  }
+
   /// 亮色默认种子 **#0D9488**（2026-10-05 由 #00B5B5 换入，决策 A）：
   /// 原档偏荧光（电光青），长时间注视刺眼；换成 Tailwind Teal 600 这一档——
   /// **同色相轴、彩度降一档、明度略低**，与暗色种子的"身份"仍一致。
@@ -1135,9 +1199,10 @@ class AppTheme {
       // 为"白字压主色"的对比兜底）——但两个种子的对比本就达标（亮 #00B5B5
       // 配深青字 4.9:1、暗 #00CED1 配深青字 6.2:1，均过 AA），直接用种子
       // 本色（所见即所选），其余角色照常派生。
-      // onPrimary 反向取深青字：亮青底配白字只有 2~2.5:1 不达标。
+      // onPrimary **按种子算**：在浅墨 / 深墨之间选与种子对比更高的一档
+      // （WCAG 相对亮度法，见 [_onPrimaryFor]）——不再是写死深青（只适配青色种子）。
       primary: seed,
-      onPrimary: const Color(0xFF003B3B),
+      onPrimary: _onPrimaryFor(seed),
       surface: windowBackground(brightness),
       // M3 的 `surfaceContainer` 是钉死的 neutral tone（暗 tone 12 / 亮 tone 94，
       // 配 M3 自家 surface 设计）。2026-10-09 双色底都改了（暗 #080808 /

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'dart:io' show Directory;
-import 'dart:ui' show AppExitResponse, PlatformDispatcher;
+import 'dart:ui' show AppExitResponse, Color, PlatformDispatcher;
 
 import 'package:appflowy_editor/appflowy_editor.dart'
     show AppFlowyEditorLocalizations;
@@ -143,10 +143,25 @@ Future<void> _hideWindowControlsOnce() async {
 class MainApp extends ConsumerStatefulWidget {
   const MainApp({super.key});
 
-  /// 两套主题的静态缓存：种子色恒定（defaultSeed），ThemeData 不可变，
-  /// 整个生命周期构造一次即可。
-  static final ThemeData _lightTheme = AppTheme.light();
-  static final ThemeData _darkTheme = AppTheme.dark();
+  /// 主题**随种子变化** ⇒ 不能再用"两套静态常量"缓存；改成按 (种子, 明暗)
+  /// 记忆化——ThemeData 构造成本不低，但设置改动很稀疏，命中率几乎 100%。
+  static final Map<(Color?, Brightness), ThemeData> _themeCache =
+      <(Color?, Brightness), ThemeData>{};
+
+  /// 取（并缓存）一套主题；[seed] 为 null = **中性默认档**（沿用 `AppTheme`
+  /// 各自的默认种子，观感与未选主题时完全一致）。
+  static ThemeData _themeFor(Color? seed, Brightness brightness) =>
+      _themeCache.putIfAbsent(
+        (seed, brightness),
+        () => switch (brightness) {
+          Brightness.light => seed == null
+              ? AppTheme.light()
+              : AppTheme.light(seed: seed),
+          Brightness.dark => seed == null
+              ? AppTheme.dark()
+              : AppTheme.dark(seed: seed),
+        },
+      );
 
   @override
   ConsumerState<MainApp> createState() => _MainAppState();
@@ -207,6 +222,12 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
     final ThemeBrightnessMode brightnessMode = ref.watch(
       settingsProvider.select((AppSettings s) => s.brightnessMode),
     );
+    // 主题种子（**0 = 中性默认档**）。只 select 这一个字段 ⇒ 拖字号滑杆的
+    // 每个 tick 都不会惊动 MaterialApp 层（与上面明暗同一套路）。
+    final int themeSeed = ref.watch(
+      settingsProvider.select((AppSettings s) => s.themeSeed),
+    );
+    final Color? seed = themeSeed == 0 ? null : Color(themeSeed);
     return MaterialApp(
       // 全局导航根：设置面板等浮层从它取 root Overlay
       // （入口按钮在 MaterialApp 之外构建，context 找不到 Overlay）。
@@ -217,8 +238,8 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
       // 主题固定用默认种子色（AppTheme.defaultSeed）；主题色不再作为可设置项。
       // ⚡ 两套 ThemeData 静态缓存：ThemeData 构造成本不低，而种子恒定，
       // 每次 build 重造纯属浪费（相等性短路救的是比较，不是构造）。
-      theme: MainApp._lightTheme,
-      darkTheme: MainApp._darkTheme,
+      theme: MainApp._themeFor(seed, Brightness.light),
+      darkTheme: MainApp._themeFor(seed, Brightness.dark),
       themeMode: switch (brightnessMode) {
         ThemeBrightnessMode.light => ThemeMode.light,
         ThemeBrightnessMode.dark => ThemeMode.dark,
@@ -275,7 +296,14 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
         // ⚡ **窗口自身切成不透明**（2026-09-23）：省掉"透明窗口 ⇒ DWM 每帧把整扇窗与
         // 桌面混合"那笔。幂等（明暗没变不会重设）—— 详见
         // [WindowService.applyWindowBackground] 的说明。
-        unawaited(WindowService.applyWindowBackground(brightness));
+        // chrome（环缝 / 标题条）：中性档走中性 ladder（观感与之前完全一致）；
+        // 彩色档 = 预设色**本身**（亮色所见即所得）/ 该色相的算法暗色档（暗色）。
+        unawaited(
+          WindowService.applyWindowBackground(
+            brightness,
+            chromeColor: AppTheme.chromeColor(seed, brightness),
+          ),
+        );
         // 窗口底 + 顶边/顶角缩放手柄都在 [WindowBase] 里——**一处管全窗口**，且它抽成
         // 具名件就是为了可测（这个 builder 在 `main.dart`、测不到）。取值、只圈顶边的
         // 理由、以及"由微渐变改纯色"的那笔账，全写在那个类的文档里。

@@ -75,6 +75,10 @@ class SettingsNotifier extends Notifier<AppSettings> {
   void setWidthMode(EditorWidthMode mode) =>
       update(state.copyWith(widthMode: mode));
 
+  /// 主题种子（**0 = 中性默认档**，非 0 = 取自 `AppTheme.themePresets`）。
+  /// 换它只让**底层**（环缝 / 标题条）跟着变；纸面 / 面板 / 内容保持中性。
+  void setThemeSeed(int seed) => update(state.copyWith(themeSeed: seed));
+
   void setFontSize(double size) => update(state.copyWith(fontSize: size));
 
   void setLineHeight(double height) =>
@@ -126,28 +130,9 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
   SelectedNoteNotifier.new,
 );
 
-/// 左侧 [NavRail] 导航栏的折叠态（桌面布局，2026-10-08 修订）。
-///
-/// 折叠 = 56px 图标轨；展开 = 图标 + 文字。默认展开（第一眼能看见有什么）。
-/// 状态持久化到 [AppSettings.navCollapsed]（重启恢复）。
-class NavCollapsedNotifier extends Notifier<bool> {
-  @override
-  bool build() => ref.watch(settingsProvider).navCollapsed;
-
-  void toggle() {
-    final bool next = !state;
-    final AppSettings s = ref.read(settingsProvider);
-    ref.read(settingsProvider.notifier).update(s.copyWith(navCollapsed: next));
-  }
-}
-
-final navCollapsedProvider = NotifierProvider<NavCollapsedNotifier, bool>(
-  NavCollapsedNotifier.new,
-);
-
 /// 右侧常驻 **AI 问答轨**的开关态（桌面布局的第三列，见 [AskRail]）。
 ///
-/// 与 [navCollapsedProvider] 同型：它只表达"用户此刻想不想看到 AI 轨"，
+/// 它只表达"用户此刻想不想看到 AI 轨"，
 /// 不关心 AI 以什么形态出现——宽窗（≥ `Tokens.askRailBreakpoint`）时 [HomeScreen]
 /// 把它画成右侧常驻栏；窄窗放不下 ⇒ 降级为既有居中浮层（`showAskPanel`）。
 /// 呈现选择归外壳，状态保持**单一真相源**，于是「命令 / 图标 / 自己的关闭钮 /
@@ -165,6 +150,22 @@ class AiPanelNotifier extends Notifier<bool> {
 
 final aiPanelOpenProvider = NotifierProvider<AiPanelNotifier, bool>(
   AiPanelNotifier.new,
+);
+
+/// 左侧面板（规划中）开合状态：与 [aiPanelOpenProvider] 同源的单布尔，状态单一
+/// 真相源——呈现形态归外壳（[HomeScreen] 的 [_LeftRailSlot]），角落折叠钮是唯一
+/// 开合入口（2026-10-11 起与右 AI 面板对称：开合两态坐标不变，好记忆）。
+class LeftPanelNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void open() => state = true;
+  void close() => state = false;
+  void toggle() => state = !state;
+}
+
+final leftPanelOpenProvider = NotifierProvider<LeftPanelNotifier, bool>(
+  LeftPanelNotifier.new,
 );
 
 /// 笔记列表（含增删改后自动刷新）。

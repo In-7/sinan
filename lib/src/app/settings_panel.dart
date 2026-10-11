@@ -305,7 +305,10 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
   /// 各分区的设置行。**加功能的入口**（与 [_SettingsSectionSpec] 配套）：
   /// 照抄既有 Row 组件往对应分支里加即可，导航与标题自动生成。
   List<Widget> _rowsFor(_SettingsSection section) => switch (section) {
-    _SettingsSection.appearance => <Widget>[const _BrightnessRow()],
+    _SettingsSection.appearance => <Widget>[
+      const _BrightnessRow(),
+      const _ThemeSeedRow(),
+    ],
     _SettingsSection.editor => <Widget>[
       const _WidthRow(),
       const _FontSizeRow(),
@@ -589,6 +592,79 @@ class _BrightnessRow extends ConsumerWidget {
         showSelectedIcon: false,
         onSelectionChanged: (Set<ThemeBrightnessMode> next) =>
             ref.read(settingsProvider.notifier).setBrightnessMode(next.first),
+      ),
+    );
+  }
+}
+
+/// **主题预设**：**中性为默认档**（最左一颗），其余 8 个浅色。
+///
+/// 亮色下 chrome（环缝 / 标题条）取预设色**本身**（所见即所得），暗色由
+/// `fromSeed(seed, dark)` 派生**同色相的暗色档**。纸面 / 面板 / 编辑器内容
+/// 一律保持中性，不参与。
+class _ThemeSeedRow extends ConsumerWidget {
+  const _ThemeSeedRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    final Brightness brightness = Theme.of(context).brightness;
+    return _SettingTile(
+      label: '主题色',
+      description: '只染底层（环缝 / 标题条）；纸面与面板保持中性。',
+      control: Wrap(
+        spacing: Tokens.spaceSm,
+        runSpacing: Tokens.spaceSm,
+        children: <Widget>[
+          // 中性默认档（0）：色块直接用中性 ladder 的 chrome 色。
+          _SeedDot(
+            color: AppTheme.chromeColor(null, brightness),
+            selected: settings.themeSeed == 0,
+            onTap: () => ref.read(settingsProvider.notifier).setThemeSeed(0),
+          ),
+          ...AppTheme.themePresets.map(
+            (Color seed) => _SeedDot(
+              color: AppTheme.chromeColor(seed, brightness),
+              selected: settings.themeSeed == seed.toARGB32(),
+              onTap: () => ref
+                  .read(settingsProvider.notifier)
+                  .setThemeSeed(seed.toARGB32()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一颗预设色点：选中态用 `primary` 描边加粗，未选走 `outlineVariant` 细边。
+class _SeedDot extends StatelessWidget {
+  const _SeedDot({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outlineVariant,
+            width: selected ? 2.5 : 1,
+          ),
+        ),
       ),
     );
   }

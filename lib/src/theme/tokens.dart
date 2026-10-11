@@ -47,28 +47,17 @@ class Tokens {
 
   // ── 桌面外壳 chrome 度量（2026-10-08 令牌收口：从各外壳文件的 k 级私有
   // 常量收编到此，与 [titleBarHeightMain] 同一档）────────────────
-  /// 左侧栏折叠后的纯图标轨宽。
-  static const double navRailCollapsedWidth = 56;
-
-  /// 左侧栏展开后的默认宽。
-  static const double navRailExpandedWidth = 248;
-
-  /// 左侧栏拖拽记忆的宽度区间。
-  static const double navRailMinWidth = 200;
-  static const double navRailMaxWidth = 340;
-
-  /// 左侧栏右缘拖宽把手的命中宽。
-  static const double navRailSplitterWidth = 4;
-
   /// **内嵌浮面**离窗缘的环缝（2026-10-09 opencode 风外壳）：内容是一张
   /// 四角圆角的浮面卡，左 / 右 / 下与窗口底之间靠这圈缝隙分层，不用
   /// 分割线。**顶部与 44 标题条间距为 0**（同日用户定）：卡顶紧贴条下沿，
   /// 圆角落出的小弧露窗口底充当分缝。
-  static const double appPanelInset = 8;
+  static const double appPanelInset = 4;
 
-  /// 顶条动作按钮（目的地 / 历史 / 设置 / AI）的固定方块：36。条高 44 时
-  /// 垂直居中，上下各 4 呼吸；图标 [iconMd]=24。
-  static const double chromeButtonSize = 36;
+  /// 顶条动作按钮（历史 / 设置 / AI）的固定方块：32。与居中目的地图标药丸
+  /// （心流 / 全部 / 日历 / 收藏，走全局 [toolbarButtonSize] = 32）同大——
+  /// 2026-10-11 用户定：悬浮背景齐平。条高 44 时垂直居中，上下各 6 呼吸；
+  /// 图标 [iconMd]=24。
+  static const double chromeButtonSize = 32;
 
   /// AI 问答轨常驻右缘的最小窗宽，低于它降级为居中浮层。
   /// （账：外壳 ≈615 ⇒ 1000 以下主区不足 385，编辑器失去意义。）
@@ -76,6 +65,9 @@ class Tokens {
 
   /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
   static const double askRailWidth = 340;
+
+  /// 左面板（规划中）宽：与 [askRailWidth] 对称，从**左**缘 dock、推开内容。
+  static const double leftRailWidth = 280;
 
   /// 卡片网格行列距（2026-10-01 用户定的 20 档：间距表 16/24 之间的定值，
   /// 不在 t 恤码表上，收编为命名几何量）。

@@ -1,11 +1,9 @@
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/home_screen.dart';
-import 'package:sinan/src/app/nav_rail.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
@@ -13,7 +11,6 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
-import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sinan/src/theme/tokens.dart';
 import 'package:sinan/src/window/app_title_bar.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
@@ -29,8 +26,6 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 ///    16 隔后接时间轴（上一步 / 下一步）；
 /// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（HomeHub 几何即卡几何）；
 ///    右簇 = 设置 + 问笔记（紧贴「最小化」左侧）；
-/// ③ 大左栏 [NavRail]（56/248 带文字版）仍不在 HomeScreen 布局里
-///   （`findsNothing`）；它的行行为由独立台架 [pumpRail] 继续钉；
 /// ④ 视图切换与进编辑器都走统一历史栈，顶条箭头按点击顺序进退。
 void main() {
   /// `WindowStrip` / 窗控按钮在 initState 里问 window_manager（isFocused /
@@ -107,31 +102,6 @@ void main() {
     return container;
   }
 
-  /// [NavRail] 独立台架（2026-10-09 撤出 HomeScreen 布局后）：rail 代码还在，
-  /// _NavRailTile 的按压 / 焦点回归改在这里钉——不挂主布局也能单测它的行。
-  Future<void> pumpRail(WidgetTester tester) async {
-    setSurfaceSize(tester, 400, 700);
-    final ProviderContainer container = buildContainer();
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(
-          navigatorKey: appNavigatorKey,
-          theme: AppTheme.light(),
-          home: const Scaffold(
-            body: Row(
-              children: <Widget>[
-                NavRail(),
-                Expanded(child: SizedBox()),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-  }
-
   IconButton buttonOf(WidgetTester tester, String tooltip) =>
       tester.widget<IconButton>(
         find
@@ -149,10 +119,6 @@ void main() {
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
-
-    // ③ 带文字的大左栏仍撤（2026-10-09 "先去掉"），它的折叠钮也不在。
-    expect(find.byType(NavRail), findsNothing);
-    expect(find.byTooltip('折叠导航栏'), findsNothing);
 
     // ① 四枚目的地都在顶条左簇，36 方块横排（vendored IconButton 子像素取整 ±1）：
     // 首枚贴 x=0、垂直居中于 44 条（top≈4）；水平顺序 心流 < 全部 < 日历 < 收藏，
@@ -226,7 +192,6 @@ void main() {
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
-    expect(find.byType(NavRail), findsNothing);
     for (final String label in kDestinations) {
       expect(find.byTooltip(label), findsOneWidget, reason: '编辑态目的地仍常驻');
       expect(tileFill(label), Colors.transparent, reason: '编辑态全灰：$label');
@@ -326,92 +291,4 @@ void main() {
     expect(find.text('Ctrl+K'), findsNothing);
   });
 
-  /// tile 的圆角底（AnimatedContainer）。**不是** Container 子类，finder 要用它。
-  AnimatedContainer railTileOf(WidgetTester tester, String label) =>
-      tester.widget<AnimatedContainer>(
-        find
-            .ancestor(
-              of: find.descendant(
-                of: find.byType(NavRail),
-                matching: find.text(label),
-              ),
-              matching: find.byType(AnimatedContainer),
-            )
-            .first,
-      );
-
-  Color railTileBg(WidgetTester tester, String label) =>
-      (railTileOf(tester, label).decoration! as BoxDecoration).color!;
-
-  testWidgets('暂撤大栏的行（独立台架）：按住叠一档 stateLayer，松手复原', (
-    WidgetTester tester,
-  ) async {
-    await pumpRail(tester);
-
-    // 用「设置」：它的 `active` 恒为 false ⇒ 静止底色**恒**透明，不受
-    // aiPanelOpen / navHistory 等其它 provider 的初值影响。
-    expect(railTileBg(tester, '设置'), Colors.transparent, reason: '静止态透明');
-
-    final Offset at = tester.getCenter(
-      find.descendant(of: find.byType(NavRail), matching: find.text('设置')),
-    );
-    // 用鼠标指针：这是桌面场景，且 hover 高亮在 touch 模式下本就不显示。
-    final TestGesture g = await tester.startGesture(
-      at,
-      kind: PointerDeviceKind.mouse,
-    );
-    await tester.pump();
-
-    final Color pressed = railTileBg(tester, '设置');
-    expect(pressed, isNot(Colors.transparent), reason: '按下 ⇒ 有反馈');
-    // 按下档 = stateLayerPressed(18%) 叠在静止底上，不是 hover 那档(4%)。
-    expect(
-      pressed.a,
-      greaterThan(AppTheme.hoverOverlay(Brightness.light).a),
-      reason: '按下必须比 hover 更实（stateLayer 18% > hover 4%）',
-    );
-
-    await g.up();
-    await tester.pumpAndSettle();
-    expect(railTileBg(tester, '设置'), Colors.transparent, reason: '松手复原');
-  });
-
-  testWidgets('暂撤大栏的行（独立台架）：键盘聚焦出现统一焦点环，且环与圆角底同半径', (
-    WidgetTester tester,
-  ) async {
-    await pumpRail(tester);
-
-    final Finder setting = find.descendant(
-      of: find.byType(NavRail),
-      matching: find.text('设置'),
-    );
-    // ⚠️ 必须先 `.first` 定位到**这一项**的 FocusRing：全树还有
-    // FocusRingIconButton 带的那些环，不限定就会取到别人的（未聚焦 ⇒ null）。
-    final Finder ring = find
-        .ancestor(of: setting, matching: find.byType(FocusRing))
-        .first;
-
-    FocusRing host() => tester.widget<FocusRing>(ring);
-    // 环必须与 tile 的圆角一致，否则会"错位一个圆角"。
-    expect(host().borderRadius, BorderRadius.circular(Tokens.radiusSm));
-    expect(host().focusNode.hasFocus, isFalse);
-
-    host().focusNode.requestFocus();
-    // 焦点由 FocusManager 在**帧末**结算 ⇒ 监听引发的重建落在下一帧，
-    // 少推一帧断的就是"上一帧的环"（见 FocusRing 的调试经验）。
-    await tester.pump();
-    await tester.pump();
-
-    expect(host().focusNode.hasFocus, isTrue);
-    // 环真的画出来了：FocusRing 内部那个 Container 带了描边。
-    final Container box = tester.widget<Container>(
-      find.descendant(of: ring, matching: find.byType(Container)).first,
-    );
-    expect(box.foregroundDecoration, isNotNull);
-    final BoxDecoration ringDecoration =
-        box.foregroundDecoration! as BoxDecoration;
-    final Border border = ringDecoration.border! as Border;
-    expect(border.top.color, AppTheme.light().colorScheme.primary);
-    expect(border.top.width, Tokens.focusRingWidth);
-  });
 }
