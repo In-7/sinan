@@ -11,7 +11,8 @@ import 'package:sinan/src/theme/app_theme.dart';
 ///
 /// 与 [ask_panel_test.dart]（浮层态）互补，这里钉右轨**自己的**三条语义：
 /// 1. 开关 false → true 时把焦点递进提问框；
-/// 2. 焦点在栏内按 Esc / 点关闭钮 ⇒ 收起整栏（并摘焦点）；
+/// 2. 焦点在栏内按 Esc ⇒ 收起整栏（并摘焦点）；**栏内不再自带关闭钮**
+///    （2026-10-11 用户定：开合入口唯一化到工作区右角折叠钮）；
 /// 3. 点引用角标只跳转、**不关栏**——答案要留着和原文对照（浮层态相反）。
 void main() {
   /// 直接把右轨挂成 Row 的固定宽子项（与产品里 `_AiRailSlot > OverflowBox`
@@ -31,7 +32,7 @@ void main() {
     ),
   );
 
-  testWidgets('开关翻转 ⇒ 焦点进提问框；关闭钮收起并摘焦点', (WidgetTester tester) async {
+  testWidgets('开关翻转 ⇒ 焦点进提问框；Esc 收起并摘焦点', (WidgetTester tester) async {
     final ProviderContainer container = ProviderContainer();
     addTearDown(container.dispose);
     await tester.pumpWidget(host(container));
@@ -54,10 +55,16 @@ void main() {
       reason: '打开右轨就该能直接打字',
     );
 
-    // 点关闭钮 ⇒ 收起且焦点从提问框摘走（不能落在正在收为宽 0 的控件上）。
-    // 注：unfocus() 后 primaryFocus 回到根 FocusScopeNode 是 Flutter 的正常
-    // 行为，这里只钉「输入框不再持有焦点」这一条产品语义。
-    await tester.tap(find.byTooltip('关闭（Esc）'));
+    // 收起并把焦点从提问框摘走（不能落在正在收为宽 0 的控件上）。
+    // 2026-10-11 用户定：右轨**不再自带关闭钮**——开合入口唯一化到工作区右角
+    // 折叠钮（那个钮在 HomeScreen 外壳上，不在本 harness 内），栏内只剩 Esc。
+    // 故这里也钉一条：栏内**确实没有**关闭钮了。
+    expect(
+      find.byTooltip('关闭（Esc）'),
+      findsNothing,
+      reason: '右轨头部不再自带关闭钮（开合归右角折叠钮）',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(container.read(aiPanelOpenProvider), isFalse);
     expect(

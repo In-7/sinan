@@ -484,6 +484,62 @@ class AppTheme {
       ? Color.lerp(boardFill(brightness), Colors.white, 0.08)!
       : windowBackground(brightness);
 
+  /// **锐利边缘 bevel 装饰**（新拟态的"无模糊阴影"替代，2026-10-12 用户定）：
+  /// 顶左**亮边** + 底右**暗边**各 1px（凸起）/ 反向（凹陷），由底面色
+  /// `Color.lerp` 派生 ⇒ 不发明新色、明暗两档自动成立、**无模糊、不触发离屏合成**
+  /// （对比 2026 流行的软阴影双向内阴影：那条边界对比仅 2–3 ΔL\* 还要 blur）。
+  ///
+  /// ⚠️ 为什么是 `Decoration` 而不是 `Border`：Flutter 的 [Border] 在
+  /// `borderRadius != null` 时强制四边**同色**（`A borderRadius can only be given
+  /// on borders with uniform colors`），而拟态胶囊/卡片都是圆角 ⇒ 必须自绘
+  /// [BevelDecoration] 才能给每条边独立上色。直接把结果传给 `Container.decoration`。
+  ///
+  /// [base] 不传时取 [raisedFill]（同材质抬起的块）；浮层类传 [floatSurface]、
+  /// 面板类传其 panel 底，bevel 自动贴合该底面、保持同一光线方向。
+  ///
+  /// - [raisedBevel]：凸块（顶左受光、底右背光），读作"鼓起来"。
+  /// - [sunkenBevel]：凹块（顶左背光、底右受光），读作"刻进去"。
+  static Decoration raisedBevel(
+    Brightness brightness, {
+    Color? base,
+    BorderRadius radius = BorderRadius.zero,
+  }) {
+    final Color c = base ?? raisedFill(brightness);
+    return BevelDecoration(
+      radius: radius,
+      light: Color.lerp(c, Colors.white, brightness == Brightness.light ? 0.5 : 0.10)!,
+      dark: Color.lerp(c, Colors.black, brightness == Brightness.light ? 0.12 : 0.35)!,
+      fill: c,
+    );
+  }
+
+  static Decoration sunkenBevel(
+    Brightness brightness, {
+    Color? base,
+    BorderRadius radius = BorderRadius.zero,
+  }) {
+    final Color c = base ?? raisedFill(brightness);
+    // 凹陷 = 受光的亮边在底右、背光的暗边在顶左 ⇒ 把 light/dark 对调传给
+    // BevelDecoration（它的 light 画顶左、dark 画底右）。
+    return BevelDecoration(
+      radius: radius,
+      light: Color.lerp(c, Colors.black, brightness == Brightness.light ? 0.12 : 0.35)!,
+      dark: Color.lerp(c, Colors.white, brightness == Brightness.light ? 0.5 : 0.10)!,
+      fill: c,
+    );
+  }
+
+  /// 圆角安全的逐边上色 bevel：四向独立色（顶左 light / 底右 dark），无模糊。
+  /// 见 [raisedBevel] / [sunkenBevel]。
+  static BevelDecoration bevelOf({
+    required BorderRadius radius,
+    required Color light,
+    required Color dark,
+    Color? fill,
+    double width = 1,
+  }) =>
+      BevelDecoration(radius: radius, light: light, dark: dark, fill: fill, width: width);
+
   /// **卡片/导航项的填充**（WinUI `CardBackgroundFillColorDefault` 同款）：
   /// 直接坐在窗口底上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
   ///
@@ -695,7 +751,8 @@ class AppTheme {
   /// - 底色 [floatSurface]：亮色 `#FFFFFF` / 深色 `#3C3C3C`，与纸面各抬一档
   ///   （亮 **+2.5 L\*** / 深 **+11.6 L\***），本身就是一道明确明度差；
   /// - 描边 [menuBorder]（满档 `outlineVariant`）：清晰勾边，不再含蓄；
-  /// - 投影 [neuShadows]：单向下投的"抬起"实体感（非双向柔光）。
+  /// - 浮起感由 [floatSurface] 与这圈 1px 描边的明度差承担（无模糊柔影，
+  ///   2026-10-12 用户定"拟态不用阴影"）。
   /// 三者叠加，条在亮/暗两种模式下都明显浮在纸面上。
   ///
   /// ⚠️ 用本装饰的调用方仍要把这 1px 描边算进布局（见
@@ -707,47 +764,10 @@ class AppTheme {
         borderRadius: BorderRadius.circular(Tokens.radiusLg),
         // ⚠️ **显式 1px**（不是菜单那档发丝宽）：本条的**外高 = 38 + 上下各 1px**，
         // 宽度一改就与预测器/布局补偿脱节（两条闸门钉着）。
+        // 2026-10-12：去掉 [neuShadows] 双向柔影，浮起感交给 floatSurface 与这圈
+        // 1px 描边（用户定"拟态不用模糊阴影"）。
         border: Border.fromBorderSide(menuBorder(scheme, width: 1)),
-        boxShadow: neuShadows(brightness),
       );
-
-  /// 浮动工具条的投影（[neuFloatBar] 用；单独暴露给其他拟态小件复用）。
-  ///
-  /// 单向下投 + 左上受光提示：底色已是与纸面差一档的 [floatSurface]，
-  /// 投影只负责补"实体抬起"感。亮色下白高光落在白面上基本隐形、无妨；
-  /// 深色下投影最弱（黑影落在暗底上对比小），故暗影加重、位移略大，配合
-  /// `#3C3C3C` 条底与 `#232321` 纸面的明度差才读得出层次。
-  /// 📌 2026-09-22 暗底抬到 +2 档后，**暗侧的投影空间第一次出现**（原来底是近黑，
-  /// 黑影落上去等于没画）⇒ 这几个 offset / alpha 的幅度可以重新调大一点。
-  static List<BoxShadow> neuShadows(Brightness brightness) =>
-      brightness == Brightness.light
-      ? const <BoxShadow>[
-          // 左上受光提示（亮色下基本隐形，仅作语义占位）。
-          BoxShadow(
-            color: Color(0xFFFFFFFF),
-            offset: Offset(-2, -2),
-            blurRadius: 6,
-          ),
-          // 右下暗影：单向下投，给"抬起"的实体感。
-          BoxShadow(
-            color: Color(0x1A000000),
-            offset: Offset(3, 4),
-            blurRadius: 12,
-          ),
-        ]
-      : const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x12FFFFFF),
-            offset: Offset(-2, -2),
-            blurRadius: 6,
-          ),
-          // 深色下投影几乎失效，暗影加重 + 位移略大才分得清层次。
-          BoxShadow(
-            color: Color(0x66000000),
-            offset: Offset(3, 4),
-            blurRadius: 12,
-          ),
-        ];
 
   /// ── 语义令牌（透明度比例收敛）────────────────────────────
   ///
@@ -1065,8 +1085,8 @@ class AppTheme {
   /// 回退链 [cjkFontFallback] 仍要保留：打包字体缺字（生僻字 / emoji /
   /// 其它语种）时逐字体兜底。
   ///
-  /// 与 UI 界面字体（`Segoe UI` + 同一回退链）有意分离：界面跟系统、
-  /// 正文用打包字体，两种"纸面"观感。
+  /// 编辑器正文 = **全应用主字体**（`ThemeData.fontFamily` 也取它，见 `_build`）：
+  /// 界面 + 正文同一套字形，全平台观感一致；缺字走 [cjkFontFallback] 兜底。
   static const String editorFont = 'LXGWNeoXiHeiScreen';
 
   /// 等宽字体链（代码块/行内代码）：Windows Consolas → Cascadia。
@@ -1166,23 +1186,42 @@ class AppTheme {
     bodySmall: base.bodySmall?.copyWith(fontSize: 11, height: 1.35),
     labelLarge: base.labelLarge?.copyWith(fontSize: 13),
     labelMedium: base.labelMedium?.copyWith(fontSize: 11),
+    // 包豪斯标题层（2026-10-12）：重字重 + 紧字距 + 收紧行高，靠 scale/weight 拉
+    // 层级（不靠投影）。⚠️ 打包的 LXGW 是**单字重**，w700 走合成加粗（观感有限；
+    // 真·重展示字需另引粗字重/几何字体资产）；**字距是可靠杠杆**。正文/标签档不动
+    // （笔记 app 长文可读性优先）。编辑器走 EditorTypography，不吃这组值。
+    headlineSmall: base.headlineSmall?.copyWith(
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.2,
+      height: 1.2,
+    ),
+    headlineMedium: base.headlineMedium?.copyWith(
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.3,
+      height: 1.15,
+    ),
+    headlineLarge: base.headlineLarge?.copyWith(
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.4,
+      height: 1.1,
+    ),
     titleSmall: base.titleSmall?.copyWith(
       fontSize: 13,
       height: 1.2,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.1,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.2,
     ),
     titleMedium: base.titleMedium?.copyWith(
       fontSize: 15,
-      height: 1.25,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.2,
+      height: 1.2,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.3,
     ),
     titleLarge: base.titleLarge?.copyWith(
       fontSize: 17,
-      height: 1.25,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.3,
+      height: 1.15,
+      fontWeight: FontWeight.w700,
+      letterSpacing: -0.4,
     ),
   );
 
@@ -1543,8 +1582,11 @@ class AppTheme {
       ),
     );
 
-    // 两步合流（顺序无关）：① Apple 口径的界面排印（§9.2）；② 统一中文回退链
-    // ——消除逐字符回退导致的笔画粗细不一致。
+    // 两步合流（顺序无关）：① Apple 口径的界面排印（§9.2，含包豪斯字重/字距处理）；
+    // ② 统一中文回退链——消除逐字符回退导致的笔画粗细不一致。
+    // 主字体已由上方 `ThemeData(fontFamily: editorFont)` 落到**全应用**（界面 + 正文）。
+    // ⚠️ 排印只作用于**界面**：编辑器走 `EditorTypography`（自带字体与字号），
+    // 不吃这里 ⇒ 不牵动块高预测器与滚动几何。
     return theme.copyWith(
       textTheme: typography(theme.textTheme)
           .apply(fontFamilyFallback: cjkFontFallback),
@@ -1553,3 +1595,145 @@ class AppTheme {
     );
   }
 }
+
+/// 圆角下的逐边上色 bevel 装饰（[AppTheme.raisedBevel] / [AppTheme.sunkenBevel] 用）。
+///
+/// [Border] 在圆角下强制四边同色（`A borderRadius can only be given on borders
+/// with uniform colors`），而拟态胶囊/卡片都是圆角 ⇒ 必须自绘才能给每条边独立上色。
+/// 顶+左用 [light]、底+右用 [dark]，各 [width] px；[fill] 为圆角填充（null = 只画边）。
+/// 无模糊、不触发离屏合成。
+class BevelDecoration extends Decoration {
+  final BorderRadius radius;
+  final Color light;
+  final Color dark;
+  final Color? fill;
+  final double width;
+
+  const BevelDecoration({
+    required this.radius,
+    required this.light,
+    required this.dark,
+    this.fill,
+    this.width = 1,
+  });
+
+  @override
+  BoxPainter createBoxPainter([VoidCallback? onChanged]) => _BevelPainter(this);
+
+  @override
+  bool hitTest(Size size, Offset position, {TextDirection? textDirection}) => false;
+
+  @override
+  Decoration? lerpFrom(Decoration? a, double t) => t < 0.5 ? a : this;
+
+  @override
+  Decoration? lerpTo(Decoration? b, double t) => t < 0.5 ? this : b;
+}
+
+class _BevelPainter extends BoxPainter {
+  final BevelDecoration decoration;
+
+  _BevelPainter(this.decoration);
+
+  @override
+  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
+    final Size? size = configuration.size;
+    if (size == null) return;
+    final Rect rect = offset & size;
+    final RRect rrect =
+        decoration.radius.resolve(configuration.textDirection).toRRect(rect);
+    final double w = decoration.width;
+    if (decoration.fill != null) {
+      canvas.drawRRect(rrect, Paint()..color = decoration.fill!);
+    }
+    if (w <= 0) return;
+    // 倒角 = 沿圆角边框一圈的**方向性渐变**（顶左 light → 底右 dark），直接作为
+    // RRect 描边的 shader：弧线与直边被同一渐变覆盖 ⇒ 边跟圆角走，无直切/缺失。
+    // （老版本用"矩形 clip 带 + 整圈描边"，clip 带是直的、会把圆角弧线切断 ⇒
+    // 角上变形、只剩直边。）
+    final Paint stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        // 准阶跃过渡（0.45→0.55 窄带）：左上受光、右下背光，两"侧角"沿各自
+        // 对角线切开 = 物理正确的倒角；不是糊成一片的渐变。
+        colors: <Color>[decoration.light, decoration.light, decoration.dark, decoration.dark],
+        stops: const <double>[0.0, 0.45, 0.55, 1.0],
+      ).createShader(rect);
+    canvas.drawRRect(rrect, stroke);
+  }
+}
+
+/// **包豪斯扁平令牌**（2026-10-12 用户定：温暖的数字极简包豪斯 = 趋势 #1 方法论
+/// + #2 暖纸底 + #4 几何/原色词汇，但保持克制、不撞色、不解构；排除 #3 渐变霓虹、
+/// #5 算法生成）。
+///
+/// 与 [AppTheme]（一颗种子派生全套的 M3）**并存**：这一套是**固定**的纸/墨/三原色，
+/// 供「外壳 + 主页」这类要走包豪斯的平面使用；编辑器内部 / 对话框等仍可走 M3。
+/// 全站**零投影 / 零 bevel / 零渐变**，层次只靠**色块 + 边框粗细 + 字号**。
+///
+/// 圆角统一 **4px 硬边**（[Bauhaus.radius]）——用户 2026-10-12 定"全硬边留 4px"。
+class Bauhaus {
+  const Bauhaus._();
+
+  /// 4px 硬边圆角（全站统一）。
+  static const BorderRadius radius = BorderRadius.all(Radius.circular(4));
+
+  // ── 固定调色板（亮）──────────────────────────────────────────
+  /// 暖纸底（窗口 / 页面底）。
+  static const Color _paperLight = Color(0xFFF3F0EA);
+  /// 浮面 / 卡片面（比纸底更亮的"纸"）。
+  static const Color _surfaceLight = Color(0xFFFFFFFF);
+  /// 墨色（正文 + 硬边）。
+  static const Color _inkLight = Color(0xFF161513);
+  /// 主色：蓝（主动作 / 选中）。
+  static const Color _blueLight = Color(0xFF1B4FD8);
+  /// 蓝·深一档（hover / pressed）。
+  static const Color _blueDeepLight = Color(0xFF123AA8);
+  /// 强调：黄（hover 高亮 / 点睛）。
+  static const Color _yellow = Color(0xFFF4C300);
+  /// 破坏：红（仅删除 / 错误）。
+  static const Color _redLight = Color(0xFFE23A2E);
+
+  // ── 固定调色板（暗）─────────────────────────────────────────
+  static const Color _paperDark = Color(0xFF1A1917);
+  static const Color _surfaceDark = Color(0xFF242320);
+  static const Color _inkDark = Color(0xFFF3F0EA);
+  static const Color _blueDark = Color(0xFF5B82FF);
+  static const Color _blueDeepDark = Color(0xFF7E9DFF);
+  static const Color _redDark = Color(0xFFE85A4E);
+
+  // ── 取色（按明暗）──────────────────────────────────────────
+  static Color paper(Brightness b) => b == Brightness.light ? _paperLight : _paperDark;
+  static Color surface(Brightness b) =>
+      b == Brightness.light ? _surfaceLight : _surfaceDark;
+  static Color ink(Brightness b) => b == Brightness.light ? _inkLight : _inkDark;
+  static Color blue(Brightness b) => b == Brightness.light ? _blueLight : _blueDark;
+  static Color blueDeep(Brightness b) =>
+      b == Brightness.light ? _blueDeepLight : _blueDeepDark;
+  static Color yellow(Brightness b) => _yellow;
+  static Color red(Brightness b) => b == Brightness.light ? _redLight : _redDark;
+
+  /// 次级文字（墨打折）。
+  static Color inkMuted(Brightness b) =>
+      ink(b).withValues(alpha: b == Brightness.light ? 0.62 : 0.60);
+
+  /// 发丝边（容器的"轻"边界：墨 14% / 暗 16%）。
+  static Color line(Brightness b) =>
+      ink(b).withValues(alpha: b == Brightness.light ? 0.14 : 0.16);
+
+  /// hover 浅覆（墨 6% / 暗 8%）——不引入 saveLayer（当不透明底色用需 alphaBlend）。
+  static Color hover(Brightness b) =>
+      ink(b).withValues(alpha: b == Brightness.light ? 0.06 : 0.08);
+
+  // ── 边框 ───────────────────────────────────────────────────
+  /// 卡片**硬边**（墨 1.5px）：包豪斯的"响"——边界是明确的线，不是软投影。
+  static Border cardBorder(Brightness b, {double width = 1.5}) =>
+      Border.all(color: ink(b), width: width);
+
+  /// 容器**发丝边**（1px line）：给大面板一个"轻"界定，不与卡片硬边抢。
+  static Border hairline(Brightness b) => Border.all(color: line(b));
+}
+

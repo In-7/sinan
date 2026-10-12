@@ -287,12 +287,10 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容）。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：只剩一枚漏斗钮 [_FilterMenuButton]（形态 / 排序 / 标签合住，
-///    靠右）。目的地视图（[kHomeTabs]）2026-10-09 用户定收进桌面顶条
-///    [WindowStrip] 左簇（纯图标药丸 + tooltip；当日早上的 50 最左图标轨
-///    同日撤入）；上一步 / 下一步与设置 / AI 同在顶条。
-///    常驻捕获输入框（OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"），
-///    新建统一走 Ctrl+N / Ctrl+Shift+P 命令。
+/// 1. **顶栏**：只剩一枚靠右的漏斗钮 [_FilterMenuButton]（形态 / 排序 / 标签合住）。
+///    视图切换 + 新建胶囊 2026-10-12 移到工作区**左侧扁平导航** [HomeSidebar]（无面板、
+///    贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步的 UI 入口已撤（功能在全局键
+///    `Alt+←/→`）。常驻捕获输入框（OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
 ///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
@@ -332,13 +330,10 @@ class _HomeHubState extends ConsumerState<HomeHub> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 顶栏（靠右）：仅一枚「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
-        // 问笔记（AI）2026-10-11 起移出此处、改为工作区右角折叠钮（见 [HomeScreen]
+        // 顶栏：只剩一枚靠右的「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
+        // 视图切换 + 新建胶囊 2026-10-12 移到工作区左侧扁平导航（[HomeSidebar]），
+        // 不再占内容区顶栏。问笔记（AI）是工作区右角折叠钮（见 [HomeScreen]
         // 工作区 [_RightRailToggleButton]），开合两态坐标不变。
-        // 目的地（心流 / 全部 / 日历 / 收藏）2026-10-09 收在桌面顶条（WindowStrip）；
-        // 上一步 / 下一步也在顶条。
-        // 2026-10-09 用户定：常驻捕获输入框（OmniBar）撤除——"这个输入方式
-        // 不好用"，新建统一走 Ctrl+N / Ctrl+Shift+P 命令。
         const Padding(
           padding: EdgeInsets.fromLTRB(
             Tokens.spaceLg,
@@ -354,7 +349,7 @@ class _HomeHubState extends ConsumerState<HomeHub> {
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
-            children: const <Widget>[
+            children: <Widget>[
               _FilterMenuButton(),
             ],
           ),
@@ -933,7 +928,7 @@ class _NoteCardState extends State<_NoteCard> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    final BorderRadius radius = BorderRadius.circular(Tokens.radiusLg);
+    const BorderRadius radius = Bauhaus.radius;
     final Note n = widget.note;
     final bool isCanvas = n.kind == NoteKind.canvas;
 
@@ -958,9 +953,8 @@ class _NoteCardState extends State<_NoteCard> {
       focusNode: _focus,
       borderRadius: radius,
       child: Material(
-        color: _hover
-            ? AppTheme.cardFillHover(brightness)
-            : AppTheme.cardFill(brightness),
+        // 包豪斯扁平卡：白面 + 1.5px 墨硬边；hover = 边转蓝（一眼可见，不靠投影）。
+        color: Bauhaus.surface(brightness),
         borderRadius: radius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -974,7 +968,9 @@ class _NoteCardState extends State<_NoteCard> {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: radius,
-              border: Border.all(color: AppTheme.cardStroke(brightness)),
+              border: _hover
+                  ? Border.all(color: Bauhaus.blue(brightness), width: 1.5)
+                  : Bauhaus.cardBorder(brightness),
             ),
             padding: const EdgeInsets.all(Tokens.spaceMd),
             child: Column(
@@ -1217,8 +1213,8 @@ class _CardTag extends StatelessWidget {
         vertical: 1,
       ),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(Tokens.radiusSm),
-        border: Border.all(color: AppTheme.cardStroke(theme.brightness)),
+        borderRadius: Bauhaus.radius,
+        border: Bauhaus.cardBorder(theme.brightness),
       ),
       child: Text(
         label,
@@ -1461,60 +1457,17 @@ class _CalendarView extends StatelessWidget {
     // 选中日的列表（日历正下方，单列叙事不出右栏）。
     final List<Note> dayNotes = byDay[_dayKey(selected)] ?? const <Note>[];
 
-    // 新拟态面板（2026-09-26 用户定）：同色浮起，软阴影分区，
-    // 不引入实体边框——只靠光影把「日历 + 选中日列表」整组托起。
-    final bool isLight = theme.brightness == Brightness.light;
-    // 日历组浮在工作区**浮面卡**上（2026-10-09 起；卡色 panelFill：暗 #161616 /
-    // 亮纯白）。
-    // 面板底色两边对称：亮 = boardFill（比白卡沉一档的板底实色，靠阴影托起）；
-    // 暗 = 从浮面往 board 方向取 30%（比 #16 略亮，读作轻轻抬起）。
-    // ⚠️ 两边**都不描边**：描边会让暗色那块出现一条框、与亮色无框的语言
-    // 不一致（用户反馈别扭）——边界一律由「色差 + 阴影」定义。
-    final Color panel = isLight
-        ? AppTheme.boardFill(theme.brightness)
-        : Color.lerp(
-            AppTheme.panelFill(theme.brightness),
-            AppTheme.boardFill(theme.brightness),
-            0.3,
-          )!;
-    // 双向软阴影：暗侧把面板压在纸面、亮侧给左上缘高光，合成"浮起"。
-    // 明暗分开（2026-09-26 用户反馈）：暗环境里底色差的感知弱，浮起感主要靠
-    // 阴影撑；亮色底色差够读出边界，保持减弱版。
-    final Color hi = isLight
-        ? Color.lerp(panel, Colors.white, 0.7)!
-        : Color.lerp(panel, Colors.white, 0.06)!;
-    final Color lo = isLight
-        ? Color.lerp(panel, Colors.black, 0.15)!
-        : Color.lerp(panel, Colors.black, 0.45)!;
-    // 偏移/羽化同样明暗分开：亮色收紧（它的色差够用），暗色放开——去掉描边后
-    // 暗色的边界由"色差 + 更强阴影"撑，offset 太小就又糊。
-    final Offset shadowOffset = isLight
-        ? const Offset(2, 2)
-        : const Offset(6, 6);
-    final double shadowBlur = isLight ? 6 : 8;
+    // 包豪斯扁平（2026-10-12）：白面 + 1px 发丝边 + 4px 硬边，无 bevel / 投影；
+    // 与主区卡片、内容浮面卡同一套扁平语言。日历组浮在工作区浮面卡上。
+    final Color panel = Bauhaus.surface(theme.brightness);
 
     // 日历**卡片**：只装月份头 / 星期 / 网格 / 底部「写日记」。选中日的篇目
     // 列表挪到卡片之外（见本方法 return 的第二段），两种背景分开。
     final Widget card = DecoratedBox(
       decoration: BoxDecoration(
         color: panel,
-        borderRadius: BorderRadius.circular(Tokens.radiusLg),
-        // ⚡ 暗色改用应用统一的"微阴影"（floatShadows）：纯下投软影，不再双向
-        // 拟态（2026-09-27 用户定）；背景靠 panel 实色差分层，阴影只给浮起感。
-        boxShadow: isLight
-            ? <BoxShadow>[
-                BoxShadow(
-                  color: lo,
-                  offset: shadowOffset,
-                  blurRadius: shadowBlur,
-                ),
-                BoxShadow(
-                  color: hi,
-                  offset: -shadowOffset,
-                  blurRadius: shadowBlur,
-                ),
-              ]
-            : AppTheme.floatShadows(theme.brightness),
+        borderRadius: Bauhaus.radius,
+        border: Bauhaus.hairline(theme.brightness),
       ),
       // 面板上挂同款纸面颗粒（paperNoiseAlpha）：颗粒铺在底色上、内容之下。
       // ⚠️ 噪点层必须铺满**整个面板**：padding 不能放在 Container 上——Stack
@@ -1578,7 +1531,7 @@ class _CalendarView extends StatelessWidget {
                 // 底下留白的那一行）。**只写今天**，点完直接打字。
                 Container(
                   height: 1,
-                  color: AppTheme.cardStroke(theme.brightness),
+                  color: Bauhaus.line(theme.brightness),
                 ),
                 const SizedBox(height: Tokens.spaceXs),
                 _DiaryEntryButton(day: today, onTap: onCreateToday),

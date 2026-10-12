@@ -175,6 +175,7 @@ exemptions = <String, Map<String, String>>{
   },
   'duration': <String, String>{
     'lib/src/app/home_screen.dart': '右轨开合 200ms 专门转场节奏（与左轨同套），非交互态三档',
+    'lib/src/app/new_note_capsule.dart': '新建胶囊悬停/展开 120ms 专门节奏（用户 2026-10-12 实机调定），非交互态三档',
     'lib/src/app/hub_nav.dart': '切换器滑块 220ms（M3 滑块节奏档），非交互态三档',
     'lib/src/app/search_provider.dart': 'kSearchDebounce 输入防抖 250ms：行为时序不是动画令牌',
     'lib/src/app/settings_panel.dart': '弹层出入场 220ms 专门节奏，非交互态三档',

@@ -10,12 +10,12 @@ import 'app_menu.dart';
 import '../command/commands.dart';
 import '../domain/note.dart';
 import 'home_hub.dart';
+import 'home_sidebar.dart';
 import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show showSettingsPanel;
-import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
@@ -32,8 +32,8 @@ import '../domain/settings.dart';
 ///   （2026-10-11 用户定，靠 `center` 的 `Positioned.fill + Center`；左 `Expanded`
 ///   等分放历史键浮在「心流」左，不挤占导航位；设置钮在更右端紧贴最小化左——与窗控
 ///   成组）；窗控按钮在更右端；无分割线。**问笔记（AI）不是标题栏钮**——它 2026-10-11
-///   起改为工作区右角折叠钮（见本文件工作区 [_RightRailToggleButton]），与规划中左面板
-///   钮对称、开合两态坐标不变，好发现好记忆。
+///   起改为工作区右角折叠钮（见本文件工作区 [_RightRailToggleButton]）；左侧是扁平
+///   导航 [HomeSidebar]（无折叠钮、常驻），AI 轨由这枚右角钮开合。
 /// - 条下 4px 环缝内是一张（AI 打开时两张并排）圆角 12 的浮面卡，
 ///   `AppTheme.panelFill` 实色 + 一圈 1px `AppTheme.panelEdge` 光边、
 ///   **无投影**（主页 / 编辑器同色，点进笔记不"变色"）：立体感来自近底 vs
@@ -135,9 +135,6 @@ class HomeScreen extends ConsumerWidget {
       final bool railFits =
           MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
       final bool aiInline = aiWanted && railFits;
-      // 左面板（规划中）：与 AI 同档断点，宽窗才 dock；窄窗暂不降级（占位面板）。
-      final bool leftWanted = ref.watch(leftPanelOpenProvider);
-      final bool leftInline = leftWanted && railFits;
 
       // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
       //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
@@ -157,104 +154,66 @@ class HomeScreen extends ConsumerWidget {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            // 居中组（[WindowStrip.center] 的 `Positioned.fill + Center` 居中）：
-            // **四枚目的地图标（心流 / 全部 / 日历 / 收藏）精确几何居中**——左侧用
-            // `Expanded` 等分放历史键（浮在「心流」左侧），中间导航药丸恒居正中、不被挤移
-            // （2026-10-11 用户定：四个导航钮居中、其他钮浮在左右、不挤占其位）。问笔记
-            // 2026-10-11 起移入 hub 头栏（贴「筛选与排序」右侧）；设置钮并入最右 `trailing`、
-            // 紧贴最小化左侧（与窗控成组）。编辑态历史键按可用态置灰、导航常驻全灰。拖拽带
-            // 正中不放搜索入口（Ctrl+K 统一口径）；窗控按钮在更右端。
-            WindowStrip(
-              // 四枚导航钮精确居中：左 `Expanded` 放历史键（内部居中），右 `Expanded` 留空
-              // 仅用于等分；中间导航药丸恒居正中。问笔记（AI）已移出顶条、改为工作区右角
-              // 折叠钮；设置钮并入最右 `trailing`（紧贴最小化左侧）；居中靠 Stack 兄弟层
-              // （不进拖拽带竞技场）。
-              center: Row(
-                children: <Widget>[
-                  Expanded(
-                    // 次级按钮组在左留白区**居中**（非右对齐贴「心流」、也非贴最左缘）：
-                    // 历史键明显左移、与导航保持距离，左右都有余量，读作"次级组浮在左侧"。
-                    // 居中只发生在本 Expanded 内部，左右 Expanded 仍等分 ⇒ 导航钮精确居中不变。
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const <Widget>[
-                        NavHistoryButton(),
-                        SizedBox(width: Tokens.spaceLg),
-                        NavHistoryButton(forward: true),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (int i = 0; i < kHomeTabs.length; i++) ...<Widget>[
-                        if (i > 0) const SizedBox(width: Tokens.spaceLg),
-                        NavDestinationButton(
-                          view: kHomeTabs[i],
-                          icon: kHomeTabs[i].icon,
-                        ),
-                      ],
-                    ],
-                  ),
-                  // 右留白区：2026-10-11 起问笔记已移出顶条、改为工作区右角折叠钮，
-                  // 此处留空 Expanded 仅用于与左 Expanded 等分、维持导航钮几何居中。
-                  const Expanded(child: Row()),
-                ],
-              ),
-              // 设置钮并入最右簇，紧贴最小化左侧（与窗控成组）。
-              trailing: const <Widget>[
+            // 标题栏不放导航（2026-10-12 用户定：取消左侧索引面板后，四枚目的地
+            // + 新建胶囊搬到工作区左侧扁平导航 [HomeSidebar]）；上一步 / 下一步 的
+            // UI 入口已撤——功能仍在全局键 `Alt+←/→`（`nav.back` / `nav.forward`）。
+            // 问笔记（AI）是工作区右角折叠钮、不在条内。条内只剩：拖拽区 +
+            // 最右 `trailing`（设置，紧贴最小化左，与窗控成组）+ 窗控按钮。
+            // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
+            const WindowStrip(
+              trailing: <Widget>[
                 SettingsNavButton(),
               ],
             ),
             // 工作区：左 / 右 / 下各 4px 环缝，**顶部与标题条间距 0**
             //（2026-10-09 用户定）——浮面像从标题条下沿"长出来"，故卡片
             // 顶两角为直角（见 [_FloatingPanel]）；AI 打开时主卡 + 8 缝 + AI 卡（右
-            // dock、推开内容），左面板（规划中）同构从左侧 dock。
-            // 角落折叠钮（[_RightRailToggleButton] / [_LeftRailToggleButton]）浮在工作区
-            // 之上、钉在内容卡内缘 4px、y 与编辑器顶栏「标签」耳按钮同高；开合两态坐标不变
+            // dock、推开内容）。左 dock 面板 2026-10-12 取消，主卡占满全宽。
+            // 角落折叠钮（[_RightRailToggleButton]）浮在工作区之上、钉在内容卡内缘
+            // 4px、y 与编辑器顶栏「标签」耳按钮同高；开合两态坐标不变
             //（2026-10-11 起：右角钮是 AI 面板唯一开合入口）。
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Tokens.appPanelInset,
-                  0,
-                  Tokens.appPanelInset,
-                  Tokens.appPanelInset,
-                ),
-                child: Stack(
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _LeftRailSlot(open: leftInline),
-                        Expanded(
-                          child: _FloatingPanel(
-                            child: selectedId == null
-                                ? const HomeHub()
-                                : detailPane(),
+              // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const HomeSidebar(),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        Tokens.appPanelInset,
+                        0,
+                        Tokens.appPanelInset,
+                        Tokens.appPanelInset,
+                      ),
+                      child: Stack(
+                        children: <Widget>[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Expanded(
+                                child: _FloatingPanel(
+                                  child: selectedId == null
+                                      ? const HomeHub()
+                                      : detailPane(),
+                                ),
+                              ),
+                              _AiRailSlot(open: aiInline),
+                            ],
                           ),
-                        ),
-                        _AiRailSlot(open: aiInline),
-                      ],
+                          // 右角折叠钮（AI）：唯一开合入口；开合两态坐标不变（2026-10-11）。
+                          const Positioned(
+                            // y 对齐编辑器顶栏「耳朵」带（标签所在那排）：32 高钮取 top 4
+                            // ⇒ 中心 20，与耳朵中心（5 + 30/2 = 20）同高（2026-10-11 用户定）。
+                            top: Tokens.spaceXs,
+                            right: Tokens.spaceXs,
+                            child: _RightRailToggleButton(),
+                          ),
+                        ],
+                      ),
                     ),
-                    // 左角折叠钮（左面板，规划中）：钉内容卡内缘 4px、y 对齐筛选排序。
-                    Positioned(
-                      // 与右角钮同高（对齐编辑器顶栏「耳朵」带，见
-                      // [_RightRailToggleButton] 的注释）。
-                      top: Tokens.spaceXs,
-                      left: Tokens.spaceXs,
-                      child: const _LeftRailToggleButton(),
-                    ),
-                    // 右角折叠钮（AI）：唯一开合入口；开合两态坐标不变（2026-10-11）。
-                    Positioned(
-                      // y 对齐编辑器顶栏「耳朵」带（标签所在那排）：32 高钮取 top 4
-                      // ⇒ 中心 20，与耳朵中心（5 + 30/2 = 20）同高（2026-10-11 用户定）。
-                      top: Tokens.spaceXs,
-                      right: Tokens.spaceXs,
-                      child: const _RightRailToggleButton(),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -467,18 +426,15 @@ class _EmptyDetail extends StatelessWidget {
       const Center(child: Text('选择左侧笔记，或新建一篇'));
 }
 
-/// 浮面卡统一圆角：四角均为 [Tokens.radiusLg]（2026-10-09 晚用户定：顶两角
-/// 恢复圆角——直角不好看）。顶边仍与 44 标题条 **0 间距**，圆角落出的小弧
-/// 露出窗口底，正好充当卡顶的分缝。主卡与 AI 卡共用，保证拼缝处半径一致。
-const BorderRadius _kPanelRadius = BorderRadius.all(
-  Radius.circular(Tokens.radiusLg),
-);
+/// 浮面卡统一圆角：包豪斯**全硬边留 4px**（[Bauhaus.radius]，2026-10-12 用户定）。
+/// 主卡与 AI 卡共用，保证拼缝处半径一致。
+const BorderRadius _kPanelRadius = Bauhaus.radius;
 
-/// 工作区的**内嵌浮面卡**（2026-10-09 opencode 风外壳）：`panelFill` 实色 +
-/// [_kPanelRadius]（四角 12 圆）+ 一圈 1px [AppTheme.panelEdge] 光边，
-/// **无投影**；内容用 [ClipRRect] 裁进圆角，滚动条 / 铺底色块不会顶出方角。
+/// 工作区的**内嵌浮面卡**（2026-10-12 改包豪斯扁平）：[Bauhaus.surface] 实色 +
+/// 4px 硬边 + 一圈 1px [Bauhaus.hairline] 发丝边，**无投影 / 无 bevel**；内容用
+/// [ClipRRect] 裁进圆角，滚动条 / 铺底色块不会顶出方角。
 ///
-/// 光边走 `foregroundDecoration` 画在内容**之上**：编辑器等子树会把底色铺到
+/// 发丝边走 `foregroundDecoration` 画在内容**之上**：编辑器等子树会把底色铺到
 /// 卡缘，普通 border 画在子层下面会被盖住。
 class _FloatingPanel extends StatelessWidget {
   const _FloatingPanel({required this.child});
@@ -490,14 +446,12 @@ class _FloatingPanel extends StatelessWidget {
     final Brightness brightness = Theme.of(context).brightness;
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.panelFill(brightness),
+        color: Bauhaus.surface(brightness),
         borderRadius: _kPanelRadius,
-        // 亮面语言靠软投影（暗端空列表，继续走光边，见 AppTheme.panelShadow）。
-        boxShadow: AppTheme.panelShadow(brightness),
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: _kPanelRadius,
-        border: Border.all(color: AppTheme.panelEdge(brightness)),
+        border: Bauhaus.hairline(brightness),
       ),
       child: ClipRRect(borderRadius: _kPanelRadius, child: child),
     );
@@ -524,6 +478,7 @@ class _AiRailSlot extends StatelessWidget {
   Widget build(BuildContext context) {
     const double seam = Tokens.appPanelInset;
     const double fullWidth = Tokens.askRailWidth + seam;
+    final Brightness brightness = Theme.of(context).brightness;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
@@ -538,17 +493,14 @@ class _AiRailSlot extends StatelessWidget {
               // 左 8 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
               padding: const EdgeInsets.only(left: seam),
               child: Container(
+                // 包豪斯扁平：与主卡同款白面 + 发丝边 + 4px，无投影。
                 decoration: BoxDecoration(
-                  color: AppTheme.panelFill(Theme.of(context).brightness),
+                  color: Bauhaus.surface(brightness),
                   borderRadius: _kPanelRadius,
-                  boxShadow: AppTheme.panelShadow(Theme.of(context).brightness),
                 ),
-                // 与主卡同一条 1px 光边（盖在内容之上，见 [_FloatingPanel]）。
                 foregroundDecoration: BoxDecoration(
                   borderRadius: _kPanelRadius,
-                  border: Border.all(
-                    color: AppTheme.panelEdge(Theme.of(context).brightness),
-                  ),
+                  border: Bauhaus.hairline(brightness),
                 ),
                 child: const ClipRRect(
                   borderRadius: _kPanelRadius,
@@ -591,207 +543,6 @@ class _RightRailToggleButton extends ConsumerWidget {
         ),
         onPressed: () => unawaited(runCommandById(ref, 'ai.ask')),
       ),
-    );
-  }
-}
-
-/// 工作区**左角折叠钮**（左面板，规划中）：与 [_RightRailToggleButton] 对称，
-/// 钉在内容卡内缘 4px、y 与右角钮同高；点击切换 [leftPanelOpenProvider]，
-/// 开合两态坐标不变。当前左面板仅占位（见 [_LeftRailSlot]）。
-class _LeftRailToggleButton extends ConsumerWidget {
-  const _LeftRailToggleButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool open = ref.watch(leftPanelOpenProvider);
-    return SizedBox(
-      width: Tokens.toolbarButtonSize,
-      height: Tokens.toolbarButtonSize,
-      child: IconButton(
-        icon: const tabler.MenuDeep(
-          height: Tokens.iconMdSm,
-          width: Tokens.iconMdSm,
-          strokeWidth: 1.5,
-        ),
-        tooltip: '左面板（规划中）',
-        style: IconButton.styleFrom(
-          backgroundColor: open
-              ? AppTheme.navSelectedTint(scheme.onSurface)
-              : Colors.transparent,
-        ),
-        onPressed: () => ref.read(leftPanelOpenProvider.notifier).toggle(),
-      ),
-    );
-  }
-}
-
-/// 左侧面板槽（规划中）：与 [_AiRailSlot] 对称——从**左**缘 dock、推开内容，
-/// 关闭收 0、打开宽 [Tokens.leftRailWidth] + 缝；当前渲染占位空面板（见
-/// [_LeftPanelPlaceholder]），真实左面板功能落地即替换内部内容。
-class _LeftRailSlot extends StatelessWidget {
-  const _LeftRailSlot({required this.open});
-
-  final bool open;
-
-  @override
-  Widget build(BuildContext context) {
-    const double seam = Tokens.appPanelInset;
-    const double fullWidth = Tokens.leftRailWidth + seam;
-    final Brightness brightness = Theme.of(context).brightness;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      width: open ? fullWidth : 0,
-      child: ExcludeFocus(
-        excluding: !open,
-        child: ClipRect(
-          child: OverflowBox(
-            alignment: Alignment.topRight,
-            maxWidth: fullWidth,
-            child: Padding(
-              // 右 8 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
-              padding: const EdgeInsets.only(right: seam),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.panelFill(brightness),
-                  borderRadius: _kPanelRadius,
-                  boxShadow: AppTheme.panelShadow(brightness),
-                ),
-                foregroundDecoration: BoxDecoration(
-                  borderRadius: _kPanelRadius,
-                  border: Border.all(color: AppTheme.panelEdge(brightness)),
-                ),
-                child: ClipRRect(
-                  borderRadius: _kPanelRadius,
-                  child: const _LeftPanelPlaceholder(),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 左面板占位（规划中）：仅证明左侧 dock 布局与左角折叠钮联动；真实功能落地
-/// 后替换。头部只留标题（关闭走 Esc 或左角折叠钮，与右 AI 面板同构）。
-class _LeftPanelPlaceholder extends StatelessWidget {
-  const _LeftPanelPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // 标题靠右（朝主卡缝一侧）：镜像右 AI 面板（标题在左），让开左上角的
-        // 左角折叠钮（见 [_LeftRailToggleButton]），避免叠字。
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            Tokens.spaceXs,
-            Tokens.spaceXs,
-            Tokens.spaceMd,
-            Tokens.spaceXs,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[
-              Text('左面板', style: theme.textTheme.titleSmall),
-            ],
-          ),
-        ),
-        Container(height: 1, color: AppTheme.divider(scheme)),
-        Expanded(
-          child: Center(
-            child: Text('规划中', style: theme.textTheme.labelSmall),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// tooltip = 视图名（也是 a11y 标签）。
-///
-/// 行为与视图切换同源（[NavHistoryNotifier.selectHome]）⇒ 在编辑器里按下 =
-/// 离开编辑器去那个视图，且进统一导航历史。主页态高亮当前视图（"我在哪"），
-/// 编辑态全灰（"在笔记里"不属于任何目的地）。
-class NavDestinationButton extends ConsumerWidget {
-  const NavDestinationButton({
-    super.key,
-    required this.view,
-    required this.icon,
-  });
-
-  final HomeView view;
-
-  /// 图标按**当前色**现画（tabler 是自绘 widget，不读 IconTheme）。
-  final Widget Function(Color color) icon;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool onHome = ref.watch(selectedNoteIdProvider) == null;
-    final bool active = onHome && ref.watch(navHistoryProvider).view == view;
-    return IconButton(
-      tooltip: view.label,
-      style: IconButton.styleFrom(
-        // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装）。
-        backgroundColor: active
-            ? AppTheme.selectedPill(scheme)
-            : Colors.transparent,
-      ),
-      icon: icon(active ? scheme.onSurface : scheme.onSurfaceVariant),
-      onPressed: () => ref.read(navHistoryProvider.notifier).selectHome(view),
-    );
-  }
-}
-
-/// 顶条左缘的**上一步 / 下一步**（2026-09-29 用户定）：**统一导航历史**
-/// （[navHistoryProvider]）的出口——主页视图切换与进入笔记 / 画布页都入栈
-/// （2026-09-30 用户定），严格按点击顺序进退；编辑器也在栈里，退到一篇笔记
-/// = 重新打开它。无可退 / 可进时按钮置灰（`onPressed: null`）。
-class NavHistoryButton extends ConsumerWidget {
-  const NavHistoryButton({super.key, this.forward = false});
-
-  /// false = 上一步（退回），true = 下一步（重做）。
-  final bool forward;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // watch 一次拿到「当前视图 + 历史可用态」：[NavHistoryState] 把两个 `canGo*`
-    // 放在 state 里 ⇒ 导航后本 widget 重建，可用态自动跟着更新。
-    // （不再读 notifier 的公开 getter——那是 `riverpod_lint` 禁止的，且拿不到
-    // 重建通知。）
-    final NavHistoryState navState = ref.watch(navHistoryProvider);
-    final bool can = forward ? navState.canGoForward : navState.canGoBack;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 上一步 / 下一步（回退为 Remix 实心箭头，与主页一致）：[CustomIcons] 是
-    // 裸 SVG，不读 Material IconTheme ⇒ 禁用色必须**自己算**（M3 禁用图标 =
-    // onSurface 38%），否则置灰失效。
-    final Color iconColor = can
-        ? scheme.onSurfaceVariant
-        : scheme.onSurface.withValues(alpha: 0.38);
-    return IconButton(
-      // 图标尺寸与顶条其它钮一致 = [Tokens.iconMdSm]（20），与「收藏」等目的地钮
-      // 同大（2026-10-11 用户定统一大小）；[CustomIcons] 默认档 24 偏大，这里显式降。
-      icon: forward
-          ? CustomIcons.arrowRight(size: Tokens.iconMdSm, color: iconColor)
-          : CustomIcons.arrowLeft(size: Tokens.iconMdSm, color: iconColor),
-      tooltip: forward ? '下一步' : '上一步',
-      onPressed: can
-          ? () {
-              // 直接走统一历史：退 / 进的落点是主页视图就离开编辑器，是某篇
-              // 笔记就重新打开——栈里已记录完整点击顺序，无需先 goHome。
-              final NavHistoryNotifier nav = ref.read(
-                navHistoryProvider.notifier,
-              );
-              forward ? nav.goForward() : nav.goBack();
-            }
-          : null,
     );
   }
 }

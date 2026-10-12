@@ -447,7 +447,7 @@ void main() {
     }
   });
 
-  test('浮动工具条：浮层口径（floatSurface 底色 + menuBorder 描边 + 下投投影）', () {
+  test('浮动工具条：浮层口径（floatSurface 底色 + menuBorder 描边，无模糊阴影）', () {
     for (final ThemeData theme in <ThemeData>[
       AppTheme.light(),
       AppTheme.dark(),
@@ -493,27 +493,9 @@ void main() {
         reason: '$label：满档描边应比发丝线更实',
       );
 
-      // 投影：左上受光提示 + 右下下投暗影（给"抬起"实体感）。
-      final List<BoxShadow> shadows = decoration.boxShadow!;
-      expect(shadows, hasLength(2), reason: '$label：投影缺一不可');
-      // 受光在左上、暗影在右下（偏移方向反了就成了"内陷"而不是"抬起"）。
-      expect(shadows[0].offset.dx, lessThan(0));
-      expect(shadows[0].offset.dy, lessThan(0));
-      // 亮色下表面已是纯白，白高光与表面等亮（隐形、无妨）⇒ 用 >= 而非 >。
-      expect(
-        shadows[0].color.computeLuminance(),
-        greaterThanOrEqualTo(decoration.color!.computeLuminance()),
-        reason: '$label：左上那层不可比表面更暗（否则不是受光）',
-      );
-      expect(shadows[1].offset.dx, greaterThan(0));
-      expect(shadows[1].offset.dy, greaterThan(0));
-      expect(
-        shadows[1].color.computeLuminance(),
-        lessThan(decoration.color!.computeLuminance()),
-        reason: '$label：右下那层必须比表面更暗（否则不是暗影）',
-      );
-      // 暗影比高光更软更长：自然光而非模板描边。
-      expect(shadows[1].blurRadius, greaterThan(shadows[0].blurRadius));
+      // 2026-10-12：拟态去掉模糊双向柔影（[neuShadows] 已移除），浮起感只靠
+      // floatSurface 与这圈 1px 描边的明度差——[decoration.boxShadow] 应为空。
+      expect(decoration.boxShadow, isNull, reason: '$label：浮条不应再带模糊阴影');
     }
   });
 
@@ -555,7 +537,7 @@ void main() {
   /// Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：规格表里的每个值都要**机器可检**
   /// ——否则下次有人"顺手"把字号调回 14、把分隔线调回满档，没人会注意到。
   group('Apple 口径（§9.2 规格）', () {
-    test('界面排印：正文 13 / 小字 11 / 标题靠字重分层', () {
+    test('界面排印：正文 13 / 小字 11 / 标题重字重+紧字距（包豪斯）', () {
       for (final ThemeData theme in <ThemeData>[
         AppTheme.light(),
         AppTheme.dark(),
@@ -566,15 +548,26 @@ void main() {
         expect(t.bodySmall?.fontSize, 11, reason: '$label：辅助文字 11');
         expect(t.labelMedium?.fontSize, 11, reason: '$label：标签 11');
         expect(t.titleSmall?.fontSize, 13, reason: '$label：面板标题不放大字号');
+        // 包豪斯标题层（2026-10-12）：重字重 + 负字距分层（不靠投影）。
         expect(
           t.titleSmall?.fontWeight,
-          FontWeight.w600,
-          reason: '$label：标题用**字重**分层（§9.2）',
+          FontWeight.w700,
+          reason: '$label：标题用**重字重**分层（包豪斯）',
+        );
+        expect(
+          t.titleSmall?.letterSpacing,
+          lessThan(0),
+          reason: '$label：标题负字距（包豪斯紧排）',
         );
         expect(
           t.titleLarge?.letterSpacing,
           lessThan(0),
-          reason: '$label：大字号负字距是 SF 的标志',
+          reason: '$label：大字号负字距',
+        );
+        expect(
+          t.headlineSmall?.fontWeight,
+          FontWeight.w700,
+          reason: '$label：headline 档也加重（包豪斯）',
         );
         expect(t.bodyMedium?.height, greaterThan(1.2), reason: '$label：正文要留呼吸');
         expect(
@@ -593,12 +586,13 @@ void main() {
         final ColorScheme scheme = theme.colorScheme;
         final String label = '${theme.brightness}';
 
-        // 两个语义令牌：「当前项」选中 = primary 12% 药丸（用户拍板全局统一）；
-        // 开关态 tint = onSurface 10%（开/关如实显示，仍留用）。
+        // 两个语义令牌：「当前项」选中 = 无背景填充（2026-10-11 用户定：选中态
+        // 去掉任何背景，只靠前景色 onSurface 区分"当前项"）；开关态 tint =
+        // onSurface 10%（开/关如实显示，仍留用）。
         expect(
           AppTheme.selectedPill(scheme),
-          scheme.primary.withValues(alpha: 0.12),
-          reason: '$label：selectedPill 必须是 primary @12%（拍板比例）',
+          Colors.transparent,
+          reason: '$label：selectedPill 必须是透明（2026-10-11 去掉背景填充）',
         );
         expect(
           AppTheme.navSelectedTint(scheme.onSurface).a,

@@ -152,22 +152,6 @@ final aiPanelOpenProvider = NotifierProvider<AiPanelNotifier, bool>(
   AiPanelNotifier.new,
 );
 
-/// 左侧面板（规划中）开合状态：与 [aiPanelOpenProvider] 同源的单布尔，状态单一
-/// 真相源——呈现形态归外壳（[HomeScreen] 的 [_LeftRailSlot]），角落折叠钮是唯一
-/// 开合入口（2026-10-11 起与右 AI 面板对称：开合两态坐标不变，好记忆）。
-class LeftPanelNotifier extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void open() => state = true;
-  void close() => state = false;
-  void toggle() => state = !state;
-}
-
-final leftPanelOpenProvider = NotifierProvider<LeftPanelNotifier, bool>(
-  LeftPanelNotifier.new,
-);
-
 /// 笔记列表（含增删改后自动刷新）。
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,

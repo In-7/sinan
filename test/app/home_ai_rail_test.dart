@@ -15,8 +15,9 @@ import 'package:sinan/src/theme/tokens.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// **AI 问答轨 · 外壳集成**（2026-09-28；2026-10-09 修订：opencode 风外壳，
-/// AI 开关在全宽顶条右端、紧贴「最小化」左侧，打开时呈现为第二张浮面卡）。
+/// **AI 问答轨 · 外壳集成**（2026-09-28；2026-10-09 修订：opencode 风外壳；
+/// 2026-10-11 再修订：开关从顶条搬进**工作区右角折叠钮**——它是 AI 轨唯一的
+/// 开合入口，钉在内容卡内缘 4px、y 与编辑页顶栏「标签」耳按钮同高）。
 ///
 /// 组件自身的语义在 [ask_rail_test.dart] 里钉；这里钉 [HomeScreen] 外壳对
 /// `aiPanelOpenProvider` 的**呈现选择**（`docs/ui_rewrite_plan.md` §2.4：
@@ -89,9 +90,10 @@ void main() {
     });
   }
 
-  /// 顶条右端那枚开关的**位置闸门**：它必须紧贴「最小化」左侧，而不是跑到
-  /// 别处（用户明确指定："位置放在最小化左边"）。
-  testWidgets('宽窗：顶条右端有「问笔记」开关，点开右轨', (WidgetTester tester) async {
+  /// AI 开关的**位置闸门**：2026-10-11 用户定它不再是顶条钮（顶条右端只留设置），
+/// 而是**工作区右角折叠钮**——钉在内容卡内缘 4px、y 与编辑页顶栏「标签」耳按钮
+/// 同高，且开合两态坐标不变（好发现好记忆）。
+testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -99,18 +101,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    // 2026-10-09 修订：左侧栏暂撤，AI 开关回通栏顶条右端（带「（Ctrl+J）」
-    // tooltip——顶条是它唯一的图标入口）。
     final Finder ai = find.byTooltip('问笔记（Ctrl+J）');
-    expect(ai, findsOneWidget, reason: '顶条右端必须有可见的 AI 开关');
+    expect(ai, findsOneWidget, reason: '右角必须有可见的 AI 折叠钮');
 
-    // 它落在窗控按钮左侧（紧贴「最小化」），而不是散落在别处。
-    final Rect minRect = tester.getRect(find.byTooltip('最小化'));
+    // 不在 44 顶条内；钉在内容卡内缘 4px（= 窗口右缘 − appPanelInset − spaceXs）。
     final Rect aiRect = tester.getRect(ai);
+    expect(aiRect.top, greaterThan(44), reason: 'AI 钮不在顶条内（已搬出）');
     expect(
-      minRect.left - aiRect.right,
-      inInclusiveRange(-0.5, 4),
-      reason: 'AI 开关应紧贴「最小化」左侧',
+      aiRect.right,
+      closeTo(1200 - Tokens.appPanelInset - Tokens.spaceXs, 0.5),
+      reason: '钉在内容卡内缘 4px',
+    );
+    expect(
+      aiRect.top + aiRect.height / 2,
+      closeTo(44 + 20, 1),
+      reason: '与编辑页顶栏「标签」耳按钮同高（内容区顶部下 20）',
     );
 
     // 默认未开。

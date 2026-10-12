@@ -17,13 +17,13 @@ import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 主页（2026-10-09：目的地收进桌面顶条左簇；HomeHub = 筛选钮
-/// + 内容区）的回归。
+/// 主页（2026-10-12：视图 tab + 新建胶囊移到工作区左侧扁平导航 [HomeSidebar]；
+/// HomeHub = 筛选钮 + 内容区）的回归。
 ///
 /// 钉的是"主页是什么"这几条结构性事实：
-/// ① 目的地（心流/全部/日历/收藏）**不在 HomeHub 里**——在 home_screen.dart
-///    的顶条 [WindowStrip] 左簇（title_bar_nav_test.dart 钉）；本文件用
-///    [navHistoryProvider] 直接驱动视图来验内容分发；
+/// ① 目的地（心流/全部/日历/收藏）**不在 HomeHub 里**——在工作区左侧扁平导航
+///    [HomeSidebar]（title_bar_nav_test.dart 钉）；标题栏 [WindowStrip] 也不放；
+///    本文件用 [navHistoryProvider] 直接驱动视图来验内容分发；
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
 ///   "显式透明"相反，卡片就该是一块浮起的板子）；
 /// ③ 点卡片走 `locateProvider`（§4 唯一跳转通道）；
@@ -147,7 +147,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('默认落心流视图：筛选控件 + 时间流（目的地在外壳图标轨，捕获条已撤）', (
+  testWidgets('默认落心流视图：筛选控件 + 时间流（目的地在左侧导航，捕获条已撤）', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pumpHub(
@@ -157,10 +157,10 @@ void main() {
 
     // 2026-10-05 决策 C：启动默认落「心流」。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    // 2026-10-09：目的地（心流 / 全部 / 日历 / 收藏）外移到外壳最左图标轨，
-    // HomeHub 顶栏不再有这四枚 tab 文字。
+    // 2026-10-12：目的地（心流 / 全部 / 日历 / 收藏）已移到工作区左侧扁平导航
+    // [HomeSidebar]，HomeHub 顶栏不再有这四枚 tab 文字。
     for (final String t in <String>['心流', '全部', '日历', '收藏']) {
-      expect(find.text(t), findsNothing, reason: '视图 tab 已外移到外壳图标轨');
+      expect(find.text(t), findsNothing, reason: '视图 tab 已移到左侧 HomeSidebar');
     }
     // 形态改走筛选器 ⇒ 顶栏里不出现「笔记」「画布」的 tab / 入口。
     expect(find.text('笔记'), findsNothing);
@@ -180,8 +180,8 @@ void main() {
     expect(find.text('乙'), findsOneWidget);
     // （「（空白）」是**卡片网格**的口径 ⇒ 由「全部」视图下的卡片用例覆盖；
     // 心流的行只有标题 + 元数据，不显示它。）
-    // 键盘可达（§5.2）：2 张卡片接 FocusRing（筛选器是
-    // IconButton，走自身焦点环，不挂 FocusRing）。
+    // 键盘可达（§5.2）：2 张卡片接 FocusRing（视图 tab / 新建胶囊在左侧
+    // [HomeSidebar]，不在这棵 HomeHub 树里；筛选器是 IconButton，走自身焦点环）。
     expect(find.byType(FocusRing), findsNWidgets(2));
   });
 
@@ -193,7 +193,8 @@ void main() {
     expect(find.text('还没有笔记或画布'), findsOneWidget);
     expect(find.text('按 Ctrl+N 新建第一篇'), findsOneWidget);
     expect(find.text('记点什么…'), findsNothing);
-    // 无卡片：FocusRing 交互件为 0（漏斗钮是 IconButton，空库也常驻）。
+    // 空库无卡片 ⇒ 这棵 HomeHub 树里 FocusRing 交互件为 0（视图 tab / 新建胶囊在
+    // 左侧 [HomeSidebar]；漏斗钮是 IconButton，走自身焦点环，不挂 FocusRing）。
     expect(find.byType(FocusRing), findsNothing);
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
   });
@@ -340,7 +341,7 @@ void main() {
     );
   });
 
-  testWidgets('卡片静止态有底色 cardFill（不许透明）', (WidgetTester tester) async {
+  testWidgets('卡片静止态有底色 Bauhaus.surface（不许透明）', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲'],
@@ -354,8 +355,8 @@ void main() {
     );
     expect(
       card.color,
-      AppTheme.cardFill(Brightness.light),
-      reason: '卡片是一块浮起的板子——静止态就该有底色（与列表行的透明相反）',
+      Bauhaus.surface(Brightness.light),
+      reason: '包豪斯扁平卡：白面静止态有底色（与列表行的透明相反），边界靠硬边非投影',
     );
   });
 
