@@ -363,7 +363,7 @@ class _PaletteRow extends StatelessWidget {
     final ColorScheme scheme = theme.colorScheme;
     final Color foreground = enabled
         ? scheme.onSurface
-        : scheme.onSurface.withValues(alpha: 0.38); // 置灰但仍可读
+        : AppTheme.disabledInk(scheme.onSurface); // 置灰但仍可读
     // 说明（有则用）兼作**置灰原因**：§3.1 要求说清"为什么不能用"，
     // 而那句话在可用时也是有意义的说明——不为它再给模型加一个字段。
     final String secondary = command.hint ?? _groupLabel(command.group);

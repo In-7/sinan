@@ -23,7 +23,7 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// `aiPanelOpenProvider` 的**呈现选择**（`docs/ui_rewrite_plan.md` §2.4：
 /// 断点重排，不是等比缩小）：
 /// - 宽窗（≥ [Tokens.askRailBreakpoint]）：第二张浮面卡常驻，关闭时槽收宽 0
-///   （裁切掉、点不着；打开 = 340 卡 + 8 左缝）；
+///   （裁切掉、点不着；打开 = 340 卡 + 4 左缝）；
 /// - 窄窗：不渲染可见轨，「打开」降级为居中浮层，开关立刻复位；
 /// - 开着轨把窗口拖过断点：同样降级，且不弹两层浮层。
 void main() {
@@ -106,7 +106,7 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
 
     // 不在 44 顶条内；钉在内容卡内缘 4px（= 窗口右缘 − appPanelInset − spaceXs）。
     final Rect aiRect = tester.getRect(ai);
-    expect(aiRect.top, greaterThan(44), reason: 'AI 钮不在顶条内（已搬出）');
+    expect(aiRect.top, greaterThan(32), reason: 'AI 钮不在顶条内（已搬出）');
     expect(
       aiRect.right,
       closeTo(1200 - Tokens.appPanelInset - Tokens.spaceXs, 0.5),
@@ -114,7 +114,9 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
     );
     expect(
       aiRect.top + aiRect.height / 2,
-      closeTo(44 + 20, 1),
+      // 面板顶部 = 顶条 32 + 顶缝（[AppTheme.surfaceRingRetreat]，随外扩亮线走）
+      // ⇒ 中心 = 其下 20。从常量推，别写死。
+      closeTo(32 + AppTheme.surfaceRingRetreat + 20, 1),
       reason: '与编辑页顶栏「标签」耳按钮同高（内容区顶部下 20）',
     );
 
@@ -160,7 +162,7 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
     expect(
       tester.getSize(slot).width,
       Tokens.askRailWidth + Tokens.appPanelInset,
-      reason: '打开 ⇒ 340 卡 + 8 左缝（两张浮面卡之间的缝，露窗口底）',
+      reason: '打开 ⇒ 340 卡 + 4 左缝（seam = Tokens.appPanelInset，两张浮面卡之间的缝，露窗口底）',
     );
     expect(
       tester

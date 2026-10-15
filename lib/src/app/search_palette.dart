@@ -28,7 +28,7 @@ import 'settings_panel.dart' show appNavigatorKey;
 /// 查询词是浮层的局部状态，浏览过程**不写** [searchNotifierProvider]；唯一
 /// 例外是底部交接行 / Shift+Enter——用户明确要"去主页看全部结果"时，才把
 /// 词灌进页内搜索（[SearchNotifier.submit]），见 [_SearchPaletteState]。
-const double _paletteWidth = 600;
+const double _paletteWidth = Tokens.paletteWidth;
 const double _topGap = 96;
 const double _maxHeightFactor = 0.6;
 

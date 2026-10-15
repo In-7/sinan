@@ -45,6 +45,7 @@ class FocusRing extends StatefulWidget {
     required this.focusNode,
     required this.borderRadius,
     required this.child,
+    this.color,
   });
 
   /// 要观察的焦点节点——**控件自己的那个**（同一个节点也要给控件用）。
@@ -52,6 +53,11 @@ class FocusRing extends StatefulWidget {
 
   /// 环的圆角——**应当与该控件的形状一致**（否则环会"错位"一个圆角）。
   final BorderRadius borderRadius;
+
+  /// 环色（缺省 = `scheme.primary`）。方案 B（2026-10-15）起 primary 恒定
+  /// 包豪斯蓝，两者同值；包豪斯平面的控件（如新建胶囊）仍显式传
+  /// [Bauhaus.blue]——不依赖"primary 恰好是蓝"这个不变式，各自钉死。
+  final Color? color;
 
   final Widget child;
 
@@ -94,6 +100,7 @@ class _FocusRingState extends State<FocusRing> {
           ? AppTheme.focusRing(
               Theme.of(context).colorScheme,
               borderRadius: widget.borderRadius,
+              color: widget.color,
             )
           : null,
       child: widget.child,

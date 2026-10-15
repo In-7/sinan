@@ -16,9 +16,14 @@ import '../../theme/tokens.dart';
 /// "引用已失效"（见 `RefBlockKeys`）。
 ///
 /// [excludeId] 用来排掉"正在编辑的这篇"：引用自己几乎总是误操作。
+///
+/// [docsOnly] 只列**文档笔记**（排除画布与心流容器）——给「引用 / 注入到笔记」这类
+/// 只认块树的目标用（画布没有块树，选它必然失败）。[dialogTitle] 让调用方按动作命名。
 Future<String?> pickNoteToReference(
   BuildContext context, {
   String? excludeId,
+  bool docsOnly = false,
+  String dialogTitle = '引用笔记',
 }) async {
   final ProviderContainer container = ProviderScope.containerOf(
     context,
@@ -32,7 +37,10 @@ Future<String?> pickNoteToReference(
       container.read(notesProvider).value ?? store.allNotes();
   final List<Note> candidates = <Note>[
     for (final Note n in all)
-      if (n.id != excludeId) n,
+      if (n.id != excludeId &&
+          (!docsOnly ||
+              (n.kind != NoteKind.canvas && n.kind != NoteKind.stream)))
+        n,
   ];
 
   if (!context.mounted) return null;
@@ -43,7 +51,8 @@ Future<String?> pickNoteToReference(
   }
   return showDialog<String>(
     context: context,
-    builder: (BuildContext ctx) => _NotePickerDialog(candidates: candidates),
+    builder: (BuildContext ctx) =>
+        _NotePickerDialog(candidates: candidates, title: dialogTitle),
   );
 }
 
@@ -52,9 +61,10 @@ Future<String?> pickNoteToReference(
 /// 带筛选框是因为笔记一多，纯列表找起来比打字慢得多；这里只按标题匹配
 /// （正文匹配是搜索的活，不是选择器的活）。
 class _NotePickerDialog extends StatefulWidget {
-  const _NotePickerDialog({required this.candidates});
+  const _NotePickerDialog({required this.candidates, this.title = '引用笔记'});
 
   final List<Note> candidates;
+  final String title;
 
   @override
   State<_NotePickerDialog> createState() => _NotePickerDialogState();
@@ -83,7 +93,7 @@ class _NotePickerDialogState extends State<_NotePickerDialog> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<Note> hits = _hits;
     return AlertDialog(
-      title: const Text('引用笔记'),
+      title: Text(widget.title),
       content: SizedBox(
         width: 360,
         height: 380,

@@ -46,8 +46,9 @@ class AppMenuButton extends ConsumerWidget {
   /// true = 复刻窗控按钮外观（点击区/悬停同窗控）；移动端 false。
   final bool captionStyle;
 
-  /// 面板宽度：最宽那行是「明暗切换 + 右侧状态字」，180 留得住。
-  static const double _panelWidth = 180;
+  /// 面板宽度 = [Tokens.menuPanelWidth]：最宽那行是「明暗切换 + 右侧状态字」，
+  /// 180 留得住。
+  static const double _panelWidth = Tokens.menuPanelWidth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -101,8 +102,8 @@ class AppMenuButton extends ConsumerWidget {
           children: <Widget>[
             _MenuRow(
               icon: const tabler.Settings(
-                height: Tokens.iconMd,
-                width: Tokens.iconMd,
+                height: Tokens.iconMdSm,
+                width: Tokens.iconMdSm,
                 strokeWidth: 1.5,
               ),
               label: '设置',

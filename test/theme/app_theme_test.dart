@@ -5,7 +5,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/theme/apca.dart';
 import 'package:sinan/src/theme/app_float_surface.dart';
 import 'package:sinan/src/theme/app_theme.dart';
-import 'package:sinan/src/theme/surface_ladder.dart' show SurfaceShape;
 import 'package:sinan/src/theme/tokens.dart';
 
 /// 主题不变量的回归（`app_theme.dart`）。
@@ -312,16 +311,15 @@ void main() {
         greaterThan(paper.computeLuminance()),
         reason: '浮层要"浮起"⇒ 明度高于纸面（亮暗两个主题都是抬一档）',
       );
-      // **纸族**（2026-10-09 改拍为类纸暖白）：R=G、B 按 [SurfaceShape.warmRatio]
-      // **按比例**下沉，与纸面同族 —— 不允许"暖白纸 + 冷白浮层"的冷暖并置。
-      // ⚠️ 原来的 R==G==B 是"大面不染种子色"的机器形式，但那条性质**自动成立**
-      // （明度序是静态表、不接收 seed），它反倒把"固定暖调"一起禁掉了。
-      expect(floating.r, floating.g);
+      // **冷族**（2026-10-14 反转）：[SurfaceShape.cold] G=R+1、B=R+3，与纸面
+      // 同族 —— 大面永远同族，层次只由明度承担（先后走过暖纸 → 冷族）。
+      expect(
+        (floating.g * 255).round(),
+        math.min(255, (floating.r * 255).round() + 1),
+      );
       expect(
         (floating.b * 255).round(),
-        ((floating.r * 255).round() * (1 - SurfaceShape.warmRatio))
-            .round()
-            .clamp(0, 255),
+        math.min(255, (floating.r * 255).round() + 3),
       );
     });
 

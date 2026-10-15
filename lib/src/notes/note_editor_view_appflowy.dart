@@ -1849,9 +1849,16 @@ const double _kHeaderActionTopPadding = 5;
 /// 头部**按钮带**的高度（2026-09-26 定）：撤销 / 重做 + 双耳独占最上面这一条，
 /// 标题从它**下面**开始 ⇒ 头部分成两条带（理由见 build 里按钮带的注释）。
 ///
-/// = 按钮带上留白 + 按钮热区 + 与标题的留白。
+/// = 按钮带上留白 [_kHeaderActionTopPadding](5) + 按钮热区
+/// [Tokens.headerActionSize](30) + 与标题的留白(5) = **40**。
+///
+/// ⚠️ 最后那档留白原为 4 ⇒ 带高 39。2026-10-15 改 5 是为了**与侧栏页头同高**：
+/// 侧栏「logo + 应用名」行取 [Tokens.brandStripHeight]（40，锚就是本带），两列
+/// 顶端的动作区于是是同一个矩形（**等高且同 y**——侧栏顶呼吸也用
+/// [Tokens.spaceXxs]，与内容卡顶环缝同值 ⇒ 两条带起点一致）。
+/// 改这里就把两列一起改（或改 [Tokens.brandStripHeight] 后同步，别只动一边）。
 const double _kHeaderBandHeight =
-    _kHeaderActionTopPadding + Tokens.headerActionSize + 4;
+    _kHeaderActionTopPadding + Tokens.headerActionSize + 5;
 
 /// 标题行**左侧**的常驻历史按钮（撤销 / 重做）。
 ///

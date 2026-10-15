@@ -28,44 +28,19 @@ import 'tokens.dart';
 /// 前景色（文字、图标）**一律不写**——交给 M3 的 `on*` 自动配对。
 /// 这是最容易出错的地方：`onPrimaryContainer` 是近白色，
 /// 若全局套用会出现「白字白底」。规则见 tokens/配色说明。
-/// **描边的三个层级**（2026-10-10 显式化）。
-///
-/// 本仓的描边**早就是三级的**，只是散在三个函数里、语义只存在于注释中。
-/// 这里把它们串成一条序列，**数值一个都没动** —— 目的是让"这套边框分过层级"
-/// 变成可查的事实，而不是各处心照不宣。
+/// **描边的两个层级**（2026-10-14 收敛：原三级里的"常驻面"档 panelEdge 已删——
+/// 暗色浮面零描边、亮色发丝边走 [Bauhaus.hairline]，不再需要独立档位）。
 ///
 /// | 级别 | 谁在用 | 强度语义 | 色源 |
 /// |---|---|---|---|
 /// | [EdgeLevel.hairline] | [AppTheme.divider] 分区线、工具条分组线、画布网格 | 两侧**同层**，只需"分"不必"挑" | `outlineVariant` 六折 |
-/// | [EdgeLevel.surface] | [AppTheme.panelEdge] 常驻内容区 / 卡片的边界 | 读得出"这是一块独立的面" | **黑** α（暗色 0.22 / 亮色 0.10） |
 /// | [EdgeLevel.overlay] | [AppTheme.menuBorder] 菜单、气泡、浮动工具条 | 要能从内容里"**挑**"出来 | `outlineVariant` 满档 + APCA 钳制 |
-///
-/// ⚠️ **两套色源不是重复，是语义不同**：[EdgeLevel.surface] 那一档说的是
-/// "这块面**有厚度**"（暗边 / 收影），而 [EdgeLevel.overlay] 说的是"这个东西
-/// **浮在上面**"（勾轮廓）。给一个凹陷的内容区描亮轮廓会自相矛盾 —— 暗色内容
-/// 区正是靠暗边读作凹陷的。
-///
-/// ## ⚠️ 三级**不是**严格递增的（实测，别按"越往后越强"去推理）
-/// 亮色实测：[AppTheme.divider] ≈ **20.9** > [AppTheme.panelEdge] ≈ **12.1**。
-/// 原因是 [AppTheme.divider] 带着 **APCA Lc≥20 的强制钳制**（2026-09-22 体检
-/// 修过"暗色下 `outlineVariant@60%` 叠近黑底只剩 Lc 0.0、线**完全不可见**"），
-/// 而 [AppTheme.panelEdge] 走的是黑 α0.10、没有钳制。
-/// ⇒ **分隔线事实上比内容区的边更强**，与上面 [EdgeLevel.surface] 声称的
-/// "读得出这是一块独立的面"（应当强于 hairline）**语义倒挂**。
-///
-/// 📌 这是历史修复留下的既成事实，**没有偷偷改数值**（当前视觉用户已验收）。
-/// 要归位的话：把 [AppTheme.panelEdge] 的亮色档从 α0.10 提到 **≈0.16**
-/// （实测约 Lc 20）即可越过 divider，而不用去动那条救过命的钳制。
-/// 真要改时记得同步上面那张表与 `surface_ladder_test` 里的实测注释。
 ///
 /// 真正被测试钉住的是两件事：① **浮层边强于分隔线**（浮层要能从内容里
 /// "挑"出来）；② **每一级在它自己的底上都读得出来**（L\* 差 ≥ 2）。
 enum EdgeLevel {
   /// 分隔线：两侧同层，只需"分"不必"挑"（最弱）。见 [AppTheme.divider]。
   hairline,
-
-  /// 常驻面：读得出"这是一块独立的面"（中）。见 [AppTheme.panelEdge]。
-  surface,
 
   /// 浮层：能从内容里"挑"出来（最强）。见 [AppTheme.menuBorder]。
   overlay,
@@ -74,11 +49,22 @@ enum EdgeLevel {
 class AppTheme {
   AppTheme._();
 
-  /// 默认种子色（Tailwind Teal 500）。
+  /// **强调色（主色）恒定 = 定稿包豪斯蓝**（2026-10-15 用户拍板"方案 B"）。
   ///
-  /// 2026-09-12 由蒂芙尼青 #0ABAB5 换入：绿意更足、明度略低，
-  /// 强调色的存在感更强，深浅两模式色相都不失。颜色只出现在动作点。
-  static const Color defaultSeed = Color(0xFF14B8A6);
+  /// 与 [Bauhaus] 的 `blue()` 同值（light `#1B4FD8` / dark `#5B82FF`）。整套
+  /// [ColorScheme] 由它派生、**不随主题预设变**——预设（[themePresets]）只染
+  /// 窗口 / 标题条（见 [chromeColor]），不再进 ColorScheme。
+  ///
+  /// ## 为什么必须钉死（2026-10-15 实测返工）
+  /// 预设色曾**同时**充当"窗口染色"与 `primary`，而这是两份相反的活：
+  /// ① 8 个预设都是 L\* 75~88 的**浅色**（当窗口染色的合格档——面板卡是近白，
+  ///    预设越接近白环缝越看不出来），当 accent 用则对浅底只有 ≈1.5:1；
+  /// ② 亮色下 [chromeColor] 直接取预设**本色**铺满整窗（Scaffold 透明，侧栏/
+  ///    按钮脚下踩的就是那层 OS 窗口色）⇒ 图标（primary）与背景**同色**
+  ///    （用户实报"只有默认档的背景色和主题色不一样"）。
+  /// 默认档成立纯属侥幸：`seed == null` 走中性底 + `#1B4FD8` 本身够暗。
+  /// ⇒ 两件事分开：accent 钉死一个永远达标的蓝；预设退回"只染窗口"
+  /// （`providers.dart` 的 `setThemeSeed` 文档早就这么写，现在才真做到）。
 
   /// **主题预设**（8 个**浅色**；默认档是中性、不在此表内，见 [chromeColor]）。
   ///
@@ -86,6 +72,10 @@ class AppTheme {
   /// `primaryContainer`（M3 对极浅/极深的种子会钳制，钳了就不是"所选即所见"）。
   /// 暗色由 `fromSeed(seed, dark)` 派生**同色相的暗色档**（算法给的对应值，
   /// **不是**按百分比混合）。
+  ///
+  /// ⚠️ 预设**只染窗口 / 标题条**，不进 [ColorScheme]（2026-10-15 方案 B）：
+  /// 强调色恒定包豪斯蓝，见类头部"强调色恒定"那段。选预设 = 选窗口染色，
+  /// 图标 / 链接 / 焦点环的蓝永远不变。
   ///
   /// ⚠️ 预设必须挑**中等偏浅**（约 L\* 75~88）：面板卡亮色是 L\* 99 近白，
   /// 预设越接近白 ⇒ 环缝与白卡的明度差越小 ⇒ 环缝看不出来，"跟主题"就白做了。
@@ -102,6 +92,9 @@ class AppTheme {
 
   /// **底层（环缝 / 标题条）的色**：[seed] 为 null（中性默认档）走中性 ladder，
   /// 彩色档走主题色。
+  ///
+  /// ⚠️ 这是**预设色唯一的落点**（2026-10-15 方案 B）：它染的是窗口自身，与
+  /// [ColorScheme] 无关——强调色恒定包豪斯蓝，不随预设变（原因见类头部）。
   static Color chromeColor(Color? seed, Brightness brightness) {
     if (seed == null) return windowBackground(brightness);
     // 亮色：**预设色本身**（所见即所得，零钳制）。
@@ -126,14 +119,6 @@ class AppTheme {
               Brightness.light
           ? const Color(0xFF1A1A18)
           : const Color(0xFFF2F2EE);
-
-  /// **暗色模式**专用种子（Dark Turquoise，2026-09-13）。
-  ///
-  /// 亮色模式种子为 #00B5B5（见 [light]）——两者几乎同色相（≈180° 青轴），
-  /// 只有明度/彩度不同 ⇒ 明暗切换时主题"身份"不漂移。暗色档用更亮的
-  /// #00CED1 在暗画布（#1A1A1A）上对比更冲、更醒目——暗色用亮种子是 M3
-  /// 的通行做法（明度补偿，避免中性种子在暗色下派生出粉笔感弱青）。
-  static const Color defaultDarkSeed = Color(0xFF00CED1);
 
   /// 内容画布色：浮在窗口底色之上的编辑区实底面板。
   ///
@@ -383,69 +368,23 @@ class AppTheme {
   /// **内嵌浮面**：桌面外壳工作区那张圆角卡片的底色（2026-10-09 opencode 风
   /// 外壳新增，2026-10-10 晚翻转语义）。
   ///
-  /// 明度序上它与窗口底的关系**明暗相反**（见 [SurfaceLadder.panelDelta]）：
-  /// - **亮色 = 浮面**：底 96 → 面 99，卡片比 chrome 亮 ⇒ 靠 8px 环缝 +
-  ///   [EdgeLevel.surface] 的暗边立住，**不投投影**（常驻面不该"浮"）；
-  /// - **暗色 = 凹陷**：底 13 → 面 9，内容区比 chrome 暗 ⇒ 只有文字发光，
-  ///   暗边读作"沉进去"。
+  /// 明度序上它与窗口底的关系**明暗一致、一律向上**（见
+  /// [SurfaceLadder.panelDelta]）：亮色 96 → 99、暗色 6.7 → 9.7，都是"比 chrome
+  /// 亮一档的浮面"（2026-10-15 对换掉暗色那侧的凹陷语义，理由见 ladder 注释）。
+  /// - **亮色**：靠 4px 环缝 + 1px 发丝边立住，**不投投影**（常驻面不该"浮"）；
+  /// - **暗色**：零描边（Linear 暗色语言：明度阶梯即边界）。
   ///
-  /// 卡片左 / 右 / 下留 [Tokens.appPanelInset]（4）环缝露出窗口底、**顶部与
-  /// 标题条 0 间距**（四角仍圆角，2026-10-09 晚用户定：直角不好看），
-  /// **不投分割线**。值改 `surface_ladder.dart` 的 `panelDelta`，别写死在这里。
+  /// 描边**不在本函数里**——按明暗分治画在调用方（`home_screen._FloatingPanel`：
+  /// 暗 `null` / 亮 `Bauhaus.hairline`）。
+  ///
+  /// 卡片**右侧与底部**留 [Tokens.appPanelInset]（4）环缝露出窗口底，顶与左
+  /// 为 0（2026-10-15 用户定），四角 8px 圆角。
+  /// 值改 `surface_ladder.dart` 的 `panelDelta`，别写死在这里。
+  ///
+  /// 📌 长文阅读档（2026-10-14 用户定："文字不需要发光，适合长时间观看、对比度
+  /// 清晰即可"）：正文走 [editorText]（暗 `#DDDDDD` / 亮 `#3A3A3A`，APCA
+  /// Lc ≈ ∓85 舒适带），**不追极亮**；亮度预算花在面上，不花在"字在发光"。
   static Color panelFill(Brightness brightness) => ladder(brightness).panel;
-
-  /// **内嵌面的 1px 边**：给"这块面有厚度"补的最后一道信号。
-  ///
-  /// ⚠️ **明暗都是暗边、但语义不同**（2026-10-10 定）：
-  /// - **亮色 = 浮面**（卡片比窗口底亮）⇒ 黑 α0.10，读作卡片边缘收出一道影；
-  /// - **暗色 = 凹陷**（内容区比 chrome **暗**，见 `panelDelta`）⇒ 黑 α0.22，
-  ///   读作内容区"沉进去"、边缘一圈内阴影。给深井描白亮边是自相矛盾。
-  ///
-  /// 📌 **亮色那一档为什么从 α0.06 提到 0.10**（用户实机反馈"边有点糊"）：
-  /// 原来的 0.06 与投影的 0.06/0.08 是**同一个量级**，等于两层信号一起失效——
-  /// 投影是"糊的"（blur 18），边是"清的"，清的那层必须先立住。
-  /// 实测：α0.10 压在 #FCFCF7 上比填充低约 10 ΔL\*，边界一眼可辨且不显脏。
-  ///
-  /// 外侧的暗晕不用画：内容区四周 [Tokens.appPanelInset] 露出的 chrome 就是框。
-  static Color panelEdge(Brightness brightness) => brightness == Brightness.dark
-      ? const Color(0x38000000) // 黑 α0.22（0x38=56/255）
-      : const Color(0x1A000000); // 黑 α0.10（0x1A=26/255）——见下
-
-  /// **内嵌浮面的软投影**（2026-10-09 晚）：**只给亮色**——亮端没有"再提亮"
-  /// 的空间，白卡的悬浮感靠深色语言（描边 + 投影）表达；暗色继续走
-  /// [panelEdge] 光边语言，投影在近黑底上既画不出也不需要。
-  ///
-  /// 两层（macOS 窗口 / Things 3 卡的口径）：
-  /// - **接触影**：黑 α0.06、模糊 4、下移 1——贴边的一圈紧实暗影，负责
-  ///   "卡片边缘"读数；
-  /// - **环境影**：黑 α0.08、模糊 18、下移 4——漫开的大软影，负责"离底面
-  ///   有高度"。
-  ///
-  /// 卡片顶缝为 0，环境影会漫上标题条约十几 px——这是刻意的：读作卡片压在
-  /// 标题条**前面**（z 序由投影定义，不靠分割线）。暗色返回空列表，调用处
-  /// 直接展开进 `boxShadow:` 即可。
-  /// **内嵌常驻面的投影：恒为空**（2026-10-10 用户实机反馈"亮色下边有点糊"）。
-  ///
-  /// ## 为什么**取消**了它
-  /// 此前是"亮色两层软投影（α0.06/0.08）+ 暗色空列表"，现在**两个模式都空**：
-  /// 1. **语义错位**：常驻内容区是"同一平面上的区域"，不是"压在上面的卡片"。
-  ///    投影是给**临时浮层**（菜单 / 对话框 / 气泡）用的 —— 那些走
-  ///    [floatShadows]，不受影响。
-  /// 2. **两层信号互相抵消**：原投影是 α0.06 / 0.08，而 [panelEdge] 那圈边也是
-  ///    α0.06 —— 同一个量级，等于两层一起失效。投影是"糊的"（blur 18），边是
-  ///    "清的"；清的那层没立住，糊的那层也托不起来，于是"既不浮、也不平"。
-  ///    现在把预算全押在**发丝边**上（亮 0.10 / 暗 0.22）。
-  /// 3. **与暗色语义对齐**：暗色内容区已翻转成**凹陷**（比 chrome 暗）。亮色
-  ///    再加投影让它"浮"，两边语义就打架了。
-  ///
-  /// 📌 真要"软"的悬浮感，走 [floatShadows] 那种**单方向**柔影 + 发丝边
-  /// （Fluent / macOS 口径），**不要**回退到双向内阴影的新拟态 —— 那个的边界
-  /// 对比只有 2–3 ΔL\*，人眼读不出，"糊"正是它的来源。
-  ///
-  /// 保留本函数（而不删掉）：调用处直接展开进 `boxShadow:`，返回空列表即自动
-  /// 退化成"无投影"，比在每个调用处写"这里为什么没投影"更不容易漂。
-  static List<BoxShadow> panelShadow(Brightness brightness) =>
-      const <BoxShadow>[];
 
   /// **通用 hover 微镀**（阶段 0 新增）：列表行 / 卡片 / 按钮 hover 的**统一入口**。
   ///
@@ -456,89 +395,73 @@ class AppTheme {
   /// ⚠️ 历史口径 boardFillHover（板底专用，亮黑 5% / 暗白 6%）已于 2026-10-08
   /// 退役收口到本函数——全应用 hover 一个口径，两种叠加色**不要**共存/叠加
   /// （叠了会比设计档重一倍）。
+  ///
+  /// ⚠️ **必须保持半透明、直接铺**（2026-10-15 二次修正，标杆口径 = M3 state
+  /// layer / VS Code `list.hoverBackground` / Linear hover tint）：合成随真实
+  /// 底色走，换任何底（含主题预设染过的窗口，见 [chromeColor]）都自动成立。
+  /// 曾有个"烤实"变体 `hoverOnWindow`（把本函数 alphaBlend 进**中性**
+  /// [windowBackground] 当实色用）——为修"侧栏与胶囊悬浮读成两种色"而生，
+  /// 但 ① 当天胶囊就改成坐窗口底，两处同底、半透明合成再次一致，前提消失；
+  /// ② 预设主题下窗口是预设色，中性灰补丁贴上每套预设一个样（用户实报）。
+  /// 已删除，**别再造烤实变体**。
   static Color hoverOverlay(Brightness brightness) =>
       brightness == Brightness.dark
       ? Colors.white.withValues(alpha: 0.12)
       : Colors.black.withValues(alpha: 0.04);
 
-  /// **凸面填充**（新拟态里"抬起来的那块"：切换器滑块 / 「+」方格）。
+  /// **常驻面的发丝环**（2026-10-15 新增）：给面板/卡片收一条极淡的边。
   ///
-  /// 两种亮度的"抬起"**语言本来就不同**——这是全应用既定的，不是切换器私有的：
-  /// - **亮色**："同色挖空"。凸块 = [windowBackground]（列底那档浅），井
-  ///   （[boardFill]）比它深一档 ⇒ 滑块读作"从页面上切下来的一块"。
-  /// - **暗色**："叠档浮起"。全家抬起都靠**在下一层上叠一档白**（[cardFill]
-  ///   白 5%、历史 boardFillHover 白 6%、[cardFillHover] 白 8%），没有"比底深的
-  ///   井"可挖——暗色 [boardFill] 本身就是比底亮的浮起 sheet。⇒ 凸块 =
-  ///   **井上再叠一档白**（8%，与 [cardFillHover] 同档）。
+  /// ## 为什么是 `boxShadow` 而不是 [Border]
+  /// 用 **shadow spread**（`0 0 0 1px`）画一圈**外扩**的发丝：
+  /// - **不占布局**（`Border.all` 会挤掉 1px，且会被不透明子树盖住——编辑器
+  ///   工具栏踩过，只能靠 `foregroundDecoration` 兜）；
+  /// - 画在盒子外 ⇒ **不会被任何子级盖掉**，省掉那层兜底；
+  /// - **无 blur、无 saveLayer** ⇒ Impeller 下一个矩形描边的成本，可忽略。
   ///
-  /// ⚠️ 用 `Color.lerp` 烤成**不透明色**而不是半透明填充："发脏"教训针对的是
-  /// alpha 直铺会混进下层色相；这里是叠在近实中性井上再烤实，不透底。
-  /// 且向中性白 lerp 会保住板底 (R, R+1, R+5) 的冷灰形状（#2A2B2F → #3B3C40）。
+  /// ## 为什么只有"环"、没有投影
+  /// 2026-10-15 用户定：暗色下黑影压在近黑底上没有对比度，阴影对"立体"无效；
+  /// 立体感由**明度阶梯 + 这圈环 + 圆角**承担（Linear 口径的 `0 0 0 1px` ring）。
+  /// ⇒ 返回值**只有一条** `boxShadow`，不要往里加柔影。
   ///
-  /// ⚠️ 不能无脑用 [windowBackground]：暗色窗口底 `#171715` 比井**还暗**，
-  /// 滑块跟列底同色就成了"井里一个更深的洞"（2026-09-26 实机截图）。
-  /// 也别用绝对色硬编码（曾试 `#333438`）——那是发明全应用没有的新颜色，
-  /// 破坏暗色的叠档语言（2026-09-26 用户指出）。
-  static Color raisedFill(Brightness brightness) =>
-      brightness == Brightness.dark
-      ? Color.lerp(boardFill(brightness), Colors.white, 0.08)!
-      : windowBackground(brightness);
+  /// ⚠️ 与 [floatShadows]（浮层的双层柔影）语义不同：那是压在内容上的临时
+  /// 浮层，这是常驻面的收边，两者不要混用。
+  /// **常驻面的亮线**：`BoxShadow(spreadRadius: 1)` = 盒子形状**外扩 1px** 的
+  /// 硬边，四边都画（不占布局、不会被不透明子树盖住、无 blur 无 saveLayer）。
+  ///
+  /// ⚠️ **外扩必须有缝可待**（2026-10-15 用户实报"重叠"后定）：顶边为此留了
+  /// **2px** 环缝（[Tokens.spaceXxs]）⇒ 顶线落在缝里、不压标题栏；左 / 右 / 下
+  /// 分别是 0 / 4 / 4。**左侧刻意 0 缝**：线直接落在侧栏那一列像素上（用户
+  /// 接受）。⇒ 若哪天把某个方向的缝改回 0，必须同步去掉那个方向的线，否则就是
+  /// 压到邻居边界像素。
+  ///
+  /// ⚠️ 两种错误写法都别用：① offset/blur/spread **全 0** ⇒ 影子与盒子重合、
+  /// 被盒子自己的不透明底盖住 = **一条线都画不出来**；② 只想要部分边时用
+  /// `offset` 硬偏移（如 (1,1) 只露右 / 下）——现在要四边，用 spread。
+  ///
+  /// ⚠️ 浓淡档位（2026-10-15 实测，暗色、相对面板的 CIE ΔL\*）：
+  /// 5% ≈ +1.2（Linear 原味，极淡）→ **8% ≈ +5.2（当前，用户定"再亮点"）**
+  /// → 10% ≈ +7.6（强描边感）。改这两个 alpha 即可，无其它牵连。
+  static List<BoxShadow> surfaceRing(Brightness brightness) => <BoxShadow>[
+        BoxShadow(
+          color: brightness == Brightness.dark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.black.withValues(alpha: 0.10),
+          spreadRadius: 1,
+        ),
+      ];
 
-  /// **锐利边缘 bevel 装饰**（新拟态的"无模糊阴影"替代，2026-10-12 用户定）：
-  /// 顶左**亮边** + 底右**暗边**各 1px（凸起）/ 反向（凹陷），由底面色
-  /// `Color.lerp` 派生 ⇒ 不发明新色、明暗两档自动成立、**无模糊、不触发离屏合成**
-  /// （对比 2026 流行的软阴影双向内阴影：那条边界对比仅 2–3 ΔL\* 还要 blur）。
+  /// **外扩收边线需要的顶部退让**（= **1**）：[surfaceRing] 是 `spread: 1` 的
+  /// **外扩**线，它那一像素要落在卡的**外缘之外**，上方必须给她留出位置。
   ///
-  /// ⚠️ 为什么是 `Decoration` 而不是 `Border`：Flutter 的 [Border] 在
-  /// `borderRadius != null` 时强制四边**同色**（`A borderRadius can only be given
-  /// on borders with uniform colors`），而拟态胶囊/卡片都是圆角 ⇒ 必须自绘
-  /// [BevelDecoration] 才能给每条边独立上色。直接把结果传给 `Container.decoration`。
+  /// - 取 **0** ⇒ 线画到标题栏最后一行像素上，读作"重叠"（2026-10-15 用户实报）；
+  /// - 2026-10-15 前取 **2**（[Tokens.spaceXxs]）：多出来的 1 不是必须，降到
+  ///   1 正好够这条线落脚 ⇒ 工作区多 1px，面板顶部仍不与标题栏咬合；
+  /// - ⚠️ 它**不是间距令牌**（项目 space 阶梯最小到 2），而是"这条线嗓子里的那口
+  ///   气" ⇒ 跟着 [surfaceRing] 住在这里，谁改了线就要先看它。
   ///
-  /// [base] 不传时取 [raisedFill]（同材质抬起的块）；浮层类传 [floatSurface]、
-  /// 面板类传其 panel 底，bevel 自动贴合该底面、保持同一光线方向。
-  ///
-  /// - [raisedBevel]：凸块（顶左受光、底右背光），读作"鼓起来"。
-  /// - [sunkenBevel]：凹块（顶左背光、底右受光），读作"刻进去"。
-  static Decoration raisedBevel(
-    Brightness brightness, {
-    Color? base,
-    BorderRadius radius = BorderRadius.zero,
-  }) {
-    final Color c = base ?? raisedFill(brightness);
-    return BevelDecoration(
-      radius: radius,
-      light: Color.lerp(c, Colors.white, brightness == Brightness.light ? 0.5 : 0.10)!,
-      dark: Color.lerp(c, Colors.black, brightness == Brightness.light ? 0.12 : 0.35)!,
-      fill: c,
-    );
-  }
-
-  static Decoration sunkenBevel(
-    Brightness brightness, {
-    Color? base,
-    BorderRadius radius = BorderRadius.zero,
-  }) {
-    final Color c = base ?? raisedFill(brightness);
-    // 凹陷 = 受光的亮边在底右、背光的暗边在顶左 ⇒ 把 light/dark 对调传给
-    // BevelDecoration（它的 light 画顶左、dark 画底右）。
-    return BevelDecoration(
-      radius: radius,
-      light: Color.lerp(c, Colors.black, brightness == Brightness.light ? 0.12 : 0.35)!,
-      dark: Color.lerp(c, Colors.white, brightness == Brightness.light ? 0.5 : 0.10)!,
-      fill: c,
-    );
-  }
-
-  /// 圆角安全的逐边上色 bevel：四向独立色（顶左 light / 底右 dark），无模糊。
-  /// 见 [raisedBevel] / [sunkenBevel]。
-  static BevelDecoration bevelOf({
-    required BorderRadius radius,
-    required Color light,
-    required Color dark,
-    Color? fill,
-    double width = 1,
-  }) =>
-      BevelDecoration(radius: radius, light: light, dark: dark, fill: fill, width: width);
+  /// 📌 内容卡顶环缝与**侧栏顶端呼吸都取本值** ⇒ 两列页头带（[Tokens.brandStripHeight]
+  /// 那两条）同起点、同高，是同一个矩形；改这里就是同时改两列，别各自拍数。
+  static const double surfaceRingRetreat = 1;
 
   /// **卡片/导航项的填充**（WinUI `CardBackgroundFillColorDefault` 同款）：
   /// 直接坐在窗口底上。暗色 = **白 5%（提亮）**，亮色 = 白 70%。
@@ -806,6 +729,22 @@ class AppTheme {
   /// 两者同为 12% 时按下几乎看不出变化。
   static Color stateLayerPressed(Color base) => base.withValues(alpha: 0.18);
 
+  /// **不可用态（置灰）**：把控件自身的墨色淡出到 **0.38**。
+  ///
+  /// 用于一切"功能存在但此刻没有可作用对象"的交互件——命令面板条目、
+  /// 编辑器右键菜单项、标题栏上一步/下一步。三条纪律：
+  /// 1. **置灰不隐藏**：控件留在原位（几何稳定），只淡出——VS Code /
+  ///    Chrome / Finder 的 back·forward 都是这个做法；隐藏会让工具条重排；
+  /// 2. **比例收敛在这里**：0.38 是全仓既有档（palette / editor_context_menu
+  ///    早就在用），别在各文件手写不同 alpha（分叉的根因）；
+  /// 3. **淡出的是同一个字形**（同色相、只降 alpha），不换色相——换色相会读成
+  ///    "另一个动作"，而不是"此刻不可用"。
+  ///
+  /// ⚠️ 裸 SVG 图标（`CustomIcons`）**必须**显式传这个色：`onPressed: null`
+  /// 只禁了点击，IconButton 的 `disabledForegroundColor` 走 IconTheme、碰不到
+  /// colorFilter 直读传入色的 SVG ⇒ 不换色的话箭头保持全强度，和可用态一模一样。
+  static Color disabledInk(Color base) => base.withValues(alpha: 0.38);
+
   /// **「当前项」选中药丸的底**（2026-10-08 用户拍板：全局统一换装）：
   /// `Colors.transparent`——**无底色**（2026-10-11 用户定：选中态去掉任何背景
   /// 填充，和未选中按钮完全一样，只靠前景色——图标/文字 `onSurface` vs 未选中
@@ -835,8 +774,10 @@ class AppTheme {
   static SurfaceLadder ladder(Brightness brightness) =>
       brightness == Brightness.light ? SurfaceLadder.light : SurfaceLadder.dark;
 
-  /// **统一焦点环**（`docs/ui_rewrite_plan.md` §5.2）：`primary`
-  /// [Tokens.focusRingWidth] 描边。
+  /// **统一焦点环**（`docs/ui_rewrite_plan.md` §5.2）：默认 `primary`
+  /// [Tokens.focusRingWidth] 描边；包豪斯平面（胶囊等）用 `color` 钉回自己的
+  /// 定稿描边色（不吃主题 primary——黑白/松石等预设的 primary 是青色，环贴着
+  /// 包豪斯蓝描边内侧会读成"边框变青"）。
   ///
   /// 取 primary 是**合法**的：§2.2 的三语义里，"我在哪"（焦点）正是其一。
   /// 画在**边界内侧**（`foregroundDecoration`）——理由见 [Tokens.focusRingWidth]
@@ -846,8 +787,9 @@ class AppTheme {
   static BoxDecoration focusRing(
     ColorScheme scheme, {
     required BorderRadius borderRadius,
+    Color? color,
   }) => BoxDecoration(
-    border: Border.all(color: scheme.primary, width: Tokens.focusRingWidth),
+    border: Border.all(color: color ?? scheme.primary, width: Tokens.focusRingWidth),
     borderRadius: borderRadius,
   );
 
@@ -864,7 +806,7 @@ class AppTheme {
   /// chrome 灰，暗 = `#080806`：CIE 分段尺 L\* 2.2，本仓连续尺 −0.33，都是
   /// [SurfaceShape.warm] 的 H=60° 极淡暖调；双尺说明见 `surface_ladder.dart`）。
   /// 2026-10-09 晚亮色两度下压：94.5 → 91.2 → **88.1**（白卡悬浮感改靠
-  /// [panelShadow] 软投影 + 更深的 chrome 色阶）。
+  /// 更深的 chrome 色阶 + 浮面卡描边，投影已取消）。
   /// ⇒ **抬/压档 = 改 `SurfaceLadder` 里的 `baseLstar` 一个数**。
   /// 注意 2026-10-09 起 [floatSurface] / [boardFill] 改成**绝对明度钉死**
   /// （不再跟随底），改底只动底与 panel 相对档。
@@ -894,8 +836,8 @@ class AppTheme {
   ///
   /// 2026-10-09 起**明暗都走 [ladder]**：亮色不再特判 `#F7F7F5`
   ///（2026-09-26 的破例作废）——当晚三度定档：grouped 灰 `#EFEFED`（94.5）
-  /// 白卡读不出悬浮 → `#E6E6E4`（91.2）→ **`#DDDDDB`（88.1）**，配白卡软投影
-  ///（[panelShadow]），与暗色 #080808 / #161616 各走各的高度语言。
+  /// 白卡读不出悬浮 → `#E6E6E4`（91.2）→ **`#DDDDDB`（88.1）**，与暗色
+  /// #080808 / #161616 各走各的高度语言（浮面卡描边见 [panelFill] 文档）。
   ///
   /// ⚠️ 它同时是移动端纸面（[contentCanvas] 复用它）⇒ 改它 = 改移动端阅读底色
   /// （桌面编辑区在纯白 / #16 浮面卡内，不受这档影响）。
@@ -905,7 +847,8 @@ class AppTheme {
   /// 编辑器中性色板：对标 Notion / Obsidian / Typora 文档风（GitHub-Flavored
   /// Markdown 观感），正文 / 代码 / 光标 / 选区 / 标记走中性系、不随种子色；
   /// 唯独 [editorLink] 吃 [ColorScheme.primary]（与引用块竖条同族，让链接即
-  /// 品牌色，2026-09-17 由写死青色改为跟随主题）。
+  /// 品牌色）——方案 B（2026-10-15）起 primary 恒定包豪斯蓝、不随预设变，
+  /// 链接永远是那个蓝。
   /// 行内代码 / 代码块用中性灰底；光标 / 选区 / 标记 / 激活态全部走 onSurface 中性系。
   /// **编辑器正文色**（正文 / 标题 / 列表 / 引用 / 代码块里的一切内容文字）。
   ///
@@ -1132,13 +1075,13 @@ class AppTheme {
   static Color _desaturate(Color c) =>
       HSLColor.fromColor(c).withSaturation(0).toColor();
 
-  /// 主色上的 ink（图标 / 文字）：**按种子算**——在浅墨与深墨之间选与种子
-  /// 对比更高的一档，WCAG 相对亮度法。`primary` 被钉成种子本色（见 [_build]），
-  /// 故 ink 直接对准种子算对比即可，不用管 M3 派生的 primary。
-  static Color _onPrimaryFor(Color seed) {
+  /// 主色上的 ink（图标 / 文字）：**按 accent 算**——在浅墨与深墨之间选与
+  /// accent 对比更高的一档，WCAG 相对亮度法。`primary` 被钉成定稿包豪斯蓝
+  /// （见 [_build]），故 ink 直接对准它算对比即可，不用管 M3 派生的 primary。
+  static Color _onPrimaryFor(Color accent) {
     const Color lightInk = Color(0xFFF2F2EE);
     const Color darkInk = Color(0xFF1A1A18);
-    final double l = _relativeLuminance(seed);
+    final double l = _relativeLuminance(accent);
     final double cDark = (math.max(l, _relativeLuminance(darkInk)) + 0.05) /
         (math.min(l, _relativeLuminance(darkInk)) + 0.05);
     final double cLight = (math.max(l, _relativeLuminance(lightInk)) + 0.05) /
@@ -1158,17 +1101,15 @@ class AppTheme {
         0.0722 * channel(c.b.round());
   }
 
-  /// 亮色默认种子 **#0D9488**（2026-10-05 由 #00B5B5 换入，决策 A）：
-  /// 原档偏荧光（电光青），长时间注视刺眼；换成 Tailwind Teal 600 这一档——
-  /// **同色相轴、彩度降一档、明度略低**，与暗色种子的"身份"仍一致。
-  /// 只动这一处默认值（换主题 = 换种子），APCA 体检表兜底。
-  static ThemeData light({Color seed = const Color(0xFF0D9488)}) =>
-      _build(seed, Brightness.light);
+  /// 亮色主题：整套配色由**定稿包豪斯蓝**派生（方案 B，2026-10-15）。
+  ///
+  /// **不接种子参数**——预设只染窗口 / 标题条（[chromeColor]），进不了
+  /// ColorScheme；换预设时这套 ThemeData 逐像素不变。原因见类头部那段。
+  static ThemeData light() => _build(Brightness.light);
 
-  /// 暗色默认用专用种子 **#00CED1**（[defaultDarkSeed]）：亮青在暗画布上
-  /// 更醒目，与亮色的深青同色相、不同明度档。
-  static ThemeData dark({Color seed = defaultDarkSeed}) =>
-      _build(seed, Brightness.dark);
+  /// 暗色主题：同 [light]，蓝用暗色档（[Bauhaus.blue] 的 `#5B82FF`）——
+  /// 暗画布上更冲、更醒目（M3 的明度补偿惯例），与亮色的深蓝同轴不漂移。
+  static ThemeData dark() => _build(Brightness.dark);
 
   /// **界面排印档位（Apple 口径）**，见 `docs/ui_rewrite_plan.md` §9.2。
   ///
@@ -1225,23 +1166,26 @@ class AppTheme {
     ),
   );
 
-  static ThemeData _build(Color seed, Brightness brightness) {
+  static ThemeData _build(Brightness brightness) {
+    // **方案 B（2026-10-15）**：种子恒为定稿包豪斯蓝——主题预设只染窗口 /
+    // 标题条（见 [chromeColor]），不进 ColorScheme。整套派生（primaryContainer /
+    // secondary / surfaceTint…）都从这个蓝出发 ⇒ 换预设时配色逐像素不变，
+    // 图标（primary）永远不会和窗口底色同色（预设色的两份活，见类头部）。
+    final Color accent = Bauhaus.blue(brightness);
     final ColorScheme base = ColorScheme.fromSeed(
-      seedColor: seed,
+      seedColor: accent,
       brightness: brightness,
       // 默认的 tonalSpot 会把主色压成低色度灰蓝，
       // fidelity 让色板贴合种子色本身。
       dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
     final ColorScheme scheme = base.copyWith(
-      // **种子即主色**（2026-09-13）：fromSeed 会把主色调到 Tone 40（暗青档，
-      // 为"白字压主色"的对比兜底）——但两个种子的对比本就达标（亮 #00B5B5
-      // 配深青字 4.9:1、暗 #00CED1 配深青字 6.2:1，均过 AA），直接用种子
-      // 本色（所见即所选），其余角色照常派生。
-      // onPrimary **按种子算**：在浅墨 / 深墨之间选与种子对比更高的一档
-      // （WCAG 相对亮度法，见 [_onPrimaryFor]）——不再是写死深青（只适配青色种子）。
-      primary: seed,
-      onPrimary: _onPrimaryFor(seed),
+      // **accent 即主色**：定稿蓝本色（light #1B4FD8 配白字约 6.5:1、
+      // dark #5B82FF 配深墨字，均过 AA），所见即所选，其余角色照常派生。
+      // onPrimary **按 accent 算**：在浅墨 / 深墨之间选与它对比更高的一档
+      // （WCAG 相对亮度法，见 [_onPrimaryFor]）。
+      primary: accent,
+      onPrimary: _onPrimaryFor(accent),
       surface: windowBackground(brightness),
       // M3 的 `surfaceContainer` 是钉死的 neutral tone（暗 tone 12 / 亮 tone 94，
       // 配 M3 自家 surface 设计）。2026-10-09 双色底都改了（暗 #080808 /
@@ -1596,75 +1540,6 @@ class AppTheme {
   }
 }
 
-/// 圆角下的逐边上色 bevel 装饰（[AppTheme.raisedBevel] / [AppTheme.sunkenBevel] 用）。
-///
-/// [Border] 在圆角下强制四边同色（`A borderRadius can only be given on borders
-/// with uniform colors`），而拟态胶囊/卡片都是圆角 ⇒ 必须自绘才能给每条边独立上色。
-/// 顶+左用 [light]、底+右用 [dark]，各 [width] px；[fill] 为圆角填充（null = 只画边）。
-/// 无模糊、不触发离屏合成。
-class BevelDecoration extends Decoration {
-  final BorderRadius radius;
-  final Color light;
-  final Color dark;
-  final Color? fill;
-  final double width;
-
-  const BevelDecoration({
-    required this.radius,
-    required this.light,
-    required this.dark,
-    this.fill,
-    this.width = 1,
-  });
-
-  @override
-  BoxPainter createBoxPainter([VoidCallback? onChanged]) => _BevelPainter(this);
-
-  @override
-  bool hitTest(Size size, Offset position, {TextDirection? textDirection}) => false;
-
-  @override
-  Decoration? lerpFrom(Decoration? a, double t) => t < 0.5 ? a : this;
-
-  @override
-  Decoration? lerpTo(Decoration? b, double t) => t < 0.5 ? this : b;
-}
-
-class _BevelPainter extends BoxPainter {
-  final BevelDecoration decoration;
-
-  _BevelPainter(this.decoration);
-
-  @override
-  void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
-    final Size? size = configuration.size;
-    if (size == null) return;
-    final Rect rect = offset & size;
-    final RRect rrect =
-        decoration.radius.resolve(configuration.textDirection).toRRect(rect);
-    final double w = decoration.width;
-    if (decoration.fill != null) {
-      canvas.drawRRect(rrect, Paint()..color = decoration.fill!);
-    }
-    if (w <= 0) return;
-    // 倒角 = 沿圆角边框一圈的**方向性渐变**（顶左 light → 底右 dark），直接作为
-    // RRect 描边的 shader：弧线与直边被同一渐变覆盖 ⇒ 边跟圆角走，无直切/缺失。
-    // （老版本用"矩形 clip 带 + 整圈描边"，clip 带是直的、会把圆角弧线切断 ⇒
-    // 角上变形、只剩直边。）
-    final Paint stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        // 准阶跃过渡（0.45→0.55 窄带）：左上受光、右下背光，两"侧角"沿各自
-        // 对角线切开 = 物理正确的倒角；不是糊成一片的渐变。
-        colors: <Color>[decoration.light, decoration.light, decoration.dark, decoration.dark],
-        stops: const <double>[0.0, 0.45, 0.55, 1.0],
-      ).createShader(rect);
-    canvas.drawRRect(rrect, stroke);
-  }
-}
 
 /// **包豪斯扁平令牌**（2026-10-12 用户定：温暖的数字极简包豪斯 = 趋势 #1 方法论
 /// + #2 暖纸底 + #4 几何/原色词汇，但保持克制、不撞色、不解构；排除 #3 渐变霓虹、
@@ -1675,6 +1550,19 @@ class _BevelPainter extends BoxPainter {
 /// 全站**零投影 / 零 bevel / 零渐变**，层次只靠**色块 + 边框粗细 + 字号**。
 ///
 /// 圆角统一 **4px 硬边**（[Bauhaus.radius]）——用户 2026-10-12 定"全硬边留 4px"。
+///
+/// ## 明度阶梯（2026-10-14 用户定，暗色实测）
+/// **底 [paper] = 0 档 → 面板 [surface] = +1 档 → 浮层 = +2 档**，每档 ≈ ΔL\*5：
+/// 暗色 paper `#1A1917`（L\*≈8.8）→ surface `#242320`（L\*≈13.7，+1 档 ✓）→
+/// 浮层（菜单 / 弹层，走 `AppTheme.floatSurface`，L\*≈19.5）≈ +2 档 ✓。
+/// 亮色是镜像：paper → surface 纯白（天花板）。
+/// ⚠️ 抬档时三处同步，别只动一处。
+///
+/// ## 色相反转（2026-10-14 用户定）
+/// 全板从"暖纸"（`#F3F0EA` / `#1A1917` 一族）反转为**中性偏微冷**
+/// （B = R+1~3）：暗底 `#141518`（Linear 式近黑亮半档）、面板 `#1E1F22`、
+/// 墨 `#E5E7E9` / `#17191B`；亮底 `#F1F2F3`。原色（蓝/黄/绿/红）保持——
+/// 冷底上更协调。与 `surface_ladder` 的 [SurfaceShape.cold] 同步反转。
 class Bauhaus {
   const Bauhaus._();
 
@@ -1682,27 +1570,34 @@ class Bauhaus {
   static const BorderRadius radius = BorderRadius.all(Radius.circular(4));
 
   // ── 固定调色板（亮）──────────────────────────────────────────
-  /// 暖纸底（窗口 / 页面底）。
-  static const Color _paperLight = Color(0xFFF3F0EA);
+  /// 窗口 / 页面底（2026-10-14 起中性偏微冷，原暖纸 #F3F0EA）。
+  static const Color _paperLight = Color(0xFFF1F2F3);
   /// 浮面 / 卡片面（比纸底更亮的"纸"）。
   static const Color _surfaceLight = Color(0xFFFFFFFF);
   /// 墨色（正文 + 硬边）。
-  static const Color _inkLight = Color(0xFF161513);
+  static const Color _inkLight = Color(0xFF17191B);
   /// 主色：蓝（主动作 / 选中）。
   static const Color _blueLight = Color(0xFF1B4FD8);
   /// 蓝·深一档（hover / pressed）。
   static const Color _blueDeepLight = Color(0xFF123AA8);
-  /// 强调：黄（hover 高亮 / 点睛）。
+  /// 强调：黄（hover 高亮 / 点睛；笔记钮 hover 整块转黄 + 墨字）。
   static const Color _yellow = Color(0xFFF4C300);
-  /// 破坏：红（仅删除 / 错误）。
+  /// 次强调：绿（hover 点睛；画布钮 hover 描边转绿 + 淡绿底）。
+  /// 与 [_yellow] **同色值档**（2026-10-13 用户定）：同为高饱和原色、亮度接近，
+  /// 保证配墨字都过 WCAG AA（≈6:1）；且不与红撞"破坏"语义。
+  static const Color _greenLight = Color(0xFF00A651);
+  /// 破坏：红（仅删除 / 错误；不做 hover 强调，免与"悬停=可创建"混淆）。
   static const Color _redLight = Color(0xFFE23A2E);
 
   // ── 固定调色板（暗）─────────────────────────────────────────
-  static const Color _paperDark = Color(0xFF1A1917);
-  static const Color _surfaceDark = Color(0xFF242320);
-  static const Color _inkDark = Color(0xFFF3F0EA);
+  // 2026-10-14 反转：暖 → 中性偏微冷。底 #141518（Linear 式近黑亮半档，
+  // 与 surface_ladder dark base 同档）、面板 #1E1F22（+1 档）、墨冷白。
+  static const Color _paperDark = Color(0xFF141518);
+  static const Color _surfaceDark = Color(0xFF1E1F22);
+  static const Color _inkDark = Color(0xFFE5E7E9);
   static const Color _blueDark = Color(0xFF5B82FF);
   static const Color _blueDeepDark = Color(0xFF7E9DFF);
+  static const Color _greenDark = Color(0xFF4CC97B);
   static const Color _redDark = Color(0xFFE85A4E);
 
   // ── 取色（按明暗）──────────────────────────────────────────
@@ -1714,7 +1609,32 @@ class Bauhaus {
   static Color blueDeep(Brightness b) =>
       b == Brightness.light ? _blueDeepLight : _blueDeepDark;
   static Color yellow(Brightness b) => _yellow;
+  /// 次强调：绿（hover 点睛；画布钮 hover 整块转绿 + 深墨字）。
+  /// 与 [_yellow] **同色值档**（2026-10-13 用户定）：同为高饱和原色、亮度接近，
+  /// 保证配深墨字都过 WCAG AA（≈6:1）；且不与红撞"破坏"语义。
+  static Color green(Brightness b) =>
+      b == Brightness.light ? _greenLight : _greenDark;
   static Color red(Brightness b) => b == Brightness.light ? _redLight : _redDark;
+
+  /// Tooltip（悬浮提示）底色：与官方 Tooltip 默认一致，使「新建」面板"看起来像
+  /// Tooltip"。值取自 Flutter `_defaultTooltipDecoration`（亮色 grey[700]@0.9 =
+  /// 0xE6616161、暗色 0xEBFCFCFC）。故意不染包豪斯色——Tooltip 本就是中性提示
+  /// 气泡，新建面板要和它同色才不突兀。定义在主题层（令牌本营），业务代码只引用。
+  static Color tooltipSurface(Brightness b) => b == Brightness.light
+      ? const Color(0xE6616161)
+      : const Color(0xEBFCFCFC);
+
+  /// Tooltip 面板内的 **1px 发丝分隔线**：与 [tooltipSurface] **反相**的半透明线
+  /// ——亮色深灰底用浅线、暗色近白底用深线，两种底色下都"分得开"。不能用
+  /// [AppTheme.divider]：那条是按纸面 / 浮面算的，压在这张**反常规的**面板底上
+  /// 会算错方向（暗色面板是浅底）。
+  static Color tooltipDivider(Brightness b) =>
+      (b == Brightness.dark ? _inkLight : _paperLight).withValues(alpha: 0.22);
+
+  /// 原色底（黄 / 绿）上的字：**始终深墨**（亮暗同一值）。
+  /// ⚠️ 不能用 [ink]：暗色下 ink 翻成浅色（#F3F0EA），浅字配黄底仅 ~1.5:1
+  /// （看不见）。黄/绿都是高亮饱和色，只有深墨字有对比（≈6–10:1）。
+  static Color onAccent(Brightness b) => _inkLight;
 
   /// 次级文字（墨打折）。
   static Color inkMuted(Brightness b) =>

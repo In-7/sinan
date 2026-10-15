@@ -55,9 +55,9 @@ String _formatLineHeight(double value) =>
 /// 挂上这个 key 后，浮层一律从导航根取 Overlay，与触发处的 context 无关。
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
-/// 面板宽度：左侧目录导航（176）+ 内容列——够放下
-/// 「标签 + SegmentedButton（三档）」同排不换行。
-const double _panelWidth = 720;
+/// 面板宽度 = [Tokens.settingsPanelWidth]（90×8）：左侧目录导航 + 内容列——
+/// 够放下「标签 + SegmentedButton（三档）」同排不换行。
+const double _panelWidth = Tokens.settingsPanelWidth;
 
 /// 面板高度：两栏布局需要**稳定的高度**（单列时代的"内容多高面板多高"
 /// 会让右侧滚动区高度随分区跳动）；窗口太矮时由外层 maxHeight 钳制。
@@ -602,6 +602,10 @@ class _BrightnessRow extends ConsumerWidget {
 /// 亮色下 chrome（环缝 / 标题条）取预设色**本身**（所见即所得），暗色由
 /// `fromSeed(seed, dark)` 派生**同色相的暗色档**。纸面 / 面板 / 编辑器内容
 /// 一律保持中性，不参与。
+///
+/// ⚠️ 方案 B（2026-10-15）：预设**只染窗口 / 标题条**，不进 ColorScheme——
+/// 图标 / 链接 / 焦点环的强调色恒定包豪斯蓝。否则浅色预设当 accent 用会对
+/// 浅底只有 ≈1.5:1，且亮色下窗口满铺预设本色时图标与背景同色（实测返工）。
 class _ThemeSeedRow extends ConsumerWidget {
   const _ThemeSeedRow();
 
@@ -611,7 +615,7 @@ class _ThemeSeedRow extends ConsumerWidget {
     final Brightness brightness = Theme.of(context).brightness;
     return _SettingTile(
       label: '主题色',
-      description: '只染底层（环缝 / 标题条）；纸面与面板保持中性。',
+      description: '只染窗口与标题条；图标 / 链接 / 焦点环的强调色固定为包豪斯蓝。',
       control: Wrap(
         spacing: Tokens.spaceSm,
         runSpacing: Tokens.spaceSm,

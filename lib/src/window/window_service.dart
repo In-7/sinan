@@ -94,11 +94,13 @@ abstract final class WindowService {
   /// 🔧 **回退方案 C**（把那层自绘底加回来）**未启用**，完整配方记在
   /// `docs/ui_rewrite_plan.md` §5.6：出现"露桌面 / 黑底 / 切明暗闪 / mac-linux 异常"
   /// 任一情形就照它装回（代价是付回第二笔，第一笔不受影响）。
-  /// [chromeColor]：底层（环缝 / 标题条）的**主题色**；传 null 则回落到中性
+  /// [chromeColor]：底层（环缝 / 标题条）的**窗口染色**；传 null 则回落到中性
   /// [AppTheme.windowBackground]（旧行为）。
   ///
-  /// 上层传的是 `scheme.primary`——`AppTheme._build` 里 `primary: seed` 已把主色
-  /// 钉成**种子本色**（所见即所选、不稀释），所以这里拿到的就是用户选的那个色。
+  /// ⚠️ 2026-10-15 方案 B 起它**与 ColorScheme 无关**：上层传的是
+  /// `AppTheme.chromeColor(seed, …)`（预设色本色 / 同色相暗色档），而强调色
+  /// （`primary`）恒定包豪斯蓝——预设只染窗口，不再进主题。早期这里传的是
+  /// `scheme.primary`（那时 primary 被钉成种子本色），现已不是。
   static Future<void> applyWindowBackground(
     Brightness brightness, {
     Color? chromeColor,

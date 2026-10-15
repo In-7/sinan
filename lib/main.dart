@@ -143,23 +143,21 @@ Future<void> _hideWindowControlsOnce() async {
 class MainApp extends ConsumerStatefulWidget {
   const MainApp({super.key});
 
-  /// 主题**随种子变化** ⇒ 不能再用"两套静态常量"缓存；改成按 (种子, 明暗)
-  /// 记忆化——ThemeData 构造成本不低，但设置改动很稀疏，命中率几乎 100%。
-  static final Map<(Color?, Brightness), ThemeData> _themeCache =
-      <(Color?, Brightness), ThemeData>{};
+  /// 主题缓存：**配色不随预设变**（2026-10-15 方案 B：ColorScheme 恒定由
+  /// 包豪斯蓝派生，预设只染窗口 / 标题条，见 builder 里的
+  /// [WindowService.applyWindowBackground]）⇒ 缓存键只剩明暗两套。
+  /// ThemeData 构造成本不低，每次 build 重造纯属浪费（相等性短路救的是比较，
+  /// 不是构造）。
+  static final Map<Brightness, ThemeData> _themeCache =
+      <Brightness, ThemeData>{};
 
-  /// 取（并缓存）一套主题；[seed] 为 null = **中性默认档**（沿用 `AppTheme`
-  /// 各自的默认种子，观感与未选主题时完全一致）。
-  static ThemeData _themeFor(Color? seed, Brightness brightness) =>
+  /// 取（并缓存）一套主题。**不接种子**——种子只染窗口，不进 ColorScheme。
+  static ThemeData _themeFor(Brightness brightness) =>
       _themeCache.putIfAbsent(
-        (seed, brightness),
+        brightness,
         () => switch (brightness) {
-          Brightness.light => seed == null
-              ? AppTheme.light()
-              : AppTheme.light(seed: seed),
-          Brightness.dark => seed == null
-              ? AppTheme.dark()
-              : AppTheme.dark(seed: seed),
+          Brightness.light => AppTheme.light(),
+          Brightness.dark => AppTheme.dark(),
         },
       );
 
@@ -222,8 +220,10 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
     final ThemeBrightnessMode brightnessMode = ref.watch(
       settingsProvider.select((AppSettings s) => s.brightnessMode),
     );
-    // 主题种子（**0 = 中性默认档**）。只 select 这一个字段 ⇒ 拖字号滑杆的
+    // 窗口染色种子（**0 = 中性默认档**）。只 select 这一个字段 ⇒ 拖字号滑杆的
     // 每个 tick 都不会惊动 MaterialApp 层（与上面明暗同一套路）。
+    // ⚠️ 它**只染窗口 / 标题条**（方案 B，2026-10-15）：ColorScheme 恒定包豪斯蓝，
+    // 不读这个值——见 [MainApp._themeFor] 与 builder 里的 chromeColor。
     final int themeSeed = ref.watch(
       settingsProvider.select((AppSettings s) => s.themeSeed),
     );
@@ -235,11 +235,12 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
       title: 'sinan',
       // 自绘标题栏下，DEBUG 角标正好压在右上角窗口按钮上，必须关掉。
       debugShowCheckedModeBanner: false,
-      // 主题固定用默认种子色（AppTheme.defaultSeed）；主题色不再作为可设置项。
-      // ⚡ 两套 ThemeData 静态缓存：ThemeData 构造成本不低，而种子恒定，
+      // 主题 = 定稿包豪斯蓝那一套（方案 B）：主题色不再作为可设置项，设置里的
+      // "主题色"预设只染窗口 / 标题条（见下面 builder 的 chromeColor）。
+      // ⚡ 两套 ThemeData 按明暗静态缓存：构造成本不低，而配色恒定，
       // 每次 build 重造纯属浪费（相等性短路救的是比较，不是构造）。
-      theme: MainApp._themeFor(seed, Brightness.light),
-      darkTheme: MainApp._themeFor(seed, Brightness.dark),
+      theme: MainApp._themeFor(Brightness.light),
+      darkTheme: MainApp._themeFor(Brightness.dark),
       themeMode: switch (brightnessMode) {
         ThemeBrightnessMode.light => ThemeMode.light,
         ThemeBrightnessMode.dark => ThemeMode.dark,

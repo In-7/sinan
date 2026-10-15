@@ -76,6 +76,336 @@ class NoteStore {
     );
   }
 
+  /// **一步建一篇带正文的笔记**（含 `plain_text` / `summary`），返回可直接进列表
+  /// 快照的 [Note]——`summary` 已填 ⇒ 卡片预览立即可见，无「先建空卡再填」的中间
+  /// 闪烁。与 [create] 的差别：正文一起落，且写好摘要投影列。
+  ///
+  /// 两个使用者：心流输入框（[NoteKind.spark]）与心流「转成新笔记」导出
+  /// （[NoteKind.note]）——都是「文本一步落成一篇」。
+  Note createSpark({
+    NoteKind kind = NoteKind.spark,
+    required String content,
+    required String plainText,
+    String title = '',
+  }) {
+    final String id = _uuid.v4();
+    final DateTime now = DateTime.now();
+    final String hash = contentFingerprint(content);
+    db.execute(
+      'INSERT INTO notes (id, kind, title, content, plain_text, summary, '
+      'content_hash, created_at, revised_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      <Object?>[
+        id,
+        kind.name,
+        title,
+        content,
+        plainText,
+        Note.summarize(plainText),
+        hash,
+        now.millisecondsSinceEpoch,
+        now.millisecondsSinceEpoch,
+      ],
+    );
+    _blocks.replaceNoteBlocks(id, content);
+    _canvas.replaceCanvasRows(id, content);
+    return Note(
+      id: id,
+      kind: kind,
+      title: title,
+      content: content,
+      plainText: plainText,
+      summary: Note.summarize(plainText),
+      contentHash: hash,
+      createdAt: now,
+      revisedAt: now,
+    );
+  }
+
+  // ── 心流收件箱（stream 容器 + 其块）──────────────────────────────────
+  //
+  // 心流 = 一篇隐藏的系统容器笔记（kind='stream'）装着的一串段落块。**单向**：心流只
+  // 读写自己这个容器，绝不读用户笔记内容；用户笔记 / 画布通过 ref / 注入**指向**心流块
+  // （导出方法在更下一段）。心流块在库里就是普通段落块（文本走 data.delta）——注入笔记
+  // 可原样复用，注入画布则走 canvas card（text 快照）。
+  //
+  // ⚠️ 走 content 真相源：所有写都改容器 content 的 v2 块树，再 [_persistContentSync]
+  // 双写投影——绝不直接 INSERT blocks（会被下次 replaceNoteBlocks 当孤儿清掉）。
+
+  /// 心流块文本读口：段落走 `data.delta`（拼接各 insert）；注入画布的快照卡走 `text`。
+  static String streamBlockText(String? propsJson) {
+    if (propsJson == null || propsJson.trim().isEmpty) return '';
+    try {
+      final Object? d = jsonDecode(propsJson);
+      if (d is Map<String, Object?>) {
+        final Object? delta = d['delta'];
+        if (delta is List<Object?>) {
+          final StringBuffer sb = StringBuffer();
+          for (final Object? op in delta) {
+            if (op is Map<String, Object?> && op['insert'] is String) {
+              sb.write(op['insert'] as String);
+            }
+          }
+          return sb.toString();
+        }
+        final Object? text = d['text'];
+        if (text is String) return text;
+      }
+    } on FormatException {
+      // 脏数据当空块，不抛。
+    }
+    return '';
+  }
+
+  /// 心流系统容器（单例，隐藏）：没有就建一篇空的 kind='stream' 笔记。
+  Note streamContainer() {
+    final ResultSet rs = db.select(
+      "SELECT id FROM notes WHERE kind = 'stream' LIMIT 1",
+    );
+    for (final Row r in rs) {
+      final Note? n = noteById(r['id'] as String);
+      if (n != null) return n;
+    }
+    return create(kind: NoteKind.stream, content: _emptyStreamTree());
+  }
+
+  /// 心流条目（**最新在上**）：读容器段落块投影，`ord ASC` = 文档序 = 最新在前
+  /// （新条目前插到块树顶 ⇒ ord 最小）。跳过空段（如容器初始空段）。
+  List<StreamItem> listStreamItems() {
+    final Note c = streamContainer();
+    final ResultSet rs = db.select(
+      'SELECT id, props_json, created_at FROM blocks WHERE note_id = ? '
+      'ORDER BY ord ASC',
+      <Object?>[c.id],
+    );
+    final List<StreamItem> out = <StreamItem>[];
+    for (final Row r in rs) {
+      final String text = streamBlockText(r['props_json'] as String?);
+      if (text.trim().isEmpty) continue;
+      out.add(
+        StreamItem(
+          id: r['id'] as String,
+          text: text,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(
+            r['created_at'] as int,
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  static String _emptyStreamTree() => jsonEncode(<String, Object?>{
+    'v': 2,
+    'format': 'blocks',
+    'document': <String, Object?>{'type': 'page', 'children': <Object?>[]},
+  });
+
+  /// 取出容器的 v2 块树 document 节点（脏 / 空 content ⇒ 空 page）。
+  Map<String, Object?> _streamDocOf(Note container) {
+    final String raw = container.content.trim().isEmpty
+        ? _emptyStreamTree()
+        : container.content;
+    final Object? decoded = jsonDecode(raw);
+    if (decoded is Map<String, Object?>) {
+      final Object? doc = decoded['document'];
+      if (doc is Map<String, Object?>) return doc;
+    }
+    return <String, Object?>{'type': 'page', 'children': <Object?>[]};
+  }
+
+  static String _encodeStreamTree(Map<String, Object?> doc) => jsonEncode(
+    <String, Object?>{'v': 2, 'format': 'blocks', 'document': doc},
+  );
+
+  static List<Object?> _streamChildren(Map<String, Object?> doc) {
+    final Object? ch = doc['children'];
+    doc['children'] = ch is List<Object?> ? ch : <Object?>[];
+    return doc['children'] as List<Object?>;
+  }
+
+  /// 心流 / 注入共用的段落块节点。**同时写 `delta` 与 `text`**：`delta` 给 AppFlowy
+  /// 编辑器读；`text` 给数据层的 [textOfProps] / `blockText` / 画布卡片快照 / 反链
+  /// 上下文读——editor 写的块只有 `delta`，缺 `text` 会让这些读口拿到空串。心流块要
+  /// 被引用 / 注入 / 搜索，必须两边都有。
+  static Map<String, Object?> _paragraphNode(String id, String text) =>
+      <String, Object?>{
+        'id': id,
+        'type': 'paragraph',
+        'data': <String, Object?>{
+          'delta': <Object?>[
+            <String, Object?>{'insert': text},
+          ],
+          'text': text,
+        },
+      };
+
+  /// 新增一条心流（**前插**到块树顶 ⇒ 最新在上），返回新块 id。
+  String addStreamItem(String text) {
+    final Note c = streamContainer();
+    final Map<String, Object?> doc = _streamDocOf(c);
+    final List<Object?> children = _streamChildren(doc);
+    final String id = _uuid.v4();
+    children.insert(0, _paragraphNode(id, text));
+    _persistContentSync(c.id, _encodeStreamTree(doc));
+    return id;
+  }
+
+  /// 改一条心流的文本（按块 id 定位，替换 delta）。没这条返回 false。
+  bool updateStreamItem(String blockId, String text) {
+    final Note c = streamContainer();
+    final Map<String, Object?> doc = _streamDocOf(c);
+    final List<Object?> children = _streamChildren(doc);
+    for (int i = 0; i < children.length; i++) {
+      final Object? n = children[i];
+      if (n is Map<String, Object?> && n['id'] == blockId) {
+        children[i] = _paragraphNode(blockId, text);
+        _persistContentSync(c.id, _encodeStreamTree(doc));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 删一条心流（从块树摘掉）。没这条返回 false。
+  bool deleteStreamItem(String blockId) {
+    final Note c = streamContainer();
+    final Map<String, Object?> doc = _streamDocOf(c);
+    final List<Object?> children = _streamChildren(doc);
+    final int before = children.length;
+    children.removeWhere(
+      (Object? n) => n is Map<String, Object?> && n['id'] == blockId,
+    );
+    if (children.length == before) return false;
+    _persistContentSync(c.id, _encodeStreamTree(doc));
+    return true;
+  }
+
+  // ── 心流导出（单向：心流 → 笔记 / 画布）────────────────────────────────
+  //
+  // 三种语义（2026-10-16 用户定）：
+  // - **引用**（活链）：目标里插一个 `ref` 块 / 画布卡**指向**该块——块**留在心流**，
+  //   两边同一份真身，[backlinks] 自动记「这条灵感被哪几篇用了」；
+  // - **注入**（快照）：把文本**复制**成目标里的一个真段落块——块留在心流，互不影响；
+  // - **转新**（消耗）：建成一篇新笔记，块从心流删除——心流里消失。
+  // 心流**永不反向读**用户笔记：这些方法只写目标 / 建新篇，不回读用户内容。
+
+  /// 块的文本：先 `text`（[textOfProps]：注入画布的卡 / editor 块），再 `delta`
+  /// （[streamBlockText]：心流段落块）。块不存在返回 null。
+  String? streamTextOf(String blockId) {
+    final ResultSet rs = db.select(
+      'SELECT props_json FROM blocks WHERE id = ?',
+      <Object?>[blockId],
+    );
+    if (rs.isEmpty) return null;
+    final String? props = rs.first['props_json'] as String?;
+    final String viaText = textOfProps(props);
+    return viaText.isNotEmpty ? viaText : streamBlockText(props);
+  }
+
+  static Map<String, Object?> _emptyTreeMap() => <String, Object?>{
+    'v': 2,
+    'format': 'blocks',
+    'document': <String, Object?>{'type': 'page', 'children': <Object?>[]},
+  };
+
+  /// 目标**文档**笔记的 v2 块树；画布 / 心流 / 不存在 / 脏内容 ⇒ null，空正文 ⇒ 空树。
+  Map<String, Object?>? _targetDocTree(String noteId) {
+    final Note? n = noteById(noteId);
+    if (n == null || n.kind == NoteKind.canvas || n.kind == NoteKind.stream) {
+      return null;
+    }
+    final String raw = n.content.trim();
+    if (raw.isEmpty) return _emptyTreeMap();
+    try {
+      final Object? d = jsonDecode(raw);
+      if (d is Map<String, Object?> && d['document'] is Map<String, Object?>) {
+        return d;
+      }
+    } on FormatException {
+      // 脏内容不当目标。
+    }
+    return null;
+  }
+
+  static List<Object?> _treeChildren(Map<String, Object?> tree) {
+    final Map<String, Object?> document =
+        tree['document'] as Map<String, Object?>;
+    final Object? ch = document['children'];
+    document['children'] = ch is List<Object?> ? ch : <Object?>[];
+    return document['children'] as List<Object?>;
+  }
+
+  /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type=block`）指向它。
+  /// 块留在心流；`backlinks` 自动记这笔引用。已引用过 ⇒ 幂等 false。
+  bool referenceStreamBlockInNote(String blockId, String noteId) {
+    final Map<String, Object?>? tree = _targetDocTree(noteId);
+    if (tree == null) return false;
+    final List<Object?> children = _treeChildren(tree);
+    for (final Object? n in children) {
+      if (n is! Map<String, Object?> || n['type'] != _refType) continue;
+      final Object? data = n['data'];
+      if (data is Map<String, Object?> &&
+          data['ref_type'] == _refTargetBlock &&
+          data['ref_id'] == blockId) {
+        return false;
+      }
+    }
+    children.add(<String, Object?>{
+      'id': _uuid.v4(),
+      'type': _refType,
+      'data': <String, Object?>{
+        'ref_type': _refTargetBlock,
+        'ref_id': blockId,
+        'ref_view': 'link',
+      },
+    });
+    _persistContentSync(noteId, jsonEncode(tree));
+    return true;
+  }
+
+  /// **注入到笔记**（快照）：把文本复制成目标里的一个真段落块。块留在心流。
+  bool injectStreamBlockInNote(String blockId, String noteId) {
+    final Map<String, Object?>? tree = _targetDocTree(noteId);
+    if (tree == null) return false;
+    final String? text = streamTextOf(blockId);
+    if (text == null || text.trim().isEmpty) return false;
+    _treeChildren(tree).add(_paragraphNode(_uuid.v4(), text));
+    _persistContentSync(noteId, jsonEncode(tree));
+    return true;
+  }
+
+  /// **转成新笔记**（消耗）：建一篇正式笔记装上这段文本，心流条目随之删除。
+  Note? streamBlockToNewNote(String blockId) {
+    final String? text = streamTextOf(blockId);
+    if (text == null) return null;
+    final Note n = createSpark(
+      kind: NoteKind.note,
+      content: _blocksTreeFromText(text),
+      plainText: text,
+    );
+    deleteStreamItem(blockId);
+    return n;
+  }
+
+  /// 纯文本 → v2 块树（每行一段，节点带 delta+text）。数据层**不 import 编辑器层**
+  /// （架构闸门），故在此自持一份编码（口径：结尾空段不落库、空文本给单个空段）。
+  static String _blocksTreeFromText(String text) {
+    final List<String> lines = text.split('\n');
+    while (lines.isNotEmpty && lines.last.isEmpty) {
+      lines.removeLast();
+    }
+    final List<Object?> children = lines.isEmpty
+        ? <Object?>[_paragraphNode(_uuid.v4(), '')]
+        : <Object?>[
+            for (final String l in lines) _paragraphNode(_uuid.v4(), l),
+          ];
+    return jsonEncode(<String, Object?>{
+      'v': 2,
+      'format': 'blocks',
+      'document': <String, Object?>{'type': 'page', 'children': children},
+    });
+  }
+
   /// 保存正文。content 的格式**由当前编辑器决定**（quill 时期是 Delta，
   /// 换成 appflowy 后是 v2 块树；详见 NoteDocumentAdapter）——本层不关心
   /// 格式，只存字符串。plainText 同步入库（全文搜索 / 字数统计用），其
@@ -155,6 +485,8 @@ class NoteStore {
     final ResultSet rs = db.select(
       'SELECT id, kind, title, content_hash, tags, summary, '
       'created_at, revised_at, promoted_at FROM notes '
+      // 心流系统容器（kind='stream'）不进文库列表（隐藏，心流走专用读取）。
+      "WHERE kind != 'stream' "
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
     );
@@ -316,10 +648,10 @@ class NoteStore {
     db.execute('DELETE FROM chunks_fts WHERE note_id = ?', <Object?>[noteId]);
     // rag_meta 是无外键 KV：画布投影的两把指纹键（meta 指纹 + 缩略图快路径
     // 闸门）没人随笔记级联，顺手清掉，避免删笔记后留下永久孤儿键。
-    db.execute(
-      'DELETE FROM rag_meta WHERE key = ? OR key = ?',
-      <Object?>['canvas.meta.fp.$noteId', 'canvas.srcfp.$noteId'],
-    );
+    db.execute('DELETE FROM rag_meta WHERE key = ? OR key = ?', <Object?>[
+      'canvas.meta.fp.$noteId',
+      'canvas.srcfp.$noteId',
+    ]);
     db.execute('DELETE FROM notes WHERE id = ?', <Object?>[noteId]);
   }
 

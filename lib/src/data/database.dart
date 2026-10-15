@@ -428,6 +428,14 @@ class AppDatabase {
       db.userVersion = 13;
     }
 
+    // v14：notes 表重建——`kind` 加第四个取值 `'stream'`（心流收件箱的系统容器，
+    // 隐藏，不进文库/搜索/日历）。SQLite 不能改 CHECK ⇒ 同 v6 整表重建，但这次把
+    // v6 之后新增的 `deleted_at` / `tags` / `summary` 一并拷过去。
+    if (db.userVersion < 14) {
+      _rebuildNotesForV14(db);
+      db.userVersion = 14;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
@@ -601,6 +609,49 @@ class AppDatabase {
     // 完整性校验：宁可当场抛，也不留一座坏库继续跑。
     if (db.select('PRAGMA foreign_key_check;').isNotEmpty) {
       throw StateError('v6 迁移后外键校验未通过（foreign_key_check 非空）');
+    }
+  }
+
+  /// v14：`notes.kind` 的 CHECK 加 `'stream'`（心流系统容器，见 [NoteKind.stream]）。
+  /// 同 v6 整表重建，但拷贝**当前全部列**（含 v6 之后的 `deleted_at` / `tags` / `summary`）。
+  static void _rebuildNotesForV14(Database db) {
+    db.execute('PRAGMA foreign_keys = OFF;');
+    try {
+      db.execute('BEGIN;');
+      db.execute('''
+        CREATE TABLE notes_v14 (
+          id           TEXT PRIMARY KEY,
+          kind         TEXT NOT NULL CHECK (kind IN ('spark','note','canvas','stream')),
+          title        TEXT NOT NULL DEFAULT '',
+          content      TEXT NOT NULL DEFAULT '',
+          content_hash TEXT NOT NULL,
+          plain_text   TEXT NOT NULL DEFAULT '',
+          created_at   INTEGER NOT NULL,
+          revised_at   INTEGER NOT NULL,
+          promoted_at  INTEGER,
+          deleted_at   INTEGER,
+          tags         TEXT NOT NULL DEFAULT '[]',
+          summary      TEXT NOT NULL DEFAULT ''
+        );
+      ''');
+      db.execute('''
+        INSERT INTO notes_v14 (id, kind, title, content, content_hash, plain_text,
+                              created_at, revised_at, promoted_at, deleted_at, tags, summary)
+          SELECT id, kind, title, content, content_hash, plain_text,
+                 created_at, revised_at, promoted_at, deleted_at, tags, summary
+            FROM notes;
+      ''');
+      db.execute('DROP TABLE notes;');
+      db.execute('ALTER TABLE notes_v14 RENAME TO notes;');
+      db.execute('COMMIT;');
+    } on Object {
+      db.execute('ROLLBACK;');
+      rethrow;
+    } finally {
+      db.execute('PRAGMA foreign_keys = ON;');
+    }
+    if (db.select('PRAGMA foreign_key_check;').isNotEmpty) {
+      throw StateError('v14 迁移后外键校验未通过（foreign_key_check 非空）');
     }
   }
 

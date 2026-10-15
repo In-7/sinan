@@ -17,6 +17,34 @@ class Tokens {
   /// 与 [spaceXl] 的区别：它是"一页纸"的段落呼吸，不是控件间距。
   static const double spaceXxl = 48;
 
+  // ── 布局网格：瑞士隐形 8pt 网格（2026-10-13）──────────────────
+  // 界面**不画网格线**：秩序来自每个区域 / 元素对齐到这套常数 + 留白表达。
+  // 与 [Bauhaus]（固定色板 / 4px 硬边 / 边框粗细分层）**互补**——Bauhaus 定"材质"，
+  // 这层定"度量"；层次靠 对齐 + 留白 + Bauhaus 边框，**不靠投影 / 色差**
+  // （Bauhaus 全站零投影）。此前布局尺寸是一批互不对齐的散点（侧栏 280 /
+  // AI 轨 340 / 卡片距 20…），这一层把它们收编到同一个 8pt 基数上。
+  /// 网格基数（8pt）：区块尺寸 / 区块间距一律取它的整数倍；控件内微调
+  /// （4px 硬边、半格呼吸）可用它的 1/2（= [spaceXs] 4）与 1/4（[spaceXxs] 2）。
+  static const double gridBaseline = 8;
+
+  /// 区块间距（gutter）：区域之间 / 网格列距。24（大留白档 = [spaceXl]）。
+  static const double gridGutter = 24;
+
+  /// 内容区左右安全边距（margin）：正文 / 网格列离容器缘的距离。24。
+  static const double gridMargin = 24;
+
+  /// 宽屏内容边距（留白更舒展一档）。48。
+  static const double gridMarginWide = 48;
+
+  /// 内容区结构列数。列宽**运行时**按容器宽与 [gridGutter] 分摊，token 只定列数。
+  static const int gridColumns = 12;
+
+  /// 阅读 / 单栏内容的一个基准上限 = 90×8。⚠️ 主页 / 编辑器的实际内容宽**不写死
+  /// 这里**，而是跟随 `AppSettings.contentWidth`（EditorWidthMode 三档
+  /// narrow 728 / standard 800 / wide 1008）——2026-10-13 起主页卡片区也用同一
+  /// settings 限宽、水平居中。此 token 仅作不随设置变的固定上限基准。
+  static const double contentMaxWidth = 720;
+
   // 圆角
   // Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：三档跨度收敛为 **6 / 8 / 12**。
   // 控件档（6）本就与 macOS 同档、未动；改的是"大档过圆"——原 14 让菜单与面板
@@ -40,17 +68,50 @@ class Tokens {
   // 所以按钮跟着标题栏一起伸缩，悬浮背景始终与标题栏等高。
   //
   // 因此 [titleBarHeightMain] 即条高（窗控按钮在 Row 里垂直居中跟着伸缩）：
-  // 2026-10-09 取 **44**（opencode 风内嵌浮面外壳：导航图标也在条内，44 给
-  // 36 按钮上下各 4 呼吸；此前 36 是按钮满格无留白的窗控条档）。
-  // [chromeActionButton] 的按钮固定 36，不以此值为准。
-  static const double titleBarHeightMain = 44;
+  // 2026-10-13 用户定 **32**——恰好等于 [window_manager] `WindowCaptionButton`
+  // 的 `minHeight: 32` 下限，且 [chromeActionButton] 的方块也是
+  // [Tokens.chromeButtonSize]=32：窗控 + 导航都满格、零溢出，无需压高/裁切。
+  static const double titleBarHeightMain = 32;
+
+  /// **顶部带中心线**（2026-10-14 骨架定）：全应用顶部控件共享一条 y=20 的
+  /// 水平中心线，各元素按自身高反推 `top = headerBandCenter − h/2`：
+  /// 筛选钮(32)→top 4、编辑器耳朵(30)→top 5、新建胶囊(32)→top 4。
+  /// 新增顶部钮一律按这条线算，禁止各自拍 top。
+  ///
+  /// ⚠️ 侧栏是唯一例外（2026-10-15）：顶带上方插了品牌行（[brandStripHeight]
+  /// + 一档 [regionGap]）⇒ 侧栏的搜索 / 新建带整体下移 56，不再与内容卡筛选行
+  /// 共享这条线（Linear 的侧栏页头同样不共享）；内容卡 / 编辑器仍按本线算。
+  static const double headerBandCenter = 20;
+
+  /// **侧栏页头行高**（2026-10-15 定）：侧栏顶部「logo + 应用名 + 右侧动作钮」行。
+  ///
+  /// 取 **40**：锚是右栏编辑器「撤销 / 重做 + 双耳」那条头一带
+  /// （`note_editor_view_appflowy.dart` 的 `_kHeaderBandHeight`
+  /// = `上留白 5 + 按钮热区 [headerActionSize]=30 + 间距 4` = **39**），
+  /// 取它的**最近 4pt 倍数** 40 —— 差 1px 察觉不到，换来整列全 4 倍数：
+  /// `顶 4 → 页头 40 → 12 → 顶带 32 → 12 → 导航`。
+  /// 两列顶端的动作区因此近乎同高（40 vs 39），仍是 C 方案里唯一保留的跨列关系。
+  ///
+  /// ⚠️ 改这个数**只动等号右侧**：上面那组 4 倍数（4/40/12/32/12）是整列节奏的来源，
+  /// 别为凑别的数把它推离 4pt（派生关系写在文档里就够了，不必牺牲网格）。
+  ///
+  /// 行内：logo [iconMd]=24 + 名称 13px w600，左缘与搜索框对齐（= 侧栏左内距
+  /// [spaceMd]）⇒ 与导航文字同一条左基线；logo 上下余 (40−24)/2 = 8，正好一档
+  /// [spaceSm]。
+  static const double brandStripHeight = 40;
+
+  /// **区块间距**（2026-10-14 骨架定）：侧栏内"新建胶囊↔导航"、侧栏↔内容卡
+  /// （= 侧栏右内距 [spaceSm] + 环缝 [appPanelInset] = 12）等**区块之间**的
+  /// 唯一间距。区块内元素仍走 space 阶梯（4/8/16），别拿它当万能间距。
+  static const double regionGap = 12;
 
   // ── 桌面外壳 chrome 度量（2026-10-08 令牌收口：从各外壳文件的 k 级私有
   // 常量收编到此，与 [titleBarHeightMain] 同一档）────────────────
   /// **内嵌浮面**离窗缘的环缝（2026-10-09 opencode 风外壳）：内容是一张
-  /// 四角圆角的浮面卡，左 / 右 / 下与窗口底之间靠这圈缝隙分层，不用
-  /// 分割线。**顶部与 44 标题条间距为 0**（同日用户定）：卡顶紧贴条下沿，
-  /// 圆角落出的小弧露窗口底充当分缝。
+  /// 四角圆角的浮面卡，**右侧与底部**与窗口底之间靠这圈缝隙分层，不用分割线；
+  /// **顶与左为 0**（2026-10-15 用户定）：面板顶缘贴标题条、左缘贴侧栏。
+  /// 分界主要交给 [AppTheme.surfaceRing] 那圈 1px 亮线（Linear 口径），
+  /// 环缝只保留右 / 下两处。
   static const double appPanelInset = 4;
 
   /// 顶条动作按钮（历史 / 设置 / AI）的固定方块：32。与居中目的地图标药丸
@@ -64,12 +125,27 @@ class Tokens {
   static const double askRailBreakpoint = 1000;
 
   /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
+  /// （8pt 收编时曾收敛到 336，2026-10-14 用户要求撤回到 340。）
   static const double askRailWidth = 340;
 
   /// 卡片网格行列距（2026-10-01 用户定的 20 档：间距表 16/24 之间的定值，
-  /// 不在 t 恤码表上，收编为命名几何量）。
+  /// 不在 t 恤码表上，收编为命名几何量）。（8pt 收编时曾收敛到 24，
+  /// 2026-10-14 用户要求撤回到 20。）
   static const double cardGridSpacing = 20;
 
+  // ── 外壳区块宽（2026-10-13 收编：原各文件私有 const，收敛到 8pt 整数倍，
+  //    消除"互不对齐的散点"）────────────────────────────────────
+  /// 左侧扁平导航栏宽 = **32×8**（2026-10-15 用户定：280 → 216 → **256**；
+  /// 参照 Linear 侧栏 ≈200 但不缩占位文字）。硬约束是顶行：搜索框 + 8 缝 +
+  /// 新建胶囊（≥80）⇒ 256 时搜索框 152，够放完整占位「搜索笔记与画布」。
+  static const double sidebarWidth = 256;
+  /// 主菜单面板宽 = 原 `app_menu._panelWidth`（180；8pt 收编时曾收敛到 176，
+  /// 2026-10-14 用户要求撤回到 180）。
+  static const double menuPanelWidth = 180;
+  /// 设置面板宽 = 90×8（原 `settings_panel._panelWidth = 720`，= [contentMaxWidth]）。
+  static const double settingsPanelWidth = 720;
+  /// 搜索面板宽 = 75×8（原 `search_palette._paletteWidth = 600`）。
+  static const double paletteWidth = 600;
   // ── 图标 ────────────────────────────────────────────────────────
   // ⚠️ 先记住一条：Tabler 的尺寸是**画板框**，不是视觉大小。它的图形画在
   // **24×24 画板**里、四周留白（实测 `Search`：内容范围 x 3~21 ⇒ 占画板 ~75%），

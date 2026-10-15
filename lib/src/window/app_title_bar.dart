@@ -15,11 +15,13 @@ import 'window_service.dart';
 /// 桌面外壳为**全宽顶条 + 内嵌浮面**（2026-10-09 用户定，opencode 风，
 /// 见 HomeScreen）：
 ///
-/// - [WindowStrip]：44 高全宽**通栏**——拖拽区（+ 可选标题）+ **正中**动作组（四枚
-///   目的地图标药丸：心流 / 全部 / 日历 / 收藏，彼此 16 隔，精确几何居中；左 `Expanded`
-///   等分放历史键浮「心流」左，不挤占导航位）+ 设置钮（紧贴最小化
-///   左、与窗控成组）+ 最小化 / 最大化 / 关闭。（问笔记 2026-10-11 起移入 hub 头栏，
-///   贴「筛选与排序」右侧。）
+/// - [WindowStrip]：由 [Tokens.titleBarHeightMain] 定高（当前 **32**）的全宽**通栏**——
+///   左起拖拽带（含可选应用名 [WindowStrip.title]）+ 右端 `trailing` 动作簇
+///   （2026-10-12 起仅设置钮，紧贴最小化左侧、与窗控成组）+ 窗控按钮
+///   （最小化 / 最大化·还原 / 关闭，见 [_CaptionButtons]）。
+///   ⚠️ 导航（四枚目的地图标药丸：心流 / 全部 / 日历 / 收藏 + 新建胶囊）已于
+///   2026-10-12 移出标题栏、落在工作区左侧扁平导航 [HomeSidebar]；标题栏内**不含**
+///   任何导航入口（问笔记 AI 入口是工作区右角折叠钮，也不在条内）。
 /// - 条下**不画分隔线**：内容区是 8px 环缝内的圆角浮面卡，层次只靠窗口底与
 ///   浮面的明度差 + 缝隙表达。
 ///
@@ -28,36 +30,44 @@ import 'window_service.dart';
 ///
 /// 已知取舍：自绘按钮拿不到 Windows 11 的 Snap Layouts 悬停菜单。
 
-/// 全宽顶条：左/右动作簇 + 拖拽区 + 窗控按钮（最小化/最大化/关闭）。
+/// 全宽顶条：左侧动作簇（可选）+ 拖拽区 + 右侧动作簇 + 窗控按钮。
 ///
-/// [leading]/[trailing] 放动作；[title] 可放应用名。
+/// [trailing] 放右侧动作；[leading] 放左侧动作（2026-10-15 加回「上一步 /
+/// 下一步」历史钮用）；[title] 可放应用名。
 class WindowStrip extends ConsumerStatefulWidget {
   const WindowStrip({
     super.key,
-    this.leading,
     this.title,
-    this.center,
     this.trailing,
+    this.leading,
+    this.leadingEdge,
+    this.leadingInset = 0,
   });
-
-  /// 左侧动作簇（可选扩展位；2026-10-11 起上一步 / 下一步已并入 [center] 居中组、
-  /// 紧挨心流左侧，此处通常留空）。
-  final List<Widget>? leading;
 
   /// 应用名（可选，渲染在拖拽带左端）。
   final String? title;
 
-  /// 拖拽带**正中**的控件（2026-10-11 起承载居中的目的地图标药丸：心流 / 全部 /
-  /// 日历 / 收藏；全局搜索胶囊后续也接进此槽，与导航同段或取代之）。
-  ///
-  /// 实现上它是盖在拖拽带之上的**外层 Stack 兄弟**，不活在 [DragToMoveArea]
-  /// 内：否则双击最大化与拖窗两个手势识别器会和它的点击同处一个竞技场，
-  /// 双击识别器要等 300ms 才认输——胶囊点击被凭空拖慢半拍，测试里则永不触发。
-  final Widget? center;
-
-  /// 右侧动作簇（可选扩展位；2026-10-11 起仅放设置钮，紧贴最小化左侧、与窗控成组；
+  /// 右侧动作簇（可选扩展位；2026-10-12 起仅放设置钮，紧贴最小化左侧、与窗控成组；
   /// 问笔记同日移入 hub 头栏）。窗控按钮由 [_CaptionButtons] 单独渲染。
   final List<Widget>? trailing;
+
+  /// **左侧动作簇**（2026-10-15 新增）：上一步 / 下一步历史钮。与 [trailing]
+  /// 一样逐个过 [chromeActionButton]（统一 32×32 方块 + 条内垂直居中）。
+  ///
+  /// ⚠️ 传的是**多个独立动作**（列表里每个元素各占一枚 32 方块），不要把一个
+  /// Row 塞进来——那会被外层的 32 宽约束压扁。
+  final List<Widget>? leading;
+
+  /// [leading] 左侧的留白：把左簇推到**内容卡左缘**（桌面外壳 = 侧栏宽
+  /// [Tokens.sidebarWidth]；内容卡左缝为 0 ⇒ 直接等于侧栏宽）。这段留白本身
+  /// 仍是拖拽区——侧栏上方的条带要能拖窗口。
+  final double leadingInset;
+
+  /// **最左缘动作**（2026-10-15 新增）：渲染在窗口左缘（x=0）、[leadingInset] 之前的
+  /// **单一**动作——现放「折叠 / 展开左侧导航」钮。与 [leading] / [trailing] 一样过
+  /// [chromeActionButton]（32×32 方块）。侧栏折叠后 home 把 [leadingInset] 归 0，此钮
+  /// 仍钉在最左缘，是展开回来的唯一入口。
+  final Widget? leadingEdge;
 
   @override
   ConsumerState<WindowStrip> createState() => _WindowStripState();
@@ -114,12 +124,25 @@ class _WindowStripState extends ConsumerState<WindowStrip> with WindowListener {
         data: IconThemeData(color: onChrome),
         child: Stack(
           children: <Widget>[
-            // 底层：动作区 + 拖拽带 + 窗控。
+            // 底层：左簇（含侧栏宽留白）+ 拖拽带 + 右簇 + 窗控。
             Row(
               children: <Widget>[
-                ...?widget.leading?.map(
-                  (Widget action) => chromeActionButton(context, action),
-                ),
+                // 最左缘：折叠 / 展开侧栏钮（x=0，独立于 [leading] 的左簇）。
+                if (widget.leadingEdge != null)
+                  chromeActionButton(context, widget.leadingEdge!),
+                // 左簇：先让出侧栏宽度的拖拽区（左簇从此开始 ⇒ 与内容卡左缘
+                // 对齐），再过 chromeActionButton 统一主题。
+                if (widget.leading != null) ...<Widget>[
+                  SizedBox(
+                    width: widget.leadingInset,
+                    child: const DragToMoveArea(
+                      child: SizedBox.expand(),
+                    ),
+                  ),
+                  ...widget.leading!.map(
+                    (Widget action) => chromeActionButton(context, action),
+                  ),
+                ],
                 // 顶边的缩放手柄**不在这里**：由 `main.dart` 的 builder 层统一盖
                 // 一层 `DragToResizeArea`（含两个顶角、一处管全窗口，见那里的
                 // 说明）。这里只负责"拖动窗口"：[DragToMoveArea] + 双击最大化。
@@ -155,11 +178,6 @@ class _WindowStripState extends ConsumerState<WindowStrip> with WindowListener {
                 const _CaptionButtons(),
               ],
             ),
-            // 正中控件（全局搜索胶囊）：盖在拖拽带**之上**的兄弟层，不进
-            // DragToMoveArea 的手势竞技场（见 [center] 字段注释）。Center 自身
-            // 不吃事件，胶囊之外的点击照常落到底层拖拽带。
-            if (widget.center != null)
-              Positioned.fill(child: Center(child: widget.center)),
           ],
         ),
       ),
@@ -249,10 +267,9 @@ class _CaptionButtonsState extends State<_CaptionButtons> with WindowListener {
   }
 }
 
-/// Chrome 内 IconButton 的统一主题包裹：全局 iconButtonTheme 的最小
-/// 尺寸是 40×40，直接放进 44 高的顶条会贴满全高——收成 [Tokens.chromeButtonSize]
-/// （32）固定方块，与居中目的地图标药丸同大（2026-10-11 用户定悬浮背景齐平），
-/// 在条内垂直居中（上下各 6 呼吸）。
+/// 标题栏内 IconButton 的统一主题包裹：全局 iconButtonTheme 的最小尺寸是 40×40，
+/// 直接放进 [Tokens.titleBarHeightMain] 顶条会贴满全高——收成 [Tokens.chromeButtonSize]
+/// （32）固定方块，在条内垂直居中（与条同高）。现仅服务 `trailing` 的设置钮。
 Widget chromeActionButton(BuildContext context, Widget action) {
   final ThemeData theme = Theme.of(context);
   return Theme(

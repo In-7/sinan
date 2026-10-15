@@ -50,6 +50,7 @@ dependencies:
   # 外引单枚图标用：官方 tabler 包里个别字形不好看时，从其他图标集
   # （Lucide 等，SVG 资产放 assets/icons/custom/）引进。见 app_custom_icons.dart。
   flutter_svg: ^2.0.0
+  flutter_staggered_grid_view: ^0.7.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

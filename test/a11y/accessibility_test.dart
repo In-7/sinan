@@ -124,28 +124,12 @@ void main() {
         dataDir: tempDir.path,
         brightness: b,
         background: AppTheme.windowBackground(b),
-        // 照 `HomeScreen` 的真实形态复刻：三个动作按钮 + 菜单，全部走
-        // `IconButton(tooltip:)`（**不要**在外层包 Tooltip，见 a11y 文档）。
+        // 照 `HomeScreen` 的真实形态复刻：标题栏仅 `trailing` 的设置钮（导航已
+        // 搬到工作区左侧 [HomeSidebar]），全部走 `IconButton(tooltip:)`，
+        // **不要**在外层包 Tooltip（见 a11y 文档）。
         child: Column(
           children: <Widget>[
             WindowStrip(
-              leading: <Widget>[
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: '新建笔记',
-                  onPressed: () {},
-                ),
-                IconButton(
-                  icon: const Icon(Icons.search),
-                  tooltip: '搜索（开发中）',
-                  onPressed: () {},
-                ),
-                IconButton(
-                  icon: const Icon(Icons.crop_square),
-                  tooltip: '新建画布',
-                  onPressed: () {},
-                ),
-              ],
               trailing: <Widget>[
                 IconButton(
                   icon: const Icon(Icons.menu),

@@ -152,9 +152,65 @@ final aiPanelOpenProvider = NotifierProvider<AiPanelNotifier, bool>(
   AiPanelNotifier.new,
 );
 
+/// 左侧扁平导航 [HomeSidebar] 的折叠态（2026-10-15 用户定：标题栏最左加折叠钮，
+/// 可把侧栏完全收起）。默认展开（`false`）。
+///
+/// 标题栏折叠钮与 [HomeScreen] 的工作区 Row 都读这一个布尔——单一真相源（同
+/// [aiPanelOpenProvider] 口径）。暂不持久化，重启回展开态。
+class HomeSidebarCollapsedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
+final homeSidebarCollapsedProvider =
+    NotifierProvider<HomeSidebarCollapsedNotifier, bool>(
+      HomeSidebarCollapsedNotifier.new,
+    );
+
 /// 笔记列表（含增删改后自动刷新）。
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,
+);
+
+/// **心流收件箱**（2026-10-16 用户定：独立于笔记的单向捕获流）。
+///
+/// 与 [notesProvider] 的关键差别：心流**不读笔记数据**——它只经
+/// [NoteStore] 的 stream 方法读写自己那个隐藏容器（kind=`stream`），
+/// 文库 / 搜索 / 日历都看不到它。条目只能**单向流出**（引用 / 注入 / 转新
+/// 笔记），由 UI 层 `stream_export.dart` 驱动。
+class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
+  NoteStore get _store => ref.read(noteStoreProvider);
+
+  @override
+  Future<List<StreamItem>> build() async => _store.listStreamItems();
+
+  /// 录入一条（输入框回车 ⇒ 直接落库）。
+  Future<void> add(String text) async {
+    await future;
+    _store.addStreamItem(text);
+    state = AsyncData(_store.listStreamItems());
+  }
+
+  /// 改一条（卡片就地展开编辑）。⚠️ 不能叫 `update`——那与 Riverpod
+  /// `Notifier.update`（改 state 的内建方法）撞名。
+  Future<void> edit(String id, String text) async {
+    await future;
+    _store.updateStreamItem(id, text);
+    state = AsyncData(_store.listStreamItems());
+  }
+
+  /// 删一条。
+  Future<void> remove(String id) async {
+    await future;
+    _store.deleteStreamItem(id);
+    state = AsyncData(_store.listStreamItems());
+  }
+}
+
+final streamProvider = AsyncNotifierProvider<StreamNotifier, List<StreamItem>>(
+  StreamNotifier.new,
 );
 
 /// 应用数据根目录（`getApplicationSupportDirectory()` 的结果）。

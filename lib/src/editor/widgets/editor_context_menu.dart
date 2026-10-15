@@ -125,7 +125,7 @@ class _ContextMenuRowState extends State<_ContextMenuRow> {
     final bool enabled = widget.onPressed != null;
     final Color foreground = enabled
         ? scheme.onSurface
-        : scheme.onSurfaceVariant.withValues(alpha: 0.38);
+        : AppTheme.disabledInk(scheme.onSurfaceVariant);
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
@@ -166,7 +166,7 @@ class _ContextMenuRowState extends State<_ContextMenuRow> {
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: enabled
                       ? scheme.onSurfaceVariant
-                      : scheme.onSurfaceVariant.withValues(alpha: 0.38),
+                      : AppTheme.disabledInk(scheme.onSurfaceVariant),
                 ),
               ),
             ],

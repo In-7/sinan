@@ -118,7 +118,7 @@ enum NoteKindFacet {
   /// 该形态是否收下这篇（文档类 = 非画布）。
   bool matches(NoteKind kind) => switch (this) {
     NoteKindFacet.all => true,
-    NoteKindFacet.docs => kind != NoteKind.canvas,
+    NoteKindFacet.docs => kind != NoteKind.canvas && kind != NoteKind.stream,
     NoteKindFacet.canvas => kind == NoteKind.canvas,
   };
 }
@@ -289,8 +289,9 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// ## 三条结构事实
 /// 1. **顶栏**：只剩一枚靠右的漏斗钮 [_FilterMenuButton]（形态 / 排序 / 标签合住）。
 ///    视图切换 + 新建胶囊 2026-10-12 移到工作区**左侧扁平导航** [HomeSidebar]（无面板、
-///    贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步的 UI 入口已撤（功能在全局键
-///    `Alt+←/→`）。常驻捕获输入框（OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"）。
+///    贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步 2026-10-15 加回**标题栏左簇**
+///    （左缘与内容卡对齐，功能与全局键 `Alt+←/→` 同走命令层）。常驻捕获输入框
+///    （OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
 ///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
@@ -337,10 +338,9 @@ class _HomeHubState extends ConsumerState<HomeHub> {
         const Padding(
           padding: EdgeInsets.fromLTRB(
             Tokens.spaceLg,
-            // 顶部对齐编辑器顶栏「耳朵」按钮带（标签所在那排，见
-            // note_editor_view_appflowy 的 _kHeaderActionTopPadding +
-            // Tokens.headerActionSize）：32 高的钮取 top 4 ⇒ 中心 20 = 耳朵中心 20。
-            Tokens.spaceXs,
+            // 顶部带中心线（Tokens.headerBandCenter = 20）：32 高的钮取
+            // top = 20 − 16 = 4，与编辑器耳朵（top 5、高 30）同中心线。
+            Tokens.headerBandCenter - Tokens.toolbarButtonSize / 2,
             // 右内缩让开工作区右角的 AI 折叠钮（_RightRailToggleButton，占据右起
             // spaceXs + toolbarButtonSize = 36px），再留 spaceSm 间隙——否则两者重叠
             // （2026-10-11 用户修）。
@@ -590,7 +590,7 @@ class _SearchResultBar extends StatelessWidget {
           Text(
             searching ? '正在搜索…' : '$count 条结果',
             style: theme.textTheme.labelMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
+              color: Bauhaus.inkMuted(scheme.brightness),
             ),
           ),
           const Spacer(),
@@ -598,7 +598,7 @@ class _SearchResultBar extends StatelessWidget {
             Text(
               '关键词检索',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+                color: Bauhaus.inkMuted(scheme.brightness).withValues(alpha: 0.65),
               ),
             ),
         ],
@@ -756,7 +756,7 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
     child: Text(
       text,
       style: Theme.of(context).textTheme.labelSmall
-          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ?.copyWith(color: Bauhaus.inkMuted(Theme.of(context).colorScheme.brightness)),
     ),
   );
 
@@ -786,7 +786,7 @@ class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
           strokeWidth: Tokens.iconStroke,
           colorFilter: active
               ? ui.ColorFilter.mode(
-                  theme.colorScheme.primary,
+                  Bauhaus.blue(theme.colorScheme.brightness),
                   ui.BlendMode.srcIn,
                 )
               : null,
@@ -857,8 +857,7 @@ class _CardsGrid extends StatelessWidget {
         // 248 见方偏高、纵向信息密度低；244×203 与最小窗 216×180 都仍高于
         // 卡内容下限（标题+4 行摘要+底行 ≈145），摘要行数不变，空白变少。
         childAspectRatio: 1.2,
-        // 间距 20px（2026-10-01 用户定，试 macOS 20pt 边距档）：卡更大、
-        // 缝更宽，整墙透气。值收编为 [Tokens.cardGridSpacing]。
+        // 间距收编为 [Tokens.cardGridSpacing]（8pt 网格化后 = 24）。
         crossAxisSpacing: Tokens.cardGridSpacing,
         mainAxisSpacing: Tokens.cardGridSpacing,
       ),
@@ -953,8 +952,14 @@ class _NoteCardState extends State<_NoteCard> {
       focusNode: _focus,
       borderRadius: radius,
       child: Material(
-        // 包豪斯扁平卡：白面 + 1.5px 墨硬边；hover = 边转蓝（一眼可见，不靠投影）。
-        color: Bauhaus.surface(brightness),
+        // 包豪斯扁平卡：白面 + 1.5px 墨硬边；hover = 墨 6% 浅覆（单色——唯一蓝只给
+        // 「新建」胶囊描边，卡片不再用蓝）。
+        color: _hover
+            ? Color.alphaBlend(
+                Bauhaus.hover(brightness),
+                Bauhaus.surface(brightness),
+              )
+            : Bauhaus.surface(brightness),
         borderRadius: radius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -968,9 +973,7 @@ class _NoteCardState extends State<_NoteCard> {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: radius,
-              border: _hover
-                  ? Border.all(color: Bauhaus.blue(brightness), width: 1.5)
-                  : Bauhaus.cardBorder(brightness),
+              border: Bauhaus.cardBorder(brightness),
             ),
             padding: const EdgeInsets.all(Tokens.spaceMd),
             child: Column(
@@ -1014,10 +1017,10 @@ class _NoteCardState extends State<_NoteCard> {
                             query: highlight,
                             base:
                                 theme.textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
+                                  color: Bauhaus.inkMuted(scheme.brightness),
                                 ) ??
                                 const TextStyle(),
-                            matchColor: scheme.primary,
+                            matchColor: Bauhaus.blue(scheme.brightness),
                             maxLines: 3,
                           )
                         : borrowedTitle
@@ -1025,7 +1028,7 @@ class _NoteCardState extends State<_NoteCard> {
                         : Text(
                             '（空白）',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: scheme.onSurfaceVariant.withValues(
+                              color: Bauhaus.inkMuted(scheme.brightness).withValues(
                                 alpha: 0.6,
                               ),
                               fontStyle: FontStyle.italic,
@@ -1065,11 +1068,11 @@ class _NoteCardState extends State<_NoteCard> {
             query: highlight,
             base:
                 theme.textTheme.titleSmall?.copyWith(
-                  color: scheme.onSurface,
+                  color: Bauhaus.ink(scheme.brightness),
                   fontWeight: FontWeight.w600,
                 ) ??
                 const TextStyle(),
-            matchColor: scheme.primary,
+            matchColor: Bauhaus.blue(scheme.brightness),
             maxLines: 1,
           ),
         ),
@@ -1086,7 +1089,7 @@ class _NoteCardState extends State<_NoteCard> {
                 width: Tokens.iconSm,
                 strokeWidth: Tokens.iconStroke,
                 colorFilter: ui.ColorFilter.mode(
-                  scheme.onSurfaceVariant,
+                  Bauhaus.inkMuted(scheme.brightness),
                   ui.BlendMode.srcIn,
                 ),
               ),
@@ -1121,7 +1124,7 @@ class _NoteCardState extends State<_NoteCard> {
         Text(
           relativeTime(n.revisedAt),
           style: theme.textTheme.labelSmall?.copyWith(
-            color: scheme.onSurfaceVariant,
+            color: Bauhaus.inkMuted(scheme.brightness),
           ),
         ),
       ],
@@ -1157,7 +1160,7 @@ class _CanvasThumbnail extends ConsumerWidget {
         width: Tokens.iconXl,
         strokeWidth: Tokens.iconStroke,
         colorFilter: ui.ColorFilter.mode(
-          scheme.onSurfaceVariant.withValues(alpha: 0.28),
+          Bauhaus.inkMuted(scheme.brightness).withValues(alpha: 0.28),
           ui.BlendMode.srcIn,
         ),
       ),
@@ -1219,7 +1222,7 @@ class _CardTag extends StatelessWidget {
       child: Text(
         label,
         style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+          color: Bauhaus.inkMuted(theme.colorScheme.brightness),
         ),
       ),
     );
@@ -1262,7 +1265,7 @@ class _EmptyView extends ConsumerWidget {
       child: Text(
         text,
         style: theme.textTheme.bodyMedium?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
+          color: Bauhaus.inkMuted(theme.colorScheme.brightness),
         ),
       ),
     );
@@ -1505,7 +1508,7 @@ class _CalendarView extends StatelessWidget {
                           child: Text(
                             s,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
+                              color: Bauhaus.inkMuted(scheme.brightness),
                             ),
                           ),
                         ),
@@ -1566,7 +1569,7 @@ class _CalendarView extends StatelessWidget {
                     child: Text(
                       '${selected.day}',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurface,
+                        color: Bauhaus.ink(scheme.brightness),
                       ),
                     ),
                   ),
@@ -1580,13 +1583,13 @@ class _CalendarView extends StatelessWidget {
                       TextSpan(
                         text: '${selected.month} 月',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurface,
+                          color: Bauhaus.ink(scheme.brightness),
                         ),
                       ),
                       TextSpan(
                         text: '  ·  新建 ${dayNotes.length} 篇',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                          color: Bauhaus.inkMuted(scheme.brightness),
                         ),
                       ),
                     ],
@@ -1600,7 +1603,7 @@ class _CalendarView extends StatelessWidget {
             Text(
               '这天没有新建笔记',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+                color: Bauhaus.inkMuted(scheme.brightness),
               ),
             )
           else
@@ -1637,7 +1640,7 @@ class _CalendarView extends StatelessWidget {
           child: Text(
             '${month.year} 年 ${month.month} 月',
             style: theme.textTheme.titleLarge?.copyWith(
-              color: scheme.onSurface,
+              color: Bauhaus.ink(scheme.brightness),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -1654,7 +1657,7 @@ class _CalendarView extends StatelessWidget {
             width: Tokens.iconSm,
             strokeWidth: Tokens.iconStroke,
             colorFilter: ui.ColorFilter.mode(
-              scheme.onSurfaceVariant,
+              Bauhaus.inkMuted(scheme.brightness),
               ui.BlendMode.srcIn,
             ),
           ),
@@ -1668,7 +1671,7 @@ class _CalendarView extends StatelessWidget {
             width: Tokens.iconSm,
             strokeWidth: Tokens.iconStroke,
             colorFilter: ui.ColorFilter.mode(
-              scheme.onSurfaceVariant,
+              Bauhaus.inkMuted(scheme.brightness),
               ui.BlendMode.srcIn,
             ),
           ),
@@ -1739,7 +1742,7 @@ class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
                       width: Tokens.iconSm,
                       strokeWidth: Tokens.iconStroke,
                       colorFilter: ui.ColorFilter.mode(
-                        scheme.onSurfaceVariant,
+                        Bauhaus.inkMuted(scheme.brightness),
                         ui.BlendMode.srcIn,
                       ),
                     ),
@@ -1747,14 +1750,14 @@ class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
                     Text(
                       '写日记',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurface,
+                        color: Bauhaus.ink(scheme.brightness),
                       ),
                     ),
                     const Spacer(),
                     Text(
                       '${widget.day.month} 月 ${widget.day.day} 日 · 周${weekdays[widget.day.weekday - 1]}',
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                        color: Bauhaus.inkMuted(scheme.brightness),
                       ),
                     ),
                   ],
@@ -1810,8 +1813,8 @@ class _CalCellState extends State<_CalCell> {
         ? AppTheme.hoverOverlay(theme.brightness)
         : null;
     final Color textColor = dim
-        ? scheme.onSurface.withValues(alpha: 0.3)
-        : scheme.onSurfaceVariant;
+        ? Bauhaus.ink(scheme.brightness).withValues(alpha: 0.3)
+        : Bauhaus.inkMuted(scheme.brightness);
 
     return MouseRegion(
       cursor: widget.onTap != null
@@ -1847,7 +1850,7 @@ class _CalCellState extends State<_CalCell> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: scheme.onSurfaceVariant),
+                        border: Border.all(color: Bauhaus.inkMuted(scheme.brightness)),
                       ),
                     ),
                   ),
@@ -1857,7 +1860,7 @@ class _CalCellState extends State<_CalCell> {
                     Text(
                       '${widget.date.day}',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.isSelected ? scheme.onSurface : textColor,
+                        color: widget.isSelected ? Bauhaus.ink(scheme.brightness) : textColor,
                         fontWeight: widget.isSelected ? FontWeight.w600 : null,
                       ),
                     ),
@@ -1992,7 +1995,7 @@ class _CalGhostButtonState extends State<_CalGhostButton> {
             child: Text(
               widget.label,
               style: theme.textTheme.labelSmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+                color: Bauhaus.inkMuted(scheme.brightness),
               ),
             ),
           ),

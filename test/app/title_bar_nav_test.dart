@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,7 +116,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('标题栏无导航：目的地/时间轴都不在条内，条只剩拖拽区+设置+窗控', (
+  testWidgets('标题栏无目的地导航：目的地不在条内；历史钮在条内左端且与内容卡对齐', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
@@ -129,8 +130,31 @@ void main() {
         reason: '$label 是左侧 HomeSidebar 的纯文字导航（无 tooltip），标题栏不该再有',
       );
     }
-    expect(find.byTooltip('上一步'), findsNothing, reason: '时间轴 UI 入口已撤（功能在 Alt+←/→）');
-    expect(find.byTooltip('下一步'), findsNothing, reason: '时间轴 UI 入口已撤（功能在 Alt+←/→）');
+    // 上一步 / 下一步：2026-10-15 用户定**加回标题栏左端**（左缘由
+    // leadingInset = 侧栏宽 ⇒ 与内容卡左缘对齐）；栈空时置灰（不进 Tab 链）。
+    expect(
+      find.byTooltip('上一步（Alt+←）'),
+      findsOneWidget,
+      reason: '上一步钮在标题栏左簇',
+    );
+    expect(
+      find.byTooltip('下一步（Alt+→）'),
+      findsOneWidget,
+      reason: '下一步钮在标题栏左簇',
+    );
+    // 左缘与内容卡左缘严格对齐（内容卡左缝为 0 ⇒ 就是侧栏宽）。
+    final Rect backRect = tester.getRect(find.byTooltip('上一步（Alt+←）'));
+    expect(
+      backRect.left,
+      closeTo(Tokens.sidebarWidth, 0.5),
+      reason: '左簇与内容卡左缘对齐（侧栏宽）',
+    );
+    // 条内垂直居中（条高 32 ⇒ 中心 16）。
+    expect(
+      backRect.center.dy,
+      closeTo(Tokens.titleBarHeightMain / 2, 0.5),
+      reason: '左簇在条内垂直居中',
+    );
     // 视图导航 + 新建胶囊在工作区左侧扁平导航（HomeSidebar）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     expect(find.byType(HomeHub), findsOneWidget, reason: '主页态渲染 HomeHub');
@@ -141,14 +165,15 @@ void main() {
         reason: 'HomeSidebar 必须有视图导航：$label',
       );
     }
-    expect(find.text('新建'), findsOneWidget, reason: '新建胶囊在 HomeSidebar');
+    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
+        reason: '新建胶囊（图标模式）在 HomeSidebar');
 
     // 顶条几何：全宽贴顶，高 44（拖拽区铺满，故仍通栏）。
     final Rect strip = tester.getRect(find.byType(WindowStrip));
     expect(strip.top, closeTo(0, 0.5));
     expect(strip.left, closeTo(0, 0.5));
     expect(strip.right, closeTo(1200, 0.5));
-    expect(strip.height, closeTo(44, 0.5));
+    expect(strip.height, closeTo(32, 0.5));
 
     // 右簇：设置钮紧挨「最小化」左侧（与窗控成组）。
     final Rect minRect = tester.getRect(find.byTooltip('最小化'));
@@ -162,7 +187,7 @@ void main() {
     // 问笔记是工作区**右角折叠钮**（不在条内）：钉内容卡内缘 4px、y 与编辑页
     // 顶栏「标签」耳按钮同高（中心 20）。
     final Rect aiRect = tester.getRect(find.byTooltip('问笔记（Ctrl+J）'));
-    expect(aiRect.top, greaterThan(44), reason: '问笔记钮不在 44 顶条内');
+    expect(aiRect.top, greaterThan(32), reason: '问笔记钮不在 32 顶条内');
     expect(
       aiRect.right,
       closeTo(1200 - Tokens.appPanelInset - Tokens.spaceXs, 0.5),
@@ -170,7 +195,10 @@ void main() {
     );
     expect(
       aiRect.top + aiRect.height / 2,
-      closeTo(44 + 20, 1),
+      // 面板顶部 = 顶条 32 + 顶缝（[AppTheme.surfaceRingRetreat]，2026-10-15
+      // 起 1；以前是 spaceXxs=2）⇒ 中心 = 其下 20。
+      // ⚠️ 必须**从常量推**：写成字面量的话，调顶缝这条几何断言会悄悄漂。
+      closeTo(32 + AppTheme.surfaceRingRetreat + 20, 1),
       reason: '右角钮与编辑页顶栏「标签」耳按钮同高（内容区顶部下 20）',
     );
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
@@ -198,7 +226,8 @@ void main() {
       reason: '导航是含图标的行',
     );
     // 新建胶囊也在 HomeSidebar 常驻。
-    expect(find.text('新建'), findsOneWidget, reason: '新建胶囊在 HomeSidebar');
+    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
+        reason: '新建胶囊（图标模式）在 HomeSidebar');
 
     // 默认视图 = 心流。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
@@ -210,7 +239,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(HomeHub), findsNothing, reason: '编辑器态不渲染 HomeHub');
     expect(find.byType(HomeSidebar), findsOneWidget, reason: '侧栏两态常驻');
-    expect(find.text('新建'), findsOneWidget, reason: '新建胶囊编辑器态仍可见');
+    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
+        reason: '新建胶囊（图标模式）编辑器态仍可见');
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(HomeSidebar), matching: find.text(label)),
@@ -223,7 +253,7 @@ void main() {
     final Rect stripInEditor = tester.getRect(find.byType(WindowStrip));
     expect(stripInEditor.left, closeTo(0, 0.5));
     expect(stripInEditor.right, closeTo(1200, 0.5));
-    expect(stripInEditor.height, closeTo(44, 0.5));
+    expect(stripInEditor.height, closeTo(32, 0.5));
     expect(find.byTooltip('心流'), findsNothing, reason: '标题栏不放导航');
   });
 
@@ -301,10 +331,10 @@ void main() {
 
     final int before = container.read(notesProvider).value?.length ?? 0;
 
-    // 胶囊默认**收起**（只显示「新建 ▾」），两半在悬停/键盘聚焦「新建」后才出现。
+    // 胶囊默认**收起**（只显示图标），两半在悬停/键盘聚焦触发钮后才出现。
     // 点「新建」枢纽 = 聚焦即展开，且**不创建**任何东西（用户 2026-10-12 定
     // "主按钮不可点"）。先以此触发展开，同时验证它不创建。
-    await tester.tap(find.text('新建'));
+    await tester.tap(find.byKey(const Key('new-note-trigger')));
     await tester.pumpAndSettle();
     expect(
       container.read(notesProvider).value?.length ?? before,
@@ -317,9 +347,9 @@ void main() {
     // 没有 SegmentedButton，两半各自是一个按钮。
     expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget);
     expect(find.byTooltip('新建画布（Ctrl+Shift+N）'), findsOneWidget);
-    // 「新建」标签常驻可见（动词不靠 hover 才知道）——2026-10-12 用户定：标签放
-    // 左侧、不可点、无「＋」前缀。
-    expect(find.text('新建'), findsOneWidget);
+    // 触发钮常驻可见（图标模式，2026-10-15 坐品牌行右端）⇒ 用其 Key 定位；
+    // 文字标签改为 Tooltip '新建'（屏幕不显示，a11y 仍可读）。
+    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget);
     expect(
       find.byType(SegmentedButton<Object>),
       findsNothing,
@@ -335,8 +365,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNotNull, reason: '新建后立刻选中');
 
-    // HomeSidebar 两态常驻 ⇒ 建完笔记落到编辑器，胶囊仍在侧栏且仍展开 ⇒ 直接
-    // 再点「画布」建的是画布（不用回主页）。
+    // 用掉后胶囊**主动收起**（两枚钮卸载、焦点环残留一并清掉）⇒ 画布钮已不在
+    //（BUG 回归：以前会留在展开态 + 无障碍选中态）。
+    expect(
+      find.byTooltip('新建画布（Ctrl+Shift+N）'),
+      findsNothing,
+      reason: '用完即收：不再留在展开态、也不留焦点环',
+    );
+
+    // HomeSidebar 两态常驻 ⇒ 重新点「新建」展开，再点「画布」建的是画布（不用回主页）。
+    await tester.tap(find.byKey(const Key('new-note-trigger')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新建画布（Ctrl+Shift+N）'));
     await tester.pumpAndSettle();
     final String? id = container.read(selectedNoteIdProvider);
@@ -346,6 +385,39 @@ void main() {
         .value!
         .firstWhere((Note n) => n.id == id);
     expect(current.kind, NoteKind.canvas, reason: '走 canvas.new ⇒ 建出来是画布');
+  });
+
+  testWidgets('新建胶囊：点击钉住后，鼠标离开也必须收起（不卡住）', (
+    WidgetTester tester,
+  ) async {
+    await pump(tester);
+
+    final Offset at = tester.getCenter(find.byKey(const Key('new-note-trigger')));
+    final TestGesture gesture = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    // 鼠标按下到「新建」上（同时触发 MouseRegion onEnter ⇒ 悬停展开）。
+    await gesture.down(at);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget, reason: '悬停即展开');
+
+    // 松开 ⇒ 「新建」onTap 切到"钉住展开"态。
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget, reason: '点击后仍展开');
+
+    // 鼠标挪出胶囊 ⇒ **必须收起**（修复前：钉住态不随鼠标离开收起 ⇒ 卡住）。
+    // ⚠️ 收起走 200ms 延迟定时器：pumpAndSettle 在没有帧可跑时**不推进假时钟**，
+    // 定时器永远不响 ⇒ 必须显式 pump 推过 200ms 再 settle。
+    await gesture.moveTo(const Offset(2, 2));
+    await gesture.removePointer();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+    expect(
+      find.byTooltip('新建笔记（Ctrl+N）'),
+      findsNothing,
+      reason: '鼠标离开一律收起，不卡在钉住态',
+    );
   });
 
   testWidgets('标题栏不放搜索入口（主页页内搜索态 / 编辑器 Ctrl+F / 全局 Ctrl+K）', (
@@ -366,5 +438,87 @@ void main() {
     expect(find.byTooltip('快速跳转（Ctrl+K）'), findsNothing);
     expect(find.text('Ctrl+K'), findsNothing);
   });
+
+  // 2026-10-15 面板契约（承接已删的 panelShadow/panelEdge 主题闸门，改在真实
+  // 外壳上钉）：① 底色 = ladder 的 panelFill（画布页同档，切笔记类型不"变色"）；
+  // ② **明暗同规则**——都只叠一条发丝环 [AppTheme.surfaceRing]（外扩 1px 的
+  // shadow spread，不占布局、不被子级盖住）；③ **无柔影**（暗色黑影无对比度，
+  // 立体感由明度阶梯 + 环 + 圆角承担）；④ 不再用 border + foregroundDecoration
+  // 兜底那套。
+  // ⚠️ 明暗**必须分成两条** testWidgets：同一测试体里连 pump 两棵 App 会让
+  // 第一棵的挂起定时器（AI 轨过渡等）在收尾时炸 "!timersPending"。
+  for (final Brightness brightness in Brightness.values) {
+    testWidgets('工作区浮面卡（$brightness）：panelFill 实面 + 只有发丝环 + 无柔影', (
+      WidgetTester tester,
+    ) async {
+      setSurfaceSize(tester, 1200, 900);
+      mockWindowManager(tester);
+      final ProviderContainer c = buildContainer();
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            navigatorKey: appNavigatorKey,
+            theme: brightness == Brightness.light
+                ? AppTheme.light()
+                : AppTheme.dark(),
+            home: const HomeScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final Finder panels = find.byWidgetPredicate((Widget w) {
+        if (w is! DecoratedBox) return false;
+        final Object d = w.decoration;
+        if (d is! BoxDecoration) return false;
+        return d.color == AppTheme.panelFill(brightness) &&
+            d.borderRadius is BorderRadius &&
+            (d.borderRadius as BorderRadius).topLeft.x == 10;
+      });
+      expect(
+        panels,
+        findsWidgets,
+        reason: '$brightness：找不到 panelFill 浮面卡（主卡 / AI 卡）',
+      );
+      for (final Element e in panels.evaluate()) {
+        final DecoratedBox w = e.widget as DecoratedBox;
+        final BoxDecoration d = w.decoration as BoxDecoration;
+        // 明暗**同规则**：都只有一条发丝环（外扩 1px 的 shadow spread），**不含柔影**。
+        // [DecoratedBox] 本就没有 foregroundDecoration 位 ⇒ 收边不可能走 border 兜底，
+        // 只可能是下面这条 boxShadow 环。
+        final List<BoxShadow>? shadows = d.boxShadow;
+        expect(
+          shadows,
+          isNotNull,
+          reason: '$brightness：浮面卡必须有发丝环（明度阶梯 + 环 + 圆角 = 立体）',
+        );
+        expect(
+          shadows!.length,
+          1,
+          reason: '$brightness：只能有一条环，不许混进柔影',
+        );
+        expect(
+          shadows.single.blurRadius,
+          0,
+          reason: '$brightness：亮线必须无模糊（有 blur 就是投影不是线）',
+        );
+        // 四边都画 ⇒ 整圈外扩 1px（spread=1）。⚠️ 前提：每个方向都有"缝"可待
+        // （顶 2px / 左 0 / 右 4 / 底 4）——左侧刻意 0 缝，线落在侧栏那一列
+        // 像素上（用户 2026-10-15 接受）；顶 / 右 / 下都落在缝里。
+        expect(
+          shadows.single.spreadRadius,
+          1,
+          reason: '$brightness：亮线靠 spread 外扩 1px；spread=0 等于没画'
+              '（影子与盒子重合、被盒子自己盖住）',
+        );
+        expect(
+          shadows.single.offset,
+          Offset.zero,
+          reason: '$brightness：整圈等宽 ⇒ 不许有偏移（有偏移就只露两边）',
+        );
+      }
+    });
+  }
 
 }

@@ -273,9 +273,10 @@ class _GlassSheet extends StatelessWidget {
 ///   位移、也不会被不透明滑块盖住（滑块画在标签**之下**）；
 ///
 /// **为什么换掉新拟态**：凹凸感依赖"明度方向"，而暗色下表面阶梯是**翻转**的
-/// （越浮起越亮、没有更深的井可挖）⇒ 明暗两套必然长得不一样（[AppTheme.raisedFill]
-/// 注释记着两次失败尝试）。改纯 [ColorScheme] 驱动后明暗**天然对称**：选中信号
-/// 由有色药丸给出，不再靠明度差。全控件纯色填充 ⇒ 无 saveLayer、无 blur。
+/// （越浮起越亮、没有更深的井可挖）⇒ 明暗两套必然长得不一样（2026-10-12/14
+/// 两次拟态尝试均失败，bevel 装饰已从主题层删除）。改纯 [ColorScheme] 驱动后
+/// 明暗**天然对称**：选中信号由有色药丸给出，不再靠明度差。全控件纯色填充
+/// ⇒ 无 saveLayer、无 blur。
 ///
 /// ⚠️ 切换器**无阴影、无玻璃**（2026-09-29 改 M3 药丸）。
 ///
@@ -472,7 +473,7 @@ class _Segment extends StatelessWidget {
                   // （M3 容器/内容配对），沿用 onSurface 会和药丸底色打架。
                   color: active
                       ? theme.colorScheme.onPrimaryContainer
-                      : theme.colorScheme.onSurfaceVariant,
+                      : Bauhaus.inkMuted(theme.colorScheme.brightness),
                   fontWeight: active ? FontWeight.w600 : null,
                 ),
               ),
@@ -560,13 +561,13 @@ class _NewButtonState extends State<_NewButton> {
         children: <Widget>[
           icon,
           const SizedBox(width: Tokens.spaceSm),
-          Text(label, style: TextStyle(color: scheme.onSurface)),
+          Text(label, style: TextStyle(color: Bauhaus.ink(scheme.brightness))),
           const SizedBox(width: Tokens.spaceMd),
           // 快捷键是**发现入口**（§3.5）：写在行尾，不抢标题。
           Text(
             shortcut,
             style: theme.textTheme.labelSmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+              color: Bauhaus.inkMuted(scheme.brightness),
             ),
           ),
         ],
@@ -612,9 +613,13 @@ class _NewButtonState extends State<_NewButton> {
               // ② 「+」图标居中（中性灰，与空闲段文字同色）。
               Positioned.fill(
                 child: Center(
-                  child: CustomIcons.add(
-                    size: Tokens.iconMdSm,
-                    color: theme.colorScheme.onSurfaceVariant,
+                  child: tabler.Plus(
+                    height: Tokens.iconMdSm,
+                    width: Tokens.iconMdSm,
+                    colorFilter: ui.ColorFilter.mode(
+                      Bauhaus.inkMuted(theme.colorScheme.brightness),
+                      ui.BlendMode.srcIn,
+                    ),
                   ),
                 ),
               ),
@@ -654,7 +659,7 @@ class _SpaceItemList extends ConsumerWidget {
         child: Text(
           isCanvasSpace ? '还没有画布' : '还没有笔记',
           style: theme.textTheme.labelSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
+            color: Bauhaus.inkMuted(theme.colorScheme.brightness),
           ),
         ),
       );
@@ -876,7 +881,7 @@ class SpaceItemRowState extends State<SpaceItemRow> {
     bool danger = false,
   }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color color = danger ? scheme.error : scheme.onSurface;
+    final Color color = danger ? scheme.error : Bauhaus.ink(scheme.brightness);
     return PopupMenuItem<void>(
       onTap: onTap,
       child: Row(
@@ -954,7 +959,7 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                                   width: Tokens.iconXs,
                                   strokeWidth: 1.5,
                                   colorFilter: ui.ColorFilter.mode(
-                                    scheme.onSurfaceVariant,
+                                    Bauhaus.inkMuted(scheme.brightness),
                                     ui.BlendMode.srcIn,
                                   ),
                                 )
@@ -963,7 +968,7 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                                   width: Tokens.iconXs,
                                   strokeWidth: 1.5,
                                   colorFilter: ui.ColorFilter.mode(
-                                    scheme.onSurfaceVariant,
+                                    Bauhaus.inkMuted(scheme.brightness),
                                     ui.BlendMode.srcIn,
                                   ),
                                 ),
@@ -976,7 +981,7 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                             width: Tokens.iconXs,
                             strokeWidth: 1.5,
                             colorFilter: ui.ColorFilter.mode(
-                              scheme.onSurfaceVariant,
+                              Bauhaus.inkMuted(scheme.brightness),
                               ui.BlendMode.srcIn,
                             ),
                           ),
@@ -989,9 +994,9 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                                   controller: _renameController,
                                   focusNode: _renameFocus,
                                   style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: scheme.onSurface,
+                                    color: Bauhaus.ink(scheme.brightness),
                                   ),
-                                  cursorColor: scheme.onSurface,
+                                  cursorColor: Bauhaus.ink(scheme.brightness),
                                   decoration: const InputDecoration(
                                     isDense: true,
                                     border: InputBorder.none,
@@ -1006,8 +1011,8 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                                       : widget.note.title,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: widget.open
-                                        ? scheme.onSurface
-                                        : scheme.onSurfaceVariant,
+                                        ? Bauhaus.ink(scheme.brightness)
+                                        : Bauhaus.inkMuted(scheme.brightness),
                                     fontWeight: widget.open
                                         ? FontWeight.w600
                                         : null,
@@ -1020,7 +1025,7 @@ class SpaceItemRowState extends State<SpaceItemRow> {
                         Text(
                           _relativeTime(widget.note.revisedAt),
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
+                            color: Bauhaus.inkMuted(scheme.brightness),
                           ),
                         ),
                         const SizedBox(width: Tokens.spaceSm),

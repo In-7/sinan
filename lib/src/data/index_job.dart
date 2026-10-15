@@ -191,7 +191,7 @@ class IndexJob {
   /// （2026-09-25 修，与 [_textOf] 同一口径）。
   static const String _pendingFrom =
       'FROM blocks b LEFT JOIN index_state s ON s.block_id = b.id '
-      'WHERE b.note_id IN (SELECT id FROM notes WHERE deleted_at IS NULL) '
+      "WHERE b.note_id IN (SELECT id FROM notes WHERE deleted_at IS NULL AND kind != 'stream') "
       "  AND (json_extract(b.props_json, '\$.delta') IS NOT NULL "
       "       OR COALESCE(json_extract(b.props_json, '$_textPath'), '') <> '') "
       '  AND ($_pendingCondition)';
@@ -244,7 +244,7 @@ class IndexJob {
   void ensureKeywordIndex() {
     final ResultSet rs = db.select(
       'SELECT DISTINCT n.id AS id FROM notes n '
-      "WHERE n.deleted_at IS NULL AND n.kind != 'canvas' "
+      "WHERE n.deleted_at IS NULL AND n.kind != 'canvas' AND n.kind != 'stream' "
       'AND NOT EXISTS (SELECT 1 FROM chunks_fts c WHERE c.note_id = n.id)',
     );
     for (final Row row in rs) {

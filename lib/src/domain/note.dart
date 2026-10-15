@@ -15,18 +15,45 @@ enum NoteKind {
   /// （`docs/data_layer.md` 评审结论 1），Dart 侧 2026-09-16 同步。
   /// 其正文存画布 JSON（`CanvasController.toJson`），与块树互不冲突
   /// ——画布笔记与文档笔记是**两条不同的笔记**。
-  canvas;
+  canvas,
+
+  /// 心流收件箱的**系统容器**（2026-10-16 用户定）：一篇隐藏的特殊笔记，只装心流块，
+  /// 不进文库 / 搜索 / 日历 / 收藏。心流块可被笔记 / 画布**单向**引用或注入
+  /// （见 [NoteStore] 的 stream 方法）；心流本身不读用户笔记内容。
+  stream;
 
   String get name => switch (this) {
     NoteKind.spark => 'spark',
     NoteKind.note => 'note',
     NoteKind.canvas => 'canvas',
+    NoteKind.stream => 'stream',
   };
 
   static NoteKind fromName(String value) => NoteKind.values.firstWhere(
     (NoteKind k) => k.name == value,
     orElse: () => NoteKind.spark,
   );
+}
+
+/// 一条心流（收件箱条目）：[NoteStore] 心流容器的段落块投影（块 id + 文本）。
+///
+/// 心流与笔记**单向**：心流只经 [NoteStore] 的 stream 方法读写自己那个隐藏容器，
+/// 不读用户笔记；条目可被笔记 / 画布**引用或注入**（导出），但不反过来。
+class StreamItem {
+  const StreamItem({
+    required this.id,
+    required this.text,
+    required this.createdAt,
+  });
+
+  /// 底层块 id（引用 / 注入 / 反链都认它）。
+  final String id;
+
+  /// 条目文本。
+  final String text;
+
+  /// 落库时间（卡片 meta 行的相对时间用）。
+  final DateTime createdAt;
 }
 
 /// 一条笔记。

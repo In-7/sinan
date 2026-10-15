@@ -52,7 +52,11 @@ void main() {
 
     AppDatabase.migrateForTesting(db);
 
-    expect(db.userVersion, 13);
+    expect(
+      db.userVersion,
+      greaterThanOrEqualTo(13),
+      reason: 'v13 已跑（其后 v14 给 kind 加了 stream，链式继续）',
+    );
     final ResultSet rows = db.select(
       'SELECT id, plain_text, summary FROM notes ORDER BY id',
     );
@@ -91,7 +95,11 @@ void main() {
       <Object?>['n1'],
     ).single['summary'] as String;
 
-    expect(db.userVersion, 13);
+    expect(
+      db.userVersion,
+      greaterThanOrEqualTo(13),
+      reason: 'v13 已跑（其后 v14 给 kind 加了 stream，链式继续）',
+    );
     expect(second, first);
   });
 }

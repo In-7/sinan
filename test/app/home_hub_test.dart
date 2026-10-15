@@ -147,9 +147,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('默认落心流视图：筛选控件 + 时间流（目的地在左侧导航，捕获条已撤）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('默认落心流视图：输入条在场 + 心流不读笔记（单向收件箱）', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲', '乙'],
@@ -170,31 +168,30 @@ void main() {
     // 上一步 / 下一步在右栏顶条，不在 HomeHub 顶栏里。
     expect(find.byTooltip('上一步'), findsNothing);
     expect(find.byTooltip('下一步'), findsNothing);
-    // 2026-10-09 用户定：常驻捕获输入框撤除（"这个输入方式不好用"），
-    // 新建走 Ctrl+N ⇒ 主页任何位置都不该再有捕获框。
+    // 心流重置（2026-10-16 用户定）：**单向收件箱**——只读自己那个隐藏容器，
+    // 不读笔记数据；顶部输入条常驻，空收件箱给邀请文案。
     expect(find.text('记点什么…'), findsNothing);
     expect(find.text('在上面输入一句话，回车即创建'), findsNothing);
-    // 心流 = 按时间分组的流 ⇒ 有组头（新建的笔记都落在「今天」）。
-    expect(find.text('今天'), findsOneWidget, reason: '心流渲染出时间分组头');
-    expect(find.text('甲'), findsOneWidget);
-    expect(find.text('乙'), findsOneWidget);
-    // （「（空白）」是**卡片网格**的口径 ⇒ 由「全部」视图下的卡片用例覆盖；
-    // 心流的行只有标题 + 元数据，不显示它。）
-    // 键盘可达（§5.2）：2 张卡片接 FocusRing（视图 tab / 新建胶囊在左侧
-    // [HomeSidebar]，不在这棵 HomeHub 树里；筛选器是 IconButton，走自身焦点环）。
-    expect(find.byType(FocusRing), findsNWidgets(2));
+    expect(find.text('今天'), findsNothing, reason: '重置后不再按时间分组');
+    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '顶部悬浮输入条在场');
+    // **单向闸门**：文库里的甲 / 乙（普通笔记）绝不漏进心流——心流不是笔记的镜像，
+    // 条目只能单向流出（引用 / 注入 / 转新）。
+    expect(find.text('甲'), findsNothing, reason: '心流不读笔记数据（单向）');
+    expect(find.text('乙'), findsNothing);
+    expect(find.text('还没有灵感'), findsOneWidget, reason: '空收件箱给邀请');
+    // 空收件箱无卡片 ⇒ 这棵 HomeHub 树里 FocusRing 交互件为 0（输入框不走 FocusRing）。
+    expect(find.byType(FocusRing), findsNothing);
   });
 
-  testWidgets('空库：心流给指路文案（Ctrl+N 新建），无捕获框无 FocusRing 交互件', (
+  testWidgets('空库：心流空态邀请 + 输入框常驻（无卡片、无 FocusRing）', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pumpHub(tester);
-    // 空库心流：只剩指路文案（捕获框 2026-10-09 已撤）。
-    expect(find.text('还没有笔记或画布'), findsOneWidget);
-    expect(find.text('按 Ctrl+N 新建第一篇'), findsOneWidget);
-    expect(find.text('记点什么…'), findsNothing);
-    // 空库无卡片 ⇒ 这棵 HomeHub 树里 FocusRing 交互件为 0（视图 tab / 新建胶囊在
-    // 左侧 [HomeSidebar]；漏斗钮是 IconButton，走自身焦点环，不挂 FocusRing）。
+    // 空库心流（2026-10-15 重置）：轻邀请文案 + 底部输入框仍可写第一条。
+    expect(find.text('还没有灵感'), findsOneWidget);
+    expect(find.text('在上面写下第一条，一句话也算'), findsOneWidget);
+    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '输入框常驻，空库也能写');
+    // 空库无卡片 ⇒ FocusRing 交互件为 0（输入框不走 FocusRing）。
     expect(find.byType(FocusRing), findsNothing);
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
   });
@@ -241,14 +238,15 @@ void main() {
     expect(find.text('（空白）'), findsNothing);
   });
 
-  testWidgets('形态 facet：筛选器里选「画布」只看画布，且不入导航历史', (WidgetTester tester) async {
+  testWidgets('形态 facet：筛选器里选「画布」只看画布（全部视图）', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲'],
       canvasTitles: <String>['乙画布'],
     );
 
-    // 2026-10-05 决策 E：形态是**筛选维度**，入口在顶栏漏斗钮的「形态」段。
+    // 形态是**筛选维度**，在跨形态视图（全部）生效；心流只收 spark、不适用形态 facet。
+    await selectView(tester, container, HomeView.all);
     await tester.tap(find.byTooltip('筛选与排序'));
     await tester.pumpAndSettle();
     await tester.tap(menuItem('画布'));
@@ -257,9 +255,8 @@ void main() {
     expect(container.read(homeKindFacetProvider), NoteKindFacet.canvas);
     expect(find.text('乙画布'), findsOneWidget);
     expect(find.text('甲'), findsNothing, reason: '文档类笔记被形态 facet 滤掉');
-    // 切形态不是"去了一个地方" ⇒ 视图不变、历史栈不动。
-    expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    expect(container.read(navHistoryProvider).canGoBack, isFalse);
+    // 切形态不是"去了一个地方" ⇒ 视图停在本视图。
+    expect(container.read(navHistoryProvider).view, HomeView.all);
   });
 
   testWidgets('「全部」视图：笔记 + 画布跨形态同一池', (WidgetTester tester) async {
@@ -366,6 +363,9 @@ void main() {
       titles: <String>['甲'],
       canvasTitles: <String>['乙画布'],
     );
+
+    // 形态筛选在跨形态视图（全部）生效；心流只收自己的收件箱、不读笔记。
+    await selectView(tester, container, HomeView.all);
 
     // 选形态「笔记」（顶栏漏斗钮的「形态」段，2026-10-05 决策 E）。
     await tester.tap(find.byTooltip('筛选与排序'));
@@ -489,7 +489,10 @@ void main() {
     await selectView(tester, container, HomeView.calendar);
 
     // 点选 15 号回看（任何月份都有 15 号，且不会与相邻月补位重号）。
-    await tester.tap(find.text('15'));
+    // ⚠️ 必须取 `.first`：日历栅格在**篇目卡之上**，而卡片上的日期也渲染成裸日号
+    // ⇒ 当"今天"正好是 15 号（夹具里那篇笔记建于今天）时会出现第二个 "15"
+    // （2026-10-15 实测：`find.text('15')` 撞出 w600 格子 + w400 卡片日期）。
+    await tester.tap(find.text('15').first);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('写日记'));
@@ -553,6 +556,9 @@ void main() {
       tester,
       titles: <String>['甲', '乙'],
     );
+
+    // 标签筛选对**笔记视图**（全部）生效；心流只收自己的收件箱、不读笔记。
+    await selectView(tester, container, HomeView.all);
 
     // createNote 新笔记置顶 ⇒ 按标题找，别按下标猜。
     final Note jia = container
