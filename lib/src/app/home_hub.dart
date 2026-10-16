@@ -41,7 +41,7 @@ import 'stream_view.dart';
 /// （[NoteKindFacet]），不再占用 tab 位，三点溢出菜单随之退役。
 ///
 /// ⚠️ **排序 / 标签 / 形态都不是页面**：它们是全局控件，合住顶栏右侧一枚
-/// 「筛选与排序」漏斗钮（[_FilterMenuButton]：一个菜单、三段——形态 / 排序 /
+/// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、三段——形态 / 排序 /
 /// 标签），对所有视图同时生效。
 /// [HomeView] 的**图标**扩展。
 ///
@@ -287,7 +287,7 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容）。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：只剩一枚靠右的漏斗钮 [_FilterMenuButton]（形态 / 排序 / 标签合住）。
+/// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（形态 / 排序 / 标签合住）。
 ///    视图切换 + 新建胶囊 2026-10-12 移到工作区**左侧扁平导航** [HomeSidebar]（无面板、
 ///    贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步 2026-10-15 加回**标题栏左簇**
 ///    （左缘与内容卡对齐，功能与全局键 `Alt+←/→` 同走命令层）。常驻捕获输入框
@@ -350,7 +350,7 @@ class _HomeHubState extends ConsumerState<HomeHub> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              _FilterMenuButton(),
+              FilterMenuButton(),
             ],
           ),
         ),
@@ -617,14 +617,14 @@ class _SearchResultBar extends StatelessWidget {
 ///
 /// 有**任何**非默认条件生效（排序非默认 / 选中了标签）⇒ 图标披主题色，
 /// 一眼能看到"列表正被筛着"。
-class _FilterMenuButton extends ConsumerStatefulWidget {
-  const _FilterMenuButton();
+class FilterMenuButton extends ConsumerStatefulWidget {
+  const FilterMenuButton({super.key});
 
   @override
-  ConsumerState<_FilterMenuButton> createState() => _FilterMenuButtonState();
+  ConsumerState<FilterMenuButton> createState() => _FilterMenuButtonState();
 }
 
-class _FilterMenuButtonState extends ConsumerState<_FilterMenuButton> {
+class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
   /// 菜单锚点（GlobalKey）：不挂的话 position 落 Offset.zero ⇒ 菜单弹到
   /// 屏幕左上角（全仓统一教训）。
   final GlobalKey _key = GlobalKey();
@@ -1250,7 +1250,7 @@ class _EmptyView extends ConsumerWidget {
     if (hasQuery) {
       text = '没有与「$query」匹配的结果';
     } else if (activeTag != null) {
-      // 标签筛选是**全局控件**（顶栏 [_FilterMenuButton]）⇒ 任何视图都可能因它
+      // 标签筛选是**全局控件**（顶栏 [FilterMenuButton]）⇒ 任何视图都可能因它
       // 而空，先答这一条，再答各视图自己的空态（2026-09-29 定）。
       text = '「$activeTag」标签下还没有内容';
     } else {

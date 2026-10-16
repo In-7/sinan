@@ -12,6 +12,7 @@ import '../command/commands.dart';
 import '../domain/note.dart';
 import 'app_icon_rail.dart';
 import 'home_hub.dart';
+import 'note_list_column.dart';
 import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
@@ -138,8 +139,9 @@ class HomeScreen extends ConsumerWidget {
       final bool railFits =
           MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
       final bool aiInline = aiWanted && railFits;
-      // 左侧扁平导航折叠态：标题栏最左折叠钮与下方工作区 Row 共用这一个布尔。
-      final bool sidebarCollapsed = ref.watch(homeSidebarCollapsedProvider);
+      // 列表列折叠态：标题栏最左折叠钮（Ctrl+B）与卡内列表列共用这一个布尔。2026-10-16
+      // 起改折**卡内 208 列表列**（60 轨常驻不折）。
+      final bool listCollapsed = ref.watch(homeSidebarCollapsedProvider);
 
       // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
       //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
@@ -154,123 +156,136 @@ class HomeScreen extends ConsumerWidget {
         });
       }
 
+      // 主从布局（2026-10-16 Option 2 进卡）：60 轨常驻（唯一平铺窗口底的脊梁，不折叠）；
+      // 轨右边一张浮面卡，卡内两格 = [列表列 ┃ 详情]。列表列可折叠（标题栏最左折叠钮 /
+      // Ctrl+B，走 [homeSidebarCollapsedProvider]）——折叠时编辑器占满卡。日历视图例外：
+      // 隐藏列表、卡整屏显示日历。详情实例只取一次 ⇒ 折叠动画每帧只重排 ClipRect 宽、
+      // 不重建昂贵的编辑器子树（最简性能）。
+      final Brightness brightness = Theme.of(context).brightness;
+      final HomeView view = ref.watch(
+        navHistoryProvider.select((NavHistoryState s) => s.view),
+      );
+      final Widget detail = detailPane();
+      final bool isDark = brightness == Brightness.dark;
+      final Widget cardChild = view == HomeView.calendar
+          ? (selectedId == null ? const HomeHub() : detail)
+          : TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 1.0, end: listCollapsed ? 0.0 : 1.0),
+              duration: Tokens.durationNormal,
+              curve: Curves.easeInOutCubic,
+              builder: (BuildContext context, double t, Widget? _) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // 列表列：宽 noteListWidth×t，本体钉 208（OverflowBox 不塌缩）、ClipRect
+                    // 从右裁；收起按**布尔**移出焦点 / 读屏。
+                    ExcludeFocus(
+                      excluding: listCollapsed,
+                      child: ExcludeSemantics(
+                        excluding: listCollapsed,
+                        child: ClipRect(
+                          child: SizedBox(
+                            width: Tokens.noteListWidth * t,
+                            child: const OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: Tokens.noteListWidth,
+                              maxWidth: Tokens.noteListWidth,
+                              child: NoteListColumn(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // 列表↔详情发丝：贴列表右缘并随 t 淡出（颜色 alpha，不用 Opacity）。
+                    Container(
+                      width: 1,
+                      color: Bauhaus.ink(brightness)
+                          .withValues(alpha: (isDark ? 0.16 : 0.14) * t),
+                    ),
+                    Expanded(child: detail),
+                  ],
+                );
+              },
+            );
+
       return Scaffold(
         backgroundColor: Colors.transparent,
-        // 侧栏折叠动画（2026-10-15 用户定，lean 版）：一个 tween（展开 1 → 收起 0，
-        // [Tokens.durationNormal] + easeInOutCubic）**同源驱动三处**——侧栏可见宽、
-        // 内容卡左缝、标题栏左簇 inset——塌缩全程不跳变。重内容走 `child` 只建一次、
-        // 不随帧重建，每帧仅重排布局。
-        body: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 1.0, end: sidebarCollapsed ? 0.0 : 1.0),
-          duration: Tokens.durationNormal,
-          curve: Curves.easeInOutCubic,
-          child: _FloatingPanel(
-            child: selectedId == null ? const HomeHub() : detailPane(),
-          ),
-          builder: (BuildContext context, double t, Widget? contentPanel) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在工作区
-                // 左侧扁平导航 [HomeSidebar]）；**上一步 / 下一步 2026-10-15 加回
-                // 条内左端**（`leading`，左缘与内容卡对齐）。
-                // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
-                // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
-                // + 窗控按钮。
-                // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
-                WindowStrip(
-                  // 最左缘：折叠 / 展开左侧导航（2026-10-15 用户定）。
-                  leadingEdge: const SidebarCollapseButton(),
-                  leading: _historyNavButtons(context, ref),
-                  // 左簇随内容左缘一起滑：inset = (railWidth − 折叠钮宽) × t。展开态
-                  // t=1 ⇒ 左簇落在 railWidth（内容卡左缘 = 48 轨右缘）；折叠 t=0 ⇒ 回贴
-                  // 折叠钮右缘。与轨宽同源，塌缩全程不跳变。
-                  leadingInset:
-                      (Tokens.railWidth - Tokens.chromeButtonSize) * t,
-                  // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
-                  // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
-                  trailing: const <Widget>[
-                    SettingsNavButton(),
-                    _AskTitleBarButton(),
-                  ],
-                ),
-                // 工作区：浮面卡**右 / 下各 4px 环缝**（顶与左 0——2026-10-15 用户定），
-                // 四角 8px 圆角；AI 打开时主卡 + 8 缝 + AI 卡（右 dock、推开内容）。
-                // 左 dock 面板 2026-10-12 取消，主卡占满全宽。
-                // 问笔记（AI）开合入口 2026-10-16 从工作区右角搬进顶条 `trailing`
-                // （设置右、最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
-                // 单布尔，呈现形态归外壳按宽度选（宽窗常驻右轨 / 窄窗降级浮层）。
-                Expanded(
-                  // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
-                  //
-                  // ⚠️ 焦点顺序必须按**控件树**走：默认的 ReadingOrder 策略按**几何位置**
-                  // 排序 ⇒ 侧栏与内容区会**交错**（实测：心流→全部→日历→卡片乙→收藏→
-                  // 卡片甲），读屏/键盘用户会在导航和内容间乱跳。改成 WidgetOrder 后是
-                  // 侧栏（新建→笔记→画布→四视图）→ 内容区。
-                  child: FocusTraversalGroup(
-                    policy: WidgetOrderTraversalPolicy(),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        // 图标轨可见宽 = railWidth × t；本体保持自然 48、只被 ClipRect 裁
-                        // （OverflowBox 让它不随收缩而压扁）。收起时用 ExcludeFocus /
-                        // ExcludeSemantics 把它带出焦点 / 读屏顺序——裁到 0 宽后键盘不能
-                        // 再 Tab 到看不见的钮（按收起**布尔**排除，不按动画值）。
-                        ExcludeFocus(
-                          excluding: sidebarCollapsed,
-                          child: ExcludeSemantics(
-                            excluding: sidebarCollapsed,
-                            child: ClipRect(
-                              child: SizedBox(
-                                width: Tokens.railWidth * t,
-                                child: const OverflowBox(
-                                  alignment: Alignment.centerLeft,
-                                  minWidth: Tokens.railWidth,
-                                  maxWidth: Tokens.railWidth,
-                                  child: AppIconRail(),
-                                ),
-                              ),
-                            ),
-                          ),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在工作区
+            // 左侧扁平导航 [HomeSidebar]）；**上一步 / 下一步 2026-10-15 加回
+            // 条内左端**（`leading`，左缘与内容卡对齐）。
+            // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
+            // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
+            // + 窗控按钮。
+            // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
+            WindowStrip(
+              // 最左缘：折叠 / 展开**列表列**（2026-10-16 起；60 轨常驻不折）。
+              leadingEdge: const SidebarCollapseButton(),
+              leading: _historyNavButtons(context, ref),
+              // 左簇左缘与内容卡对齐 = 折叠钮 + (railWidth − chromeButtonSize) ⇒ 落在
+              // 60 轨右缘。轨常驻不折叠 ⇒ 此 inset 是常量，不随动画动。
+              leadingInset: Tokens.railWidth - Tokens.chromeButtonSize,
+              // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
+              // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
+              trailing: const <Widget>[
+                SettingsNavButton(),
+                _AskTitleBarButton(),
+              ],
+            ),
+            // 工作区：浮面卡**右 / 下各 4px 环缝**（顶与左 0——2026-10-15 用户定），
+            // 四角 8px 圆角；AI 打开时主卡 + 8 缝 + AI 卡（右 dock、推开内容）。
+            // 左 dock 面板 2026-10-12 取消，主卡占满全宽。
+            // 问笔记（AI）开合入口 2026-10-16 从工作区右角搬进顶条 `trailing`
+            // （设置右、最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
+            // 单布尔，呈现形态归外壳按宽度选（宽窗常驻右轨 / 窄窗降级浮层）。
+            Expanded(
+              // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
+              //
+              // ⚠️ 焦点顺序必须按**控件树**走：默认的 ReadingOrder 策略按**几何位置**
+              // 排序 ⇒ 侧栏与内容区会**交错**（实测：心流→全部→日历→卡片乙→收藏→
+              // 卡片甲），读屏/键盘用户会在导航和内容间乱跳。改成 WidgetOrder 后是
+              // 侧栏（新建→笔记→画布→四视图）→ 内容区。
+              child: FocusTraversalGroup(
+                policy: WidgetOrderTraversalPolicy(),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    // 60 图标轨：常驻脊梁，平铺窗口底，不折叠。
+                    const AppIconRail(),
+                    Expanded(
+                      child: Padding(
+                        // 环缝：**顶 1px / 左 0 / 右 4 / 底 4**（2026-10-15 用户定；
+                        // 顶由 2 降到 1）。顶这道缝给卡的外扩亮线留落脚位——0 会让线
+                        // 压到标题栏最后一行（读作"重叠"，用户实报过），1 正好够。
+                        // 左缝 0：卡左缘贴 60 轨右界，外扩亮线落在轨那一列像素上。
+                        padding: const EdgeInsets.fromLTRB(
+                          0,
+                          AppTheme.surfaceRingRetreat,
+                          Tokens.appPanelInset,
+                          Tokens.appPanelInset,
                         ),
-                        Expanded(
-                          child: Padding(
-                            // 环缝：**顶 1px / 左 0（折叠 4）/ 右 4 / 底 4**（2026-10-15 用户定；
-                            // 顶由 2 降到 1）。顶这道缝是给卡的外扩亮线留的落脚位——
-                            // 0 会让线压到标题栏最后一行（读作"重叠"，用户实报过），
-                            // 1 正好够。取值随人 [AppTheme.surfaceRing] 走：[AppTheme
-                            // .surfaceRingRetreat]。
-                            // 左缝随 t 平滑：展开 0（卡左缘贴侧栏右界，外扩亮线落在侧栏
-                            // 那一列像素上）、收起 [Tokens.appPanelInset](4)（不贴窗缘、四边
-                            // 齐）——与侧栏宽同源，塌缩全程不跳变。
-                            padding: EdgeInsets.fromLTRB(
-                              Tokens.appPanelInset * (1 - t),
-                              AppTheme.surfaceRingRetreat,
-                              Tokens.appPanelInset,
-                              Tokens.appPanelInset,
-                            ),
-                            child: Stack(
+                        child: Stack(
+                          children: <Widget>[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: <Widget>[
-                                Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: <Widget>[
-                                    Expanded(child: contentPanel!),
-                                    _AiRailSlot(open: aiInline),
-                                  ],
+                                Expanded(
+                                  child: _FloatingPanel(child: cardChild),
                                 ),
-
+                                _AiRailSlot(open: aiInline),
                               ],
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -515,7 +530,9 @@ class _EmptyDetail extends StatelessWidget {
 
 /// 浮面卡统一圆角：内面板 **10px**（2026-10-15 用户定；8 → 10，比默认
 /// [Bauhaus.radius] 的 4px 更舒展）；主卡与 AI 卡共用，保证拼缝处半径一致。
-const BorderRadius _kPanelRadius = BorderRadius.all(Radius.circular(Tokens.radiusMd));
+const BorderRadius _kPanelRadius = BorderRadius.all(
+  Radius.circular(Tokens.radiusMd),
+);
 
 /// 工作区的**内嵌浮面卡**（2026-10-14 统一到 surface_ladder 的 panel 档）：
 /// [AppTheme.panelFill] 实色 + 8px 硬角，**无投影 / 无 bevel**；内容用
@@ -633,7 +650,10 @@ class _AskTitleBarButton extends ConsumerWidget {
           borderRadius: BorderRadius.circular(Tokens.radiusButton),
         ),
         minimumSize: const Size.square(Tokens.chromeButtonSize),
-        maximumSize: const Size(Tokens.chromeButtonSize + 8, Tokens.chromeButtonSize),
+        maximumSize: const Size(
+          Tokens.chromeButtonSize + 8,
+          Tokens.chromeButtonSize,
+        ),
         padding: EdgeInsets.zero,
         iconSize: Tokens.iconMd,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -665,9 +685,9 @@ class SettingsNavButton extends ConsumerWidget {
   }
 }
 
-/// 标题栏**最左缘**的「折叠 / 展开左侧导航」钮（2026-10-15 用户定：可把工作区左侧
-/// 扁平导航 [HomeSidebar] 完全收起）。点按切 [homeSidebarCollapsedProvider]——本钮与
-/// [HomeScreen] 的工作区 Row 共用这一个布尔（单一真相源）。
+/// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内 208 列表列；
+/// 60 轨常驻不折）。点按切 [homeSidebarCollapsedProvider]——本钮与 [HomeScreen] 卡内
+/// 列表列共用这一个布尔（单一真相源）。
 ///
 /// 不着色：标题栏 [WindowStrip] 已套 IconTheme(onChrome)，tabler 经 AppIconTheme
 /// 桥接继承（同 [SettingsNavButton]）。
@@ -683,7 +703,7 @@ class SidebarCollapseButton extends ConsumerWidget {
         width: Tokens.iconMdSm,
         strokeWidth: 1.5,
       ),
-      tooltip: collapsed ? '展开侧栏' : '收起侧栏',
+      tooltip: collapsed ? '展开列表' : '收起列表',
       onPressed: () => ref.read(homeSidebarCollapsedProvider.notifier).toggle(),
     );
   }

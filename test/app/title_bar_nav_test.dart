@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/app_icon_rail.dart';
 import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/home_screen.dart';
+import 'package:sinan/src/app/note_list_column.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
@@ -160,7 +161,8 @@ void main() {
     );
     // 视图导航 + 新建胶囊在工作区左侧扁平导航（HomeSidebar）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    expect(find.byType(HomeHub), findsOneWidget, reason: '主页态渲染 HomeHub');
+    expect(find.byType(NoteListColumn), findsOneWidget,
+        reason: '主页态渲染列表列（主从，不再整屏 HomeHub 卡片墙）');
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),

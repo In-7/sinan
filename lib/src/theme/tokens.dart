@@ -148,6 +148,10 @@ class Tokens {
   /// 图标轨内**交互钮**边长（2026-10-16 用户定：36）：搜索 / 新建 / 四视图共用；
   /// 图标仍 [Tokens.iconMd](24)。轨 60 − 左右各 8 呼吸 = 44 内容区，36 钮两侧各余 4。
   static const double railButtonSize = 36;
+  /// 主从布局的**列表列**宽（2026-10-16 Option 2 进卡；2026-10-17 用户定 208→240）：
+  /// 坐在浮面卡左格、右格是详情；可折叠（Ctrl+B / 标题栏折叠钮），折叠时编辑器占满卡。
+  /// 240 下编辑器（默认正文列 800）在窗口 ≥~1116px 时满列、不受影响。
+  static const double noteListWidth = 240;
   /// 主菜单面板宽 = 原 `app_menu._panelWidth`（180；8pt 收编时曾收敛到 176，
   /// 2026-10-14 用户要求撤回到 180）。
   static const double menuPanelWidth = 180;
