@@ -536,7 +536,7 @@ class _EmptyDetail extends StatelessWidget {
 
 /// 浮面卡统一圆角：内面板 **10px**（2026-10-15 用户定；8 → 10，比默认
 /// [Bauhaus.radius] 的 4px 更舒展）；主卡与 AI 卡共用，保证拼缝处半径一致。
-const BorderRadius _kPanelRadius = BorderRadius.all(Radius.circular(10));
+const BorderRadius _kPanelRadius = BorderRadius.all(Radius.circular(Tokens.radiusMd));
 
 /// 工作区的**内嵌浮面卡**（2026-10-14 统一到 surface_ladder 的 panel 档）：
 /// [AppTheme.panelFill] 实色 + 8px 硬角，**无投影 / 无 bevel**；内容用

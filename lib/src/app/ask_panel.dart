@@ -86,6 +86,7 @@ class _AskOverlay extends StatelessWidget {
                 maxHeight: MediaQuery.sizeOf(context).height * 0.8,
               ),
               child: AppFloatSurface(
+                key: const Key('askRailFloatSurface'),
                 width: 560,
                 child: FocusScope(child: _AskModalCard(onClose: onClose)),
               ),

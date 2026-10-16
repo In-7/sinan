@@ -474,7 +474,7 @@ void main() {
         if (d is! BoxDecoration) return false;
         return d.color == AppTheme.panelFill(brightness) &&
             d.borderRadius is BorderRadius &&
-            (d.borderRadius as BorderRadius).topLeft.x == 10;
+            (d.borderRadius as BorderRadius).topLeft.x == Tokens.radiusMd;
       });
       expect(
         panels,

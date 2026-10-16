@@ -208,7 +208,7 @@ class _SparkCardState extends ConsumerState<_SparkCard> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Brightness brightness = theme.brightness;
-    const BorderRadius radius = Bauhaus.radius;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
 
     return MouseRegion(
       onEnter: (_) {
@@ -382,7 +382,8 @@ class _SparkCardState extends ConsumerState<_SparkCard> {
 /// 心流卡，零摩擦。套路同 `AskPanelBody` 的 composer（焦点节点收 Enter / Shift+Enter
 /// 换行 / 空态禁用 / 提交后留焦点），但这里提交 = 录一条心流（[StreamNotifier.add]）。
 ///
-/// 视觉上与无边框的文本卡彻底分开：一条有淡底的圆角输入条（`surfaceContainerHighest`），
+/// 视觉上与无边框的文本卡彻底分开：一条**同色新拟态**输入条——底色与页面同色
+///（`scheme.surface`），只靠柔光（上）/柔暗（下）双影浮出，不染种子色、不做玻璃：
 /// 一眼"能打字"，不再是"又一张卡"。
 class StreamComposer extends ConsumerStatefulWidget {
   const StreamComposer({super.key, required this.onSubmit});
@@ -452,13 +453,34 @@ class _StreamComposerState extends ConsumerState<StreamComposer> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    const BorderRadius radius = Bauhaus.radius;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusLg);
 
+    // 同色新拟态输入框：底色与页面同色（scheme.surface），靠柔光（上）/柔暗（下）
+    // 双影浮出，不染种子色、不做玻璃。零 backdrop、认主题。
+    final Color surface = scheme.surface;
+    final bool isDark = brightness == Brightness.dark;
+    final Color darkShadow = isDark
+        ? Colors.black.withOpacity(0.45)
+        : Colors.black.withOpacity(0.10);
+    final Color lightShadow = isDark
+        ? Colors.white.withOpacity(0.06)
+        : Colors.white.withOpacity(0.9);
     return DecoratedBox(
       decoration: BoxDecoration(
-        // 与无边框文本卡区分：一条有淡底的输入条（无硬边）。
-        color: scheme.surfaceContainerHighest,
+        color: surface,
         borderRadius: radius,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: lightShadow,
+            blurRadius: 6,
+            offset: const Offset(0, -1),
+          ),
+          BoxShadow(
+            color: darkShadow,
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(

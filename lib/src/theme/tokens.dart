@@ -46,14 +46,17 @@ class Tokens {
   static const double contentMaxWidth = 720;
 
   // 圆角
-  // Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：三档跨度收敛为 **6 / 8 / 12**。
-  // 控件档（6）本就与 macOS 同档、未动；改的是"大档过圆"——原 14 让菜单与面板
-  // 比 macOS 的 popover（10–12）更圆。
-  // ⚠️ 浮层族（菜单 / 气泡 / 工具条 / 斜杠菜单 / 面板）**共用 radiusLg**，不按
-  // Apple 的菜单档（6–8）单独分——族内语法一致优先（§2.3）。
-  static const double radiusSm = 6;
-  static const double radiusMd = 8;
-  static const double radiusLg = 12;
+  // 比例分级（2026-10-16 用户定）：圆角随元素尺寸 / 层级走，不再全局一个数。
+  // - 控件档（按钮 / 单行输入 / chip / 列表行 / 焦点环）：**10px**
+  // - 卡片档（笔记卡 / 内面板 / 日历卡）：**12px**
+  // - 浮层+创作条档（菜单 / 对话框 / popover / sheet / 心流 Composer / 新建胶囊浮层）：**16px**
+  // 10 在 32px 小控件上比例最稳；16 落在 iOS sheet / M3 dialog 甜区上沿，浮起更柔。
+  static const double radiusSm = 10;
+  static const double radiusMd = 12;
+  static const double radiusLg = 16;
+
+  /// 按钮圆角：控件档（**10px**），与 [radiusSm] 同值。
+  static const double radiusButton = 10;
 
   /// 全圆（胶囊按钮 / 圆点 / 圆形发送钮）。
   static const double radiusFull = 999;

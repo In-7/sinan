@@ -927,7 +927,7 @@ class _NoteCardState extends State<_NoteCard> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    const BorderRadius radius = Bauhaus.radius;
+    final BorderRadius radius = BorderRadius.circular(Tokens.radiusMd);
     final Note n = widget.note;
     final bool isCanvas = n.kind == NoteKind.canvas;
 
@@ -1216,7 +1216,7 @@ class _CardTag extends StatelessWidget {
         vertical: 1,
       ),
       decoration: BoxDecoration(
-        borderRadius: Bauhaus.radius,
+        borderRadius: BorderRadius.circular(Tokens.radiusMd),
         border: Bauhaus.cardBorder(theme.brightness),
       ),
       child: Text(
@@ -1469,7 +1469,7 @@ class _CalendarView extends StatelessWidget {
     final Widget card = DecoratedBox(
       decoration: BoxDecoration(
         color: panel,
-        borderRadius: Bauhaus.radius,
+        borderRadius: BorderRadius.circular(Tokens.radiusMd),
         border: Bauhaus.hairline(theme.brightness),
       ),
       // 面板上挂同款纸面颗粒（paperNoiseAlpha）：颗粒铺在底色上、内容之下。

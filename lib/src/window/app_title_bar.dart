@@ -276,10 +276,10 @@ Widget chromeActionButton(BuildContext context, Widget action) {
     data: theme.copyWith(
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          // 形状与全局一致（radiusSm 圆角方形）。M3 的 IconButton
-          // 默认是 StadiumBorder 正圆，不显式指定会盖掉全局样式。
+          // 形状与全局一致（radiusButton 圆角方形，与内面板同 10px）。M3 的
+          // IconButton 默认是 StadiumBorder 正圆，不显式指定会盖掉全局样式。
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Tokens.radiusSm),
+            borderRadius: BorderRadius.circular(Tokens.radiusButton),
           ),
           minimumSize: const Size.square(Tokens.chromeButtonSize),
           maximumSize: const Size(

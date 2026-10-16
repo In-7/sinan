@@ -762,8 +762,13 @@ class AppTheme {
   ///
   /// 2026-10-08 起「当前项」选中已全部改走 [selectedPill]（用户拍板全局统一），
   /// 新代码别再拿它当选中底（旧口径的分叉根因）。
-  static Color navSelectedTint(Color onSurface) =>
-      onSurface.withValues(alpha: 0.10);
+  // 暗色需显式传 [brightness] 才走 white@18%：原 onSurface@10% 在暗底太弱，会"盖不过"
+  // hover（white@12%），观感 hover 深、选中轻，与亮色相反（2026-10-16 修）。不传则保持
+  // 旧行为，避免波及其它暗色场景（如开关"开"态）。
+  static Color navSelectedTint(Color onSurface, [Brightness? brightness]) =>
+      brightness == Brightness.dark
+          ? Colors.white.withValues(alpha: 0.18)
+          : onSurface.withValues(alpha: 0.10);
 
   /// 当前主题的**明度序**（`surface_ladder.dart`）：应用里每一块"面"的底色都从它取。
   ///
@@ -1226,6 +1231,10 @@ class AppTheme {
     final RoundedRectangleBorder shapeLg = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(Tokens.radiusLg),
     );
+    // 按钮专用圆角：与内面板同 10px（2026-10-16 用户定），比 radiusSm 更舒展。
+    final RoundedRectangleBorder shapeButton = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(Tokens.radiusButton),
+    );
 
     final ThemeData theme = ThemeData(
       // 主字体 = 打包的霞鹜新晰黑·屏幕阅读版（与编辑器正文同一来源，
@@ -1361,7 +1370,7 @@ class AppTheme {
       // ── 按钮 ───────────────────────────────────────────────
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-          shape: shapeSm,
+          shape: shapeButton,
           // 32 = [Tokens.toolbarButtonSize]（Apple 口径 §9.2：桌面控件比移动端小一档）。
           // 此前是 M3 的 40，与工具栏按钮（32）**同一个"图标按钮"两种尺寸**。
           // ⚠️ 下限仍受 a11y 约束（桌面 24×24，见 `test/a11y`），32 有余量。
@@ -1371,21 +1380,21 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          shape: shapeSm,
+          shape: shapeButton,
           minimumSize: const Size(56, Tokens.toolbarButtonSize),
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          shape: shapeSm,
+          shape: shapeButton,
           minimumSize: const Size(56, Tokens.toolbarButtonSize),
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          shape: shapeSm,
+          shape: shapeButton,
           minimumSize: const Size(56, Tokens.toolbarButtonSize),
           padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceMd),
         ),
@@ -1396,7 +1405,7 @@ class AppTheme {
         focusElevation: 0,
         hoverElevation: 0,
         highlightElevation: 0,
-        shape: shapeLg,
+        shape: shapeButton,
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(
         // 设置项（明暗 / 正文宽度 / 连线端点形状）的分段选择。
@@ -1409,7 +1418,7 @@ class AppTheme {
         // `TextStyle`、表达不了"选中加粗"，所以这里直接给 `ButtonStyle`
         // （`WidgetStateProperty` 才能按态取值）。
         style: ButtonStyle(
-          shape: WidgetStatePropertyAll<OutlinedBorder>(shapeSm),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(shapeButton),
           backgroundColor: WidgetStateProperty.resolveWith<Color?>(
             (Set<WidgetState> states) => states.contains(WidgetState.selected)
                 ? selectedPill(scheme)
@@ -1566,8 +1575,9 @@ class AppTheme {
 class Bauhaus {
   const Bauhaus._();
 
-  /// 4px 硬边圆角（全站统一）。
-  static const BorderRadius radius = BorderRadius.all(Radius.circular(4));
+  /// 控件档圆角（**10px**）——按钮 / 侧栏行 / 焦点环等小控件。卡片与浮层已各自分档
+  /// 走 [Tokens]（卡片 12 / 浮层·创作条 16，2026-10-16 用户定）。
+  static const BorderRadius radius = BorderRadius.all(Radius.circular(10));
 
   // ── 固定调色板（亮）──────────────────────────────────────────
   /// 窗口 / 页面底（2026-10-14 起中性偏微冷，原暖纸 #F3F0EA）。

@@ -279,7 +279,7 @@ class _SidebarItemState extends State<_SidebarItem> {
     // 中性灰补丁贴在彩色窗上每套预设一个样。半透明叠加随底自适应，全 App 一个口径。
     final Color fg = current ? scheme.onSurface : scheme.onSurfaceVariant;
     final Color bg = current
-        ? AppTheme.navSelectedTint(scheme.onSurface)
+        ? AppTheme.navSelectedTint(scheme.onSurface, b)
         : (_hover ? AppTheme.hoverOverlay(b) : Colors.transparent);
     return MouseRegion(
       onEnter: (_) {

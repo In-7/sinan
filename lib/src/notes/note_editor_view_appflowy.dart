@@ -1910,7 +1910,7 @@ class _HistoryButton extends StatelessWidget {
               iconSize: Tokens.iconMdSm,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                borderRadius: BorderRadius.circular(Tokens.radiusButton),
               ),
               // 与三个耳同一套色（见 [_headerActionColor]）；不可用再降一档，
               // "现在按不了"一眼可见。

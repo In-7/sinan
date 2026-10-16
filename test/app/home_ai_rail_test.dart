@@ -9,7 +9,6 @@ import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
-import 'package:sinan/src/theme/app_float_surface.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
@@ -207,18 +206,20 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
       isFalse,
       reason: '浮层显隐不归这个布尔管，降级后必须立刻复位',
     );
+    // 只数「AI 轨自己的浮层」：用 Key 精确命中，避开工作区里那根常驻的 心流
+    // Composer（它也是 AppFloatSurface，会污染全量计数）。
+    final Finder railSurface = find.byKey(const Key('askRailFloatSurface'));
     expect(
-      find.byType(AppFloatSurface),
+      railSurface,
       findsOneWidget,
       reason: '窄窗应弹出居中浮层，而不是把右轨压进窄窗',
     );
-    // 浮层问答体同样打开即聚焦。注意常驻轨此时仍挂在树里（保活）、自带一个
-    // TextField，所以要在 AppFloatSurface 子树内取。
+    // 浮层问答体同样打开即聚焦。常驻轨此时仍挂在树里（保活），要落在浮层子树内。
     expect(
       tester
           .widget<TextField>(
             find.descendant(
-              of: find.byType(AppFloatSurface),
+              of: railSurface,
               matching: find.byType(TextField),
             ),
           )
@@ -237,7 +238,11 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
 
     container.read(aiPanelOpenProvider.notifier).open();
     await tester.pumpAndSettle();
-    expect(find.byType(AppFloatSurface), findsNothing);
+    // 宽窗常驻轨不进浮层；用 Key 精确命中 AI 轨浮层，避开常驻的 心流 Composer。
+    expect(
+      find.byKey(const Key('askRailFloatSurface')),
+      findsNothing,
+    );
 
     // 模拟用户把窗口拖窄到断点以下。
     setSurfaceSize(tester, 900, 700);
@@ -246,7 +251,7 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
 
     expect(container.read(aiPanelOpenProvider), isFalse);
     expect(
-      find.byType(AppFloatSurface),
+      find.byKey(const Key('askRailFloatSurface')),
       findsOneWidget,
       reason: '跨断点要降级；同帧多个 post-frame 回调也不得叠两层浮层',
     );

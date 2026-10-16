@@ -182,8 +182,8 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
         side: const WidgetStatePropertyAll<BorderSide?>(BorderSide.none),
         // **四角全圆角**（2026-10-14 定）：面板现在是浮起的磨砂面，不再与按钮
         // 拼成一条连续轮廓 ⇒ 上缘不必直角，四角统一 [Bauhaus.radius]。
-        shape: const WidgetStatePropertyAll<OutlinedBorder?>(
-          RoundedRectangleBorder(borderRadius: Bauhaus.radius),
+        shape: WidgetStatePropertyAll<OutlinedBorder?>(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tokens.radiusLg)),
         ),
         padding: const WidgetStatePropertyAll<EdgeInsetsGeometry?>(EdgeInsets.zero),
         // ⚠️ MenuStyle.alignment 是**浮层相对锚点的定位对齐**（不是内容对齐）：
@@ -239,8 +239,8 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
             // 底色走 [Bauhaus.tooltipSurface]（= Tooltip 默认，令牌层定义）——
             // 让面板与搜索钮的 Tooltip 同色系（2026-10-15 用户定"面板改 tooltip 色"）。
             color: Bauhaus.tooltipSurface(b),
-            // 四角全圆角（与 MenuStyle.shape 同值）。
-            borderRadius: Bauhaus.radius,
+            // 四角全圆角（与 MenuStyle.shape 同值，浮层档 16）。
+            borderRadius: BorderRadius.circular(Tokens.radiusLg),
             // ⚠️ 宽度**显式钉成 [_menuWidth]**：面板只给最小宽，内层若随内容
             // 收缩就会比按钮窄 ⇒ 两侧对不齐；图标模式取固定宽（加大）。
             width: _menuWidth,
@@ -359,7 +359,7 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
                 height: Tokens.headerActionSize,
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: Bauhaus.radius,
+                  borderRadius: BorderRadius.circular(Tokens.radiusLg),
                 ),
                 child: Center(child: icon),
               ),
@@ -403,7 +403,7 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
                 padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: Bauhaus.radius,
+                  borderRadius: BorderRadius.circular(Tokens.radiusLg),
                 ),
                 child: Row(
                   // 内容**居中**（2026-10-14 用户定）：文字 + 加号在一枚 ≥80 宽的
