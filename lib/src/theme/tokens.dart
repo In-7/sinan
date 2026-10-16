@@ -142,6 +142,12 @@ class Tokens {
   /// 参照 Linear 侧栏 ≈200 但不缩占位文字）。硬约束是顶行：搜索框 + 8 缝 +
   /// 新建胶囊（≥80）⇒ 256 时搜索框 152，够放完整占位「搜索笔记与画布」。
   static const double sidebarWidth = 256;
+  /// 最左**图标导航轨**宽（2026-10-16 Option 2 第一阶段）：60，常驻脊梁、暂仍可折叠
+  /// （Phase D 起改为常驻 + 只折 208 列表列）。旧 [sidebarWidth](256) 的未来 = 本轨 + 列表列。
+  static const double railWidth = 60;
+  /// 图标轨内**交互钮**边长（2026-10-16 用户定：36）：搜索 / 新建 / 四视图共用；
+  /// 图标仍 [Tokens.iconMd](24)。轨 60 − 左右各 8 呼吸 = 44 内容区，36 钮两侧各余 4。
+  static const double railButtonSize = 36;
   /// 主菜单面板宽 = 原 `app_menu._panelWidth`（180；8pt 收编时曾收敛到 176，
   /// 2026-10-14 用户要求撤回到 180）。
   static const double menuPanelWidth = 180;

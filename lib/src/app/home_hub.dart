@@ -52,29 +52,29 @@ import 'stream_view.dart';
 extension HomeViewIcon on HomeView {
   /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
-  Widget icon(Color color) => switch (this) {
+  Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
     // 心流 = 时间流 ⇒ 时钟（分组键是 `revisedAt`）。
     HomeView.timeline => tabler.Clock(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
+      height: size,
+      width: size,
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
     HomeView.all => tabler.LayoutGrid(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
+      height: size,
+      width: size,
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
     HomeView.calendar => tabler.Calendar(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
+      height: size,
+      width: size,
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
     HomeView.favorites => tabler.Star(
-      height: Tokens.iconMdSm,
-      width: Tokens.iconMdSm,
+      height: size,
+      width: size,
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),

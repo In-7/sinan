@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:sinan/src/app/app_icon_rail.dart';
 import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/home_screen.dart';
-import 'package:sinan/src/app/home_sidebar.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/settings_panel.dart' show appNavigatorKey;
 import 'package:sinan/src/data/database.dart';
@@ -111,7 +111,7 @@ void main() {
   /// 点左侧 [HomeSidebar] 的某个视图导航（切换主区视图）。
   Future<void> tapViewTab(WidgetTester tester, String label) async {
     await tester.tap(
-      find.descendant(of: find.byType(HomeSidebar), matching: find.text(label)),
+      find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
     );
     await tester.pumpAndSettle();
   }
@@ -121,13 +121,16 @@ void main() {
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 2026-10-12 用户定：四枚目的地搬到左侧 [HomeSidebar] ⇒ 标题栏
-    // **不放任何导航**。这是反向断言：钉住"搬走了"，防止哪天又被塞回条内。
+    // 2026-10-12 用户定：四枚目的地搬到左侧导航（2026-10-16 起是 [AppIconRail] 48
+    // 图标轨）⇒ 标题栏 **不放任何导航**。反向断言：钉住"搬走了"，防止又被塞回条内。
     for (final String label in kDestinations) {
       expect(
-        find.byTooltip(label),
+        find.descendant(
+          of: find.byType(WindowStrip),
+          matching: find.byTooltip(label),
+        ),
         findsNothing,
-        reason: '$label 是左侧 HomeSidebar 的纯文字导航（无 tooltip），标题栏不该再有',
+        reason: '$label 在左侧 AppIconRail（tooltip），标题栏不该再有',
       );
     }
     // 上一步 / 下一步：2026-10-15 用户定**加回标题栏左端**（左缘由
@@ -142,12 +145,12 @@ void main() {
       findsOneWidget,
       reason: '下一步钮在标题栏左簇',
     );
-    // 左缘与内容卡左缘严格对齐（内容卡左缝为 0 ⇒ 就是侧栏宽）。
+    // 左缘与内容卡左缘严格对齐（内容卡左缝为 0 ⇒ 就是轨宽 48）。
     final Rect backRect = tester.getRect(find.byTooltip('上一步（Alt+←）'));
     expect(
       backRect.left,
-      closeTo(Tokens.sidebarWidth, 0.5),
-      reason: '左簇与内容卡左缘对齐（侧栏宽）',
+      closeTo(Tokens.railWidth, 0.5),
+      reason: '左簇与内容卡左缘对齐（轨宽 48）',
     );
     // 条内垂直居中（条高 32 ⇒ 中心 16）。
     expect(
@@ -160,7 +163,7 @@ void main() {
     expect(find.byType(HomeHub), findsOneWidget, reason: '主页态渲染 HomeHub');
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(HomeSidebar), matching: find.text(label)),
+        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
         findsOneWidget,
         reason: 'HomeSidebar 必须有视图导航：$label',
       );
@@ -203,17 +206,20 @@ void main() {
     // 导航是文字行（不是 IconButton）⇒ 用 find.text 定位。
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(HomeSidebar), matching: find.text(label)),
+        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
         findsOneWidget,
         reason: 'HomeSidebar 必须有视图导航：$label',
       );
     }
-    // 导航带目的地图标（复用 HomeViewIcon ⇒ 与原标题栏同一套图形）：
-    // 心流 = 时钟，用 Clock 的 tooltip/语义不方便，改为断言图标节点存在。
+    // 导航带目的地图标（复用 HomeViewIcon ⇒ 与旧标题栏同一套图形）：每个视图钮是
+    // 一个含图标的方块（[_RailButton] 的 Container）。
     expect(
-      find.descendant(of: find.byType(HomeSidebar), matching: find.byType(Row)),
+      find.descendant(
+        of: find.byType(AppIconRail),
+        matching: find.byType(Container),
+      ),
       findsWidgets,
-      reason: '导航是含图标的行',
+      reason: '导航钮是含图标的方块',
     );
     // 新建胶囊也在 HomeSidebar 常驻。
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
@@ -228,12 +234,12 @@ void main() {
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
     expect(find.byType(HomeHub), findsNothing, reason: '编辑器态不渲染 HomeHub');
-    expect(find.byType(HomeSidebar), findsOneWidget, reason: '侧栏两态常驻');
+    expect(find.byType(AppIconRail), findsOneWidget, reason: '侧栏两态常驻');
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
         reason: '新建胶囊（图标模式）编辑器态仍可见');
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(HomeSidebar), matching: find.text(label)),
+        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
         findsOneWidget,
         reason: '编辑态视图导航仍常驻：$label',
       );
@@ -244,7 +250,14 @@ void main() {
     expect(stripInEditor.left, closeTo(0, 0.5));
     expect(stripInEditor.right, closeTo(1200, 0.5));
     expect(stripInEditor.height, closeTo(32, 0.5));
-    expect(find.byTooltip('心流'), findsNothing, reason: '标题栏不放导航');
+    expect(
+      find.descendant(
+        of: find.byType(WindowStrip),
+        matching: find.byTooltip('心流'),
+      ),
+      findsNothing,
+      reason: '标题栏不放导航',
+    );
   });
 
   testWidgets('顶条目的地切视图驱动统一历史：切到日历后箭头可退回、可重做', (WidgetTester tester) async {

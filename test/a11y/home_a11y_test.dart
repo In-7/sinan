@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/home_screen.dart';
-import 'package:sinan/src/app/home_sidebar.dart';
+import 'package:sinan/src/app/app_icon_rail.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
@@ -86,7 +86,7 @@ void main() {
     }) =>
         find
             .descendant(
-              of: find.byType(HomeSidebar),
+              of: find.byType(AppIconRail),
               matching: find.byWidgetPredicate(
                 (Widget w) =>
                     w is Semantics &&
@@ -101,7 +101,7 @@ void main() {
     // 四枚导航都声明了 button + selected（可读屏才知"可点"与"当前是哪个"）。
     final int navDeclared = find
         .descendant(
-          of: find.byType(HomeSidebar),
+          of: find.byType(AppIconRail),
           matching: find.byWidgetPredicate(
             (Widget w) =>
                 w is Semantics &&
@@ -121,7 +121,7 @@ void main() {
     );
     final int selectedCount = find
         .descendant(
-          of: find.byType(HomeSidebar),
+          of: find.byType(AppIconRail),
           matching: find.byWidgetPredicate(
             (Widget w) =>
                 w is Semantics &&

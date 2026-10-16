@@ -46,11 +46,19 @@ import '../command/commands.dart';
 /// **完整模式**（默认 iconOnly = false）："新建 ▾" 文字钮，高 [kHeight]=32、有最小宽
 /// ——保留给未来侧栏展开等需要文字标签的场景（当前侧栏不这么用）。
 class NewNoteCapsule extends ConsumerStatefulWidget {
-  const NewNoteCapsule({super.key, this.iconOnly = false});
+  const NewNoteCapsule({
+    super.key,
+    this.iconOnly = false,
+    this.size = Tokens.headerActionSize,
+  });
 
   /// **图标模式**：只画一枚 + 图标、不画"新建"文字、不撑最小宽（坐品牌行右端）。
   /// 默认 false = 完整文字钮模式。
   final bool iconOnly;
+
+  /// 图标模式热区边长（默认 [Tokens.headerActionSize]=30）。2026-10-16 图标轨把它
+  /// 放到 [Tokens.railButtonSize]=36（与轨上其它钮齐平）；图标仍 [Tokens.iconMd]。
+  final double size;
 
   /// 外高（完整模式公开；图标模式用 [Tokens.headerActionSize]）。
   static const double kHeight = 32;
@@ -356,11 +364,13 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
               label: '新建',
               child: Container(
                 key: const Key('new-note-trigger'),
-                width: Tokens.headerActionSize,
-                height: Tokens.headerActionSize,
+                width: widget.size,
+                height: widget.size,
                 decoration: BoxDecoration(
                   color: surface,
-                  borderRadius: BorderRadius.circular(Tokens.radiusLg),
+                  // 圆角与轨上其它钮齐平（控件档 10 = [Tokens.radiusSm] = [Bauhaus.radius]，
+                  // 也与上面 FocusRing 同值）；浮层托盘才走浮层档 16（见 MenuStyle.shape）。
+                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
                 ),
                 child: Center(child: icon),
               ),

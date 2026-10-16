@@ -10,8 +10,8 @@ import '../canvas/canvas_switch.dart';
 import 'app_menu.dart';
 import '../command/commands.dart';
 import '../domain/note.dart';
+import 'app_icon_rail.dart';
 import 'home_hub.dart';
-import 'home_sidebar.dart';
 import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
@@ -182,11 +182,11 @@ class HomeScreen extends ConsumerWidget {
                   // 最左缘：折叠 / 展开左侧导航（2026-10-15 用户定）。
                   leadingEdge: const SidebarCollapseButton(),
                   leading: _historyNavButtons(context, ref),
-                  // 左簇随内容左缘一起滑：inset = (sidebarWidth − 折叠钮宽) × t。展开态
-                  // t=1 ⇒ 左簇落在 sidebarWidth（title_bar_nav_test 断言这个对齐）；折叠
-                  // t=0 ⇒ 回贴折叠钮右缘。与侧栏宽同源，塌缩全程不跳变。
+                  // 左簇随内容左缘一起滑：inset = (railWidth − 折叠钮宽) × t。展开态
+                  // t=1 ⇒ 左簇落在 railWidth（内容卡左缘 = 48 轨右缘）；折叠 t=0 ⇒ 回贴
+                  // 折叠钮右缘。与轨宽同源，塌缩全程不跳变。
                   leadingInset:
-                      (Tokens.sidebarWidth - Tokens.chromeButtonSize) * t,
+                      (Tokens.railWidth - Tokens.chromeButtonSize) * t,
                   // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
                   // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
                   trailing: const <Widget>[
@@ -212,8 +212,8 @@ class HomeScreen extends ConsumerWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        // 侧栏可见宽 = sidebarWidth × t；本体保持自然 256、只被 ClipRect 裁
-                        // （OverflowBox 让它不随视图收缩而压扁）。收起时用 ExcludeFocus /
+                        // 图标轨可见宽 = railWidth × t；本体保持自然 48、只被 ClipRect 裁
+                        // （OverflowBox 让它不随收缩而压扁）。收起时用 ExcludeFocus /
                         // ExcludeSemantics 把它带出焦点 / 读屏顺序——裁到 0 宽后键盘不能
                         // 再 Tab 到看不见的钮（按收起**布尔**排除，不按动画值）。
                         ExcludeFocus(
@@ -222,12 +222,12 @@ class HomeScreen extends ConsumerWidget {
                             excluding: sidebarCollapsed,
                             child: ClipRect(
                               child: SizedBox(
-                                width: Tokens.sidebarWidth * t,
+                                width: Tokens.railWidth * t,
                                 child: const OverflowBox(
                                   alignment: Alignment.centerLeft,
-                                  minWidth: Tokens.sidebarWidth,
-                                  maxWidth: Tokens.sidebarWidth,
-                                  child: HomeSidebar(),
+                                  minWidth: Tokens.railWidth,
+                                  maxWidth: Tokens.railWidth,
+                                  child: AppIconRail(),
                                 ),
                               ),
                             ),
