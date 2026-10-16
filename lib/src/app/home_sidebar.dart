@@ -278,8 +278,13 @@ class _SidebarItemState extends State<_SidebarItem> {
     // 烤实的中性灰 hoverOnWindow，但预设主题下窗口本身就是预设色（chromeColor）——
     // 中性灰补丁贴在彩色窗上每套预设一个样。半透明叠加随底自适应，全 App 一个口径。
     final Color fg = current ? scheme.onSurface : scheme.onSurfaceVariant;
+    // 选中底 = hover 的 2×：暗色 hover 6% ⇒ 选中 white@12%；亮色 hover 4% ⇒
+    // 选中 onSurface@8%（2026-10-16 用户定，明暗同比例、柔和但清楚托起）。
+    final Color selectedBg = b == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.12)
+        : scheme.onSurface.withValues(alpha: 0.08);
     final Color bg = current
-        ? AppTheme.navSelectedTint(scheme.onSurface, b)
+        ? selectedBg
         : (_hover ? AppTheme.hoverOverlay(b) : Colors.transparent);
     return MouseRegion(
       onEnter: (_) {

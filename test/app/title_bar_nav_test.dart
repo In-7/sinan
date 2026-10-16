@@ -175,32 +175,22 @@ void main() {
     expect(strip.right, closeTo(1200, 0.5));
     expect(strip.height, closeTo(32, 0.5));
 
-    // 右簇：设置钮紧挨「最小化」左侧（与窗控成组）。
+    // 右簇：设置、问笔记都在 `trailing`，紧贴「最小化」左侧（与窗控成组）；问笔记
+    // 2026-10-16 从工作区右角搬来，夹在设置右、最小化左之间。仍以 [aiPanelOpenProvider]
+    // 单布尔开合。
     final Rect minRect = tester.getRect(find.byTooltip('最小化'));
     final Rect settingsRect = tester.getRect(find.byTooltip('设置'));
-    expect(
-      minRect.left - settingsRect.right,
-      inInclusiveRange(-0.5, 4),
-      reason: '设置紧贴「最小化」左侧',
-    );
-
-    // 问笔记是工作区**右角折叠钮**（不在条内）：钉内容卡内缘 4px、y 与编辑页
-    // 顶栏「标签」耳按钮同高（中心 20）。
     final Rect aiRect = tester.getRect(find.byTooltip('问笔记（Ctrl+J）'));
-    expect(aiRect.top, greaterThan(32), reason: '问笔记钮不在 32 顶条内');
-    expect(
-      aiRect.right,
-      closeTo(1200 - Tokens.appPanelInset - Tokens.spaceXs, 0.5),
-      reason: '右角钮：距内容卡内缘 4px',
-    );
-    expect(
-      aiRect.top + aiRect.height / 2,
-      // 面板顶部 = 顶条 32 + 顶缝（[AppTheme.surfaceRingRetreat]，2026-10-15
-      // 起 1；以前是 spaceXxs=2）⇒ 中心 = 其下 20。
-      // ⚠️ 必须**从常量推**：写成字面量的话，调顶缝这条几何断言会悄悄漂。
-      closeTo(32 + AppTheme.surfaceRingRetreat + 20, 1),
-      reason: '右角钮与编辑页顶栏「标签」耳按钮同高（内容区顶部下 20）',
-    );
+    // 三钮都在 32 顶条内（贴顶、占满条高）。
+    for (final Rect r in <Rect>[settingsRect, aiRect, minRect]) {
+      expect(r.top, lessThan(32), reason: '钮在 32 顶条内');
+      expect(r.bottom, lessThanOrEqualTo(32.5), reason: '钮占满顶条高');
+    }
+    // 顺序：设置 → 问笔记 → 最小化，问笔记夹在中间、两侧各紧贴（与窗控成组）。
+    expect(aiRect.left - settingsRect.right, inInclusiveRange(-0.5, 4),
+        reason: '问笔记紧贴设置右侧');
+    expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4),
+        reason: '问笔记紧贴最小化左侧');
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
   });
 

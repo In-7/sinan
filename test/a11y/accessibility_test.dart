@@ -124,7 +124,7 @@ void main() {
         dataDir: tempDir.path,
         brightness: b,
         background: AppTheme.windowBackground(b),
-        // 照 `HomeScreen` 的真实形态复刻：标题栏仅 `trailing` 的设置钮（导航已
+        // 照 `HomeScreen` 的真实形态复刻：标题栏 `trailing` 含问笔记 + 设置钮（导航已
         // 搬到工作区左侧 [HomeSidebar]），全部走 `IconButton(tooltip:)`，
         // **不要**在外层包 Tooltip（见 a11y 文档）。
         child: Column(

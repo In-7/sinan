@@ -15,8 +15,8 @@ import 'package:sinan/src/theme/tokens.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
 /// **AI 问答轨 · 外壳集成**（2026-09-28；2026-10-09 修订：opencode 风外壳；
-/// 2026-10-11 再修订：开关从顶条搬进**工作区右角折叠钮**——它是 AI 轨唯一的
-/// 开合入口，钉在内容卡内缘 4px、y 与编辑页顶栏「标签」耳按钮同高）。
+/// 2026-10-16 再修订：开关从工作区右角搬回**顶条 `trailing`**（设置右、最小化左）——
+/// 它仍是 AI 轨唯一开合入口，开合走 [aiPanelOpenProvider] 单布尔）。
 ///
 /// 组件自身的语义在 [ask_rail_test.dart] 里钉；这里钉 [HomeScreen] 外壳对
 /// `aiPanelOpenProvider` 的**呈现选择**（`docs/ui_rewrite_plan.md` §2.4：
@@ -89,10 +89,9 @@ void main() {
     });
   }
 
-  /// AI 开关的**位置闸门**：2026-10-11 用户定它不再是顶条钮（顶条右端只留设置），
-/// 而是**工作区右角折叠钮**——钉在内容卡内缘 4px、y 与编辑页顶栏「标签」耳按钮
-/// 同高，且开合两态坐标不变（好发现好记忆）。
-testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨', (WidgetTester tester) async {
+  /// AI 开关的**位置闸门**：2026-10-16 用户定它从工作区右角搬进顶条 `trailing`
+  /// （设置右、最小化左），仍是 AI 轨唯一开合入口，开合走 [aiPanelOpenProvider]。
+  testWidgets('宽窗：顶条 `trailing` 有「问笔记」钮，点开右轨', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -101,23 +100,16 @@ testWidgets('宽窗：工作区右角有「问笔记」折叠钮，点开右轨'
     expect(tester.takeException(), isNull);
 
     final Finder ai = find.byTooltip('问笔记（Ctrl+J）');
-    expect(ai, findsOneWidget, reason: '右角必须有可见的 AI 折叠钮');
+    expect(ai, findsOneWidget, reason: '顶条必须有可见的 AI 钮');
 
-    // 不在 44 顶条内；钉在内容卡内缘 4px（= 窗口右缘 − appPanelInset − spaceXs）。
+    // 在 32 顶条内（贴顶、占满条高），且紧贴最小化左侧（与窗控成组）。
     final Rect aiRect = tester.getRect(ai);
-    expect(aiRect.top, greaterThan(32), reason: 'AI 钮不在顶条内（已搬出）');
-    expect(
-      aiRect.right,
-      closeTo(1200 - Tokens.appPanelInset - Tokens.spaceXs, 0.5),
-      reason: '钉在内容卡内缘 4px',
-    );
-    expect(
-      aiRect.top + aiRect.height / 2,
-      // 面板顶部 = 顶条 32 + 顶缝（[AppTheme.surfaceRingRetreat]，随外扩亮线走）
-      // ⇒ 中心 = 其下 20。从常量推，别写死。
-      closeTo(32 + AppTheme.surfaceRingRetreat + 20, 1),
-      reason: '与编辑页顶栏「标签」耳按钮同高（内容区顶部下 20）',
-    );
+    expect(aiRect.top, lessThan(32), reason: 'AI 钮在顶条内（已搬入）');
+    expect(aiRect.bottom, lessThanOrEqualTo(32.5), reason: '占满顶条高');
+
+    final Rect minRect = tester.getRect(find.byTooltip('最小化'));
+    expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4),
+        reason: '问笔记紧贴最小化左侧');
 
     // 默认未开。
     expect(container.read(aiPanelOpenProvider), isFalse);

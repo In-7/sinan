@@ -404,9 +404,12 @@ class AppTheme {
   /// 但 ① 当天胶囊就改成坐窗口底，两处同底、半透明合成再次一致，前提消失；
   /// ② 预设主题下窗口是预设色，中性灰补丁贴上每套预设一个样（用户实报）。
   /// 已删除，**别再造烤实变体**。
+  // hover 叠层：亮色 black@4%（极淡，"没颜色"感）；暗色 white@6%（对应 subtle，
+  // 与亮色观感对齐）——hover 本就该"近乎无"，选中才"有颜色"（见 [navSelectedTint]）。
+  // 2026-10-16 修：暗色原 white@12% 太"有存在感"，与亮色 hover 的"没颜色"感相反。
   static Color hoverOverlay(Brightness brightness) =>
       brightness == Brightness.dark
-      ? Colors.white.withValues(alpha: 0.12)
+      ? Colors.white.withValues(alpha: 0.06)
       : Colors.black.withValues(alpha: 0.04);
 
   /// **常驻面的发丝环**（2026-10-15 新增）：给面板/卡片收一条极淡的边。
@@ -762,13 +765,14 @@ class AppTheme {
   ///
   /// 2026-10-08 起「当前项」选中已全部改走 [selectedPill]（用户拍板全局统一），
   /// 新代码别再拿它当选中底（旧口径的分叉根因）。
-  // 暗色需显式传 [brightness] 才走 white@18%：原 onSurface@10% 在暗底太弱，会"盖不过"
-  // hover（white@12%），观感 hover 深、选中轻，与亮色相反（2026-10-16 修）。不传则保持
-  // 旧行为，避免波及其它暗色场景（如开关"开"态）。
-  static Color navSelectedTint(Color onSurface, [Brightness? brightness]) =>
-      brightness == Brightness.dark
-          ? Colors.white.withValues(alpha: 0.18)
-          : onSurface.withValues(alpha: 0.10);
+  /// **开关态的底**（开 = `onSurface @ 10%`）：AI 轨开关这类"开/关如实显示"
+  /// 的控件用它——那是状态镜像，不是"我在哪"的选中读法。
+  ///
+  /// 2026-10-08 起「当前项」选中已全部改走 [selectedPill]（用户拍板全局统一），
+  /// 新代码别再拿它当选中底（旧口径的分叉根因）。侧栏当前项的选中底另有"2× hover"
+  /// 的算法（见 [home_sidebar]），不在此处。
+  static Color navSelectedTint(Color onSurface) =>
+      onSurface.withValues(alpha: 0.10);
 
   /// 当前主题的**明度序**（`surface_ladder.dart`）：应用里每一块"面"的底色都从它取。
   ///

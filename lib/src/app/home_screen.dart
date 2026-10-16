@@ -33,8 +33,9 @@ import '../domain/settings.dart';
 ///   拖拽带（可选应用名）+ 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+
 ///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：心流 / 全部 / 日历 /
 ///   收藏 + 新建胶囊）落在工作区左侧扁平导航 [HomeSidebar]（无折叠钮、常驻）。
-///   **问笔记（AI）不是标题栏钮**——它是工作区右角折叠钮（见本文件工作区
-///   [_RightRailToggleButton]），AI 轨由这枚右角钮开合；无分割线。
+///   **问笔记（AI）是标题栏 `trailing` 钮**——2026-10-16 从工作区右角搬来，落在
+///   设置右、最小化左；AI 轨由这枚钮开合（单一开合入口，其余入口走同一条
+///   [aiPanelOpenProvider]）；无分割线。
 /// - 条下 4px 环缝内是一张（AI 打开时两张并排）圆角 8 的浮面卡，
 ///   `AppTheme.panelFill` 实色、**无投影**（主页 / 编辑器同色，点进笔记不"变色"）：
 ///   立体感来自环缝露出的窗口底 vs 面板的明度差；描边按明暗分治——
@@ -116,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
       // 顶条由 [Tokens.titleBarHeightMain] 定高（当前 **32**）全宽——仅拖拽带 +
       // 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+ 窗控按钮，**不含导航**
       // （四枚目的地图标 + 新建胶囊 2026-10-12 起移入工作区左侧 [HomeSidebar]）；
-      // 问笔记（AI）已改为工作区右角折叠钮（见下方工作区 [_RightRailToggleButton]）。
+      // 问笔记（AI）是顶条 `trailing` 钮（设置右、最小化左；2026-10-16 从工作区右角搬来）。
       // 条下不再画 1px 分隔线：内容是 8px 环缝内的圆角浮面卡。分层三件套 =
       // 窗口底 vs panelFill 的明度差 + 卡缘 1px panelEdge 光边 + 4px 暗缝
       //（无投影；2026-10-09 量 opencode 像素定，量值与理由见 surface_ladder）。
@@ -173,8 +174,9 @@ class HomeScreen extends ConsumerWidget {
                 // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在工作区
                 // 左侧扁平导航 [HomeSidebar]）；**上一步 / 下一步 2026-10-15 加回
                 // 条内左端**（`leading`，左缘与内容卡对齐）。
-                // 问笔记（AI）是工作区右角折叠钮、不在条内。条内只剩：拖拽区 +
-                // 最右 `trailing`（设置，紧贴最小化左，与窗控成组）+ 窗控按钮。
+                // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
+                // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
+                // + 窗控按钮。
                 // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
                 WindowStrip(
                   // 最左缘：折叠 / 展开左侧导航（2026-10-15 用户定）。
@@ -185,14 +187,19 @@ class HomeScreen extends ConsumerWidget {
                   // t=0 ⇒ 回贴折叠钮右缘。与侧栏宽同源，塌缩全程不跳变。
                   leadingInset:
                       (Tokens.sidebarWidth - Tokens.chromeButtonSize) * t,
-                  trailing: const <Widget>[SettingsNavButton()],
+                  // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
+                  // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
+                  trailing: const <Widget>[
+                    SettingsNavButton(),
+                    _AskTitleBarButton(),
+                  ],
                 ),
                 // 工作区：浮面卡**右 / 下各 4px 环缝**（顶与左 0——2026-10-15 用户定），
                 // 四角 8px 圆角；AI 打开时主卡 + 8 缝 + AI 卡（右 dock、推开内容）。
                 // 左 dock 面板 2026-10-12 取消，主卡占满全宽。
-                // 角落折叠钮（[_RightRailToggleButton]）浮在工作区之上、钉在内容卡内缘
-                // 4px、y 与编辑器顶栏「标签」耳按钮同高；开合两态坐标不变
-                //（2026-10-11 起：右角钮是 AI 面板唯一开合入口）。
+                // 问笔记（AI）开合入口 2026-10-16 从工作区右角搬进顶条 `trailing`
+                // （设置右、最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
+                // 单布尔，呈现形态归外壳按宽度选（宽窗常驻右轨 / 窄窗降级浮层）。
                 Expanded(
                   // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
                   //
@@ -252,14 +259,7 @@ class HomeScreen extends ConsumerWidget {
                                     _AiRailSlot(open: aiInline),
                                   ],
                                 ),
-                                // 右角折叠钮（AI）：唯一开合入口；开合两态坐标不变（2026-10-11）。
-                                const Positioned(
-                                  // y 对齐编辑器顶栏「耳朵」带（标签所在那排）：32 高钮取 top 4
-                                  // ⇒ 中心 20，与耳朵中心（5 + 30/2 = 20）同高（2026-10-11 用户定）。
-                                  top: Tokens.spaceXs,
-                                  right: Tokens.spaceXs,
-                                  child: _RightRailToggleButton(),
-                                ),
+
                               ],
                             ),
                           ),
@@ -321,18 +321,6 @@ class HomeScreen extends ConsumerWidget {
       tooltip: '搜索（开发中）',
       onPressed: () {},
     ),
-    // 问笔记（AI 问答）：**没配就不露出入口**——点了只会得到一句报错，
-    // 与「设置 → AI」默认关闭是同一口径（见 AppSettings.aiEnabled 的说明）。
-    if (_aiReady(ref))
-      const IconButton(
-        icon: tabler.Sparkles(
-          height: Tokens.iconMd,
-          width: Tokens.iconMd,
-          strokeWidth: 1.5,
-        ),
-        tooltip: '问笔记',
-        onPressed: showAskPanel,
-      ),
     // 新建画布笔记（[NoteKind.canvas]）：建好即选中，右栏直接出画布。
     // 不再是"全屏路由的实验页"——画布已与块编辑器同页共存。
     IconButton(
@@ -345,15 +333,6 @@ class HomeScreen extends ConsumerWidget {
       onPressed: () => unawaited(runCommandById(ref, 'canvas.new')),
     ),
   ];
-
-  ///
-  ///
-  ///
-  ///
-  bool _aiReady(WidgetRef ref) {
-    final AppSettings settings = ref.watch(settingsProvider);
-    return settings.aiEnabled && settings.aiModel.trim().isNotEmpty;
-  }
 
   ///
   List<Widget> _chromeActions(BuildContext context, WidgetRef ref) => <Widget>[
@@ -632,12 +611,11 @@ class _AiRailSlot extends StatelessWidget {
   }
 }
 
-/// 顶条左簇的单枚**目的地钮**（2026-10-09 下午从 50 图标轨移入）：
-/// 工作区**右角折叠钮**（2026-10-11 起从 hub 头栏移此）：钉在内容卡内缘 4px、
-/// y 与「筛选与排序」及编辑器顶栏「标签」耳按钮同高，是 AI 面板（[AskRail]）的
-/// **唯一**开合入口——开态披中性 tint，关闭走 Esc 或本钮；开合两态坐标不变，好记忆。
-class _RightRailToggleButton extends ConsumerWidget {
-  const _RightRailToggleButton();
+/// 顶条右簇的「问笔记（AI）」开合钮：2026-10-16 用户定从工作区右角搬来，落在
+/// `trailing` 的设置之后、最小化之前。仍是 AI 面板（[AskRail]）的**唯一**开合入口，
+/// 始终露出（未配 AI 时点按由 `ai.ask` 命令兜底报错，同原右角钮口径）；开态披中性 tint。
+class _AskTitleBarButton extends ConsumerWidget {
+  const _AskTitleBarButton();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -645,20 +623,20 @@ class _RightRailToggleButton extends ConsumerWidget {
     final bool open = ref.watch(aiPanelOpenProvider);
     return IconButton(
       icon: const tabler.Sparkles(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
+        height: Tokens.iconMd,
+        width: Tokens.iconMd,
         strokeWidth: 1.5,
       ),
       tooltip: '问笔记（Ctrl+J）',
       style: IconButton.styleFrom(
-        minimumSize: const Size.square(Tokens.headerActionSize),
-        maximumSize: const Size.square(Tokens.headerActionSize),
-        padding: EdgeInsets.zero,
-        iconSize: Tokens.iconMdSm,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
+          borderRadius: BorderRadius.circular(Tokens.radiusButton),
         ),
+        minimumSize: const Size.square(Tokens.chromeButtonSize),
+        maximumSize: const Size(Tokens.chromeButtonSize + 8, Tokens.chromeButtonSize),
+        padding: EdgeInsets.zero,
+        iconSize: Tokens.iconMd,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         backgroundColor: open
             ? AppTheme.navSelectedTint(scheme.onSurface)
             : Colors.transparent,

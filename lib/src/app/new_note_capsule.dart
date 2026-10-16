@@ -169,10 +169,10 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
     _syncMenuWidth();
 
     return MenuAnchor(
-      // 浮层托盘：**Tooltip 同款实色**（2026-10-15 用户定"面板改 tooltip 色"）——
-      // MenuStyle 只负责定位/裁剪/透明底，真正的面由 menuChildren 里的
-      // [AppFloatSurface]（blur/glass 关掉、底色 = Tooltip 默认）画，与搜索钮
-      // 的 Tooltip 同色系。从按钮**正下方**向下展开
+      // 浮层托盘：**主题 surface 实色**（2026-10-16 用户定：亮色亮面 / 暗色暗面，
+      // 不再反相 tooltip 色）——MenuStyle 只负责定位/裁剪/透明底，真正的面由
+      // menuChildren 里的 [AppFloatSurface]（blur/glass 关掉、底色 = 主题 surface）画。
+      // 从按钮**正下方**向下展开
       // （bottomStart：左缘对齐、顶边贴按钮底边）——零布局位移。
       style: MenuStyle(
         elevation: const WidgetStatePropertyAll<double?>(0.0),
@@ -233,12 +233,10 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
           onEnter: (_) => _cancelClose(),
           onExit: (_) => _scheduleClose(),
           child: AppFloatSurface(
-            // 实色气泡（不再磨砂）：底色 = Tooltip 同款（2026-10-15 用户定
-            // "面板改 tooltip 色"）——亮色深灰 / 暗色近白，与搜索钮的
-            // Tooltip('搜索（Ctrl+K）') 同色系。blur/glass 默认都关，纯实色浮层。
-            // 底色走 [Bauhaus.tooltipSurface]（= Tooltip 默认，令牌层定义）——
-            // 让面板与搜索钮的 Tooltip 同色系（2026-10-15 用户定"面板改 tooltip 色"）。
-            color: Bauhaus.tooltipSurface(b),
+            // 实色气泡（不再磨砂）：底色**跟随主题 surface**——亮色用亮面
+            // （[Bauhaus.surface] 白）、暗色用暗面（同令牌 dark），不再反相成 tooltip 色
+            // （2026-10-16 用户定：亮色亮面 / 暗色暗面）。blur/glass 关，纯实色浮层。
+            color: Bauhaus.surface(b),
             // 四角全圆角（与 MenuStyle.shape 同值，浮层档 16）。
             borderRadius: BorderRadius.circular(Tokens.radiusLg),
             // ⚠️ 宽度**显式钉成 [_menuWidth]**：面板只给最小宽，内层若随内容
@@ -255,7 +253,7 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 // 弹窗首行：新建提示字（非交互标签）。文字色随面板底反相——
-                // 亮色深灰底用纸色字、暗色近白底用墨色字（同 Tooltip 文字配色）。
+                // 亮色亮底用深墨字、暗色暗底用纸色字（跟随主题 surface）。
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: Tokens.spaceMd,
@@ -264,11 +262,9 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
                   child: Text(
                     '新建',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      // 同 [_MenuTile] 的 fg：暗色近白底用深墨（[Bauhaus.onAccent]）、
-                      // 亮色深灰底用纸色——不能取主题 [Bauhaus.ink]（暗色下是浅色）。
-                      color: b == Brightness.dark
-                          ? Bauhaus.onAccent(b)
-                          : Bauhaus.paper(b),
+                      // 同 [_MenuTile] 的静止 fg：主题前景 [Bauhaus.ink]
+                      // （亮色深墨 / 暗色浅纸），是 [Bauhaus.surface] 的配套前景。
+                      color: Bauhaus.ink(b),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -288,7 +284,12 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
                 ),
                 // 两枚之间的 **1px 发丝分隔线**（2026-10-15 用户定）：与面板底反相，
                 // 两种底色下都"分得开"；弱于浮层描边（只需分、不必挑）。
-                Container(height: 1, color: Bauhaus.tooltipDivider(b)),
+                // 发丝分隔线：面板底是主题 surface，用主题前景 [Bauhaus.ink] 打折，
+                // 明暗都"分得开"。
+                Container(
+                  height: 1,
+                  color: Bauhaus.ink(b).withValues(alpha: 0.22),
+                ),
                 _MenuTile(
                   focusNode: _canvasTileFocus,
                   // 下载图标 197_画笔（2026-10-15 用户定）：新建菜单「画布」项，
@@ -467,14 +468,11 @@ class _MenuTileState extends State<_MenuTile> {
     final ThemeData theme = Theme.of(context);
     final Brightness b = widget.brightness;
     // 无黑块（2026-10-15 用户定）：静止**透明底**，只留 hover / 聚焦时的各自
-    // accent 原色整块高亮。文字 / 图标色必须随**面板底**走——面板 = [Bauhaus.tooltipSurface]，
-    // **随主题反相**（亮色深灰底 / 暗色近白底，用户 2026-10-15 确认"跟随 tooltip"）。
-    // ⚠️ 不能取主题前景 [Bauhaus.ink]：它暗色下翻成浅色 #F3F0EA，落近白底会消失——
-    // 这正是暗色下"没颜色"的根因。与 [Bauhaus.tooltipDivider] 同口径：亮色用纸色、
-    // 暗色用深墨（[Bauhaus.onAccent] = _inkLight）；hover 铺 accent 亮底也用深墨字。
-    final Color fg = (_hover || b == Brightness.dark)
-        ? Bauhaus.onAccent(b)
-        : Bauhaus.paper(b);
+    // accent 原色整块高亮。文字 / 图标色随**面板底**走——面板 = [Bauhaus.surface]
+    // （亮色亮面 / 暗色暗面，2026-10-16 改回跟随主题、不再反相）。
+    // 静止字色 = 主题前景 [Bauhaus.ink]（亮色深墨 / 暗色浅纸），正是 surface 的配套前景；
+    // hover 铺 accent 亮底改用深墨字（黄/绿都是高亮饱和色，只有深墨字有对比）。
+    final Color fg = _hover ? Bauhaus.onAccent(b) : Bauhaus.ink(b);
     final Color bg = _hover ? widget.accent : Colors.transparent;
     return Tooltip(
       message: widget.tooltip,

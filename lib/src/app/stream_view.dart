@@ -460,11 +460,11 @@ class _StreamComposerState extends ConsumerState<StreamComposer> {
     final Color surface = scheme.surface;
     final bool isDark = brightness == Brightness.dark;
     final Color darkShadow = isDark
-        ? Colors.black.withOpacity(0.45)
-        : Colors.black.withOpacity(0.10);
+        ? Colors.black.withValues(alpha: 0.45)
+        : Colors.black.withValues(alpha: 0.10);
     final Color lightShadow = isDark
-        ? Colors.white.withOpacity(0.06)
-        : Colors.white.withOpacity(0.9);
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.white.withValues(alpha: 0.9);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: surface,
