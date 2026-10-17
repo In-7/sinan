@@ -18,6 +18,7 @@ import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show showSettingsPanel;
+import 'stream_view.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
@@ -111,7 +112,7 @@ class HomeScreen extends ConsumerWidget {
     );
 
     if (WindowService.isSupported) {
-      // 桌面统一布局（2026-09-25）：随 `selectedId` 切换主页（[HomeHub]）/
+      // 桌面统一布局（2026-09-25）：随 `selectedId` 切换主页（[CalendarPage]）/
       // 笔记·画布编辑器，不进新路由。
       //
       // 2026-10-09 用户定（opencode 风"内嵌浮面"，替代当日早上的 50 图标轨）：
@@ -171,46 +172,57 @@ class HomeScreen extends ConsumerWidget {
       );
       final Widget detail = detailPane();
       final bool isDark = brightness == Brightness.dark;
-      final Widget cardChild = view == HomeView.calendar
-          ? (selectedId == null ? const HomeHub() : detail)
-          : TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 1.0, end: listCollapsed ? 0.0 : 1.0),
-              duration: Tokens.durationNormal,
-              curve: Curves.easeInOutCubic,
-              builder: (BuildContext context, double t, Widget? _) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    // 列表列：宽 noteListWidth×t，本体钉 208（OverflowBox 不塌缩）、ClipRect
-                    // 从右裁；收起按**布尔**移出焦点 / 读屏。
-                    ExcludeFocus(
-                      excluding: listCollapsed,
-                      child: ExcludeSemantics(
-                        excluding: listCollapsed,
-                        child: ClipRect(
-                          child: SizedBox(
-                            width: Tokens.noteListWidth * t,
-                            child: const OverflowBox(
-                              alignment: Alignment.centerLeft,
-                              minWidth: Tokens.noteListWidth,
-                              maxWidth: Tokens.noteListWidth,
-                              child: NoteListColumn(),
-                            ),
-                          ),
+      final Widget cardChild = switch (view) {
+        // **速记（心流）**：一页纸流，**不走主从布局**。
+        // 速记没有"详情页"——右侧没有可展示的东西，240 列表列在这里只会与
+        // 速记自己的时间流打架（2026-10-17 用户实报"打开没有任何变化"：
+        // 速记页当年挂在日历页（原名 HomeHub）的 timeline 分支里，而新外壳
+        // 早已改走 NoteListColumn ⇒ 那份实现成了孤儿。现在由外壳直接挂载）。
+        HomeView.timeline => const StreamView(),
+        // 日历：列表列无意义，整卡显示日历（选中某篇后仍出详情）。
+        HomeView.calendar =>
+          selectedId == null ? const CalendarPage() : detail,
+        // 全部 / 收藏：主从（240 列表列 + 详情）。
+        HomeView.all ||
+        HomeView.favorites => TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 1.0, end: listCollapsed ? 0.0 : 1.0),
+          duration: Tokens.durationNormal,
+          curve: Curves.easeInOutCubic,
+          builder: (BuildContext context, double t, Widget? _) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // 列表列：宽 noteListWidth×t，本体钉 noteListWidth（OverflowBox 不塌缩）、
+                // ClipRect 从右裁；收起按**布尔**移出焦点 / 读屏。
+                ExcludeFocus(
+                  excluding: listCollapsed,
+                  child: ExcludeSemantics(
+                    excluding: listCollapsed,
+                    child: ClipRect(
+                      child: SizedBox(
+                        width: Tokens.noteListWidth * t,
+                        child: const OverflowBox(
+                          alignment: Alignment.centerLeft,
+                          minWidth: Tokens.noteListWidth,
+                          maxWidth: Tokens.noteListWidth,
+                          child: NoteListColumn(),
                         ),
                       ),
                     ),
-                    // 列表↔详情发丝：贴列表右缘并随 t 淡出（颜色 alpha，不用 Opacity）。
-                    Container(
-                      width: 1,
-                      color: Bauhaus.ink(brightness)
-                          .withValues(alpha: (isDark ? 0.16 : 0.14) * t),
-                    ),
-                    Expanded(child: detail),
-                  ],
-                );
-              },
+                  ),
+                ),
+                // 列表↔详情发丝：贴列表右缘并随 t 淡出（颜色 alpha，不用 Opacity）。
+                Container(
+                  width: 1,
+                  color: Bauhaus.ink(brightness)
+                      .withValues(alpha: (isDark ? 0.16 : 0.14) * t),
+                ),
+                Expanded(child: detail),
+              ],
             );
+          },
+        ),
+      };
 
       return Scaffold(
         backgroundColor: Colors.transparent,
@@ -226,11 +238,16 @@ class HomeScreen extends ConsumerWidget {
             // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
             WindowStrip(
               // 最左缘：折叠 / 展开**列表列**（2026-10-16 起；60 轨常驻不折）。
-              leadingEdge: const SidebarCollapseButton(),
+              // 速记页没有列表列 ⇒ 这一视图里不出现折叠钮（否则按了什么都不动）。
+              leadingEdge: view == HomeView.timeline
+                  ? null
+                  : const SidebarCollapseButton(),
               leading: _historyNavButtons(context, ref),
               // 左簇左缘与内容卡对齐 = 折叠钮 + (railWidth − chromeButtonSize) ⇒ 落在
-              // 60 轨右缘。轨常驻不折叠 ⇒ 此 inset 是常量，不随动画动。
-              leadingInset: Tokens.railWidth - Tokens.chromeButtonSize,
+              // 60 轨右缘。速记页没有折叠钮 ⇒ 那 32 由 inset 自己让出，仍然对齐 60。
+              leadingInset: view == HomeView.timeline
+                  ? Tokens.railWidth
+                  : Tokens.railWidth - Tokens.chromeButtonSize,
               // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
               // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
               trailing: const <Widget>[

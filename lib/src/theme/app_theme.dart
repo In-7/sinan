@@ -1491,7 +1491,8 @@ class AppTheme {
       ),
 
       // ── 滚动条 ───────────────────────────────────────────────
-      // M3 桌面规范：8dp 圆头拇指，悬停/拖拽加粗到 12dp。
+      // **4 静止 / 6 悬停拖拽**（2026-10-17 用户定）：比 M3 的 8/12 细一档，
+      // 细到几乎只是一根线——桌面列表里滑块不该抢内容；hover 才加粗给"可抓"感。
       // thumbVisibility=false：滚动或悬浮时才出现，平时不占视线
       // （贴近 Win11 原生列表的习惯）；想常显改 true。
       scrollbarTheme: ScrollbarThemeData(
@@ -1499,9 +1500,9 @@ class AppTheme {
         thickness: WidgetStateProperty.resolveWith<double>((states) {
           if (states.contains(WidgetState.hovered) ||
               states.contains(WidgetState.dragged)) {
-            return 9;
+            return 6;
           }
-          return 6;
+          return 4;
         }),
         thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
           if (states.contains(WidgetState.dragged)) {

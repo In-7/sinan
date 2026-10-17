@@ -9,6 +9,7 @@ import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
+import 'package:sinan/src/data/stream_store.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
@@ -247,9 +248,9 @@ Future<_HomeAudit> _auditHome(
 ) async {
   store.create(title: '甲');
   store.create(title: '乙');
-  // 心流默认视图要有一张卡可聚焦：心流**不读笔记**（单向收件箱）⇒ 必须显式录一条
-  // 收件箱条目，否则默认视图里没有任何内容控件，焦点顺序测试找不到"内容卡片"标记。
-  store.addStreamItem('甲');
+  // 心流默认视图要有一张卡可聚焦：心流**不读笔记**（独立速记表）⇒ 必须显式录一条
+  // 速记，否则默认视图里没有任何内容控件，焦点顺序测试找不到"内容卡片"标记。
+  StreamStore(store.db).add('甲');
 
   // 宽逻辑面跑：HomeScreen 有窄窗自动折列表（< [Tokens.noteListBreakpoint]=1040），
   // 默认测试面 800×600 会被判窄窗 ⇒ 列表收起、焦点序找不到列表行。这里不靠
@@ -265,6 +266,8 @@ Future<_HomeAudit> _auditHome(
         noteStoreProvider.overrideWithValue(store),
         settingsStoreProvider.overrideWithValue(settings),
         appDataDirProvider.overrideWithValue('C:\\test\\sinan'),
+        // 速记走独立 store（`stream_items`），它经 databaseProvider 取连接。
+        databaseProvider.overrideWithValue(store.db),
       ],
       child: MaterialApp(
         theme: brightness == Brightness.light ? AppTheme.light() : AppTheme.dark(),
@@ -308,6 +311,13 @@ Future<_HomeAudit> _auditHome(
   }
 
   // 语义节点快照（在 Tab 打乱焦点前先取）。
+  //
+  // 2026-10-17：速记页挂载后会自动聚焦顶部捕获区（"进入即写"的产品决定）。
+  // 本用例验的是**遍历顺序**（侧栏先于内容），不是初始焦点 ⇒ 先清掉焦点，
+  // 让 Tab 从根开始走，否则第一站会落在内容区的输入框上。
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pumpAndSettle();
+
   // Tab 序列。
   final List<List<String>> order = <List<String>>[];
   for (int i = 0; i < 14; i++) {

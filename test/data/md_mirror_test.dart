@@ -7,6 +7,7 @@ import 'package:sinan/src/data/block_store.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/markdown/md_mirror.dart';
 import 'package:sinan/src/data/note_store.dart';
+import 'package:sinan/src/data/stream_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
@@ -150,13 +151,13 @@ void main() {
     expect(names, hasLength(2));
   });
 
-  test('画布 / 心流容器不导（显式导也不写）', () {
+  test('画布不导；速记也不导（它不在 notes 里，天然看不见）', () {
     final Note canvas = store.create(kind: NoteKind.canvas, title: '画布');
-    final Note stream = store.create(kind: NoteKind.stream, title: '心流');
+    // v16 起速记是独立表（`stream_items`），不在 `notes` ⇒ 镜像连扫都扫不到。
+    StreamStore(db).add('一条速记');
     expect(mirror.exportPending(dir: tmp.path), 0);
     expect(tmp.listSync(), isEmpty);
     expect(mirror.exportOne(canvas.id, dir: tmp.path), isFalse);
-    expect(mirror.exportOne(stream.id, dir: tmp.path), isFalse);
   });
 
   test('没有块行的存量笔记 ⇒ plain_text 兜底导出', () {

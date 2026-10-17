@@ -27,7 +27,7 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 ///    + 新建胶囊搬到工作区**左侧扁平导航** [AppIconRail]，无面板、贴窗口底）；
 ///    上一步 / 下一步 的 UI 入口已撤（功能仍在全局键 `Alt+←/→`）。条内只剩
 ///    拖拽区 + 右簇设置钮 + 窗控；
-/// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（HomeHub 几何即卡几何）；
+/// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（CalendarPage 几何即卡几何）；
 /// ③ 问笔记不是顶条钮：它是工作区右角折叠钮，钉在内容卡内缘 4px、y 与编辑页
 ///    顶栏「标签」耳按钮同高；
 /// ④ 视图切换与进编辑器都走统一历史栈，按点击顺序进退（`Alt+←/→` 或 provider）。
@@ -161,8 +161,13 @@ void main() {
     );
     // 视图导航 + 新建胶囊在工作区左侧扁平导航（AppIconRail）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
+    // 2026-10-17：心流 = **速记页**（一页纸流），不做主从布局 ⇒ 默认视图里
+    // 没有列表列；列表列只服务「全部 / 收藏」（下面切过去再验）。
+    expect(find.byType(NoteListColumn), findsNothing);
+    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '心流是速记页');
+    await tapViewTab(tester, '全部');
     expect(find.byType(NoteListColumn), findsOneWidget,
-        reason: '主页态渲染列表列（主从，不再整屏 HomeHub 卡片墙）');
+        reason: '全部 / 收藏才走主从列表列');
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
@@ -230,12 +235,16 @@ void main() {
     // 默认视图 = 心流。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
 
-    // 编辑态：HomeHub 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航 /
+    // 编辑态：CalendarPage 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航 /
     // 新建胶囊**两态都在**（与已删的左索引面板同一条"常驻"原则）。
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
-    expect(find.byType(HomeHub), findsNothing, reason: '编辑器态不渲染 HomeHub');
+    expect(
+      find.byType(CalendarPage),
+      findsNothing,
+      reason: '编辑器态不渲染日历页（CalendarPage）',
+    );
     expect(find.byType(AppIconRail), findsOneWidget, reason: '侧栏两态常驻');
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
         reason: '新建胶囊（图标模式）编辑器态仍可见');

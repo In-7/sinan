@@ -86,6 +86,9 @@ void main() {
       // 编辑器不占这两个键（Alt+方向键在 appflowy 键表里无绑定）。
       'Alt+Arrow Left',
       'Alt+Arrow Right',
+      // 2026-10-17：全局速记 stream.capture（M = memo）。编辑器不占
+      // Ctrl+Shift+M，与 Ctrl+M 也无冲突（后者同样空着）。
+      'Ctrl+Shift+M',
     };
     final RegExp functionKeys = RegExp(r'^F([1-9]|1[0-2])$');
     bool isFree(String label) =>

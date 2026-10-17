@@ -74,6 +74,10 @@ void main() {
     store.create(title: '乙');
     store.create(title: '丙');
 
+    // 列表列只服务「全部 / 收藏」；心流（速记）不走主从布局（见 home_screen 的
+    // 视图分发）。所以这里先把视图切到「全部」再挂载。
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -85,7 +89,7 @@ void main() {
     // 列表实际渲染顺序（与列表列同一个 [homeItemsProvider] ⇒ 自洽）。
     final List<Note> ordered = container.read(
       homeItemsProvider((
-        view: HomeView.timeline,
+        view: HomeView.all,
         tag: null,
         kind: container.read(homeKindFacetProvider),
       )),

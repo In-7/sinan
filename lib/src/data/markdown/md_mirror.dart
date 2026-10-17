@@ -164,6 +164,20 @@ class MdMirror {
 
   MdRefLink? _resolveRef(String refType, String refId) {
     if (refId.isEmpty) return null;
+    // 速记（心流）没有镜像文件 ⇒ 落纯文本，不往 Obsidian 图谱里塞死链。
+    if (refType == 'stream') {
+      final ResultSet rs = db.select(
+        'SELECT text FROM stream_items WHERE id = ?',
+        <Object?>[refId],
+      );
+      if (rs.isEmpty) return null;
+      final String text = ((rs.first['text'] as String?) ?? '').trim();
+      final String first = text.split('\n').first.trim();
+      final String label = first.length <= 24
+          ? first
+          : '${first.substring(0, 24)}…';
+      return MdRefLink('速记：${label.isEmpty ? '（空）' : label}', linked: false);
+    }
     final ResultSet rs = refType == 'block'
         ? db.select(
             'SELECT n.title AS title, n.kind AS kind FROM blocks b '

@@ -513,6 +513,28 @@ void main() {
     }
   });
 
+  test('滚动条：粗细 4（静止）→ 6（悬停/拖拽）', () {
+    // 2026-10-17 用户定：比 M3 默认 8/12 细一档，滑块几乎只是一根线。
+    for (final ThemeData theme in <ThemeData>[
+      AppTheme.light(),
+      AppTheme.dark(),
+    ]) {
+      final WidgetStateProperty<double?> thickness =
+          theme.scrollbarTheme.thickness!;
+      expect(thickness.resolve(<WidgetState>{}), 4);
+      expect(
+        thickness.resolve(<WidgetState>{WidgetState.hovered}),
+        6,
+        reason: '悬停要给出"可抓"的加粗',
+      );
+      expect(
+        thickness.resolve(<WidgetState>{WidgetState.dragged}),
+        6,
+        reason: '拖拽与悬停同档，避免抓起来又变细',
+      );
+    }
+  });
+
   test('图标/次级色/正文都退染为纯灰（不随种子染色）', () {
     // M3 会给中性角色染种子色相（onSurface C6~10 / onSurfaceVariant C10~15，
     // 实测）。主题层在 _build 里对这两档"退染"（保留明度、清零色度）——

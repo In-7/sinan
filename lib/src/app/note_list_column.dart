@@ -14,7 +14,8 @@ import 'providers.dart';
 import 'search_provider.dart';
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
-/// （编辑器 / 画布 / 空态）。心流 / 全部 / 收藏三视图走它，开笔记不再整屏替换、列表常驻。
+/// （编辑器 / 画布 / 空态）。**只服务「全部 / 收藏」**——速记（心流）是一页纸时间流，
+/// 由外壳直接挂 `StreamView`，不经过这里（2026-10-17 收口）。
 ///
 /// - 头 = 视图名 + 篇数 + 「筛选」钮（[FilterMenuButton]：排序 / 形态 / 标签，全局控件）。
 /// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按排序 + 形态 + 标签过滤）。
@@ -24,7 +25,6 @@ import 'search_provider.dart';
 /// ## 极简留白（2026-10-17 用户定）
 /// 不用行间分割线（满格横线 = 表格感）——分层靠：① 留白（行 vertical padding spaceMd）；
 /// ② 字重三级（标题 w600 浓墨 / 摘要 w400 淡墨 / 时间·图标 最小最淡）；③ 选中态淡色底。
-/// **心流**再按 `revisedAt` 日期分桶，重复日期上移到分组小标、行内只留 图标+标题+摘要。
 class NoteListColumn extends ConsumerWidget {
   const NoteListColumn({super.key});
 
@@ -43,21 +43,11 @@ class NoteListColumn extends ConsumerWidget {
       )),
     );
     final String? selectedId = ref.watch(selectedNoteIdProvider);
-    final bool grouped = view == HomeView.timeline;
-
-    // 拍平成一串条目：心流 = [分组标, 行, 行, 分组标, 行…]；其余 = [行, 行…]。
-    final List<_ListItem> entries = <_ListItem>[];
-    String? lastBucket;
-    for (final Note n in items) {
-      if (grouped) {
-        final String bucket = _dateBucket(n.revisedAt);
-        if (bucket != lastBucket) {
-          entries.add(_HeaderItem(bucket));
-          lastBucket = bucket;
-        }
-      }
-      entries.add(_NoteItem(n));
-    }
+    // ⚠️ 速记（心流）**不走这里**：它是独立的一页纸流（`StreamView`，由外壳直接
+    // 挂载）。列表列只服务「全部 / 收藏」——2026-10-17 前它还把 timeline 当成
+    // "笔记时间流"并按日期分桶，与速记页形成两套语义（用户实报"改了没变化"）。
+    //
+    // 于是这里不再有分组条目，也没有"心流"这一档的专属显示口径。
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -97,18 +87,12 @@ class NoteListColumn extends ConsumerWidget {
           child: items.isEmpty
               ? _ListEmpty(view: view)
               : ListView.builder(
-                  itemCount: entries.length,
+                  itemCount: items.length,
                   itemBuilder: (BuildContext context, int i) {
-                    final _ListItem e = entries[i];
-                    if (e is _HeaderItem) {
-                      return _GroupHeader(label: e.label);
-                    }
-                    final Note n = (e as _NoteItem).note;
+                    final Note n = items[i];
                     return _NoteRow(
                       note: n,
                       selected: n.id == selectedId,
-                      // 心流已按日期分组 ⇒ 行内不再显示日期；全部 / 收藏保留。
-                      showDate: !grouped,
                       onOpen: () => ref
                           .read(locateProvider.notifier)
                           .locate(noteId: n.id),
@@ -144,35 +128,6 @@ String _viewLabel(HomeView v) => switch (v) {
   HomeView.favorites => '收藏',
 };
 
-/// `revisedAt` 的日期分桶（心流分组小标）：今天 / 昨天 / 前天 / 本周 / 更早（显日月，
-/// 跨年带年）。本地时区、按"自然日"归一。
-String _dateBucket(DateTime at) {
-  final DateTime now = DateTime.now();
-  final DateTime today = DateTime(now.year, now.month, now.day);
-  final DateTime day = DateTime(at.year, at.month, at.day);
-  final int diff = today.difference(day).inDays;
-  if (diff <= 0) return '今天';
-  if (diff == 1) return '昨天';
-  if (diff == 2) return '前天';
-  if (diff <= 6) return '本周';
-  return at.year == now.year
-      ? '${at.month} 月 ${at.day} 日'
-      : '${at.year} 年 ${at.month} 月 ${at.day} 日';
-}
-
-/// 列表条目：要么一个分组小标（[_HeaderItem]），要么一行笔记（[_NoteItem]）。
-sealed class _ListItem {}
-
-class _HeaderItem extends _ListItem {
-  _HeaderItem(this.label);
-  final String label;
-}
-
-class _NoteItem extends _ListItem {
-  _NoteItem(this.note);
-  final Note note;
-}
-
 /// 列表列空态（当前视图 / 筛选下没有笔记）。
 class _ListEmpty extends StatelessWidget {
   const _ListEmpty({required this.view});
@@ -202,37 +157,6 @@ class _ListEmpty extends StatelessWidget {
   }
 }
 
-/// 分组小标（心流）：小字 + 微字距 + 淡墨，上面多一档留白当"間"（组与组的分隔全靠
-/// 留白，不画线）。
-class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Brightness b = theme.brightness;
-    return Padding(
-      // 上 spaceMd = 组间「間」（比行距再松一档）；下 spaceXs 贴近首行。
-      padding: const EdgeInsets.fromLTRB(
-        Tokens.spaceMd,
-        Tokens.spaceMd,
-        Tokens.spaceMd,
-        Tokens.spaceXs,
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: Bauhaus.inkMuted(b),
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-}
-
 /// 单行笔记：kind 图标 + 标题（1 行 w600 浓墨）+ 摘要（2 行 w400 淡墨）[+ 右对齐相对
 /// 时间，仅非心流]。选中 / hover 底与 60 轨同口径（选中 = hover 2×）。
 class _NoteRow extends StatefulWidget {
@@ -241,7 +165,6 @@ class _NoteRow extends StatefulWidget {
     required this.selected,
     required this.onOpen,
     required this.onNavigate,
-    this.showDate = true,
   });
 
   final Note note;
@@ -250,7 +173,6 @@ class _NoteRow extends StatefulWidget {
 
   /// ↑/↓ 由本行方向键快捷键触发，回调给父列切上/下一篇（父才知道全局顺序）。
   final ValueChanged<int> onNavigate;
-  final bool showDate;
 
   @override
   State<_NoteRow> createState() => _NoteRowState();
@@ -405,15 +327,13 @@ class _NoteRowState extends State<_NoteRow> {
                         ],
                       ),
                     ),
-                    if (widget.showDate) ...<Widget>[
-                      const SizedBox(width: Tokens.spaceSm),
-                      Text(
-                        relativeTime(n.revisedAt),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Bauhaus.inkMuted(b),
-                        ),
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text(
+                      relativeTime(n.revisedAt),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Bauhaus.inkMuted(b),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),

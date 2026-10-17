@@ -12,6 +12,7 @@ import 'block_store.dart';
 import 'canvas_store.dart';
 import 'fingerprint.dart';
 import 'index_job.dart';
+import 'stream_store.dart';
 
 /// 笔记的读写入口：CRUD。
 ///
@@ -121,112 +122,25 @@ class NoteStore {
     );
   }
 
-  // ── 心流收件箱（stream 容器 + 其块）──────────────────────────────────
+  // ── 速记（心流）→ 笔记 / 画布：**单向导出** ─────────────────────────────
   //
-  // 心流 = 一篇隐藏的系统容器笔记（kind='stream'）装着的一串段落块。**单向**：心流只
-  // 读写自己这个容器，绝不读用户笔记内容；用户笔记 / 画布通过 ref / 注入**指向**心流块
-  // （导出方法在更下一段）。心流块在库里就是普通段落块（文本走 data.delta）——注入笔记
-  // 可原样复用，注入画布则走 canvas card（text 快照）。
+  // 速记的真相源是独立表 `stream_items`（见 `StreamStore`），与 notes / blocks
+  // **无外键**。这里只做"用户手动把一条速记变成内容"的写路径：
   //
-  // ⚠️ 走 content 真相源：所有写都改容器 content 的 v2 块树，再 [_persistContentSync]
-  // 双写投影——绝不直接 INSERT blocks（会被下次 replaceNoteBlocks 当孤儿清掉）。
+  // - **引用**（活链）：笔记里插 `ref` 块（`ref_type='stream'`）。只有笔记读速记，
+  //   速记永不回读；删速记后引用处显示「已失效」，笔记内容不丢。
+  // - **复制**（快照）：笔记里插独立段落块 / 画布上建独立块 + 卡片，之后互不相干。
+  // - **转新**（归档）：建成一篇新笔记，速记条目**归档**（2026-10-17 定：不删，
+  //   可回看、可撤销）。
+  //
+  // 画布**不做**活链（同日定）：卡片必须有自己的块，速记更新不推送过去。
 
-  /// 心流块文本读口：段落走 `data.delta`（拼接各 insert）；注入画布的快照卡走 `text`。
-  static String streamBlockText(String? propsJson) {
-    if (propsJson == null || propsJson.trim().isEmpty) return '';
-    try {
-      final Object? d = jsonDecode(propsJson);
-      if (d is Map<String, Object?>) {
-        final Object? delta = d['delta'];
-        if (delta is List<Object?>) {
-          final StringBuffer sb = StringBuffer();
-          for (final Object? op in delta) {
-            if (op is Map<String, Object?> && op['insert'] is String) {
-              sb.write(op['insert'] as String);
-            }
-          }
-          return sb.toString();
-        }
-        final Object? text = d['text'];
-        if (text is String) return text;
-      }
-    } on FormatException {
-      // 脏数据当空块，不抛。
-    }
-    return '';
-  }
+  /// 速记文本（引用解析 / 复制 / 转新的唯一读口）。条目不存在返回 null。
+  String? streamTextOf(String streamId) => StreamStore(db).textOf(streamId);
 
-  /// 心流系统容器（单例，隐藏）：没有就建一篇空的 kind='stream' 笔记。
-  Note streamContainer() {
-    final ResultSet rs = db.select(
-      "SELECT id FROM notes WHERE kind = 'stream' LIMIT 1",
-    );
-    for (final Row r in rs) {
-      final Note? n = noteById(r['id'] as String);
-      if (n != null) return n;
-    }
-    return create(kind: NoteKind.stream, content: _emptyStreamTree());
-  }
-
-  /// 心流条目（**最新在上**）：读容器段落块投影，`ord ASC` = 文档序 = 最新在前
-  /// （新条目前插到块树顶 ⇒ ord 最小）。跳过空段（如容器初始空段）。
-  List<StreamItem> listStreamItems() {
-    final Note c = streamContainer();
-    final ResultSet rs = db.select(
-      'SELECT id, props_json, created_at FROM blocks WHERE note_id = ? '
-      'ORDER BY ord ASC',
-      <Object?>[c.id],
-    );
-    final List<StreamItem> out = <StreamItem>[];
-    for (final Row r in rs) {
-      final String text = streamBlockText(r['props_json'] as String?);
-      if (text.trim().isEmpty) continue;
-      out.add(
-        StreamItem(
-          id: r['id'] as String,
-          text: text,
-          createdAt: DateTime.fromMillisecondsSinceEpoch(
-            r['created_at'] as int,
-          ),
-        ),
-      );
-    }
-    return out;
-  }
-
-  static String _emptyStreamTree() => jsonEncode(<String, Object?>{
-    'v': 2,
-    'format': 'blocks',
-    'document': <String, Object?>{'type': 'page', 'children': <Object?>[]},
-  });
-
-  /// 取出容器的 v2 块树 document 节点（脏 / 空 content ⇒ 空 page）。
-  Map<String, Object?> _streamDocOf(Note container) {
-    final String raw = container.content.trim().isEmpty
-        ? _emptyStreamTree()
-        : container.content;
-    final Object? decoded = jsonDecode(raw);
-    if (decoded is Map<String, Object?>) {
-      final Object? doc = decoded['document'];
-      if (doc is Map<String, Object?>) return doc;
-    }
-    return <String, Object?>{'type': 'page', 'children': <Object?>[]};
-  }
-
-  static String _encodeStreamTree(Map<String, Object?> doc) => jsonEncode(
-    <String, Object?>{'v': 2, 'format': 'blocks', 'document': doc},
-  );
-
-  static List<Object?> _streamChildren(Map<String, Object?> doc) {
-    final Object? ch = doc['children'];
-    doc['children'] = ch is List<Object?> ? ch : <Object?>[];
-    return doc['children'] as List<Object?>;
-  }
-
-  /// 心流 / 注入共用的段落块节点。**同时写 `delta` 与 `text`**：`delta` 给 AppFlowy
+  /// 复制 / 注入共用的段落块节点。**同时写 `delta` 与 `text`**：`delta` 给 AppFlowy
   /// 编辑器读；`text` 给数据层的 [textOfProps] / `blockText` / 画布卡片快照 / 反链
-  /// 上下文读——editor 写的块只有 `delta`，缺 `text` 会让这些读口拿到空串。心流块要
-  /// 被引用 / 注入 / 搜索，必须两边都有。
+  /// 上下文读——editor 写的块只有 `delta`，缺 `text` 会让这些读口拿到空串。
   static Map<String, Object?> _paragraphNode(String id, String text) =>
       <String, Object?>{
         'id': id,
@@ -239,81 +153,16 @@ class NoteStore {
         },
       };
 
-  /// 新增一条心流（**前插**到块树顶 ⇒ 最新在上），返回新块 id。
-  String addStreamItem(String text) {
-    final Note c = streamContainer();
-    final Map<String, Object?> doc = _streamDocOf(c);
-    final List<Object?> children = _streamChildren(doc);
-    final String id = _uuid.v4();
-    children.insert(0, _paragraphNode(id, text));
-    _persistContentSync(c.id, _encodeStreamTree(doc));
-    return id;
-  }
-
-  /// 改一条心流的文本（按块 id 定位，替换 delta）。没这条返回 false。
-  bool updateStreamItem(String blockId, String text) {
-    final Note c = streamContainer();
-    final Map<String, Object?> doc = _streamDocOf(c);
-    final List<Object?> children = _streamChildren(doc);
-    for (int i = 0; i < children.length; i++) {
-      final Object? n = children[i];
-      if (n is Map<String, Object?> && n['id'] == blockId) {
-        children[i] = _paragraphNode(blockId, text);
-        _persistContentSync(c.id, _encodeStreamTree(doc));
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// 删一条心流（从块树摘掉）。没这条返回 false。
-  bool deleteStreamItem(String blockId) {
-    final Note c = streamContainer();
-    final Map<String, Object?> doc = _streamDocOf(c);
-    final List<Object?> children = _streamChildren(doc);
-    final int before = children.length;
-    children.removeWhere(
-      (Object? n) => n is Map<String, Object?> && n['id'] == blockId,
-    );
-    if (children.length == before) return false;
-    _persistContentSync(c.id, _encodeStreamTree(doc));
-    return true;
-  }
-
-  // ── 心流导出（单向：心流 → 笔记 / 画布）────────────────────────────────
-  //
-  // 三种语义（2026-10-16 用户定）：
-  // - **引用**（活链）：目标里插一个 `ref` 块 / 画布卡**指向**该块——块**留在心流**，
-  //   两边同一份真身，[backlinks] 自动记「这条灵感被哪几篇用了」；
-  // - **注入**（快照）：把文本**复制**成目标里的一个真段落块——块留在心流，互不影响；
-  // - **转新**（消耗）：建成一篇新笔记，块从心流删除——心流里消失。
-  // 心流**永不反向读**用户笔记：这些方法只写目标 / 建新篇，不回读用户内容。
-
-  /// 块的文本：先 `text`（[textOfProps]：注入画布的卡 / editor 块），再 `delta`
-  /// （[streamBlockText]：心流段落块）。块不存在返回 null。
-  String? streamTextOf(String blockId) {
-    final ResultSet rs = db.select(
-      'SELECT props_json FROM blocks WHERE id = ?',
-      <Object?>[blockId],
-    );
-    if (rs.isEmpty) return null;
-    final String? props = rs.first['props_json'] as String?;
-    final String viaText = textOfProps(props);
-    return viaText.isNotEmpty ? viaText : streamBlockText(props);
-  }
-
   static Map<String, Object?> _emptyTreeMap() => <String, Object?>{
     'v': 2,
     'format': 'blocks',
     'document': <String, Object?>{'type': 'page', 'children': <Object?>[]},
   };
 
-  /// 目标**文档**笔记的 v2 块树；画布 / 心流 / 不存在 / 脏内容 ⇒ null，空正文 ⇒ 空树。
+  /// 目标**文档**笔记的 v2 块树；画布 / 不存在 / 脏内容 ⇒ null，空正文 ⇒ 空树。
   Map<String, Object?>? _targetDocTree(String noteId) {
     final Note? n = noteById(noteId);
-    if (n == null || n.kind == NoteKind.canvas || n.kind == NoteKind.stream) {
-      return null;
-    }
+    if (n == null || n.kind == NoteKind.canvas) return null;
     final String raw = n.content.trim();
     if (raw.isEmpty) return _emptyTreeMap();
     try {
@@ -335,18 +184,20 @@ class NoteStore {
     return document['children'] as List<Object?>;
   }
 
-  /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type=block`）指向它。
-  /// 块留在心流；`backlinks` 自动记这笔引用。已引用过 ⇒ 幂等 false。
-  bool referenceStreamBlockInNote(String blockId, String noteId) {
+  /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type='stream'`）。
+  /// 速记留在心流；已引用过 ⇒ 幂等 false。
+  bool referenceStreamInNote(String streamId, String noteId) {
     final Map<String, Object?>? tree = _targetDocTree(noteId);
     if (tree == null) return false;
+    // 目标条目必须还在：否则插进去的就是一条天生的断链。
+    if (streamTextOf(streamId) == null) return false;
     final List<Object?> children = _treeChildren(tree);
     for (final Object? n in children) {
       if (n is! Map<String, Object?> || n['type'] != _refType) continue;
       final Object? data = n['data'];
       if (data is Map<String, Object?> &&
-          data['ref_type'] == _refTargetBlock &&
-          data['ref_id'] == blockId) {
+          data['ref_type'] == _refTargetStream &&
+          data['ref_id'] == streamId) {
         return false;
       }
     }
@@ -354,8 +205,8 @@ class NoteStore {
       'id': _uuid.v4(),
       'type': _refType,
       'data': <String, Object?>{
-        'ref_type': _refTargetBlock,
-        'ref_id': blockId,
+        'ref_type': _refTargetStream,
+        'ref_id': streamId,
         'ref_view': 'link',
       },
     });
@@ -363,47 +214,122 @@ class NoteStore {
     return true;
   }
 
-  /// **注入到笔记**（快照）：把文本复制成目标里的一个真段落块。块留在心流。
-  bool injectStreamBlockInNote(String blockId, String noteId) {
+  /// **复制到笔记**（快照）：把速记文本复制成目标里的一个真段落块。
+  bool copyStreamIntoNote(String streamId, String noteId) {
     final Map<String, Object?>? tree = _targetDocTree(noteId);
     if (tree == null) return false;
-    final String? text = streamTextOf(blockId);
+    final String? text = streamTextOf(streamId);
     if (text == null || text.trim().isEmpty) return false;
     _treeChildren(tree).add(_paragraphNode(_uuid.v4(), text));
     _persistContentSync(noteId, jsonEncode(tree));
     return true;
   }
 
-  /// **转成新笔记**（消耗）：建一篇正式笔记装上这段文本，心流条目随之删除。
-  Note? streamBlockToNewNote(String blockId) {
-    final String? text = streamTextOf(blockId);
+  /// **复制到画布**（快照卡）：新建一张**独立**卡片（自己的块 + 自己的文本），
+  /// 速记更新不会再推过来（2026-10-17 用户定：画布只复制、不做活链）。
+  bool copyStreamOntoCanvas(String streamId, String canvasId) {
+    final String? text = streamTextOf(streamId);
+    if (text == null || text.trim().isEmpty) return false;
+    final Map<String, Object?>? doc = _canvasDoc(canvasId);
+    if (doc == null) return false;
+    final Map<String, Object?>? document = _canvasDocument(doc);
+    if (document == null) return false;
+    final Map<String, Object?>? items = _canvasItems(document);
+    if (items == null) return false;
+
+    final String itemId = _nextCanvasItemId(items.keys);
+    items[itemId] = <String, Object?>{
+      'type': 'card',
+      'id': itemId,
+      'blockId': _uuid.v4(),
+      'text': text,
+      'angle': 0,
+      'rect': _freeCardRect(items),
+      'meta': <String, Object?>{},
+    };
+    final Object? rawOrder = document['itemOrder'];
+    final List<Object?> order = rawOrder is List
+        ? rawOrder.toList()
+        : <Object?>[];
+    order.add(itemId);
+    document['itemOrder'] = order;
+
+    // 落盘 + 投影：`_replaceCardBlocks` 会为这张新卡建好 `blocks` 行
+    // （先内容后几何，外键才不会炸）。
+    _persistContentSync(canvasId, jsonEncode(doc));
+    return true;
+  }
+
+  /// **转成新笔记**（归档）：建一篇正式笔记装上这段文本，速记条目**归档**
+  /// （不删 —— 速记最怕误删，归档区还能找回来）。
+  Note? streamToNewNote(String streamId, {NoteKind kind = NoteKind.note}) {
+    final String? text = streamTextOf(streamId);
     if (text == null) return null;
     final Note n = createSpark(
-      kind: NoteKind.note,
-      content: _blocksTreeFromText(text),
+      kind: kind,
+      content: StreamStore.blocksTreeFromText(text),
       plainText: text,
     );
-    deleteStreamItem(blockId);
+    StreamStore(db).archive(streamId);
     return n;
   }
 
-  /// 纯文本 → v2 块树（每行一段，节点带 delta+text）。数据层**不 import 编辑器层**
-  /// （架构闸门），故在此自持一份编码（口径：结尾空段不落库、空文本给单个空段）。
-  static String _blocksTreeFromText(String text) {
-    final List<String> lines = text.split('\n');
-    while (lines.isNotEmpty && lines.last.isEmpty) {
-      lines.removeLast();
+  /// **合并成一篇新笔记**（归档）：多条速记按时间顺序（旧 → 新）拼成正文。
+  ///
+  /// 这是速记 → 深思考的主路径：零散记录攒够了，一次提炼成一篇笔记。
+  /// 参与合并的条目全部归档（可回看）；返回 null = 一条有效的都没有。
+  Note? streamMergeToNewNote(List<String> streamIds) {
+    if (streamIds.isEmpty) return null;
+    // 顺序在 SQL 里定死：`created_at`（同一毫秒再按插入顺序 rowid）——
+    // 只在内存里 sort 会因为入库时间戳截到毫秒而并列，合并顺序时对时错。
+    final String marks = List<String>.filled(streamIds.length, '?').join(',');
+    final ResultSet rs = db.select(
+      'SELECT id, text FROM stream_items WHERE id IN ($marks) '
+      'ORDER BY created_at ASC, rowid ASC',
+      streamIds,
+    );
+    if (rs.isEmpty) return null;
+    final List<String> lines = <String>[
+      for (final Row r in rs)
+        ...(r['text'] as String).split('\n').where(
+          (String l) => l.trim().isNotEmpty,
+        ),
+    ];
+    if (lines.isEmpty) return null;
+    final String plain = lines.join('\n');
+    final Note n = createSpark(
+      kind: NoteKind.note,
+      content: StreamStore.blocksTreeFromText(plain),
+      plainText: plain,
+    );
+    final StreamStore streams = StreamStore(db);
+    for (final Row r in rs) {
+      streams.archive(r['id'] as String);
     }
-    final List<Object?> children = lines.isEmpty
-        ? <Object?>[_paragraphNode(_uuid.v4(), '')]
-        : <Object?>[
-            for (final String l in lines) _paragraphNode(_uuid.v4(), l),
-          ];
-    return jsonEncode(<String, Object?>{
-      'v': 2,
-      'format': 'blocks',
-      'document': <String, Object?>{'type': 'page', 'children': children},
-    });
+    return n;
+  }
+
+  /// **转成新画布**（归档）：新建一张画布，里面放一条独立卡片（速记文本）。
+  Note? streamToNewCanvas(String streamId) {
+    final String? text = streamTextOf(streamId);
+    if (text == null) return null;
+    final String first = text.trim().split('\n').first.trim();
+    final String title = first.length <= 20 ? first : '${first.substring(0, 20)}…';
+    final Note n = create(kind: NoteKind.canvas, title: title);
+    // 画布需要合法骨架才能被 `_canvasDoc` 认出来（create 只给空 content）。
+    _persistContentSync(
+      n.id,
+      jsonEncode(<String, Object?>{
+        'camera': <String, Object?>{'x': 0, 'y': 0, 'scale': 1},
+        'document': <String, Object?>{
+          'items': <String, Object?>{},
+          'itemOrder': <Object?>[],
+        },
+      }),
+    );
+    copyStreamOntoCanvas(streamId, n.id);
+    StreamStore(db).archive(streamId);
+    return noteById(n.id);
   }
 
   /// 保存正文。content 的格式**由当前编辑器决定**（quill 时期是 Delta，
@@ -485,8 +411,7 @@ class NoteStore {
     final ResultSet rs = db.select(
       'SELECT id, kind, title, content_hash, tags, summary, '
       'created_at, revised_at, promoted_at FROM notes '
-      // 心流系统容器（kind='stream'）不进文库列表（隐藏，心流走专用读取）。
-      "WHERE kind != 'stream' "
+      // v16 起速记不再是笔记（独立表 `stream_items`）⇒ 已没有要排除的形态。
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
     );
@@ -922,9 +847,10 @@ class NoteStore {
   /// 插值开头，后面不是标识符时**编译报错**（"Expected an identifier"）。
   static const String _textPath = r'$.text';
 
-  /// `ref_type` 的两个取值（与 `RefBlockKeys.refNote / refBlock` 对齐）。
+  /// `ref_type` 的取值（与 `RefBlockKeys.refNote / refBlock / refStream` 对齐）。
   static const String _refTargetNote = 'note';
   static const String _refTargetBlock = 'block';
+  static const String _refTargetStream = 'stream';
 
   /// 谁引用了 [noteId]（或它的块），按来源笔记的最近修改倒序。
   ///

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -5,8 +6,11 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite_vector/sqlite_vector.dart';
+import 'package:uuid/uuid.dart';
 
 import '../domain/note.dart';
+import 'fingerprint.dart';
+import 'stream_store.dart';
 
 /// 数据库层：只负责「打开 + schema + 迁移」，不碰业务查询。
 ///
@@ -452,6 +456,17 @@ class AppDatabase {
       db.userVersion = 15;
     }
 
+    // v16：心流**独立存储**（2026-10-17 用户定）。
+    //
+    // 此前心流是"一篇隐藏笔记（`kind='stream'`）+ 一串段落块"，每处下游都要写
+    // `kind != 'stream'` 的特例，且速记会混进块选择器 / 反链上下文。现在搬进
+    // 独立表 `stream_items`（无外键指向 notes/blocks），**id 沿用旧块 id**，
+    // 于是已有的 `ref` 引用只需把 `ref_type` 改成 `'stream'` 就不断链。
+    if (db.userVersion < 16) {
+      _migrateStreamV16(db);
+      db.userVersion = 16;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
@@ -460,6 +475,208 @@ class AppDatabase {
     // 缺的列要在这里补（否则首次保存就抛 "no such column"，见用户 2026-09-18 报错）。
     _repairCanvasEdgesTable(db);
     _repairCanvasItemsBlockId(db);
+  }
+
+  static const Uuid _uuid = Uuid();
+
+  /// v16：把旧的"隐藏心流笔记 + 段落块"搬进独立表 `stream_items`。
+  ///
+  /// 四件事，顺序不能换：
+  /// 1. 建表；把容器里的段落逐条搬过去（**id 沿用旧块 id**，`created_at` 优先
+  ///    取块行的时间，"最新在上"的排序不飘）；
+  /// 2. 笔记里指向这些块的 `ref` 块：`ref_type` 由 `block` 改为 `stream`
+  ///    （id 没变 ⇒ 引用不断）；
+  /// 3. 画布上指向这些块的卡片：转成**独立复制卡**（v16 起心流不做画布活链，
+  ///    详见方案"画布只复制、不引用"）——不先处理，删容器时它们会变成空框；
+  /// 4. 删容器（CASCADE 清它的块）。删前把原文备份进 `settings`，可人工找回。
+  ///
+  /// 幂等：建表与插入都带 `IF NOT EXISTS` / `OR REPLACE`；容器不存在时是空转。
+  static void _migrateStreamV16(Database db) {
+    db.execute(StreamStore.ddl);
+    final ResultSet containers = db.select(
+      "SELECT id, content, created_at FROM notes WHERE kind = 'stream'",
+    );
+    for (final Row c in containers) {
+      final String containerId = c['id'] as String;
+      final String raw = (c['content'] as String?) ?? '';
+      // 备份（回滚 / 人工核对用）。容器马上要删，这是唯一的原文。
+      db.execute(
+        'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+        <Object?>['stream.migration.backup', raw.isEmpty ? '{}' : raw],
+      );
+
+      final List<_LegacyStream> items = _legacyStreamItems(raw);
+      final Map<String, int> createdOf = <String, int>{
+        for (final Row r in db.select(
+          'SELECT id, created_at FROM blocks WHERE note_id = ?',
+          <Object?>[containerId],
+        ))
+          r['id'] as String: r['created_at'] as int,
+      };
+      final int base = (c['created_at'] as int?) ?? 0;
+      final Set<String> movedIds = <String>{};
+      for (int i = 0; i < items.length; i++) {
+        final _LegacyStream item = items[i];
+        final String text = item.text.trim();
+        if (text.isEmpty) continue;
+        movedIds.add(item.id);
+        // 兜底时间戳按"容器创建 + 序位"给，保证与文档序（新在前）一致。
+        final int ts = createdOf[item.id] ?? (base + (items.length - i));
+        db.execute(
+          'INSERT OR REPLACE INTO stream_items '
+          '(id, text, created_at, updated_at) VALUES (?, ?, ?, ?)',
+          <Object?>[item.id, text, ts, ts],
+        );
+      }
+
+      if (movedIds.isNotEmpty) {
+        // ② 引用块：只改类型，id 沿用。
+        db.execute(
+          "UPDATE blocks SET props_json = "
+          "json_set(props_json, '\$.ref_type', 'stream') "
+          "WHERE type = 'ref' AND json_valid(props_json) "
+          "AND json_extract(props_json, '\$.ref_type') = 'block' "
+          "AND json_extract(props_json, '\$.ref_id') IN "
+          "(SELECT id FROM stream_items)",
+        );
+        // ③ 画布卡片：转为独立复制卡。
+        _repointStreamCardsV16(db, movedIds);
+      }
+
+      // ④ 删容器（块的 CASCADE 一并清）。
+      db.execute('DELETE FROM notes WHERE id = ?', <Object?>[containerId]);
+    }
+  }
+
+  /// 旧心流容器的一块：id + 文本（`data.text` 优先，回退 `delta` 拼接）。
+  static List<_LegacyStream> _legacyStreamItems(String raw) {
+    if (raw.trim().isEmpty) return const <_LegacyStream>[];
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return const <_LegacyStream>[];
+    }
+    if (decoded is! Map) return const <_LegacyStream>[];
+    final Object? document = decoded['document'];
+    if (document is! Map) return const <_LegacyStream>[];
+    final Object? children = document['children'];
+    if (children is! List) return const <_LegacyStream>[];
+    return <_LegacyStream>[
+      for (final Object? n in children)
+        if (n is Map && n['id'] is String)
+          _LegacyStream(
+            n['id'] as String,
+            _legacyText(n['data'] is Map ? n['data'] as Map : const <String, Object?>{}),
+          ),
+    ];
+  }
+
+  static String _legacyText(Map<Object?, Object?> data) {
+    final Object? text = data['text'];
+    if (text is String && text.trim().isNotEmpty) return text;
+    final Object? delta = data['delta'];
+    if (delta is List) {
+      final StringBuffer sb = StringBuffer();
+      for (final Object? op in delta) {
+        if (op is Map && op['insert'] is String) sb.write(op['insert'] as String);
+      }
+      return sb.toString();
+    }
+    return '';
+  }
+
+  /// 把画布上**指向旧心流块**的卡片转成独立复制卡：换一个新块 id（块行当场建好）、
+  /// 保留文本，再删掉旧投影行（指向即将消失的块）。缩略图快路径会因行数不符自动
+  /// 回落到 JSON，下一次保存/回填重建投影。
+  static void _repointStreamCardsV16(Database db, Set<String> streamIds) {
+    final List<String> ids = streamIds.toList(growable: false);
+    final String marks = List<String>.filled(ids.length, '?').join(',');
+    final ResultSet canvases = db.select(
+      "SELECT DISTINCT note_id FROM canvas_items "
+      "WHERE kind = 'card' AND block_id IN ($marks)",
+      ids,
+    );
+    for (final Row row in canvases) {
+      final String noteId = row['note_id'] as String;
+      final ResultSet rs = db.select(
+        'SELECT content FROM notes WHERE id = ?',
+        <Object?>[noteId],
+      );
+      if (rs.isEmpty) continue;
+      final String content = (rs.first['content'] as String?) ?? '';
+      final Map<String, dynamic>? doc = _decodeCanvasJson(content);
+      if (doc == null) continue;
+      final Object? documentRaw = doc['document'];
+      final Object? itemsRaw = documentRaw is Map ? documentRaw['items'] : null;
+      if (itemsRaw is! Map) continue;
+      final Map<String, dynamic> items = itemsRaw.cast<String, dynamic>();
+
+      final List<MapEntry<String, String>> copies = <MapEntry<String, String>>[];
+      for (final MapEntry<String, dynamic> e in items.entries.toList()) {
+        final Object? v = e.value;
+        if (v is! Map) continue;
+        final Map<String, dynamic> card = v.cast<String, dynamic>();
+        if (card['type'] != 'card') continue;
+        final Object? blockId = card['blockId'];
+        if (blockId is! String || !streamIds.contains(blockId)) continue;
+        final String newId = _uuid.v4();
+        card['blockId'] = newId;
+        copies.add(MapEntry<String, String>(newId, (card['text'] as String?) ?? ''));
+      }
+      if (copies.isEmpty) continue;
+
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      int ord = 1024;
+      for (final MapEntry<String, String> copy in copies) {
+        final String props = jsonEncode(<String, Object?>{
+          'delta': <Object?>[
+            <String, Object?>{'insert': copy.value},
+          ],
+          'text': copy.value,
+        });
+        db.execute(
+          'INSERT OR REPLACE INTO blocks '
+          '(id, note_id, type, props_json, ord, parent_id, created_at, '
+          'updated_at, fingerprint) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)',
+          <Object?>[
+            copy.key,
+            noteId,
+            'card',
+            props,
+            ord,
+            now,
+            now,
+            contentFingerprint(props),
+          ],
+        );
+        ord += 1024;
+      }
+
+      final String next = jsonEncode(doc);
+      db.execute(
+        'UPDATE notes SET content = ?, content_hash = ? WHERE id = ?',
+        <Object?>[next, contentFingerprint(next), noteId],
+      );
+      // 旧几何行指向马上要消失的块 ⇒ 删行（下次保存按新 JSON 重建）。
+      db.execute(
+        "DELETE FROM canvas_items WHERE note_id = ? AND kind = 'card' "
+        "AND block_id IN ($marks)",
+        <Object?>[noteId, ...ids],
+      );
+    }
+  }
+
+  static Map<String, dynamic>? _decodeCanvasJson(String content) {
+    if (content.trim().isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(content);
+      if (decoded is! Map) return null;
+      final Map<String, dynamic> doc = decoded.cast<String, dynamic>();
+      return doc['document'] is Map ? doc : null;
+    } on FormatException {
+      return null;
+    }
   }
 
   /// 低频维护：刷新查询规划器统计（SQLite 对**长连接**的推荐节奏）。
@@ -682,4 +899,12 @@ class AppDatabase {
   }
 
   void close() => db.close();
+}
+
+/// v16 迁移用：旧心流容器里的一条（块 id + 文本）。
+class _LegacyStream {
+  const _LegacyStream(this.id, this.text);
+
+  final String id;
+  final String text;
 }

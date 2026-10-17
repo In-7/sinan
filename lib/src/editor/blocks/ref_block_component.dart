@@ -27,9 +27,13 @@ class RefBlockKeys {
   static const String refId = 'ref_id';
   static const String refView = 'ref_view';
 
-  /// [refType] 的取值：引用整篇笔记 / 引用某一块。
+  /// [refType] 的取值：引用整篇笔记 / 引用某一块 / 引用一条**速记**。
+  ///
+  /// `stream` 的目标在独立表 `stream_items`（心流，见 `StreamStore`）——
+  /// 不在 `notes` / `blocks` 里，所以解析与跳转都走自己那条路。
   static const String refNote = 'note';
   static const String refBlock = 'block';
+  static const String refStream = 'stream';
 
   /// [refView] 的取值：
   /// - [viewLink]（默认）：一行卡片，只显示目标标题（= 传统双链的"链接"）；
@@ -56,10 +60,13 @@ Node refBlockNode({
 
 /// 解出来的引用目标；`null` 表示目标已不存在（UI 显示"引用已失效"）。
 class RefTarget {
-  const RefTarget({required this.title, required this.kind});
+  const RefTarget({required this.title, required this.kind, this.stream = false});
 
   final String title;
   final NoteKind kind;
+
+  /// 目标是一条**速记**（不在笔记里）：标签显示「速记」，点击跳心流视图。
+  final bool stream;
 }
 
 /// 引用块与宿主（笔记库 / 导航）之间的**接缝**。
@@ -363,6 +370,11 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
 
   static String _labelOf(String refType, {required bool missing}) {
     if (missing) return '断链';
-    return refType == RefBlockKeys.refBlock ? '引用' : '笔记';
+    return switch (refType) {
+      RefBlockKeys.refBlock => '引用',
+      // 速记是独立数据（不在任何笔记里），标签与笔记 / 块都不同。
+      RefBlockKeys.refStream => '速记',
+      _ => '笔记',
+    };
   }
 }

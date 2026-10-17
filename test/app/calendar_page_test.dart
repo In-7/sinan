@@ -14,14 +14,12 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
-import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 主页（2026-10-12：视图 tab + 新建胶囊移到工作区左侧扁平导航 [AppIconRail]；
-/// HomeHub = 筛选钮 + 内容区）的回归。
+/// 日历页（原名 `HomeHub`，2026-10-17 改名 `CalendarPage`）的回归。
 ///
-/// 钉的是"主页是什么"这几条结构性事实：
-/// ① 目的地（心流/全部/日历/收藏）**不在 HomeHub 里**——在工作区左侧扁平导航
+/// 钉的是"这一页是什么"这几条结构性事实：
+/// ① 目的地（心流/全部/日历/收藏）**不在本页里**——在工作区左侧扁平导航
 ///    [AppIconRail]（title_bar_nav_test.dart 钉）；标题栏 [WindowStrip] 也不放；
 ///    本文件用 [navHistoryProvider] 直接驱动视图来验内容分发；
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
@@ -100,7 +98,7 @@ void main() {
         container: container,
         child: MaterialApp(
           theme: AppTheme.light(),
-          home: const Scaffold(body: HomeHub()),
+          home: const Scaffold(body: CalendarPage()),
         ),
       ),
     );
@@ -136,7 +134,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 切换主页视图（2026-10-09：目的地入口外移到外壳的最左图标轨，HomeHub
+  /// 切换主页视图（2026-10-09：目的地入口外移到外壳的最左图标轨，本页
   /// 台架里没有轨；这些用例只验内容分发，直接驱动 [navHistoryProvider] 即可）。
   Future<void> selectView(
     WidgetTester tester,
@@ -147,53 +145,31 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('默认落心流视图：输入条在场 + 心流不读笔记（单向收件箱）', (WidgetTester tester) async {
+  testWidgets('速记（心流）不再由本页渲染：宿主是外壳的 StreamView', (
+    WidgetTester tester,
+  ) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲', '乙'],
     );
 
-    // 2026-10-05 决策 C：启动默认落「心流」。
+    // 2026-10-05 决策 C：启动默认落「心流」——导航态不变。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    // 2026-10-12：目的地（心流 / 全部 / 日历 / 收藏）已移到工作区左侧扁平导航
-    // [AppIconRail]，HomeHub 顶栏不再有这四枚 tab 文字。
+    // ⚠️ 2026-10-17 修：速记页曾经挂在本组件的 timeline 分支里，而桌面壳改走
+    // 主从布局后该分支永远走不到（用户实报"改了速记界面、打开完全没有变化"）。
+    // 现在它由 `HomeScreen` 直接挂载 ⇒ 本页（CalendarPage）里**不该**再有
+    // 输入条 / 空态。
+    expect(find.text('记下此刻的想法…'), findsNothing);
+    expect(find.text('还没有灵感'), findsNothing);
+    // 2026-10-12：视图目的地已移到左侧 [AppIconRail]，本页顶栏没有这些 tab。
     for (final String t in <String>['心流', '全部', '日历', '收藏']) {
       expect(find.text(t), findsNothing, reason: '视图 tab 已移到左侧 AppIconRail');
     }
-    // 形态改走筛选器 ⇒ 顶栏里不出现「笔记」「画布」的 tab / 入口。
-    expect(find.text('笔记'), findsNothing);
-    expect(find.text('画布'), findsNothing);
     // 筛选与排序是一枚全局控件钮（不是页面）⇒ 恒在顶栏。
     expect(find.byTooltip('筛选与排序'), findsOneWidget);
-    // 上一步 / 下一步在右栏顶条，不在 HomeHub 顶栏里。
+    // 上一步 / 下一步在标题条，不在本页顶栏里。
     expect(find.byTooltip('上一步'), findsNothing);
     expect(find.byTooltip('下一步'), findsNothing);
-    // 心流重置（2026-10-16 用户定）：**单向收件箱**——只读自己那个隐藏容器，
-    // 不读笔记数据；顶部输入条常驻，空收件箱给邀请文案。
-    expect(find.text('记点什么…'), findsNothing);
-    expect(find.text('在上面输入一句话，回车即创建'), findsNothing);
-    expect(find.text('今天'), findsNothing, reason: '重置后不再按时间分组');
-    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '顶部悬浮输入条在场');
-    // **单向闸门**：文库里的甲 / 乙（普通笔记）绝不漏进心流——心流不是笔记的镜像，
-    // 条目只能单向流出（引用 / 注入 / 转新）。
-    expect(find.text('甲'), findsNothing, reason: '心流不读笔记数据（单向）');
-    expect(find.text('乙'), findsNothing);
-    expect(find.text('还没有灵感'), findsOneWidget, reason: '空收件箱给邀请');
-    // 空收件箱无卡片 ⇒ 这棵 HomeHub 树里 FocusRing 交互件为 0（输入框不走 FocusRing）。
-    expect(find.byType(FocusRing), findsNothing);
-  });
-
-  testWidgets('空库：心流空态邀请 + 输入框常驻（无卡片、无 FocusRing）', (
-    WidgetTester tester,
-  ) async {
-    final ProviderContainer container = await pumpHub(tester);
-    // 空库心流（2026-10-15 重置）：轻邀请文案 + 底部输入框仍可写第一条。
-    expect(find.text('还没有灵感'), findsOneWidget);
-    expect(find.text('在上面写下第一条，一句话也算'), findsOneWidget);
-    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '输入框常驻，空库也能写');
-    // 空库无卡片 ⇒ FocusRing 交互件为 0（输入框不走 FocusRing）。
-    expect(find.byType(FocusRing), findsNothing);
-    expect(container.read(navHistoryProvider).view, HomeView.timeline);
   });
 
   testWidgets('无标题卡片借正文首行当标题；摘要吃余下行，不落「（空白）」', (WidgetTester tester) async {

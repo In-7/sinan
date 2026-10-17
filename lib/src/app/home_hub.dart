@@ -19,7 +19,6 @@ import '../theme/tokens.dart';
 import 'note_display.dart';
 import 'providers.dart';
 import 'search_provider.dart';
-import 'stream_view.dart';
 
 /// 主页顶部的**视图切换**（2026-09-29 用户定，取代 Things 式单列一页纸）。
 ///
@@ -53,8 +52,10 @@ extension HomeViewIcon on HomeView {
   /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
   Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
-    // 心流 = 时间流 ⇒ 时钟（分组键是 `revisedAt`）。
-    HomeView.timeline => tabler.Clock(
+    // 心流 = **速记收件箱**（不是笔记的时间流）⇒ 收件箱图标。
+    // 2026-10-17：这一格曾用 `Clock`（当时的"心流"是按 revisedAt 的笔记时间线）；
+    // 现在它是一页纸速记流，语义换成"收进来、待处理"。
+    HomeView.timeline => tabler.Inbox(
       height: size,
       width: size,
       strokeWidth: Tokens.iconStroke,
@@ -81,7 +82,7 @@ extension HomeViewIcon on HomeView {
   };
 }
 
-/// 最左图标导航轨的**四个常驻目的地**（2026-10-09 用户定外移；此前是 HomeHub
+/// 最左图标导航轨的**四个常驻目的地**（2026-10-09 用户定外移；此前是主页
 /// 顶栏横排 tab）：**心流 | 全部 | 日历 | 收藏**，心流首位且为启动默认
 ///（与 [NavHistoryNotifier.build] 的默认值一致）。
 ///
@@ -118,7 +119,7 @@ enum NoteKindFacet {
   /// 该形态是否收下这篇（文档类 = 非画布）。
   bool matches(NoteKind kind) => switch (this) {
     NoteKindFacet.all => true,
-    NoteKindFacet.docs => kind != NoteKind.canvas && kind != NoteKind.stream,
+    NoteKindFacet.docs => kind != NoteKind.canvas,
     NoteKindFacet.canvas => kind == NoteKind.canvas,
   };
 }
@@ -199,9 +200,10 @@ final homeItemsProvider = Provider.autoDispose
       final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
       final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
       final List<Note> scope = switch (args.view) {
-        // 心流与"全部"同为跨形态统一池、跟随全局排序（心流的时间分组在
-        // stream_view 里按 revisedAt 做，这里仍给一份排好序的全集）。
-        HomeView.timeline => all.toList()..sort(order),
+        // 心流（速记）**不读笔记池**：它是独立表 `stream_items`，由
+        // `StreamView` 自行渲染。这里给空列表是"此视图没有笔记项"的诚实回答——
+        // 绝不能让谁把文库里的笔记塞进速记页（单向契约）。
+        HomeView.timeline => const <Note>[],
         // 全部：跨形态统一池，跟随全局排序。
         HomeView.all => all.toList()..sort(order),
         // 收藏不读全局排序：最近收藏的排前面。
@@ -279,36 +281,33 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
       return thumb;
     });
 
-/// **主页**：顶栏（筛选）+ 内容区（心流 / 卡片网格 / 日历 / 收藏）。
+/// **日历页**（原名 `HomeHub`，2026-10-17 改名）。
 ///
-/// ## 为什么从"单列一页纸"改成这个（2026-09-29 用户定）
-/// 旧的 Things 式一页纸把日历 / 收藏 / 继续 / 最近 / 新建**串成一列**，一次只能
-/// 从上往下扫；用户要的是**空间切换**范式（对标 Craft / Bear）：目的地切换
-/// 点哪个看哪个，内容统一用**小卡片**（带 2–3 行摘要，一眼知道大概内容）。
+/// ## 现在的职责（2026-10-17 收口）
+/// 桌面外壳只在「日历」视图、且**未选中笔记**时挂载本页：
+/// - 「全部 / 收藏」→ 主从布局（240 列表列 + 详情），不经过这里；
+/// - 「心流（速记）」→ 独立的一页纸流 `StreamView`，同样不经过这里。
+///
+/// 内容区仍按 `view` 分发（日历 / 卡片网格 / 搜索结果）——网格与搜索分支是
+/// 本页被**单独**挂载时的兜底形态（测试、以及将来移动端复用），桌面壳不走它们。
 ///
 /// ## 三条结构事实
 /// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（形态 / 排序 / 标签合住）。
-///    视图切换 + 新建胶囊 2026-10-12 起移出内容区，今在最左 **60 图标轨**
-///    [AppIconRail]（无面板、贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步
-///    2026-10-15 加回**标题栏左簇**
-///    （左缘与内容卡对齐，功能与全局键 `Alt+←/→` 同走命令层）。常驻捕获输入框
-///    （OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"）。
+///    视图切换 + 新建胶囊在最左 **60 图标轨** [AppIconRail]；上一步 / 下一步在
+///    标题栏左簇（与全局键 `Alt+←/→` 同走命令层）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
 ///    视图范围内**过滤（日历视图忽略搜索）；命中渲染成 [_CardsGrid]。
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
 ///    [cardFillHover]）——静止态**有底色**（与列表行的"显式透明"相反：卡片本就
 ///    该是一块浮起的板子）。每张接 [FocusRing]（§5.2 键盘可达）。
-///
-/// ## 页面模型（不变）
-/// 未选中笔记 = 主页；选中 = 笔记 / 画布页。同一个 `selectedNoteIdProvider` 驱动。
-class HomeHub extends ConsumerStatefulWidget {
-  const HomeHub({super.key});
+class CalendarPage extends ConsumerStatefulWidget {
+  const CalendarPage({super.key});
 
   @override
-  ConsumerState<HomeHub> createState() => _HomeHubState();
+  ConsumerState<CalendarPage> createState() => _CalendarPageState();
 }
 
-class _HomeHubState extends ConsumerState<HomeHub> {
+class _CalendarPageState extends ConsumerState<CalendarPage> {
   /// 日历视图的浏览态：显示月份与选中日。只放本地 State（纯浏览节奏，
   /// 不进 provider 不落盘，重启回今天）。
   DateTime _calMonth = _todayMonth();
@@ -407,12 +406,10 @@ class _HomeBody extends ConsumerWidget {
       return _SearchResultsView(search: search);
     }
 
-    // 心流视图：按 `revisedAt` 分组的时间流（2026-10-06，阶段 1 ②A）。
-    // 与卡片网格**同一池子**（同一 homeItemsProvider 入参，形态 / 标签 facet
-    // 同样生效）、同一种显示口径，只是换了一种排布。
-    if (view == HomeView.timeline) {
-      return StreamView(tag: search.activeTag);
-    }
+    // ⚠️ 心流（速记）**不由本页渲染**：它是独立的一页纸时间流，由外壳
+    // `HomeScreen` 直接挂 `StreamView`（2026-10-17 修：此前挂在这里，而桌面壳
+    // 改走主从布局后这条分支再也没被走到 —— 表现为"改了界面没变化"）。
+    // 本页在桌面上只承担「日历」（以及单独挂载时的网格 / 搜索兜底）。
 
     // 日历视图：日历卡片 + 卡片外下方的选中日篇目。
     if (view == HomeView.calendar) {
@@ -611,7 +608,7 @@ class _SearchResultBar extends StatelessWidget {
 /// 顶栏**筛选器**控件钮（2026-09-30 用户定）：排序方案（[homeSortProvider]）
 /// 与标签筛选（[SearchState.activeTag]）同属"整理当前池子"的元操作，合住一枚
 /// 漏斗钮、一个菜单——上半段排序、下半段标签。对 [kHomeTabs] /
-/// [kHomeTabs] 所有视图全局生效（收藏的排序语义除外，见 [_HomeHubState]）。
+/// [kHomeTabs] 所有视图全局生效（收藏的排序语义除外，见 [_CalendarPageState]）。
 ///
 /// 标签段在全库无标签时**整段消失**，但钮本身常驻（排序永远可用，
 /// 2026-09-30 之前排序 / 标签是两枚钮，无标签时只剩排序，用户找不到入口）。

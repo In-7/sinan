@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app/providers.dart';
 import '../app/search_palette.dart';
 import '../app/settings_panel.dart';
+import '../app/stream_capture.dart';
 import '../domain/note.dart';
 import 'command.dart';
 import 'palette.dart';
@@ -106,6 +107,23 @@ List<Command> buildCommands(Ref ref) => <Command>[
       ),
     ],
     run: (CommandContext _) => runCreateNote(ref, NoteKind.canvas),
+  ),
+  // 速记（2026-10-17）：任意界面唤起小窗，Enter 存入即关，不打断当前工作。
+  // 与主页心流输入条写的是同一张表（`stream_items`），不进笔记 / 画布。
+  Command(
+    id: 'stream.capture',
+    title: '速记一条',
+    group: CommandGroup.file,
+    scope: CommandScope.global,
+    hint: '唤起速记小窗：Enter 记下，Esc 关闭（不离开当前页面）',
+    keys: <KeyBinding>[
+      const KeyBinding(
+        key: LogicalKeyboardKey.keyM,
+        control: true,
+        shift: true,
+      ),
+    ],
+    run: (CommandContext _) => showStreamCapture(),
   ),
   // ── 导航（2026-10-06 决策 D）：Alt+←/→ 是「上一步 / 下一步」的键盘路，
   // 与顶条按钮**同一条路**（都走 navHistoryProvider）。栈空时 goBack /

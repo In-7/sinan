@@ -20,6 +20,31 @@ Future<void> referenceBlockToCanvas({
   );
   // 类型由 provider 推断（本层不 import `data/`，见架构闸门）。
   final store = container.read(noteStoreProvider);
+  final String? target = await pickCanvasToTarget(
+    context,
+    dialogTitle: '引用到画布',
+    emptyHint: '还没有画布笔记 —— 先新建一张画布，再回来引用',
+  );
+  if (target == null || !context.mounted) return;
+
+  final bool added = store.referenceBlockOnCanvas(blockId, target);
+  if (!context.mounted) return;
+  _toast(context, added ? '已在画布上引用这张卡片' : '这张卡片已经在画布上了');
+}
+
+/// 选一张画布（只有一张就直接用）。速记导出与块引用共用同一套选择口径。
+///
+/// 返回 `null` = 用户取消 / 没有画布（已弹提示）。
+Future<String?> pickCanvasToTarget(
+  BuildContext context, {
+  String dialogTitle = '选择画布',
+  String emptyHint = '还没有画布笔记 —— 先新建一张画布',
+}) async {
+  final ProviderContainer container = ProviderScope.containerOf(
+    context,
+    listen: false,
+  );
+  final store = container.read(noteStoreProvider);
   // 列表优先取 provider 的快照；它还没装载完时**直接查库兜底** —— 否则会误报
   // "还没有画布笔记"（明明有）。`allNotes()` 是同步的，兜底不引入等待。
   final List<Note> all =
@@ -28,25 +53,17 @@ Future<void> referenceBlockToCanvas({
     for (final Note n in all)
       if (n.kind == NoteKind.canvas) n,
   ];
-
-  if (!context.mounted) return;
+  if (!context.mounted) return null;
   if (canvases.isEmpty) {
-    _toast(context, '还没有画布笔记 —— 先新建一张画布，再回来引用');
-    return;
+    _toast(context, emptyHint);
+    return null;
   }
-
-  final String? target = canvases.length == 1
-      ? canvases.first.id
-      : await showDialog<String>(
-          context: context,
-          builder: (BuildContext ctx) =>
-              _CanvasPickerDialog(canvases: canvases),
-        );
-  if (target == null || !context.mounted) return;
-
-  final bool added = store.referenceBlockOnCanvas(blockId, target);
-  if (!context.mounted) return;
-  _toast(context, added ? '已在画布上引用这张卡片' : '这张卡片已经在画布上了');
+  if (canvases.length == 1) return canvases.first.id;
+  return showDialog<String>(
+    context: context,
+    builder: (BuildContext ctx) =>
+        _CanvasPickerDialog(canvases: canvases, title: dialogTitle),
+  );
 }
 
 void _toast(BuildContext context, String message) {
@@ -56,14 +73,15 @@ void _toast(BuildContext context, String message) {
 
 /// 「引用到哪张画布？」—— 仅在有多张画布时才弹。
 class _CanvasPickerDialog extends StatelessWidget {
-  const _CanvasPickerDialog({required this.canvases});
+  const _CanvasPickerDialog({required this.canvases, this.title = '引用到画布'});
 
   final List<Note> canvases;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('引用到画布'),
+      title: Text(title),
       content: SizedBox(
         width: 320,
         child: ListView(

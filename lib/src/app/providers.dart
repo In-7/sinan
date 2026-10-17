@@ -15,6 +15,7 @@ import '../canvas/kernel/canvas_media.dart';
 import '../data/canvas_media_refs.dart';
 import '../data/note_store.dart';
 import '../data/settings_store.dart';
+import '../data/stream_store.dart';
 import '../domain/note.dart';
 import '../domain/settings.dart';
 import 'pending_saves.dart';
@@ -185,38 +186,60 @@ final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,
 );
 
-/// **心流收件箱**（2026-10-16 用户定：独立于笔记的单向捕获流）。
-///
-/// 与 [notesProvider] 的关键差别：心流**不读笔记数据**——它只经
-/// [NoteStore] 的 stream 方法读写自己那个隐藏容器（kind=`stream`），
-/// 文库 / 搜索 / 日历都看不到它。条目只能**单向流出**（引用 / 注入 / 转新
-/// 笔记），由 UI 层 `stream_export.dart` 驱动。
-class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
-  NoteStore get _store => ref.read(noteStoreProvider);
+/// 速记存储（心流收件箱）。独立表、独立 store，与笔记 / 画布无反向依赖。
+final streamStoreProvider = Provider<StreamStore>(
+  (Ref ref) => StreamStore(ref.watch(databaseProvider)),
+);
 
+/// **速记 / 心流**（2026-10-17 定：独立存储的单向捕获流）。
+///
+/// 只经 [StreamStore] 读写 `stream_items`：文库 / 搜索 / 日历 / Markdown 镜像
+/// 都看不到它。条目只能**单向流出**（引用 / 复制到笔记、复制到画布、转新），
+/// 由 UI 层 `stream_export.dart` 驱动。
+class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
+  StreamStore get _store => ref.read(streamStoreProvider);
+
+  /// 状态里**含归档**：界面要同时给出「待处理」与「已处理」两区，
+  /// 只带 open 会让归档区永远为空（还得再查一次库）。
   @override
-  Future<List<StreamItem>> build() async => _store.listStreamItems();
+  Future<List<StreamItem>> build() async => _store.list(includeArchived: true);
+
+  void _refresh() => state = AsyncData(_store.list(includeArchived: true));
 
   /// 录入一条（输入框回车 ⇒ 直接落库）。
   Future<void> add(String text) async {
     await future;
-    _store.addStreamItem(text);
-    state = AsyncData(_store.listStreamItems());
+    _store.add(text);
+    _refresh();
   }
 
   /// 改一条（卡片就地展开编辑）。⚠️ 不能叫 `update`——那与 Riverpod
   /// `Notifier.update`（改 state 的内建方法）撞名。
   Future<void> edit(String id, String text) async {
     await future;
-    _store.updateStreamItem(id, text);
-    state = AsyncData(_store.listStreamItems());
+    _store.update(id, text);
+    _refresh();
   }
 
-  /// 删一条。
+  /// 已处理 / 归档（不删，可回看）。
+  Future<void> archive(String id) async {
+    await future;
+    _store.archive(id);
+    _refresh();
+  }
+
+  /// 从归档拿回来。
+  Future<void> unarchive(String id) async {
+    await future;
+    _store.unarchive(id);
+    _refresh();
+  }
+
+  /// 真删。
   Future<void> remove(String id) async {
     await future;
-    _store.deleteStreamItem(id);
-    state = AsyncData(_store.listStreamItems());
+    _store.remove(id);
+    _refresh();
   }
 }
 

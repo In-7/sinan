@@ -37,10 +37,7 @@ Future<String?> pickNoteToReference(
       container.read(notesProvider).value ?? store.allNotes();
   final List<Note> candidates = <Note>[
     for (final Note n in all)
-      if (n.id != excludeId &&
-          (!docsOnly ||
-              (n.kind != NoteKind.canvas && n.kind != NoteKind.stream)))
-        n,
+      if (n.id != excludeId && (!docsOnly || n.kind != NoteKind.canvas)) n,
   ];
 
   if (!context.mounted) return null;

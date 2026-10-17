@@ -843,6 +843,16 @@ class _NoteEditorViewAppFlowyState
   /// 解析引用块的目标（标题 + 形态）；目标不存在返回 null ⇒ 块显示"引用已失效"。
   RefTarget? _resolveRefTarget(String refType, String refId) {
     final store = ref.read(noteStoreProvider);
+    if (refType == RefBlockKeys.refStream) {
+      // 速记在独立表（`stream_items`），与笔记 / 块两条读口分开。
+      final String? text = ref.read(streamStoreProvider).textOf(refId);
+      if (text == null) return null;
+      return RefTarget(
+        title: _streamRefTitle(text),
+        kind: NoteKind.spark,
+        stream: true,
+      );
+    }
     if (refType == RefBlockKeys.refBlock) {
       // 块引用：显示它**所属笔记**的标题（块级定位留待后续）。
       final String? owner = store.blockNoteId(refId);
@@ -858,6 +868,11 @@ class _NoteEditorViewAppFlowyState
 
   /// 引用块跳转：块引用跳到它所属的那篇笔记。
   void _openRefTarget(String refType, String refId) {
+    if (refType == RefBlockKeys.refStream) {
+      // 速记不是笔记：切到「心流」视图（走统一导航历史，可「上一步」回来）。
+      ref.read(navHistoryProvider.notifier).selectHome(HomeView.timeline);
+      return;
+    }
     final store = ref.read(noteStoreProvider);
     final String? noteId = refType == RefBlockKeys.refBlock
         ? store.blockNoteId(refId)
@@ -868,6 +883,13 @@ class _NoteEditorViewAppFlowyState
 
   static String _displayTitle(Note n) =>
       n.title.trim().isEmpty ? '未命名笔记' : n.title;
+
+  /// 速记引用的显示名：首行截断（速记没有标题）。
+  static String _streamRefTitle(String text) {
+    final String first = text.trim().split('\n').first.trim();
+    if (first.isEmpty) return '速记';
+    return first.length <= 24 ? first : '${first.substring(0, 24)}…';
+  }
 
   /// 反链气泡：与目录气泡同一套定位（右对齐、与按钮底边无缝相接）。
   Widget _backlinkPopover(BuildContext context, OverlayChildLayoutInfo info) {

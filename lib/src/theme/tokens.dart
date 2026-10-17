@@ -51,6 +51,9 @@ class Tokens {
   // - 卡片档（笔记卡 / 内面板 / 日历卡）：**12px**
   // - 浮层+创作条档（菜单 / 对话框 / popover / sheet / 心流 Composer / 新建胶囊浮层）：**16px**
   // 10 在 32px 小控件上比例最稳；16 落在 iOS sheet / M3 dialog 甜区上沿，浮起更柔。
+  /// **硬边小件档**：勾选框 / 徽标这类 <24px 的方件用 **4px**。
+  /// 再小看不出圆角，再大就不像"方件"（包豪斯几何的最小圆角）。
+  static const double radiusXxs = 4;
   static const double radiusSm = 10;
   static const double radiusMd = 12;
   static const double radiusLg = 16;
@@ -270,4 +273,10 @@ class Tokens {
   /// 反馈**，慢了会黏手——指针已经移开、底色还在追。桌面端 hover 是高频动作，
   /// 故单列一档而不复用 150。
   static const Duration durationHover = Duration(milliseconds: 100);
+
+  /// **一次性操作确认**（保存 / 发送成功）的驻留时长：**600ms**。
+  ///
+  /// 比 [durationNormal] 长：这类反馈不是"过程"，而是"结果必须被看见一眼"，
+  /// 250ms 容易被错过；又不该像文案那样常驻（2026-10-17 速记发送钮的绿勾）。
+  static const Duration durationFeedback = Duration(milliseconds: 600);
 }
