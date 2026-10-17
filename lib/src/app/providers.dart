@@ -8,6 +8,7 @@ import '../data/answer_service.dart';
 import '../data/database.dart';
 import '../data/embedding_backend.dart';
 import '../data/index_job.dart';
+import '../data/markdown/md_mirror.dart';
 import '../data/retriever.dart';
 import '../canvas/kernel/canvas_ai_cache.dart';
 import '../canvas/kernel/canvas_media.dart';
@@ -83,6 +84,15 @@ class SettingsNotifier extends Notifier<AppSettings> {
 
   void setLineHeight(double height) =>
       update(state.copyWith(lineHeight: height));
+
+  // ── Markdown 镜像（单向导出到磁盘，见 `MdMirror`）──
+
+  void setMarkdownMirrorEnabled(bool value) =>
+      update(state.copyWith(markdownMirrorEnabled: value));
+
+  /// 空串 = 用默认目录（应用数据目录下），**不是**"导出到根目录"。
+  void setMarkdownMirrorDir(String value) =>
+      update(state.copyWith(markdownMirrorDir: value.trim()));
 
   // ── AI（画布结构轨的推理后端）──
   //
@@ -239,6 +249,54 @@ final appDatabaseProvider = Provider<AppDatabase>(
 final databaseProvider = Provider(
   (Ref ref) => ref.watch(appDatabaseProvider).db,
 );
+
+// ── Markdown 镜像（单向导出）──────────────────────────────────────────────
+//
+// 权威永远是 `blocks` 表；磁盘上的 .md 只是**投影**（Obsidian 能直接打开）。
+// 这里只有三件接线：引擎实例、实际目录、跑一轮的端口——规则都在 `MdMirror`。
+
+/// 镜像引擎（保存后顺手导出单篇时用，跑在主 isolate 上——单篇很快）。
+final markdownMirrorProvider = Provider<MdMirror>(
+  (Ref ref) => MdMirror(ref.watch(databaseProvider)),
+);
+
+/// **实际**导出目录：用户没选过 ⇒ 应用数据目录下的 `markdown-mirror`。
+///
+/// 单一来源：设置面板显示它、导出用它。两处各自拼路径就会漂移（换目录后
+/// "显示的是新目录，文件还写在旧目录"）。
+final markdownMirrorDirProvider = Provider<String>((Ref ref) {
+  final AppSettings settings = ref.watch(settingsProvider);
+  return MdMirror.resolveDir(
+    ref.watch(appDataDirProvider),
+    settings.markdownMirrorDir,
+  );
+});
+
+/// 「跑一轮导出」的端口：返回写出的篇数。
+///
+/// [all] = true 无视 `revised_at` 全量重写（换目录 / 用户点「立即导出」）；
+/// 开关关着 ⇒ 恒 0，连目录都不解析。
+typedef MirrorExportRun = Future<int> Function({bool all});
+
+final markdownMirrorExportProvider = Provider<MirrorExportRun>((Ref ref) {
+  final bool enabled = ref.watch(
+    settingsProvider.select((AppSettings s) => s.markdownMirrorEnabled),
+  );
+  final String dir = ref.watch(markdownMirrorDirProvider);
+  return ({bool all = false}) {
+    if (!enabled) return Future<int>.value(0);
+    // 库里路径**懒读**：开关关着时这条链一次都不该被碰（测试容器里
+    // `appDatabaseProvider` 也未必注入）。
+    //
+    // 后台 isolate + 第二条连接：几千篇的解析与写盘不能卡住设置面板所在的
+    // UI 线程（见 `MdMirror.exportPendingInBackground`）。
+    return MdMirror.exportPendingInBackground(
+      dbPath: ref.read(appDatabaseProvider).path,
+      dir: dir,
+      all: all,
+    );
+  };
+});
 
 /// 嵌入客户端（Ollama `/api/embed`）。设置一改就换实例（同 `llmClientProvider`）。
 final embeddingClientProvider = Provider<EmbeddingClient>((Ref ref) {
@@ -700,6 +758,43 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     }
   }
 
+  /// Markdown 镜像：把**这一篇**同步到磁盘（单向导出，规则见 `MdMirror`）。
+  ///
+  /// 与 [_indexKeywordPath] 同一条原则：镜像只是附属品，任何失败都不许连累
+  /// 落盘（磁盘满 / 文件被占用 ⇒ 下一轮扫描或下次保存再试）。开关关着时连
+  /// 目录都不解析——`appDataDirProvider` 在某些测试容器里未必注入。
+  void _mirrorOne(String id) {
+    if (!_mirrorEnabled) return;
+    try {
+      ref
+          .read(markdownMirrorProvider)
+          .exportOne(id, dir: ref.read(markdownMirrorDirProvider));
+    } on Object {
+      // 静默：正文已经落库，镜像缺席的后果只是"磁盘上那份旧了一版"。
+    }
+  }
+
+  /// 删笔记**之前**清镜像文件（`md_mirror` 账本行由外键 CASCADE 清，文件它管不到）。
+  void _mirrorRemove(String id) {
+    if (!_mirrorEnabled) return;
+    try {
+      ref.read(markdownMirrorProvider).removeForNote(id);
+    } on Object {
+      // 同上：删笔记才是主流程，文件删不掉属于"下次清理"。
+    }
+  }
+
+  /// 镜像开关。**读不到设置就当作关**：本仓库有些测试容器只装了
+  /// `noteStoreProvider`（不关心设置），而镜像是附属能力——它不该因为
+  /// 装配不全把保存 / 删除这类主流程拖红（生产环境由 `main` 一定注入）。
+  bool get _mirrorEnabled {
+    try {
+      return ref.read(settingsProvider).markdownMirrorEnabled;
+    } on Object {
+      return false;
+    }
+  }
+
   /// 保存正文（格式随当前编辑器，见 NoteDocumentAdapter）+ 纯文本，刷新列表。
   ///
   /// 哈希判变没写库时**直接跳过刷新**——连快照都不换，所有监听者零重建。
@@ -722,6 +817,8 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
       // 关键词路是纯 SQL、毫秒级；语义路仍走设置面板的手动索引（要模型）。
       // 走 [_indexKeywordPath]：索引失败不许连累这次保存。
       _indexKeywordPath(id);
+      // Markdown 镜像（单向导出）：正文变了就把磁盘那份重写一遍。
+      _mirrorOne(id);
     }
   }
 
@@ -729,6 +826,9 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
   Future<void> saveTitle(String id, String title) async {
     await _store.updateTitle(id, title);
     _replaceRow(id);
+    // 标题变了 ⇒ 镜像文件名跟着变（旧文件由引擎自己删掉，等同改名）。
+    // 注意这里**不看** revised_at：改标题不改"最近修改"，但文件必须搬。
+    _mirrorOne(id);
   }
 
   /// 删除一条笔记，返回被删的那条（供「撤销」用；id 不存在则 null）。
@@ -746,6 +846,9 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     final Note? removed = _store.noteById(id);
     if (removed == null) return null;
 
+    // 删之前先清镜像文件：`md_mirror` 行会被外键 CASCADE 掉，那之后就查不到
+    // 路径了（文件它自己不会消失）。
+    _mirrorRemove(id);
     await _store.delete(id);
     final List<Note> rest = _store.allNotes();
     state = AsyncData(rest);
@@ -772,6 +875,8 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     // 删除时清过它的 FTS 行 ⇒ 恢复后补回关键词索引（否则撤销回来的笔记
     // 内容搜不到）。同样走 [_indexKeywordPath]：不许连累这次恢复。
     _indexKeywordPath(note.id);
+    // 删除时清掉过镜像文件 ⇒ 撤销回来要重新写一份（否则"文件跟着笔记一起消失"）。
+    _mirrorOne(note.id);
     // 不带 focus：撤销的入口在列表的 toast 上，用户的手还在列表那边。
     ref.read(locateProvider.notifier).locate(noteId: note.id);
   }

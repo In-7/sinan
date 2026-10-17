@@ -44,6 +44,8 @@ class AppSettings {
     this.aiModel = '',
     this.aiEmbeddingModel = '',
     this.themeSeed = 0,
+    this.markdownMirrorEnabled = false,
+    this.markdownMirrorDir = '',
   });
 
   /// 本地 LLM 的默认基址（Ollama 的约定端口）。
@@ -114,6 +116,16 @@ class AppSettings {
   /// 而"选回中性"是必须可达的操作。
   final int themeSeed;
 
+  /// 是否把笔记**单向导出**成 Markdown 镜像落到磁盘（2026-10-17 用户定）。
+  ///
+  /// 默认 **false**：权威始终在 `blocks` 表，镜像只是便于 Obsidian 打开 /
+  /// "文件在我手里"的安心感。只写不读——用户手改 .md 不会被回收（不做双向合并）。
+  final bool markdownMirrorEnabled;
+
+  /// 镜像目录（绝对路径）。空串 = 默认 `<应用数据目录>/markdown-mirror`
+  /// （由 `MdMirror.resolveDir` 解析；设置里只在用户显式选过目录时非空）。
+  final String markdownMirrorDir;
+
   /// 正文列宽（固定像素，不随窗口放大而变）。
   double get contentWidth => switch (widthMode) {
     // 三档都含块手柄的 48px（见 [EditorWidthMode] 的说明）。
@@ -135,6 +147,8 @@ class AppSettings {
     String? aiModel,
     String? aiEmbeddingModel,
     int? themeSeed,
+    bool? markdownMirrorEnabled,
+    String? markdownMirrorDir,
   }) => AppSettings(
     brightnessMode: brightnessMode ?? this.brightnessMode,
     widthMode: widthMode ?? this.widthMode,
@@ -145,6 +159,8 @@ class AppSettings {
     aiModel: aiModel ?? this.aiModel,
     aiEmbeddingModel: aiEmbeddingModel ?? this.aiEmbeddingModel,
     themeSeed: themeSeed ?? this.themeSeed,
+    markdownMirrorEnabled: markdownMirrorEnabled ?? this.markdownMirrorEnabled,
+    markdownMirrorDir: markdownMirrorDir ?? this.markdownMirrorDir,
   );
 
   // ── 持久化：key-value 与 store 的边界 ────────────────────
@@ -160,6 +176,8 @@ class AppSettings {
   static const String _kAiEmbeddingModel = 'ai.embeddingModel';
   /// 主题种子（ARGB 整数）；`0` / 缺键 / 脏值 ⇒ 中性默认档。
   static const String _kThemeSeed = 'appearance.themeSeed';
+  static const String _kMdMirrorEnabled = 'markdown.mirrorEnabled';
+  static const String _kMdMirrorDir = 'markdown.mirrorDir';
 
   /// 从 store 还原；任何键缺失或解析失败都回落到默认值
   /// （升级/降级/手工改库都不会崩）。
@@ -185,6 +203,8 @@ class AppSettings {
       aiEmbeddingModel: store.get(_kAiEmbeddingModel) ?? '',
       // 解析失败（缺键 / 脏值）⇒ 0 ⇒ 中性默认档，不会崩。
       themeSeed: int.tryParse(store.get(_kThemeSeed) ?? '') ?? 0,
+      markdownMirrorEnabled: store.get(_kMdMirrorEnabled) == 'true',
+      markdownMirrorDir: store.get(_kMdMirrorDir) ?? '',
     );
   }
 
@@ -199,6 +219,8 @@ class AppSettings {
       ..set(_kAiEndpoint, aiEndpoint)
       ..set(_kAiModel, aiModel)
       ..set(_kAiEmbeddingModel, aiEmbeddingModel)
-      ..set(_kThemeSeed, themeSeed.toString());
+      ..set(_kThemeSeed, themeSeed.toString())
+      ..set(_kMdMirrorEnabled, markdownMirrorEnabled.toString())
+      ..set(_kMdMirrorDir, markdownMirrorDir);
   }
 }

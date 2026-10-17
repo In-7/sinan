@@ -436,6 +436,22 @@ class AppDatabase {
       db.userVersion = 14;
     }
 
+    // v15：`md_mirror` 侧表——Markdown **单向镜像**的导出账本（2026-10-17）。
+    //
+    // 一行 = 一篇笔记当前导出到哪个 .md 文件、以及导出时笔记的 `revised_at`。
+    // 扫描条件就靠它：`notes.revised_at > md_mirror.revised_at`（或无行）即待导出，
+    // 幂等可续、崩溃后自愈，不需要内存态。CASCADE 随笔记删除清行；磁盘文件由
+    // `MdMirror.removeForNote` 显式删（SQL 级联管不到文件系统）。
+    if (db.userVersion < 15) {
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS md_mirror (
+          note_id    TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+          path       TEXT NOT NULL,
+          revised_at INTEGER NOT NULL
+        );''');
+      db.userVersion = 15;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
@@ -445,6 +461,16 @@ class AppDatabase {
     _repairCanvasEdgesTable(db);
     _repairCanvasItemsBlockId(db);
   }
+
+  /// 低频维护：刷新查询规划器统计（SQLite 对**长连接**的推荐节奏）。
+  ///
+  /// `PRAGMA optimize` 统计新鲜时基本是 no-op，只在需要时补跑 ANALYZE；长生命
+  /// 周期连接不定期跑，`sqlite_stat1` 过期后规划器可能选错索引。FTS5 虚表不参与
+  /// ANALYZE，受益的主要是 notes / blocks / canvas 几张普通表。
+  ///
+  /// 调用方 fire-and-forget（失败不惊动用户，下个周期再来）——见 `main.dart`
+  /// 的 30 分钟维护定时器。
+  static void optimize(Database db) => db.execute('PRAGMA optimize;');
 
   /// `canvas_items` 的建表 DDL（**v8 建表与主键自愈共用**，避免两处漂移）。
   ///

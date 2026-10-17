@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -65,12 +66,13 @@ const double _panelHeight = 560;
 
 /// 左侧目录导航的分区。**加功能的入口**：枚举加一项 +
 /// [_SettingsCardState._rowsFor] 加一个分支（行表照抄既有 Row 组件）。
-enum _SettingsSection { appearance, editor, ai, about }
+enum _SettingsSection { appearance, editor, mirror, ai, about }
 
 extension _SettingsSectionSpec on _SettingsSection {
   String get label => switch (this) {
     _SettingsSection.appearance => '外观',
     _SettingsSection.editor => '编辑器',
+    _SettingsSection.mirror => '导出',
     _SettingsSection.ai => 'AI',
     _SettingsSection.about => '关于',
   };
@@ -82,6 +84,11 @@ extension _SettingsSectionSpec on _SettingsSection {
       strokeWidth: 1.5,
     ),
     _SettingsSection.editor => const tabler.Pencil(
+      height: Tokens.iconMd,
+      width: Tokens.iconMd,
+      strokeWidth: 1.5,
+    ),
+    _SettingsSection.mirror => const tabler.FileExport(
       height: Tokens.iconMd,
       width: Tokens.iconMd,
       strokeWidth: 1.5,
@@ -313,6 +320,12 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
       const _WidthRow(),
       const _FontSizeRow(),
       const _LineHeightRow(),
+    ],
+    // 「导出」= Markdown 单向镜像（`MdMirror`）：权威在库，磁盘 .md 只是投影。
+    _SettingsSection.mirror => <Widget>[
+      const _MirrorEnabledRow(),
+      const _MirrorDirRow(),
+      const _MirrorExportRow(),
     ],
     // AI 分区：画布的结构轨要用本地 LLM（Ollama）。默认**关闭**——
     // 没起服务时露出入口只会让用户点出一个报错，所以让它成为一次显式开启。
@@ -1465,6 +1478,175 @@ class _TextSettingRowState extends ConsumerState<_TextSettingRow> {
           onSubmitted: (_) => _commit(),
         ),
       ),
+    );
+  }
+}
+
+// ───────────────────────────── 导出分区 ─────────────────────────────
+//
+// Markdown **单向镜像**（见 `MdMirror`）：权威在库，磁盘上的 .md 是投影。
+// 设置里只有三件事：开不开、导到哪、现在就导一轮。
+
+/// 跑一轮导出并把结果说人话（成功篇数 / 没有改动 / 失败原因）。
+Future<String> _runMirrorExport(WidgetRef ref, {bool all = false}) async {
+  try {
+    final int n = await ref.read(markdownMirrorExportProvider)(all: all);
+    return n == 0 ? '没有需要导出的改动' : '已导出 $n 篇 Markdown';
+  } on Object catch (e) {
+    // 磁盘满 / 目录无权限：说清楚，别让用户以为点了没反应。
+    return '导出失败：$e';
+  }
+}
+
+/// 是否把笔记导出成 `.md`（默认关——不开就不写任何东西到磁盘）。
+class _MirrorEnabledRow extends ConsumerStatefulWidget {
+  const _MirrorEnabledRow();
+
+  @override
+  ConsumerState<_MirrorEnabledRow> createState() => _MirrorEnabledRowState();
+}
+
+class _MirrorEnabledRowState extends ConsumerState<_MirrorEnabledRow> {
+  bool _busy = false;
+
+  Future<void> _toggle(bool value) async {
+    ref.read(settingsProvider.notifier).setMarkdownMirrorEnabled(value);
+    // 关掉只"停止写"，已经导出的文件留在原处（不是删除磁盘内容的动作）。
+    if (!value) return;
+    setState(() => _busy = true);
+    final String message = await _runMirrorExport(ref);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    return _SettingTile(
+      label: '导出 Markdown 镜像',
+      description:
+          '把笔记写成 .md 文件，Obsidian 或任意编辑器都能打开。'
+          '只写不读：你在文件里的手改不会被回收，下次保存以应用为准覆写；'
+          '画布与心流不导出。',
+      control: _busy
+          ? const SizedBox(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Switch(
+              value: settings.markdownMirrorEnabled,
+              onChanged: _toggle,
+            ),
+    );
+  }
+}
+
+/// 导出目录：默认落在应用数据目录，也可以指到 Obsidian 库里。
+class _MirrorDirRow extends ConsumerStatefulWidget {
+  const _MirrorDirRow();
+
+  @override
+  ConsumerState<_MirrorDirRow> createState() => _MirrorDirRowState();
+}
+
+class _MirrorDirRowState extends ConsumerState<_MirrorDirRow> {
+  bool _busy = false;
+
+  Future<void> _pick() async {
+    final String? picked = await FilePicker.getDirectoryPath(
+      dialogTitle: '选择 Markdown 镜像目录',
+    );
+    if (picked == null || picked.trim().isEmpty) return;
+    ref.read(settingsProvider.notifier).setMarkdownMirrorDir(picked);
+    if (!ref.read(settingsProvider).markdownMirrorEnabled) return;
+    // 换目录 = 文件要搬家：账本记的是旧路径，必须**全量**重写一遍
+    // （旧目录里的副本由引擎顺手删掉，见 `MdMirror.exportOne`）。
+    setState(() => _busy = true);
+    final String message = await _runMirrorExport(ref, all: true);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppSettings settings = ref.watch(settingsProvider);
+    final String dir = ref.watch(markdownMirrorDirProvider);
+    return _SettingTile(
+      label: '导出目录',
+      // 路径原样展示：用户要拿它去 Obsidian 里开库。
+      description: dir,
+      control: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (settings.markdownMirrorDir.isNotEmpty)
+            TextButton(
+              onPressed: _busy
+                  ? null
+                  : () =>
+                        ref.read(settingsProvider.notifier).setMarkdownMirrorDir(''),
+              child: const Text('用默认'),
+            ),
+          const SizedBox(width: Tokens.spaceXs),
+          if (_busy)
+            const SizedBox(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            FilledButton.tonal(onPressed: _pick, child: const Text('选择…')),
+        ],
+      ),
+    );
+  }
+}
+
+/// 「立即导出」：全量重写一遍（首次开开关 / 想强制刷新时）。
+class _MirrorExportRow extends ConsumerStatefulWidget {
+  const _MirrorExportRow();
+
+  @override
+  ConsumerState<_MirrorExportRow> createState() => _MirrorExportRowState();
+}
+
+class _MirrorExportRowState extends ConsumerState<_MirrorExportRow> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    setState(() => _busy = true);
+    final String message = await _runMirrorExport(ref, all: true);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = ref.watch(
+      settingsProvider.select((AppSettings s) => s.markdownMirrorEnabled),
+    );
+    return _SettingTile(
+      label: '立即导出',
+      description: '把所有笔记重写一遍（换过目录或想强制刷新时用；后台执行，不卡界面）。',
+      control: _busy
+          ? const SizedBox(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : FilledButton.tonal(
+              onPressed: enabled ? _run : null,
+              child: const Text('立即导出'),
+            ),
     );
   }
 }

@@ -15,6 +15,7 @@ import 'src/app/pending_saves.dart';
 import 'src/command/bindings.dart';
 import 'src/app/settings_panel.dart';
 import 'src/data/database.dart';
+import 'src/data/markdown/md_mirror.dart';
 import 'src/data/note_store.dart';
 import 'src/data/settings_store.dart';
 import 'src/data/startup_backfill.dart';
@@ -74,12 +75,15 @@ Future<void> main() async {
   final Directory supportDir = await getApplicationSupportDirectory();
   StartupProbe.mark('supportDir');
 
+  final NoteStore noteStore = NoteStore(db.db);
+  final SettingsStore settingsStore = SettingsStore(db.db);
+
   runApp(
     ProviderScope(
       overrides: [
         // DB 只打开一次，整应用复用同一个连接。
-        noteStoreProvider.overrideWithValue(NoteStore(db.db)),
-        settingsStoreProvider.overrideWithValue(SettingsStore(db.db)),
+        noteStoreProvider.overrideWithValue(noteStore),
+        settingsStoreProvider.overrideWithValue(settingsStore),
         // 媒体引用的基准目录（画布 JSON 只存相对引用，靠它换算成绝对路径）。
         appDataDirProvider.overrideWithValue(supportDir.path),
         // 检索/索引设施要裸连接（见 appDatabaseProvider 的说明）。
@@ -110,7 +114,28 @@ Future<void> main() async {
     unawaited(
       runStartupBackfill(db.path).catchError((Object _, StackTrace _) {}),
     );
+    // Markdown 镜像：启动补一轮（上次没导完 / 在应用外改过库 / 刚换过目录）。
+    // 开关关着就整条跳过（默认关），fire-and-forget —— 镜像缺席不影响使用。
+    _startMarkdownMirrorSweep(db, settingsStore, supportDir.path);
   });
+}
+
+/// 启动期的一轮 Markdown 镜像同步（后台 isolate，见 `MdMirror`）。
+///
+/// 只做"补齐"：`revised_at` 比账本新的笔记才重写，绝大多数启动是空探测。
+void _startMarkdownMirrorSweep(
+  AppDatabase db,
+  SettingsStore settings,
+  String appDataDir,
+) {
+  final AppSettings boot = AppSettings.load(settings);
+  if (!boot.markdownMirrorEnabled) return;
+  unawaited(
+    MdMirror.exportPendingInBackground(
+      dbPath: db.path,
+      dir: MdMirror.resolveDir(appDataDir, boot.markdownMirrorDir),
+    ).catchError((Object _) => 0),
+  );
 }
 
 /// acrylic 初始化的缓存 Future：`Window.initialize()` 内部用 Completer，
