@@ -492,6 +492,19 @@ class AppDatabase {
   ///
   /// 幂等：建表与插入都带 `IF NOT EXISTS` / `OR REPLACE`；容器不存在时是空转。
   static void _migrateStreamV16(Database db) {
+    // 四步（搬条目 → 改引用 → 重指向画布卡 → 删容器）必须**同进同退**：
+    // 中途异常若只做了一半，容器可能已删、条目只搬了一部分，用户数据就残了。
+    db.execute('BEGIN;');
+    try {
+      _migrateStreamRowsV16(db);
+      db.execute('COMMIT;');
+    } on Object {
+      db.execute('ROLLBACK;');
+      rethrow;
+    }
+  }
+
+  static void _migrateStreamRowsV16(Database db) {
     db.execute(StreamStore.ddl);
     final ResultSet containers = db.select(
       "SELECT id, content, created_at FROM notes WHERE kind = 'stream'",

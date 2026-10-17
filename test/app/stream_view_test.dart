@@ -142,6 +142,89 @@ void main() {
     expect(find.text('要合并的想法'), findsNothing);
   });
 
+  testWidgets('聚焦：从引用跳来只显示那一条，可"显示全部"', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    seed('a', '被引用的那条', now);
+    seed('b', '别的速记', now);
+    container.read(streamFocusProvider.notifier).focusOn('a');
+    await pumpView(tester);
+
+    expect(find.text('正在查看被引用的速记'), findsOneWidget);
+    expect(find.text('被引用的那条'), findsOneWidget);
+    expect(find.text('别的速记'), findsNothing);
+
+    await tester.tap(find.text('显示全部'));
+    await tester.pumpAndSettle();
+    expect(find.text('别的速记'), findsOneWidget);
+  });
+
+  testWidgets('聚焦到已归档条目：仍然看得见、可拿回', (WidgetTester tester) async {
+    seed(
+      'b',
+      '已归档的被引用条目',
+      DateTime.now().subtract(const Duration(days: 1)),
+      archived: true,
+    );
+    container.read(streamFocusProvider.notifier).focusOn('b');
+    await pumpView(tester);
+
+    expect(find.text('已归档的被引用条目'), findsOneWidget);
+    expect(find.text('拿回'), findsOneWidget);
+    expect(find.text('已处理 1 条'), findsNothing, reason: '聚焦时不再给折叠行');
+  });
+
+  testWidgets('归档不是死路：只剩已处理时折叠行仍在、能展开', (WidgetTester tester) async {
+    seed(
+      'b',
+      '已归档的那条',
+      DateTime.now().subtract(const Duration(days: 1)),
+      archived: true,
+    );
+    await pumpView(tester);
+
+    // 待处理 0 条 + 归档 1 条：不能再被空态吞掉（2026-10-17 复查的 P0）。
+    expect(find.text('还没有灵感'), findsNothing);
+    expect(find.text('已处理 1 条'), findsOneWidget);
+    await tester.tap(find.text('已处理 1 条'));
+    await tester.pumpAndSettle();
+    expect(find.text('已归档的那条'), findsOneWidget);
+  });
+
+  testWidgets('编辑清空：提示"速记不能为空"，不改原文', (WidgetTester tester) async {
+    seed('a', '原文', DateTime.now());
+    await pumpView(tester);
+
+    await tester.tap(find.text('原文'));
+    await tester.pumpAndSettle();
+    // 捕获条(0) / 搜索框(1) / 行内编辑框(2)
+    await tester.enterText(find.byType(TextField).at(2), '');
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('速记不能为空'), findsOneWidget);
+    expect(stream.byId('a')!.text, '原文', reason: '空文本不该落库');
+  });
+
+  testWidgets('选择模式下归档条目不可勾选', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    seed('a', '待处理', now);
+    seed('b', '已归档', now.subtract(const Duration(days: 1)), archived: true);
+    await pumpView(tester);
+
+    await tester.tap(find.text('选择'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已处理 1 条'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已归档'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('选择要合并的速记'),
+      findsOneWidget,
+      reason: '归档条目不该进合并池',
+    );
+  });
+
   testWidgets('hover 操作簇不挤动正文（占位固定）', (WidgetTester tester) async {
     const String text = '这一行足够长，用来量宽度是否会被悬浮出现的三枚图标挤动';
     seed('a', text, DateTime.now());

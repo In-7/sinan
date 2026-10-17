@@ -191,6 +191,23 @@ final streamStoreProvider = Provider<StreamStore>(
   (Ref ref) => StreamStore(ref.watch(databaseProvider)),
 );
 
+/// 从笔记里的**速记引用**跳过来时要停在哪一条（`null` = 正常时间流）。
+///
+/// 引用块只知道 `ref_id`；心流页用这个 id 把列表临时收窄到那一条并给出
+/// 「显示全部」出口——比"切过去然后自己往下翻"准确得多（没有滚动索引）。
+class StreamFocusNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void focusOn(String id) => state = id;
+
+  void clear() => state = null;
+}
+
+final streamFocusProvider = NotifierProvider<StreamFocusNotifier, String?>(
+  StreamFocusNotifier.new,
+);
+
 /// **速记 / 心流**（2026-10-17 定：独立存储的单向捕获流）。
 ///
 /// 只经 [StreamStore] 读写 `stream_items`：文库 / 搜索 / 日历 / Markdown 镜像

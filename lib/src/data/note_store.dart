@@ -214,13 +214,19 @@ class NoteStore {
     return true;
   }
 
-  /// **复制到笔记**（快照）：把速记文本复制成目标里的一个真段落块。
+  /// **复制到笔记**（快照）：把速记文本复制成目标里的**段落**。
+  ///
+  /// 多行速记按行拆成多个段落块——与 `streamToNewNote` 同一口径；否则整段换行
+  /// 塞进一个块里，在编辑器里表现成"一块超大段落"（2026-10-17 复查）。
   bool copyStreamIntoNote(String streamId, String noteId) {
     final Map<String, Object?>? tree = _targetDocTree(noteId);
     if (tree == null) return false;
     final String? text = streamTextOf(streamId);
     if (text == null || text.trim().isEmpty) return false;
-    _treeChildren(tree).add(_paragraphNode(_uuid.v4(), text));
+    final List<Object?> children = _treeChildren(tree);
+    for (final String line in StreamStore.linesOf(text)) {
+      children.add(_paragraphNode(_uuid.v4(), line));
+    }
     _persistContentSync(noteId, jsonEncode(tree));
     return true;
   }
@@ -327,7 +333,12 @@ class NoteStore {
         },
       }),
     );
-    copyStreamOntoCanvas(streamId, n.id);
+    // 卡片建失败就**别归档**（否则速记被标成已处理、却哪儿都没有）——顺手把这张
+    // 空画布删掉，不留半成品。
+    if (!copyStreamOntoCanvas(streamId, n.id)) {
+      db.execute('DELETE FROM notes WHERE id = ?', <Object?>[n.id]);
+      return null;
+    }
     StreamStore(db).archive(streamId);
     return noteById(n.id);
   }
@@ -943,6 +954,19 @@ class NoteStore {
   ///
   /// [limit] 只在 `refType='note'` 时生效（整篇可能很长，不能全展开）。
   List<EmbedLine> embedPreview(String refType, String refId, {int limit = 30}) {
+    // 速记是独立表：不在这里拦，`ref_view='embed'` 的速记引用会得到一个空嵌入框。
+    if (refType == _refTargetStream) {
+      final ResultSet rs = db.select(
+        'SELECT text FROM stream_items WHERE id = ?',
+        <Object?>[refId],
+      );
+      if (rs.isEmpty) return const <EmbedLine>[];
+      return <EmbedLine>[
+        for (final String line
+            in (rs.first['text'] as String).split('\n').take(limit))
+          EmbedLine(text: line, blockType: 'paragraph'),
+      ];
+    }
     final ResultSet rs = refType == _refTargetBlock
         ? db.select(
             "SELECT type, props_json FROM blocks WHERE id = ? "

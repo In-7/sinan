@@ -77,10 +77,22 @@ class _StreamCaptureDialogState extends ConsumerState<_StreamCaptureDialog> {
   Future<void> _submit() async {
     final String text = _controller.text.trim();
     if (text.isEmpty) return;
-    // 先关窗再落库：落库是同步 SQLite（微秒级），但顺序上"关窗"才是用户
-    // 感知到的完成 —— 失败也不该把人卡在对话框里。
+    // 先拿到 notifier 再动窗口：`pop()` 后本 State 会随路由卸载，之后再 `ref.read`
+    // 属于"已销毁的 State 上取 provider"。
+    final notifier = ref.read(streamProvider.notifier);
+    // **写成功才关窗**：失败时留在这里，文本还在，可以重按 Enter。
+    try {
+      await notifier.add(text);
+    } on Object {
+      if (!mounted) return;
+      setState(() {}); // 让按钮状态重新评估
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text('没记下来，请重试')));
+      return;
+    }
+    if (!mounted) return;
     Navigator.of(context).pop();
-    await ref.read(streamProvider.notifier).add(text);
   }
 
   @override

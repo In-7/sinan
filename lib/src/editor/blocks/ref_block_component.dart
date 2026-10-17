@@ -60,13 +60,10 @@ Node refBlockNode({
 
 /// 解出来的引用目标；`null` 表示目标已不存在（UI 显示"引用已失效"）。
 class RefTarget {
-  const RefTarget({required this.title, required this.kind, this.stream = false});
+  const RefTarget({required this.title, required this.kind});
 
   final String title;
   final NoteKind kind;
-
-  /// 目标是一条**速记**（不在笔记里）：标签显示「速记」，点击跳心流视图。
-  final bool stream;
 }
 
 /// 引用块与宿主（笔记库 / 导航）之间的**接缝**。

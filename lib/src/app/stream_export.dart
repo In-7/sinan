@@ -17,28 +17,10 @@ import 'providers.dart';
 /// 画布**不做活链**（同日定）：卡片必须有自己的块，速记更新不推过去。
 /// 心流从不读笔记 / 画布正文——这里的对话框只列标题让你选目标。
 
-/// 引用到**笔记**（活链）：选一篇文档笔记，在它块树里插 `ref` 块。
-Future<void> referenceStreamToNote({
-  required BuildContext context,
-  required String streamId,
-}) async {
-  final ProviderContainer container = ProviderScope.containerOf(
-    context,
-    listen: false,
-  );
-  final store = container.read(noteStoreProvider);
-  final String? target = await pickNoteToReference(
-    context,
-    docsOnly: true,
-    dialogTitle: '引用到哪篇笔记',
-  );
-  if (target == null || !context.mounted) return;
-  final bool ok = store.referenceStreamInNote(streamId, target);
-  if (ok) container.invalidate(notesProvider);
-  _toast(context, ok ? '已引用（改速记会同步显示）' : '这篇笔记已经引用过它了');
-}
-
 /// 复制到**笔记**（快照）：把文本复制成目标里的一个真段落块。
+///
+/// （原「引用到笔记」入口已按用户决定移除：引用应由笔记 / 画布那一端发起；
+/// 后端能力仍在 `NoteStore.referenceStreamInNote`，届时直接复用。）
 Future<void> copyStreamToNote({
   required BuildContext context,
   required String streamId,

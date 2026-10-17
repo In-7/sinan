@@ -132,6 +132,26 @@ void main() {
       expect(stream.byId(item.id), isNotNull);
     });
 
+    test('复制到笔记：多行速记按行拆成多个段落（与转新同一口径）', () {
+      final StreamItem item = stream.add('第一行\n第二行')!;
+      final Note target = store.createSpark(
+        kind: NoteKind.note,
+        content: _emptyBlocks,
+        plainText: '',
+      );
+      expect(store.copyStreamIntoNote(item.id, target.id), isTrue);
+
+      final List<Row> rows = db.select(
+        'SELECT props_json FROM blocks WHERE note_id = ? ORDER BY ord',
+        <Object?>[target.id],
+      );
+      expect(
+        rows.map((Row r) => textOfProps(r['props_json'] as String?)).toList(),
+        <String>['第一行', '第二行'],
+        reason: '整段换行塞进一个块会在编辑器里变成"超大段落"',
+      );
+    });
+
     test('转新笔记（归档）：新笔记落块、速记归档但不删', () {
       final StreamItem item = stream.add('转我')!;
       final Note? created = store.streamToNewNote(item.id);
@@ -196,6 +216,15 @@ void main() {
       expect(store.referenceStreamInNote('no-such-id', canvas.id), isFalse);
       expect(store.copyStreamIntoNote('no-such-id', canvas.id), isFalse);
     });
+  });
+
+  test('嵌入预览：速记按行给出（不再是空框）', () {
+    final StreamItem item = stream.add('第一行\n第二行')!;
+    expect(
+      store.embedPreview('stream', item.id).map((l) => l.text).toList(),
+      <String>['第一行', '第二行'],
+    );
+    expect(store.embedPreview('stream', 'no-such-id'), isEmpty);
   });
 
   group('单向导出：速记 → 画布（只复制，不做活链）', () {

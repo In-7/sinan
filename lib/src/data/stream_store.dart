@@ -53,7 +53,8 @@ class StreamStore {
     final ResultSet rs = db.select(
       'SELECT id, text, created_at, updated_at, archived_at FROM $table '
       '${includeArchived ? '' : 'WHERE archived_at IS NULL '}'
-      'ORDER BY created_at DESC',
+      // 同一毫秒连记两条时按插入顺序兜底（rowid），否则两次读取顺序会翻。
+      'ORDER BY created_at DESC, rowid DESC',
     );
     return <StreamItem>[for (final Row r in rs) _itemOf(r)];
   }

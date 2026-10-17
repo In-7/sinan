@@ -847,11 +847,7 @@ class _NoteEditorViewAppFlowyState
       // 速记在独立表（`stream_items`），与笔记 / 块两条读口分开。
       final String? text = ref.read(streamStoreProvider).textOf(refId);
       if (text == null) return null;
-      return RefTarget(
-        title: _streamRefTitle(text),
-        kind: NoteKind.spark,
-        stream: true,
-      );
+      return RefTarget(title: _streamRefTitle(text), kind: NoteKind.spark);
     }
     if (refType == RefBlockKeys.refBlock) {
       // 块引用：显示它**所属笔记**的标题（块级定位留待后续）。
@@ -869,7 +865,9 @@ class _NoteEditorViewAppFlowyState
   /// 引用块跳转：块引用跳到它所属的那篇笔记。
   void _openRefTarget(String refType, String refId) {
     if (refType == RefBlockKeys.refStream) {
-      // 速记不是笔记：切到「心流」视图（走统一导航历史，可「上一步」回来）。
+      // 速记不是笔记：先告诉心流页"停在哪一条"，再切到「心流」视图
+      // （走统一导航历史，可「上一步」回来）。
+      ref.read(streamFocusProvider.notifier).focusOn(refId);
       ref.read(navHistoryProvider.notifier).selectHome(HomeView.timeline);
       return;
     }

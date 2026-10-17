@@ -10,7 +10,7 @@ import '../domain/note.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
-import 'providers.dart' show streamProvider;
+import 'providers.dart' show streamFocusProvider, streamProvider;
 import 'stream_export.dart';
 
 /// **速记 / 心流**（2026-10-17 定：flomo 式低摩擦收件箱）。
@@ -100,17 +100,52 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
   @override
   Widget build(BuildContext context) {
-    final List<StreamItem> all =
-        ref.watch(streamProvider).value ?? const <StreamItem>[];
+    final AsyncValue<List<StreamItem>> streamAsync = ref.watch(streamProvider);
+    final List<StreamItem> all = streamAsync.value ?? const <StreamItem>[];
+    // 从笔记里的速记引用跳过来：只显示那一条（`null` = 正常时间流）。
+    final String? focusId = ref.watch(streamFocusProvider);
+    final List<StreamItem> scoped = focusId == null
+        ? all
+        : <StreamItem>[
+            for (final StreamItem i in all)
+              if (i.id == focusId) i,
+          ];
+    // 目标已删（引用断链）：清掉聚焦，回到正常流。
+    // ⚠️ 必须等数据**装载完成**再判：首帧 `value` 还是 null，直接判会把刚设的
+    // 聚焦当成"目标不存在"清掉（一开始就是这么写错的）。
+    if (focusId != null && streamAsync.hasValue && scoped.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(streamFocusProvider.notifier).clear();
+      });
+    }
     final List<StreamItem> open = <StreamItem>[
-      for (final StreamItem i in all)
+      for (final StreamItem i in scoped)
         if (!i.archived && _matches(i)) i,
     ];
     final List<StreamItem> archived = <StreamItem>[
-      for (final StreamItem i in all)
+      for (final StreamItem i in scoped)
         if (i.archived && _matches(i)) i,
     ];
-    final bool empty = open.isEmpty && !_showArchived;
+    // **两区都空**才算空：只看 `open` 会把归档区一起藏掉——把最后一条待处理
+    // 归档后，「已处理 N 条」折叠行也跟着消失，归档再也打不开（2026-10-17 复查
+    // 抓到的 P0）。有归档就必须渲染列表，哪怕待处理是 0 条。
+    final bool empty = open.isEmpty && archived.isEmpty;
+    // 聚焦：清掉搜索词，否则"引用的那条"可能被上次的搜索过滤掉，页面变成"什么都没有"。
+    ref.listen<String?>(streamFocusProvider, (String? _, String? next) {
+      if (next != null && _query.isNotEmpty) {
+        _search.clear();
+        setState(() => _query = '');
+      }
+    });
+    final List<_Entry> entries = empty
+        ? const <_Entry>[]
+        : _entries(
+            open,
+            archived,
+            // 聚焦的那条可能已经归档：此时也要能看见它（并允许「拿回」）。
+            showArchivedRows: _showArchived || focusId != null,
+            showFold: focusId == null,
+          );
 
     return Padding(
       // 上留白 48 / 下 24（2026-10-17 用户定）：把书写区推到视线的黄金位，
@@ -134,13 +169,16 @@ class _StreamViewState extends ConsumerState<StreamView> {
               // **列表头**（2026-10-17 用户定）：条数 + 搜索 / 选择。
               // 这三样操作的是下面的列表，不是输入框 ⇒ 贴在列表上缘，且空库时
               // 整行不出现（既没东西可搜，也没东西可选）。
-              if (_selectMode)
+              if (focusId != null)
+                _focusHeader()
+              else if (_selectMode)
                 _selectionToolbar()
               else if (_query.isNotEmpty ||
                   open.isNotEmpty ||
                   archived.isNotEmpty)
                 _listHeader(open.length, archived.length),
-              if (_selectMode ||
+              if (focusId != null ||
+                  _selectMode ||
                   _query.isNotEmpty ||
                   open.isNotEmpty ||
                   archived.isNotEmpty)
@@ -151,13 +189,22 @@ class _StreamViewState extends ConsumerState<StreamView> {
                     if (empty)
                       _StreamEmpty(searching: _query.trim().isNotEmpty)
                     else
-                      ListView(
+                      // `builder`（不是 `children`）：条目再多也只构建视口内那几行
+                      // ——之前每次 hover / 输入都会重建全部卡片（2026-10-17 复查）。
+                      ListView.builder(
                         padding: const EdgeInsets.only(bottom: 72),
-                        children: <Widget>[
-                          ..._sectioned(open),
-                          if (archived.isNotEmpty) _archiveFold(archived.length),
-                          if (_showArchived) ..._archivedRows(archived),
-                        ],
+                        itemCount: entries.length,
+                        itemBuilder: (BuildContext context, int i) =>
+                            switch (entries[i]) {
+                              _DateEntry(:final String label) => _DayHeader(
+                                label: label,
+                              ),
+                              _FoldEntry(:final int count) => _archiveFold(
+                                count,
+                              ),
+                              _ItemEntry(:final StreamItem item, archived: final bool a) =>
+                                _row(item, archived: a),
+                            },
                       ),
                     if (_selectMode && _selected.isNotEmpty)
                       Positioned(
@@ -190,6 +237,10 @@ class _StreamViewState extends ConsumerState<StreamView> {
     final TextStyle? muted = theme.textTheme.labelSmall?.copyWith(
       color: Bauhaus.inkMuted(theme.brightness),
     );
+    // 窄窗收窄搜索框（< 560 时 190 → 120），免得「N 条 + 搜索 + 选择」挤成一团。
+    final double searchWidth = MediaQuery.sizeOf(context).width < 560
+        ? 120
+        : 190;
     return SizedBox(
       height: 28,
       child: Row(
@@ -205,7 +256,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
             ),
           ),
           SizedBox(
-            width: 190,
+            width: searchWidth,
             height: 28,
             child: TextField(
               controller: _search,
@@ -344,39 +395,68 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
   // ── 时间流 ───────────────────────────────────────────────────────────
 
-  /// 按**日期分组**：日期是组标题（单独一行、左对齐内容左缘），组内"最新在上"，
-  /// 条目**铺满整列宽**（2026-10-17 用户定：不要左侧 56 日期栏把正文整体右推）。
-  List<Widget> _sectioned(List<StreamItem> items) {
-    final List<Widget> out = <Widget>[];
+  /// 把两个区拍平成`[日期标, 条目, …, 折叠行, 归档条目…]`，供 `ListView.builder`。
+  List<_Entry> _entries(
+    List<StreamItem> open,
+    List<StreamItem> archived, {
+    required bool showArchivedRows,
+    required bool showFold,
+  }) {
+    final List<_Entry> out = <_Entry>[];
     String? lastDay;
-    for (final StreamItem item in items) {
+    for (final StreamItem item in open) {
       final String day = _dayKey(item.createdAt);
       if (day != lastDay) {
-        out.add(_DayHeader(label: _dayLabel(item.createdAt)));
+        out.add(_DateEntry(_dayLabel(item.createdAt)));
         lastDay = day;
       }
-      out.add(_row(item));
+      out.add(_ItemEntry(item));
+    }
+    if (archived.isNotEmpty && showFold) {
+      out.add(_FoldEntry(archived.length));
+    }
+    if (showArchivedRows) {
+      for (final StreamItem item in archived) {
+        out.add(_ItemEntry(item, archived: true));
+      }
     }
     return out;
   }
 
-  List<Widget> _archivedRows(List<StreamItem> items) {
-    if (items.isEmpty) {
-      return <Widget>[
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: Tokens.spaceSm),
-          child: Text(
-            '没有匹配的已处理速记',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Bauhaus.inkMuted(Theme.of(context).brightness),
+  /// 聚焦态头部：告诉你"这是从某篇笔记引用跳过来的"，并给出回全量流的出口。
+  Widget _focusHeader() {
+    final ThemeData theme = Theme.of(context);
+    return SizedBox(
+      height: 28,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              '正在查看被引用的速记',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Bauhaus.inkMuted(theme.brightness),
+              ),
             ),
           ),
-        ),
-      ];
-    }
-    return <Widget>[
-      for (final StreamItem item in items) _row(item, archived: true),
-    ];
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 28),
+            child: TextButton(
+              onPressed: () => ref.read(streamFocusProvider.notifier).clear(),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: theme.colorScheme.onSurfaceVariant,
+                textStyle: theme.textTheme.labelMedium,
+              ),
+              child: const Text('显示全部'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _archiveFold(int count) {
@@ -434,6 +514,29 @@ class _StreamViewState extends ConsumerState<StreamView> {
     if (day.year == today.year) return '${day.month} 月 ${day.day} 日';
     return '${day.year} 年 ${day.month} 月 ${day.day} 日';
   }
+}
+
+/// 列表里的一项：日期标题 / 一条速记 / 「已处理」折叠行。
+///
+/// 拍平成一维再交给 `ListView.builder`——不为列表性能保留 widget 树。
+sealed class _Entry {
+  const _Entry();
+}
+
+class _DateEntry extends _Entry {
+  const _DateEntry(this.label);
+  final String label;
+}
+
+class _ItemEntry extends _Entry {
+  const _ItemEntry(this.item, {this.archived = false});
+  final StreamItem item;
+  final bool archived;
+}
+
+class _FoldEntry extends _Entry {
+  const _FoldEntry(this.count);
+  final int count;
 }
 
 /// 日期组标题（今天 / 昨天 / `12 月 31 日`）：单独一行、左对齐内容左缘，
@@ -567,13 +670,26 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   Future<void> _submit() async {
     final String text = _controller.text.trim();
     if (text.isEmpty) return;
-    _controller.clear(); // 清空但保留焦点，方便连续记录
+    // **先落库、再清空**：写失败时把原文留在输入框里并给一句提示，别让人以为
+    // "记下了"却什么都没存（2026-10-17 复查）。
+    try {
+      await widget.onSubmit(text);
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text('没记下来，请重试')));
+      return;
+    }
+    if (!mounted) return;
+    if (_controller.text.trim() == text) {
+      _controller.clear(); // 清空但保留焦点，方便连续记录
+    }
     _sentTimer?.cancel();
     setState(() => _justSent = true);
     _sentTimer = Timer(Tokens.durationFeedback, () {
       if (mounted) setState(() => _justSent = false);
     });
-    await widget.onSubmit(text);
   }
 
   /// 底行左侧**只描述当下输入**：有字给字数，没字给键位提示。
@@ -765,6 +881,16 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
 
   Future<void> _saveAndCollapse() async {
     final String text = _editController.text;
+    // **不许改空**：`StreamStore.update` 会拒绝空文本，但这里若直接收起，用户
+    // 看到的还是旧文本——像是"我删的内容又回来了"（2026-10-17 复查）。
+    // 明确说一句、留在编辑态，让人自己再写。
+    if (text.trim().isEmpty && widget.item.text.trim().isNotEmpty) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(content: Text('速记不能为空')),
+      );
+      if (mounted) _editFocus.requestFocus();
+      return;
+    }
     if (text.trim() != widget.item.text.trim()) {
       await ref.read(streamProvider.notifier).edit(widget.item.id, text);
     }
@@ -782,8 +908,6 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
         await streamToNewNote(context: context, streamId: id);
       case 'to-canvas':
         await streamToNewCanvas(context: context, streamId: id);
-      case 'archive':
-        await ref.read(streamProvider.notifier).archive(id);
       case 'delete':
         await ref.read(streamProvider.notifier).remove(id);
     }
@@ -825,8 +949,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
       label: widget.item.text,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        // 归档条目**不参与多选**（否则已处理的旧条目会被混进"合并成新笔记"里）。
         onTap: widget.selectMode
-            ? widget.onToggleSelect
+            ? (widget.archived ? null : widget.onToggleSelect)
             : (widget.archived ? null : _expand),
         child: FocusRing(
           focusNode: _rowFocus,
@@ -838,6 +963,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                   event.logicalKey != LogicalKeyboardKey.enter) {
                 return KeyEventResult.ignored;
               }
+              if (widget.archived) return KeyEventResult.ignored;
               if (widget.selectMode) {
                 widget.onToggleSelect?.call();
               } else {
@@ -867,20 +993,24 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (widget.selectMode) ...<Widget>[
+                  if (widget.selectMode && !widget.archived) ...<Widget>[
                     _SelectBox(selected: marked),
                     const SizedBox(width: Tokens.spaceSm),
                   ],
                   Expanded(
-                    child: Text(
-                      widget.item.text,
-                      maxLines: 8,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.archived
-                            ? Bauhaus.inkMuted(brightness)
-                            : Bauhaus.ink(brightness),
-                        height: 1.6,
+                    // 正文由外层 [Semantics.label] 朗读（整条一起念），这里排除，
+                    // 免得"标签 + 正文"念两遍；行内按钮的语义**保留**（可单独聚焦）。
+                    child: ExcludeSemantics(
+                      child: Text(
+                        widget.item.text,
+                        maxLines: 8,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: widget.archived
+                              ? Bauhaus.inkMuted(brightness)
+                              : Bauhaus.ink(brightness),
+                          height: 1.6,
+                        ),
                       ),
                     ),
                   ),
@@ -893,10 +1023,13 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                         top: Tokens.spaceXxs,
                         left: Tokens.spaceSm,
                       ),
-                      child: Text(
-                        '归档于 ${_clock(widget.item.archivedAt ?? widget.item.createdAt)}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: Bauhaus.inkMuted(brightness),
+                      // 时间是装饰性 meta：不参与朗读（行标签已含正文）。
+                      child: ExcludeSemantics(
+                        child: Text(
+                          '归档于 ${_clock(widget.item.archivedAt ?? widget.item.createdAt)}',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Bauhaus.inkMuted(brightness),
+                          ),
                         ),
                       ),
                     ),
@@ -936,10 +1069,13 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
         top: Tokens.spaceXxs,
         right: Tokens.spaceXs,
       ),
-      child: Text(
-        _clock(widget.item.createdAt),
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: Bauhaus.inkMuted(brightness),
+      // 装饰性 meta：读屏只念行标签里的正文，不念时间。
+      child: ExcludeSemantics(
+        child: Text(
+          _clock(widget.item.createdAt),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: Bauhaus.inkMuted(brightness),
+          ),
         ),
       ),
     ),
