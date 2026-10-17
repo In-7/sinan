@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -12,23 +13,18 @@ import 'note_display.dart';
 import 'providers.dart';
 import 'search_provider.dart';
 
-/// 208px **笔记列表列**（主从布局的"主"，2026-10-16 Option 2 进卡方案）：坐在浮面卡
-/// **左格**，右格是详情（编辑器 / 画布 / 空态）。取代原主页卡片墙——心流 / 全部 / 收藏
-/// 三视图走它，开笔记不再整屏替换、列表常驻。
+/// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
+/// （编辑器 / 画布 / 空态）。心流 / 全部 / 收藏三视图走它，开笔记不再整屏替换、列表常驻。
 ///
 /// - 头 = 视图名 + 篇数 + 「筛选」钮（[FilterMenuButton]：排序 / 形态 / 标签，全局控件）。
 /// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按排序 + 形态 + 标签过滤）。
 /// - 行：点 / Enter 开（走 [locateProvider]，`focus` 默认 false ⇒ 焦点不被编辑器抢走）；
 ///   选中行（== [selectedNoteIdProvider]）铺 navSelectedTint 同款选中底（= hover 2×）。
 ///
-/// ## 极简留白（2026-10-17 用户定，完整版）
-/// **不用行间分割线**（满格横线 = 表格感，长列表显乱）——分层靠三样：
-/// ① **留白**：行 vertical padding 提到 spaceMd，行高自然、短行也不糊；
-/// ② **字重三级**：标题 w600 浓墨 / 摘要 w400 淡墨 / 时间·图标 最小最淡；
-/// ③ **选中态**：当前行的淡色底即"分隔"，静止干净、交互才显形。
-/// **心流**再按 `revisedAt` 日期分桶（今天 / 昨天 / 前天 / 本周 / 更早），重复的日期从
-/// 每行上移到**分组小标**、行内只留 图标 + 标题 + 摘要；分组顶多一档留白当"間"。
-/// 全部 / 收藏（非时间流）不分组，日期保留行内（更小更淡）。
+/// ## 极简留白（2026-10-17 用户定）
+/// 不用行间分割线（满格横线 = 表格感）——分层靠：① 留白（行 vertical padding spaceMd）；
+/// ② 字重三级（标题 w600 浓墨 / 摘要 w400 淡墨 / 时间·图标 最小最淡）；③ 选中态淡色底。
+/// **心流**再按 `revisedAt` 日期分桶，重复日期上移到分组小标、行内只留 图标+标题+摘要。
 class NoteListColumn extends ConsumerWidget {
   const NoteListColumn({super.key});
 
@@ -50,7 +46,6 @@ class NoteListColumn extends ConsumerWidget {
     final bool grouped = view == HomeView.timeline;
 
     // 拍平成一串条目：心流 = [分组标, 行, 行, 分组标, 行…]；其余 = [行, 行…]。
-    // items 已按 revisedAt 倒序 ⇒ 同桶行必然相邻，遇新桶插一个分组标即可。
     final List<_ListItem> entries = <_ListItem>[];
     String? lastBucket;
     for (final Note n in items) {
@@ -117,6 +112,22 @@ class NoteListColumn extends ConsumerWidget {
                       onOpen: () => ref
                           .read(locateProvider.notifier)
                           .locate(noteId: n.id),
+                      // ↑/↓：读当前顺序 + 选中，算上/下一篇，走 [LocateNotifier.preview]
+                      // （静默选中、**不入历史**，不刷爆前进/后退栈）。选中行自己在
+                      // didUpdateWidget 里滚入视野 + 接管焦点（焦点锚跟着选中走）。
+                      onNavigate: (int delta) {
+                        final String? cur = ref.read(selectedNoteIdProvider);
+                        final int i = cur == null
+                            ? -1
+                            : items.indexWhere((Note n) => n.id == cur);
+                        final int target = i < 0
+                            ? (delta > 0 ? 0 : items.length - 1)
+                            : (i + delta).clamp(0, items.length - 1);
+                        if (target == i) return;
+                        ref
+                            .read(locateProvider.notifier)
+                            .preview(noteId: items[target].id);
+                      },
                     );
                   },
                 ),
@@ -229,16 +240,27 @@ class _NoteRow extends StatefulWidget {
     required this.note,
     required this.selected,
     required this.onOpen,
+    required this.onNavigate,
     this.showDate = true,
   });
 
   final Note note;
   final bool selected;
   final VoidCallback onOpen;
+
+  /// ↑/↓ 由本行方向键快捷键触发，回调给父列切上/下一篇（父才知道全局顺序）。
+  final ValueChanged<int> onNavigate;
   final bool showDate;
 
   @override
   State<_NoteRow> createState() => _NoteRowState();
+}
+
+/// ↑/↓ 的意图（带方向 delta）：行内 [SingleActivator] 快捷键映射到它，动作回调给父
+/// 切上/下一篇——父才知道全局顺序，行只知道"我被按了"。
+class _RowNavIntent extends Intent {
+  const _RowNavIntent(this.delta);
+  final int delta;
 }
 
 class _NoteRowState extends State<_NoteRow> {
@@ -249,6 +271,25 @@ class _NoteRowState extends State<_NoteRow> {
   void dispose() {
     _focus.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_NoteRow old) {
+    super.didUpdateWidget(old);
+    // 被选中（点开 / ↑↓ 预览切到这篇）⇒ 帧末把自己滚进视野 + 接管焦点。这样 ↑/↓ 的
+    // "键盘锚"始终跟着选中行走，连续按不会断；只抢**行**的焦点、不抢编辑器（locate
+    // 不带 focus）。放 post-frame：didUpdateWidget 在 build 期，布局还没定。
+    if (widget.selected && !old.selected) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Scrollable.ensureVisible(
+          context,
+          duration: Tokens.durationFast,
+          curve: Curves.easeOut,
+        );
+        _focus.requestFocus();
+      });
+    }
   }
 
   @override
@@ -280,10 +321,20 @@ class _NoteRowState extends State<_NoteRow> {
       child: FocusableActionDetector(
         focusNode: _focus,
         mouseCursor: SystemMouseCursors.click,
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.arrowDown): _RowNavIntent(1),
+          SingleActivator(LogicalKeyboardKey.arrowUp): _RowNavIntent(-1),
+        },
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<Intent>(
             onInvoke: (_) {
               widget.onOpen();
+              return null;
+            },
+          ),
+          _RowNavIntent: CallbackAction<_RowNavIntent>(
+            onInvoke: (_RowNavIntent intent) {
+              widget.onNavigate(intent.delta);
               return null;
             },
           ),
@@ -298,10 +349,14 @@ class _NoteRowState extends State<_NoteRow> {
             focusNode: _focus,
             borderRadius: BorderRadius.circular(Tokens.radiusSm),
             child: GestureDetector(
-              onTap: widget.onOpen,
+              onTap: () {
+                // 点行即把键盘锚放到这行：紧接着按 ↑/↓ 能继续在列表里走。
+                _focus.requestFocus();
+                widget.onOpen();
+              },
               child: Container(
                 color: bg,
-                // 行 vertical padding 提到 spaceMd：靠留白分隔，不靠线。
+                // 行 vertical padding spaceMd：靠留白分隔，不靠线。
                 padding: const EdgeInsets.symmetric(
                   horizontal: Tokens.spaceMd,
                   vertical: Tokens.spaceMd,

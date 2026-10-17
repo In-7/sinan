@@ -1569,7 +1569,13 @@ class _NoteEditorViewAppFlowyState
               child: AppFlowyEditor(
                 editorState: _editor,
                 editorScrollController: _scroll,
-                autoFocus: true,
+                // **不自动抢焦点**（2026-10-17 删掉原先的 `autoFocus: true`；官方默认
+                // 即 false，故不显式传）：本类的焦点规矩全在 [_maybeConsumeLocate]——
+                // "要开写"的入口（新建 / 日记 / 引文跳转）带 `focus: true` ⇒ `_focusAt`
+                // 设选区、键盘服务随即聚焦；其余浏览入口（列表点开 / Ctrl+K / 日历 /
+                // 撤销 toast）一律 `focus: false` ⇒ 焦点留在原处（列表行），键盘 ↑/↓
+                // 选笔记才不断。挂载即抢焦会把这条规矩整个推翻（点开一篇就从列表被
+                // 拽进编辑器）。⚠️ 别再把 autoFocus 加回 true。
                 // 正文右键菜单：官方 `contextMenuBuilder` **不传就完全不弹**
                 // （`_showContextMenu` 首行判空返回——此前右键毫无反应）。
                 // 面板与条目见 `widgets/editor_context_menu.dart`。

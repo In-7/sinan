@@ -152,22 +152,23 @@ final aiPanelOpenProvider = NotifierProvider<AiPanelNotifier, bool>(
   AiPanelNotifier.new,
 );
 
-/// 左侧扁平导航 [HomeSidebar] 的折叠态（2026-10-15 用户定：标题栏最左加折叠钮，
-/// 可把侧栏完全收起）。默认展开（`false`）。
+/// 卡内**列表列**的折叠态（手动档：标题栏最左折叠钮 / Ctrl+B 切它）。
 ///
-/// 标题栏折叠钮与 [HomeScreen] 的工作区 Row 都读这一个布尔——单一真相源（同
+/// 窄窗（< [Tokens.noteListBreakpoint]）另有**自动折**（见 [HomeScreen]）——最终显隐
+/// = 窄窗 || 本布尔。默认展开（`false`）。
+///
+/// 标题栏折叠钮与 [HomeScreen] 的卡内列表列都读这一个布尔——单一真相源（同
 /// [aiPanelOpenProvider] 口径）。暂不持久化，重启回展开态。
-class HomeSidebarCollapsedNotifier extends Notifier<bool> {
+class ListCollapsedNotifier extends Notifier<bool> {
   @override
   bool build() => false;
 
   void toggle() => state = !state;
 }
 
-final homeSidebarCollapsedProvider =
-    NotifierProvider<HomeSidebarCollapsedNotifier, bool>(
-      HomeSidebarCollapsedNotifier.new,
-    );
+final listCollapsedProvider = NotifierProvider<ListCollapsedNotifier, bool>(
+  ListCollapsedNotifier.new,
+);
 
 /// 笔记列表（含增删改后自动刷新）。
 final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
@@ -566,6 +567,16 @@ class LocateNotifier extends Notifier<LocateRequest?> {
       ref.read(selectedNoteIdProvider.notifier).select(noteId);
     }
     state = (noteId: noteId, blockId: blockId, focus: focus, seq: ++_seq);
+  }
+
+  /// 列表 **↑/↓ 预览选中**：换笔记但**不入导航历史**——连续浏览不该把前进/后退栈刷爆
+  /// （每篇都记一步的话，`Alt+←` 得逐篇回退）。与 [locate] 同效用（都写
+  /// [selectedNoteIdProvider]、同一条真相源），只差 [recordBeforeNavigate] 这一步。
+  /// 不设跳转请求 state（不定位块、不抢焦点）——选中态变化自会驱动详情重绘。
+  void preview({required String noteId}) {
+    if (ref.read(selectedNoteIdProvider) != noteId) {
+      ref.read(selectedNoteIdProvider.notifier).select(noteId);
+    }
   }
 
   /// **回主页**（§5.6：切换，不是叠加）——清空选中与待消费的跳转请求。

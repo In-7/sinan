@@ -40,8 +40,9 @@ import '../command/commands.dart';
 ///
 /// ## 落点
 /// **图标模式**（[iconOnly] = true，2026-10-15 起侧栏的默认用法）：坐
-/// [HomeSidebar] 品牌行右端，一枚 30 热区（[Tokens.headerActionSize]）+ 24 图标
-/// （[Tokens.iconMd]）的 + 钮，与同行的搜索图标同规格。a11y 标签由 [Semantics.label]
+/// [AppIconRail] 轨上（2026-10-16 起随轨用 [Tokens.railButtonSize] 热区），一枚
+/// 24 图标（[Tokens.iconMd]）的 + 钮，与同轨的搜索 / 视图钮同规格。a11y 标签由
+/// [Semantics.label]
 /// ='新建' 提供（不悬浮 Tooltip：点按弹面板即提示，再悬浮标签是重复）。
 /// **完整模式**（默认 iconOnly = false）："新建 ▾" 文字钮，高 [kHeight]=32、有最小宽
 /// ——保留给未来侧栏展开等需要文字标签的场景（当前侧栏不这么用）。
@@ -323,7 +324,7 @@ class _NewNoteCapsuleState extends ConsumerState<NewNoteCapsule> {
   }
 
   Widget _buildTrigger(ThemeData theme, Brightness b) {
-    // **不垫浮层档**（2026-10-15 用户定：与侧栏导航项 [HomeSidebar] 完全同口径
+    // **不垫浮层档**（2026-10-15 用户定：与 [AppIconRail] 上其它导航钮完全同口径
     // ——静止**透明**（直接坐窗口底），只有 hover / 展开才铺一层 hover 热区色。
     // ⚠️ 用**半透明**的 [AppTheme.hoverOverlay]（黑 4% / 白 12%）而不是烤实的中性
     // 灰：预设主题下窗口本身就是预设色（chromeColor，见 main.dart），烤实的灰补丁

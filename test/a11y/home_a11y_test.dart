@@ -251,6 +251,13 @@ Future<_HomeAudit> _auditHome(
   // 收件箱条目，否则默认视图里没有任何内容控件，焦点顺序测试找不到"内容卡片"标记。
   store.addStreamItem('甲');
 
+  // 宽逻辑面跑：HomeScreen 有窄窗自动折列表（< [Tokens.noteListBreakpoint]=1040），
+  // 默认测试面 800×600 会被判窄窗 ⇒ 列表收起、焦点序找不到列表行。这里不靠
+  // setSurfaceSize（那个设物理像素、本环境 dpr≠1 时逻辑宽仍 800），而是用 MediaQuery
+  // override 直接把**逻辑面**钉到 1280×900——HomeScreen 的 MediaQuery.sizeOf 读到的
+  // 就是宽面，列表常开。真实布局约束仍是 800×600（Row 装得下，无溢出）。
+  const Size kWide = Size(1280, 900);
+
   final SemanticsHandle handle = tester.ensureSemantics();
   await tester.pumpWidget(
     ProviderScope(
@@ -265,7 +272,13 @@ Future<_HomeAudit> _auditHome(
         // 垫一层真实窗口底色 ⇒ 对比度检查器才算得出可信背景（否则拿透明当黑底，假阳性）。
         home: ColoredBox(
           color: AppTheme.windowBackground(brightness),
-          child: const HomeScreen(),
+          child: Builder(
+            builder: (BuildContext context) => MediaQuery(
+              // 只覆盖 size（保留 padding / textScaler 等其余字段），把逻辑面钉宽。
+              data: MediaQuery.of(context).copyWith(size: kWide),
+              child: const HomeScreen(),
+            ),
+          ),
         ),
       ),
     ),

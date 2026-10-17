@@ -288,8 +288,9 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 ///
 /// ## 三条结构事实
 /// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（形态 / 排序 / 标签合住）。
-///    视图切换 + 新建胶囊 2026-10-12 移到工作区**左侧扁平导航** [HomeSidebar]（无面板、
-///    贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步 2026-10-15 加回**标题栏左簇**
+///    视图切换 + 新建胶囊 2026-10-12 起移出内容区，今在最左 **60 图标轨**
+///    [AppIconRail]（无面板、贴窗口底）；本内容区本身才是浮面卡。上一步 / 下一步
+///    2026-10-15 加回**标题栏左簇**
 ///    （左缘与内容卡对齐，功能与全局键 `Alt+←/→` 同走命令层）。常驻捕获输入框
 ///    （OmniBar）2026-10-09 撤除（用户："这个输入方式不好用"）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
@@ -332,19 +333,19 @@ class _HomeHubState extends ConsumerState<HomeHub> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // 顶栏：只剩一枚靠右的「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
-        // 视图切换 + 新建胶囊 2026-10-12 移到工作区左侧扁平导航（[HomeSidebar]），
-        // 不再占内容区顶栏。问笔记（AI）是工作区右角折叠钮（见 [HomeScreen]
-        // 工作区 [_RightRailToggleButton]），开合两态坐标不变。
+        // 视图切换 + 新建胶囊 2026-10-12 起移出内容区（今在最左 [AppIconRail] 60
+        // 图标轨）。问笔记（AI）2026-10-16 起是标题栏 `trailing` 钮（设置右、最小化
+        // 左），不在工作区。
         const Padding(
           padding: EdgeInsets.fromLTRB(
             Tokens.spaceLg,
             // 顶部带中心线（Tokens.headerBandCenter = 20）：32 高的钮取
             // top = 20 − 16 = 4，与编辑器耳朵（top 5、高 30）同中心线。
             Tokens.headerBandCenter - Tokens.toolbarButtonSize / 2,
-            // 右内缩让开工作区右角的 AI 折叠钮（_RightRailToggleButton，占据右起
-            // spaceXs + toolbarButtonSize = 36px），再留 spaceSm 间隙——否则两者重叠
-            // （2026-10-11 用户修）。
-            Tokens.spaceXs + Tokens.toolbarButtonSize + Tokens.spaceSm,
+            // 右内缩与左对称（spaceLg）。2026-10-16 前这里是
+            // spaceXs + toolbarButtonSize + spaceSm（44）——让开工作区右角的旧 AI
+            // 折叠钮（已随"问笔记"搬进标题栏 trailing）；无需再让。
+            Tokens.spaceLg,
             Tokens.spaceSm,
           ),
           child: Row(

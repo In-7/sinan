@@ -152,6 +152,11 @@ class Tokens {
   /// 坐在浮面卡左格、右格是详情；可折叠（Ctrl+B / 标题栏折叠钮），折叠时编辑器占满卡。
   /// 240 下编辑器（默认正文列 800）在窗口 ≥~1116px 时满列、不受影响。
   static const double noteListWidth = 240;
+  /// 窄窗**自动折列表列**断点（2026-10-17 用户定）：窗宽 < 此值时自动收起 240 列表列、
+  /// 把宽度让给编辑器（切笔记走 Ctrl+K 搜索面板）。取 1040 = 60 轨 + 240 列表 +
+  /// 728 编辑器窄档正文列 + ~12 边距——低于它、开着列表编辑器正文列会跌破最窄档，
+  /// 不如收列表让编辑器满列。与 [askRailBreakpoint](AI 轨降级) 是两道独立断点。
+  static const double noteListBreakpoint = 1040;
   /// 主菜单面板宽 = 原 `app_menu._panelWidth`（180；8pt 收编时曾收敛到 176，
   /// 2026-10-14 用户要求撤回到 180）。
   static const double menuPanelWidth = 180;

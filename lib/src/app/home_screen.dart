@@ -33,7 +33,7 @@ import '../domain/settings.dart';
 ///   [Tokens.titleBarHeightMain] 定高（当前 **32**）的全宽 [WindowStrip]，仅含
 ///   拖拽带（可选应用名）+ 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+
 ///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：心流 / 全部 / 日历 /
-///   收藏 + 新建胶囊）落在工作区左侧扁平导航 [HomeSidebar]（无折叠钮、常驻）。
+///   收藏 + 新建胶囊）落在最左 60 图标轨 [AppIconRail]（常驻脊梁、平铺窗口底）。
 ///   **问笔记（AI）是标题栏 `trailing` 钮**——2026-10-16 从工作区右角搬来，落在
 ///   设置右、最小化左；AI 轨由这枚钮开合（单一开合入口，其余入口走同一条
 ///   [aiPanelOpenProvider]）；无分割线。
@@ -60,8 +60,8 @@ class HomeScreen extends ConsumerWidget {
     //
     // 2026-09-25 统一桌面布局：右栏随 `selectedId` 在主页 / 编辑器之间切换——
     // **不进新路由**（旧的 [NoteListView] 侧栏已删）。导航（四枚目的地图标 + 新建
-    // 胶囊）2026-10-12 起落在工作区左侧扁平 [HomeSidebar]，标题栏只留拖拽带 +
-    // 设置钮 + 窗控；更早的 50 宽 `_AppIconRail`（2026-10-09 上午）、导航板
+    // 胶囊）2026-10-12 起落左侧导航（今为 [AppIconRail] 60 图标轨），标题栏只留
+    // 拖拽带 + 设置钮 + 窗控；更早的 50 宽 `_AppIconRail`（2026-10-09 上午）、导航板
     // [HubNav]（2026-09-30）均已是历史。
     // 具体分支见下方 `WindowService.isSupported`。
 
@@ -117,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
       // 2026-10-09 用户定（opencode 风"内嵌浮面"，替代当日早上的 50 图标轨）：
       // 顶条由 [Tokens.titleBarHeightMain] 定高（当前 **32**）全宽——仅拖拽带 +
       // 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+ 窗控按钮，**不含导航**
-      // （四枚目的地图标 + 新建胶囊 2026-10-12 起移入工作区左侧 [HomeSidebar]）；
+      // （四枚目的地图标 + 新建胶囊 2026-10-12 起移入左侧导航，今在最左 [AppIconRail]）；
       // 问笔记（AI）是顶条 `trailing` 钮（设置右、最小化左；2026-10-16 从工作区右角搬来）。
       // 条下不再画 1px 分隔线：内容是 8px 环缝内的圆角浮面卡。分层三件套 =
       // 窗口底 vs panelFill 的明度差 + 卡缘 1px panelEdge 光边 + 4px 暗缝
@@ -139,9 +139,13 @@ class HomeScreen extends ConsumerWidget {
       final bool railFits =
           MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
       final bool aiInline = aiWanted && railFits;
-      // 列表列折叠态：标题栏最左折叠钮（Ctrl+B）与卡内列表列共用这一个布尔。2026-10-16
-      // 起改折**卡内 208 列表列**（60 轨常驻不折）。
-      final bool listCollapsed = ref.watch(homeSidebarCollapsedProvider);
+      // 列表列折叠态：标题栏最左折叠钮（Ctrl+B）手动折 + 窄窗自动折，合一显隐。
+      // 窄窗（< [Tokens.noteListBreakpoint]）强制收起列表、把宽度让给编辑器；切笔记走
+      // Ctrl+K 搜索面板（列表收起时也能跳）。
+      final bool narrow =
+          MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
+      final bool listCollapsed =
+          narrow || ref.watch(listCollapsedProvider);
 
       // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
       //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
@@ -158,7 +162,7 @@ class HomeScreen extends ConsumerWidget {
 
       // 主从布局（2026-10-16 Option 2 进卡）：60 轨常驻（唯一平铺窗口底的脊梁，不折叠）；
       // 轨右边一张浮面卡，卡内两格 = [列表列 ┃ 详情]。列表列可折叠（标题栏最左折叠钮 /
-      // Ctrl+B，走 [homeSidebarCollapsedProvider]）——折叠时编辑器占满卡。日历视图例外：
+      // Ctrl+B，走 [listCollapsedProvider]）——折叠时编辑器占满卡。日历视图例外：
       // 隐藏列表、卡整屏显示日历。详情实例只取一次 ⇒ 折叠动画每帧只重排 ClipRect 宽、
       // 不重建昂贵的编辑器子树（最简性能）。
       final Brightness brightness = Theme.of(context).brightness;
@@ -213,8 +217,8 @@ class HomeScreen extends ConsumerWidget {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在工作区
-            // 左侧扁平导航 [HomeSidebar]）；**上一步 / 下一步 2026-10-15 加回
+            // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在最左
+            // [AppIconRail] 图标轨）；**上一步 / 下一步 2026-10-15 加回
             // 条内左端**（`leading`，左缘与内容卡对齐）。
             // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
             // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
@@ -685,9 +689,12 @@ class SettingsNavButton extends ConsumerWidget {
   }
 }
 
-/// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内 208 列表列；
-/// 60 轨常驻不折）。点按切 [homeSidebarCollapsedProvider]——本钮与 [HomeScreen] 卡内
-/// 列表列共用这一个布尔（单一真相源）。
+/// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内列表列；60 轨
+/// 常驻不折）。点按切 [listCollapsedProvider]——本钮与 [HomeScreen] 卡内列表列
+/// 共用这一个布尔（单一真相源）。
+///
+/// 窄窗（< [Tokens.noteListBreakpoint]）时列表被强制收起（见 [HomeScreen]）⇒ 钮置灰、
+/// 给一句实话；宽窗才可手动折 / 展。
 ///
 /// 不着色：标题栏 [WindowStrip] 已套 IconTheme(onChrome)，tabler 经 AppIconTheme
 /// 桥接继承（同 [SettingsNavButton]）。
@@ -696,15 +703,21 @@ class SidebarCollapseButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bool collapsed = ref.watch(homeSidebarCollapsedProvider);
+    final bool narrow =
+        MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
+    final bool collapsed = narrow || ref.watch(listCollapsedProvider);
     return IconButton(
       icon: const tabler.LayoutSidebar(
         height: Tokens.iconMdSm,
         width: Tokens.iconMdSm,
         strokeWidth: 1.5,
       ),
-      tooltip: collapsed ? '展开列表' : '收起列表',
-      onPressed: () => ref.read(homeSidebarCollapsedProvider.notifier).toggle(),
+      tooltip: narrow
+          ? '放宽窗口可展开列表'
+          : (collapsed ? '展开列表' : '收起列表'),
+      onPressed: narrow
+          ? null
+          : () => ref.read(listCollapsedProvider.notifier).toggle(),
     );
   }
 }

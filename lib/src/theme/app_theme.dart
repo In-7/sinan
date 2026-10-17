@@ -769,8 +769,8 @@ class AppTheme {
   /// 的控件用它——那是状态镜像，不是"我在哪"的选中读法。
   ///
   /// 2026-10-08 起「当前项」选中已全部改走 [selectedPill]（用户拍板全局统一），
-  /// 新代码别再拿它当选中底（旧口径的分叉根因）。侧栏当前项的选中底另有"2× hover"
-  /// 的算法（见 [home_sidebar]），不在此处。
+  /// 新代码别再拿它当选中底（旧口径的分叉根因）。导航当前项的选中底另有"2× hover"
+  /// 的算法（见 [AppIconRail] 与 `NoteListColumn` 的行选中底），不在此处。
   static Color navSelectedTint(Color onSurface) =>
       onSurface.withValues(alpha: 0.10);
 

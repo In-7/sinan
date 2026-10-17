@@ -24,7 +24,7 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 ///
 /// 钉的是这几条结构性事实：
 /// ① **标题栏不放导航**（2026-10-12 用户定：取消左侧索引面板后，四枚目的地
-///    + 新建胶囊搬到工作区**左侧扁平导航** [HomeSidebar]，无面板、贴窗口底）；
+///    + 新建胶囊搬到工作区**左侧扁平导航** [AppIconRail]，无面板、贴窗口底）；
 ///    上一步 / 下一步 的 UI 入口已撤（功能仍在全局键 `Alt+←/→`）。条内只剩
 ///    拖拽区 + 右簇设置钮 + 窗控；
 /// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（HomeHub 几何即卡几何）；
@@ -106,10 +106,10 @@ void main() {
     return container;
   }
 
-  /// 四枚目的地的名称（= [HomeView.label]，左侧 [HomeSidebar] 导航文字）。
+  /// 四枚目的地的名称（= [HomeView.label]，左侧 [AppIconRail] 导航文字）。
   const List<String> kDestinations = <String>['心流', '全部', '日历', '收藏'];
 
-  /// 点左侧 [HomeSidebar] 的某个视图导航（切换主区视图）。
+  /// 点左侧 [AppIconRail] 的某个视图导航（切换主区视图）。
   Future<void> tapViewTab(WidgetTester tester, String label) async {
     await tester.tap(
       find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
@@ -159,7 +159,7 @@ void main() {
       closeTo(Tokens.titleBarHeightMain / 2, 0.5),
       reason: '左簇在条内垂直居中',
     );
-    // 视图导航 + 新建胶囊在工作区左侧扁平导航（HomeSidebar）上。
+    // 视图导航 + 新建胶囊在工作区左侧扁平导航（AppIconRail）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     expect(find.byType(NoteListColumn), findsOneWidget,
         reason: '主页态渲染列表列（主从，不再整屏 HomeHub 卡片墙）');
@@ -167,11 +167,11 @@ void main() {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
         findsOneWidget,
-        reason: 'HomeSidebar 必须有视图导航：$label',
+        reason: 'AppIconRail 必须有视图导航：$label',
       );
     }
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
-        reason: '新建胶囊（图标模式）在 HomeSidebar');
+        reason: '新建胶囊（图标模式）在 AppIconRail');
 
     // 顶条几何：全宽贴顶，高 44（拖拽区铺满，故仍通栏）。
     final Rect strip = tester.getRect(find.byType(WindowStrip));
@@ -199,18 +199,18 @@ void main() {
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
   });
 
-  testWidgets('HomeSidebar：四枚视图导航带图标、新建胶囊两态常驻', (
+  testWidgets('AppIconRail：四枚视图导航带图标、新建胶囊两态常驻', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 四枚目的地以**视图导航**形式常驻左侧 HomeSidebar（心流 / 全部 / 日历 / 收藏）。
-    // 导航是文字行（不是 IconButton）⇒ 用 find.text 定位。
+    // 四枚目的地以**视图导航**形式常驻最左 AppIconRail（心流 / 全部 / 日历 / 收藏）。
+    // 轨上钮是图标 + tooltip（不是文字行）⇒ 用 find.byTooltip 定位。
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
         findsOneWidget,
-        reason: 'HomeSidebar 必须有视图导航：$label',
+        reason: 'AppIconRail 必须有视图导航：$label',
       );
     }
     // 导航带目的地图标（复用 HomeViewIcon ⇒ 与旧标题栏同一套图形）：每个视图钮是
@@ -223,14 +223,14 @@ void main() {
       findsWidgets,
       reason: '导航钮是含图标的方块',
     );
-    // 新建胶囊也在 HomeSidebar 常驻。
+    // 新建胶囊也在 AppIconRail 常驻。
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
-        reason: '新建胶囊（图标模式）在 HomeSidebar');
+        reason: '新建胶囊（图标模式）在 AppIconRail');
 
     // 默认视图 = 心流。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
 
-    // 编辑态：HomeHub 被编辑器替换，但 HomeSidebar 在工作区级常驻 ⇒ 视图导航 /
+    // 编辑态：HomeHub 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航 /
     // 新建胶囊**两态都在**（与已删的左索引面板同一条"常驻"原则）。
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(locateProvider.notifier).locate(noteId: note.id);
@@ -265,7 +265,7 @@ void main() {
   testWidgets('顶条目的地切视图驱动统一历史：切到日历后箭头可退回、可重做', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    // 起点是「心流」（2026-10-05 决策 C 的默认视图），点左侧 HomeSidebar「日历」导航换视图。
+    // 起点是「心流」（2026-10-05 决策 C 的默认视图），点左侧 AppIconRail「日历」导航换视图。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     await tapViewTab(tester, '日历');
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
@@ -285,7 +285,7 @@ void main() {
   testWidgets('编辑器在统一历史栈里：切心流→上一步=回笔记，再上一步=回日历', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    // 与真实点击路径一致：点左侧 HomeSidebar「日历」导航换视图，再走 locateProvider
+    // 与真实点击路径一致：点左侧 AppIconRail「日历」导航换视图，再走 locateProvider
     // 打开笔记（卡片 / 列表的入口同路）。
     await tapViewTab(tester, '日历');
     final Note note = await container.read(notesProvider.notifier).createNote();
@@ -296,7 +296,7 @@ void main() {
     expect(find.byTooltip('上一步'), findsNothing);
     expect(find.byTooltip('下一步'), findsNothing);
 
-    // HomeSidebar 两态常驻 ⇒ 编辑器里直接点「心流」导航离开编辑器、落回「心流」，
+    // AppIconRail 两态常驻 ⇒ 编辑器里直接点「心流」导航离开编辑器、落回「心流」，
     // 并把"这篇笔记"记入统一历史。
     await tapViewTab(tester, '心流');
     await tester.pumpAndSettle();
@@ -329,7 +329,7 @@ void main() {
     expect(container.read(navHistoryProvider).canGoForward, isFalse, reason: '进到底了');
   });
 
-  testWidgets('HomeSidebar 新建胶囊：两半各是一个动作，走 note.new / canvas.new', (
+  testWidgets('AppIconRail 新建胶囊：两半各是一个动作，走 note.new / canvas.new', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
@@ -378,7 +378,7 @@ void main() {
       reason: '用完即收：不再留在展开态、也不留焦点环',
     );
 
-    // HomeSidebar 两态常驻 ⇒ 重新点「新建」展开，再点「画布」建的是画布（不用回主页）。
+    // AppIconRail 两态常驻 ⇒ 重新点「新建」展开，再点「画布」建的是画布（不用回主页）。
     await tester.tap(find.byKey(const Key('new-note-trigger')));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('新建画布（Ctrl+Shift+N）'));

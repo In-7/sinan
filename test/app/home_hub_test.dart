@@ -17,12 +17,12 @@ import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/focus_ring.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 主页（2026-10-12：视图 tab + 新建胶囊移到工作区左侧扁平导航 [HomeSidebar]；
+/// 主页（2026-10-12：视图 tab + 新建胶囊移到工作区左侧扁平导航 [AppIconRail]；
 /// HomeHub = 筛选钮 + 内容区）的回归。
 ///
 /// 钉的是"主页是什么"这几条结构性事实：
 /// ① 目的地（心流/全部/日历/收藏）**不在 HomeHub 里**——在工作区左侧扁平导航
-///    [HomeSidebar]（title_bar_nav_test.dart 钉）；标题栏 [WindowStrip] 也不放；
+///    [AppIconRail]（title_bar_nav_test.dart 钉）；标题栏 [WindowStrip] 也不放；
 ///    本文件用 [navHistoryProvider] 直接驱动视图来验内容分发；
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
 ///   "显式透明"相反，卡片就该是一块浮起的板子）；
@@ -156,9 +156,9 @@ void main() {
     // 2026-10-05 决策 C：启动默认落「心流」。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     // 2026-10-12：目的地（心流 / 全部 / 日历 / 收藏）已移到工作区左侧扁平导航
-    // [HomeSidebar]，HomeHub 顶栏不再有这四枚 tab 文字。
+    // [AppIconRail]，HomeHub 顶栏不再有这四枚 tab 文字。
     for (final String t in <String>['心流', '全部', '日历', '收藏']) {
-      expect(find.text(t), findsNothing, reason: '视图 tab 已移到左侧 HomeSidebar');
+      expect(find.text(t), findsNothing, reason: '视图 tab 已移到左侧 AppIconRail');
     }
     // 形态改走筛选器 ⇒ 顶栏里不出现「笔记」「画布」的 tab / 入口。
     expect(find.text('笔记'), findsNothing);

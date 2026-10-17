@@ -153,6 +153,7 @@ void main() {
   testWidgets('Ctrl+F 打开官方查找面板（此前 Ctrl+F 完全无效）', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
+    await _focusEditor(tester);
     expect(find.byKey(const Key('closeButton')), findsNothing);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -194,6 +195,7 @@ void main() {
     const String content = '{"ops":[{"insert":"苹果香蕉苹果橘子苹果\\n"}]}';
     final _FakeNotes notes = _FakeNotes(<Note>[_note(content: content)]);
     await _pumpView(tester, notes);
+    await _focusEditor(tester);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
@@ -230,6 +232,7 @@ void main() {
   testWidgets('Ctrl+H：打开替换行；Esc 同样能关', (WidgetTester tester) async {
     final _FakeNotes notes = _FakeNotes(<Note>[_note()]);
     await _pumpView(tester, notes);
+    await _focusEditor(tester);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
@@ -1175,6 +1178,29 @@ Future<PendingSaves> _pumpView(WidgetTester tester, _FakeNotes notes) async {
   );
   await tester.pumpAndSettle();
   return saves;
+}
+
+/// 让编辑器拿到键盘焦点（= 用户"点一下正文"的等价物）。
+///
+/// 2026-10-17：编辑器**不再 autoFocus**（焦点规矩归 [NoteEditorViewAppFlowy] 的
+/// locate `focus` 标志——"要开写"的入口才聚焦；从列表点开是 focus:false、焦点留在
+/// 列表行）。Ctrl+F / Ctrl+H 是编辑器键盘服务的快捷键，只有编辑器持焦时才响应，
+/// 故先给正文一个折叠选区：用 [SelectionUpdateReason.uiEvent]（与真实点击同路），
+/// 键盘服务的选区监听随即 `focusNode.requestFocus()`。⚠️ 不能像 [_expandSelection]
+/// 那样直接 `state.selection = …`——那条路的 reason 不是 uiEvent，不会聚焦。
+Future<void> _focusEditor(WidgetTester tester) async {
+  final EditorState state = tester
+      .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+      .editorState;
+  // 选区**同步**设置（listener 同步聚焦）；别 await 它的 Future——uiEvent 分支靠一个
+  // post-frame 回调才 complete，await 会没人泵帧而挂死。交给下面的 pump 推进即可。
+  unawaited(
+    state.updateSelectionWithReason(
+      Selection.collapsed(Position(path: <int>[0])),
+      reason: SelectionUpdateReason.uiEvent,
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 /// 编辑器内部是否出现了"落点高亮"（带底色的块装饰）。
