@@ -37,7 +37,11 @@ Future<void> copyStreamToNote({
   );
   if (target == null || !context.mounted) return;
   final bool ok = store.copyStreamIntoNote(streamId, target);
-  if (ok) container.invalidate(notesProvider);
+  if (ok) {
+    container.invalidate(notesProvider);
+    // 台账多了一行（这条流去了哪），处理面板要重读。
+    container.invalidate(streamExportsProvider);
+  }
   _toast(context, ok ? '已复制（快照，之后互不影响）' : '复制失败：目标不是可写的文档笔记');
 }
 
@@ -58,6 +62,7 @@ Future<void> copyStreamToCanvas({
   );
   if (target == null || !context.mounted) return;
   final bool ok = store.copyStreamOntoCanvas(streamId, target);
+  if (ok) container.invalidate(streamExportsProvider);
   _toast(context, ok ? '已复制成独立卡片（与速记再无关联）' : '复制失败：目标不是画布');
 }
 
@@ -76,9 +81,10 @@ Future<void> streamToNewNote({
     if (context.mounted) _toast(context, '转换失败：找不到这条速记');
     return;
   }
-  // 速记少了一条（进归档）+ 文库多了一篇 ⇒ 两个列表都重读。
+  // 速记少了一条（进归档）+ 文库多了一篇 ⇒ 三个列表都重读（含处理台账）。
   container.invalidate(streamProvider);
   container.invalidate(notesProvider);
+  container.invalidate(streamExportsProvider);
   if (context.mounted) _toast(context, '已转成新笔记，速记已归档');
 }
 
@@ -99,6 +105,7 @@ Future<void> streamToNewCanvas({
   }
   container.invalidate(streamProvider);
   container.invalidate(notesProvider);
+  container.invalidate(streamExportsProvider);
   if (context.mounted) _toast(context, '已建成新画布，速记已归档');
 }
 
@@ -120,6 +127,7 @@ Future<void> mergeStreamToNewNote({
   }
   container.invalidate(streamProvider);
   container.invalidate(notesProvider);
+  container.invalidate(streamExportsProvider);
   if (context.mounted) _toast(context, '已合并成新笔记（${streamIds.length} 条已归档）');
 }
 

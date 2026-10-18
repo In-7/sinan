@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
+import 'package:sinan/src/data/stream_store.dart';
 import 'package:sinan/src/domain/backlink.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -173,5 +174,64 @@ void main() {
   test('没有任何引用 ⇒ 空列表', () {
     final Note lonely = store.create(title: '没人引用我', content: v2(<Map<String, Object?>>[]));
     expect(store.backlinks(lonely.id), isEmpty);
+  });
+
+  // ── 来自速记的反链（双链的另一半）─────────────────────────────────
+
+  test('streamSourcesOf：复制 / 引用都算"这篇收过它"，合并算进产出那篇', () {
+    final Note target = store.create(title: '周五的闲聊');
+    final StreamItem a = StreamStore(db).add('想清楚的那句话')!;
+    final StreamItem b = StreamStore(db).add('另一条灵感')!;
+    final StreamItem c = StreamStore(db).add('被合并的那条')!;
+
+    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
+    expect(store.referenceStreamInNote(b.id, target.id), isTrue);
+    store.streamMergeToNewNote(<String>[c.id]);
+
+    // target 收了 a（复制）与 b（引用）；合并那篇是**另一篇**，不算 target 的。
+    final List<StreamSource> mine = store.streamSourcesOf(target.id);
+    expect(
+      mine.map((StreamSource s) => s.streamId).toSet(),
+      <String>{a.id, b.id},
+    );
+    // 原文随行带上（面板里当上下文显示），手法标签可直接读。
+    final StreamSource copied = mine.firstWhere(
+      (StreamSource s) => s.streamId == a.id,
+    );
+    expect(copied.text, '想清楚的那句话');
+    expect(copied.kind, StreamExportKind.copy);
+    expect(copied.blockId, isNotNull, reason: '落点块要能高亮');
+
+    // 合并产出的那篇，反过来能看到它的来源。
+    final String mergedId = db
+        .select(
+          "SELECT id FROM notes WHERE kind = 'note' AND id <> ?",
+          <Object?>[target.id],
+        )
+        .map((Row r) => r['id'] as String)
+        .first;
+    expect(
+      store.streamSourcesOf(mergedId).single.streamId,
+      c.id,
+      reason: '合并出来的笔记要能反查参与合并的速记',
+    );
+  });
+
+  test('streamSourcesOf：同一条速记对同一目标多种手法只列一次（留最新）', () {
+    final Note target = store.create(title: '周五的闲聊');
+    final StreamItem a = StreamStore(db).add('先引用后复制')!;
+    // 两种手法都指向**同一篇**（引用插 ref 块、复制插段落）⇒ 反链里只该出现一次。
+    expect(store.referenceStreamInNote(a.id, target.id), isTrue);
+    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
+
+    final List<StreamSource> mine = store.streamSourcesOf(target.id);
+    expect(mine, hasLength(1));
+    expect(mine.single.streamId, a.id);
+    expect(mine.single.kind, StreamExportKind.copy, reason: '留最新一笔');
+  });
+
+  test('streamSourcesOf：没收到过速记 ⇒ 空', () {
+    final Note lonely = store.create(title: '只被引用的笔记');
+    expect(store.streamSourcesOf(lonely.id), isEmpty);
   });
 }

@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'providers.dart' show streamFocusProvider, streamProvider;
+import 'stream_ledger_panel.dart' show showStreamLedger;
 import 'stream_export.dart';
 
 /// **速记 / 心流**（2026-10-17 定：flomo 式低摩擦收件箱）。
@@ -47,7 +48,6 @@ class _StreamViewState extends ConsumerState<StreamView> {
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   String _query = '';
-  bool _showArchived = false;
 
   /// 多选合并：进入后点击行 = 勾选，不再展开编辑。
   bool _selectMode = false;
@@ -122,14 +122,15 @@ class _StreamViewState extends ConsumerState<StreamView> {
       for (final StreamItem i in scoped)
         if (!i.archived && _matches(i)) i,
     ];
+    // 已处理**不在这里**：它是一整页（`StreamLedgerView`，2026-10-18 P1）。
+    // 这里仍算出归档集，只为了让工具栏报「N 条 · M 已处理」的计数。
     final List<StreamItem> archived = <StreamItem>[
       for (final StreamItem i in scoped)
         if (i.archived && _matches(i)) i,
     ];
-    // **两区都空**才算空：只看 `open` 会把归档区一起藏掉——把最后一条待处理
-    // 归档后，「已处理 N 条」折叠行也跟着消失，归档再也打不开（2026-10-17 复查
-    // 抓到的 P0）。有归档就必须渲染列表，哪怕待处理是 0 条。
-    final bool empty = open.isEmpty && archived.isEmpty;
+    // 时间流永远只有"当下"；聚焦（从引用跳来）时只给那一条。
+    final List<StreamItem> shown = focusId != null ? scoped : open;
+    final bool empty = shown.isEmpty;
     // 聚焦：清掉搜索词，否则"引用的那条"可能被上次的搜索过滤掉，页面变成"什么都没有"。
     ref.listen<String?>(streamFocusProvider, (String? _, String? next) {
       if (next != null && _query.isNotEmpty) {
@@ -139,89 +140,107 @@ class _StreamViewState extends ConsumerState<StreamView> {
     });
     final List<_Entry> entries = empty
         ? const <_Entry>[]
-        : _entries(
-            open,
-            archived,
-            // 聚焦的那条可能已经归档：此时也要能看见它（并允许「拿回」）。
-            showArchivedRows: _showArchived || focusId != null,
-            showFold: focusId == null,
-          );
+        // 聚焦视图是一条条的清单，不需要日期分组。
+        : _entries(shown, withDates: focusId == null);
 
     return Padding(
-      // 上留白 48 / 下 24（2026-10-17 用户定）：把书写区推到视线的黄金位，
-      // 让"重心"来自留白而不是加料——页首 48 是 `spaceXxl`（一页纸的呼吸档），
-      // 与输入块下方 24 形成不对称，读起来像"一张纸的上边距"。
-      padding: const EdgeInsets.fromLTRB(
-        Tokens.gridMargin,
-        Tokens.spaceXxl,
-        Tokens.gridMargin,
-        0,
-      ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _CaptureBar(onSubmit: _capture),
-              // 输入块下方 24：与页首 48 一起构成长短边，书写区自然浮在"纸面上"。
-              const SizedBox(height: Tokens.spaceXl),
-              // **列表头**（2026-10-17 用户定）：条数 + 搜索 / 选择。
-              // 这三样操作的是下面的列表，不是输入框 ⇒ 贴在列表上缘，且空库时
-              // 整行不出现（既没东西可搜，也没东西可选）。
-              if (focusId != null)
-                _focusHeader()
-              else if (_selectMode)
-                _selectionToolbar()
-              else if (_query.isNotEmpty ||
-                  open.isNotEmpty ||
-                  archived.isNotEmpty)
-                _listHeader(open.length, archived.length),
-              if (focusId != null ||
-                  _selectMode ||
-                  _query.isNotEmpty ||
-                  open.isNotEmpty ||
-                  archived.isNotEmpty)
-                const SizedBox(height: Tokens.spaceSm),
-              Expanded(
-                child: Stack(
-                  children: <Widget>[
-                    if (empty)
-                      _StreamEmpty(searching: _query.trim().isNotEmpty)
-                    else
-                      // `builder`（不是 `children`）：条目再多也只构建视口内那几行
-                      // ——之前每次 hover / 输入都会重建全部卡片（2026-10-17 复查）。
-                      ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 72),
-                        itemCount: entries.length,
-                        itemBuilder: (BuildContext context, int i) =>
-                            switch (entries[i]) {
-                              _DateEntry(:final String label) => _DayHeader(
-                                label: label,
-                              ),
-                              _FoldEntry(:final int count) => _archiveFold(
-                                count,
-                              ),
-                              _ItemEntry(:final StreamItem item, archived: final bool a) =>
-                                _row(item, archived: a),
-                            },
-                      ),
-                    if (_selectMode && _selected.isNotEmpty)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: Tokens.spaceLg,
-                        child: Center(child: _mergeBar()),
-                      ),
-                  ],
-                ),
-              ),
-            ],
+      // 上留白 **24** / 下 0（2026-10-18 用户改）：工具栏上移之后，页首不需要
+      // 再靠 48 的留白把书写区推到"黄金位"了——输入块本身就在视线起手处，
+      // 24 与输入块下方留白同档，整页是均匀的呼吸。
+      // 上留白 24 / 下 0；**左右不留**——留白区域也要能滚（见下方 [_pageColumn]）。
+      padding: const EdgeInsets.only(top: Tokens.spaceXl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // **列表头挪到输入框之上**（2026-10-18 用户定，对齐 flomo 的版式）：
+          // 条数 / 搜索 / 选择是"这一页的工具栏"，写在纸上就是页眉——先于
+          // 书写区出现，眼睛从左上角顺着读下来。空库时整行不出现。
+          if (focusId != null)
+            _pageColumn(_focusHeader())
+          else if (_selectMode)
+            _pageColumn(_selectionToolbar())
+          else if (_query.isNotEmpty ||
+              open.isNotEmpty ||
+              archived.isNotEmpty)
+            _pageColumn(_listHeader(open.length, archived.length)),
+          if (focusId != null ||
+              _selectMode ||
+              _query.isNotEmpty ||
+              open.isNotEmpty ||
+              archived.isNotEmpty)
+            const SizedBox(height: Tokens.spaceSm),
+          // 书写区**永远在**：即便正在看归档面板，这一页的主任务还是"记"。
+          _pageColumn(_CaptureBar(onSubmit: _capture)),
+          // 输入块下方 24：与页首 48 一起构成长短边，书写区自然浮在"纸面上"。
+          const SizedBox(height: Tokens.spaceXl),
+          Expanded(
+            child: Stack(
+              children: <Widget>[
+                if (empty)
+                  _pageColumn(
+                    _StreamEmpty(
+                      searching: _query.trim().isNotEmpty,
+                      archivedCount: archived.length,
+                    ),
+                  )
+                else
+                  // `builder`（不是 `children`）：条目再多也只构建视口内那几行
+                  // ——之前每次 hover / 输入都会重建全部卡片（2026-10-17 复查）。
+                  //
+                  // **列表铺满整卡宽**、条目在内部居中到 640（2026-10-18 用户定）：
+                  // ① 滚动条由 `MaterialScrollBehavior` 自动挂在 Scrollable 边缘
+                  //    ⇒ 它贴在**窗口/卡片右缘**，而不是缩在 640 列里那条"小细线"；
+                  // ② 鼠标放在两侧留白上也能滚—— Scrollable 的热区就是整卡宽，
+                  //    不再只有中间那条（用户实报"以为不能滚"）。
+                  ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 72),
+                    itemCount: entries.length,
+                    itemBuilder: (BuildContext context, int i) =>
+                        _pageColumn(
+                          switch (entries[i]) {
+                            _DateEntry(:final String label) => _DayHeader(
+                              label: label,
+                            ),
+                            _ItemEntry(
+                              :final StreamItem item,
+                              archived: final bool a,
+                            ) => _row(item, archived: a),
+                          },
+                        ),
+                  ),
+                if (_selectMode && _selected.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: Tokens.spaceLg,
+                    child: Center(child: _pageColumn(_mergeBar())),
+                  ),
+                // 归档是浮层（2026-10-18 定稿）：点表头那枚「归档 N」弹出来，
+                // 背后这一页原样不动。
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
+
+  /// 页面内容的**水平栅格**：左右 `gridMargin` 呼吸 + 640 阅读列居中。
+  ///
+  /// 头部 / 书写区 / 每一条速记都走它 ⇒ 三者的左缘永远同在一条竖线上；
+  /// 而**滚动视口本身是整卡宽**（见 build 里的 ListView），滚动条因此贴边、
+  /// 留白也能滚。
+  Widget _pageColumn(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: Tokens.gridMargin),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        // **撑到列宽**：Center 给子节点的是松约束（0..640），不撑的话输入框
+        // 会缩成自己的内容宽，左右留白就歪了。
+        child: SizedBox(width: double.infinity, child: child),
+      ),
+    ),
+  );
 
   // ── 列表头（条数 + 搜索框 + 选择）────────────────────────────────────
 
@@ -230,7 +249,8 @@ class _StreamViewState extends ConsumerState<StreamView> {
   ///   打字，边打边过滤；有词时右侧出现清空 ×；
   /// - **选择是文字**（不是一枚看不懂的图标）：`选择` 两字，中性色、hover 铺底，
   ///   与搜索框同一条基线——之前那枚虚线方框图标在实机上根本认不出（用户实报）；
-  /// - 左侧只报条数，不再重复快捷键。
+  /// - 左侧报条数；`N 已处理` 是**入口**（2026-10-18 用户定：归档不放在流里，
+  ///   就挂在这个计数上，点进去看清单）。
   Widget _listHeader(int openCount, int archivedCount) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -247,9 +267,9 @@ class _StreamViewState extends ConsumerState<StreamView> {
         children: <Widget>[
           Expanded(
             child: Text(
-              archivedCount > 0
-                  ? '$openCount 条 · $archivedCount 已处理'
-                  : '$openCount 条',
+              // 左端只报**待处理**条数：归档数由右侧那枚「归档 N」按钮说
+              // （2026-10-18 用户定稿）——同一个数字出现两遍只会让人以为能点两次。
+              '$openCount 条',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: muted,
@@ -307,14 +327,46 @@ class _StreamViewState extends ConsumerState<StreamView> {
             ),
           ),
           const SizedBox(width: Tokens.spaceSm),
+          // **归档入口**（2026-10-18 用户定稿）：图标 + 「归档 N」。
+          //
+          // 曾经它是左端计数里的一枚文字链（`3 条 · 2 已处理`）——用户实报"不知道
+          // 这是干啥的"。低频功能不能指望用户猜：给它一枚箱子图标和一个动词，
+          // 与「选择」并排放到右侧操作区，观感与语义才一致。
+          if (archivedCount > 0) ...<Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 28),
+              child: TextButton.icon(
+                onPressed: () {
+                  if (_selectMode) setState(() => _selectMode = false);
+                  showStreamLedger();
+                },
+                icon: const tabler.Archive(
+                  height: Tokens.iconXs,
+                  width: Tokens.iconXs,
+                  strokeWidth: Tokens.iconStroke,
+                ),
+                label: Text('归档 $archivedCount'),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Tokens.spaceSm,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: scheme.onSurfaceVariant,
+                  textStyle: theme.textTheme.labelMedium,
+                ),
+              ),
+            ),
+            const SizedBox(width: Tokens.spaceXs),
+          ],
           // `minimumSize` 会被 compact 密度再压成 20 高（触达尺寸会红）⇒ 用
           // ConstrainedBox 把**按钮本身**撑到 28，语义矩形同步变大。
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 28),
             child: TextButton.icon(
               onPressed: _toggleSelectMode,
-              // 图标 + 文字：单放图标认不出（15px 的虚线方块），单放文字又缺少
-              // "这是多选"的识别点 ⇒ 两者一起，图标 14 框（视觉 ≈10.5）。
+              // 图标 + 文字：单放图标认不出（15px 的虚线方块），单放文字又
+              // 缺少"这是多选"的识别点 ⇒ 两者一起，图标 14 框（视觉 ≈10.5）。
               icon: const tabler.Checkbox(
                 height: Tokens.iconXs,
                 width: Tokens.iconXs,
@@ -395,30 +447,22 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
   // ── 时间流 ───────────────────────────────────────────────────────────
 
-  /// 把两个区拍平成`[日期标, 条目, …, 折叠行, 归档条目…]`，供 `ListView.builder`。
-  List<_Entry> _entries(
-    List<StreamItem> open,
-    List<StreamItem> archived, {
-    required bool showArchivedRows,
-    required bool showFold,
-  }) {
+  /// 拍平成`[日期标, 条目, 条目…]`，供 `ListView.builder`。
+  ///
+  /// [withDates]：时间流需要日期分组；「已处理」清单与引用聚焦都是一条条列出来，
+  /// 分组只会让人以为它们还在时间轴上。
+  List<_Entry> _entries(List<StreamItem> items, {required bool withDates}) {
     final List<_Entry> out = <_Entry>[];
     String? lastDay;
-    for (final StreamItem item in open) {
-      final String day = _dayKey(item.createdAt);
-      if (day != lastDay) {
-        out.add(_DateEntry(_dayLabel(item.createdAt)));
-        lastDay = day;
+    for (final StreamItem item in items) {
+      if (withDates) {
+        final String day = _dayKey(item.createdAt);
+        if (day != lastDay) {
+          out.add(_DateEntry(_dayLabel(item.createdAt)));
+          lastDay = day;
+        }
       }
-      out.add(_ItemEntry(item));
-    }
-    if (archived.isNotEmpty && showFold) {
-      out.add(_FoldEntry(archived.length));
-    }
-    if (showArchivedRows) {
-      for (final StreamItem item in archived) {
-        out.add(_ItemEntry(item, archived: true));
-      }
+      out.add(_ItemEntry(item, archived: item.archived));
     }
     return out;
   }
@@ -459,47 +503,20 @@ class _StreamViewState extends ConsumerState<StreamView> {
     );
   }
 
-  Widget _archiveFold(int count) {
-    final ThemeData theme = Theme.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: TextButton(
-        onPressed: () => setState(() => _showArchived = !_showArchived),
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceSm),
-          minimumSize: const Size(0, 32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: theme.textTheme.labelSmall,
-          foregroundColor: Bauhaus.inkMuted(theme.brightness),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text('已处理 $count 条'),
-            const SizedBox(width: Tokens.spaceXxs),
-            AnimatedRotation(
-              turns: _showArchived ? 0.5 : 0,
-              duration: Tokens.durationFast,
-              child: const tabler.ChevronDown(
-                height: Tokens.iconXs,
-                width: Tokens.iconXs,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   /// 单条速记：**铺满整列**（没有左侧日期栏，正文左缘 = 行内 padding 8 + 竖条 2）。
-  Widget _row(StreamItem item, {bool archived = false}) => _StreamRow(
-    key: ValueKey<String>(item.id),
-    item: item,
-    archived: archived,
-    selectMode: _selectMode,
-    selected: _selected.contains(item.id),
-    onToggleSelect: () => _toggleSelected(item.id),
+  ///
+  /// 行间距 6：底色**常显**之后，相邻两行的色块会连成一条长带；6px 让每条是
+  /// 独立的一张"纸片"，又还没松到把一组日期拆成两份（2026-10-17 用户定）。
+  Widget _row(StreamItem item, {bool archived = false}) => Padding(
+    padding: const EdgeInsets.only(bottom: Tokens.spaceXs + Tokens.spaceXxs),
+    child: _StreamRow(
+      key: ValueKey<String>(item.id),
+      item: item,
+      archived: archived,
+      selectMode: _selectMode,
+      selected: _selected.contains(item.id),
+      onToggleSelect: () => _toggleSelected(item.id),
+    ),
   );
 
   static String _dayKey(DateTime t) => '${t.year}-${t.month}-${t.day}';
@@ -534,10 +551,6 @@ class _ItemEntry extends _Entry {
   final bool archived;
 }
 
-class _FoldEntry extends _Entry {
-  const _FoldEntry(this.count);
-  final int count;
-}
 
 /// 日期组标题（今天 / 昨天 / `12 月 31 日`）：单独一行、左对齐内容左缘，
 /// 条目在它下面**铺满整列**。
@@ -549,12 +562,15 @@ class _DayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // 日期是**分类标题**：没有自己的底色、没有纸片，只是正文上方的一行字
+    // （2026-10-17 用户定）。行的底色只在速记卡上。
     return Padding(
-      // 左缘与条目正文同一列（行内 padding 8 + 竖条 2 = 10），读起来是一个文本块。
+      // 左缘对齐列表头的「N 条」（= 内容区左缘，0 缩进）：日期是这一段的标签，
+      // 和上面的条数、下面的卡片同一条竖线，才有"段落"的读法（2026-10-17 用户定）。
+      // 上下留 16 / 4：上边距撑开与上一组的距离，下边距只隔一条呼吸缝。
       padding: const EdgeInsets.only(
-        left: Tokens.spaceSm + Tokens.spaceXxs,
-        top: Tokens.spaceMd,
-        bottom: Tokens.spaceXxs,
+        top: Tokens.spaceLg,
+        bottom: Tokens.spaceXs,
       ),
       child: Semantics(
         header: true,
@@ -572,10 +588,13 @@ class _DayHeader extends StatelessWidget {
 
 /// 空态：一句轻邀请 + 键位提示（输入条常驻，空库也能直接写第一条）。
 class _StreamEmpty extends StatelessWidget {
-  const _StreamEmpty({this.searching = false});
+  const _StreamEmpty({this.searching = false, this.archivedCount = 0});
 
   /// 搜索无结果是另一回事：这时该说"没有匹配"，而不是"还没有灵感"。
   final bool searching;
+
+  /// 待处理空、但归档里还有东西：这是"清空了"，不是"没开始"。
+  final int archivedCount;
 
   @override
   Widget build(BuildContext context) {
@@ -586,14 +605,22 @@ class _StreamEmpty extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Text(
-            searching ? '没有匹配的速记' : '还没有灵感',
+            searching
+                ? '没有匹配的速记'
+                : archivedCount > 0
+                ? '待处理清空了'
+                : '还没有灵感',
             style: theme.textTheme.titleMedium?.copyWith(
               color: Bauhaus.ink(brightness),
             ),
           ),
           const SizedBox(height: Tokens.spaceXs),
           Text(
-            searching ? '换个词试试' : '按 Ctrl+Shift+M 随时记一条，或在上面写第一句',
+            searching
+                ? '换个词试试'
+                : archivedCount > 0
+                ? '已处理的 $archivedCount 条还在上面的计数里，点开就能回看'
+                : '按 Ctrl+Shift+M 随时记一条，或在上面写第一句',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: Bauhaus.inkMuted(brightness),
             ),
@@ -931,17 +958,29 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
     final bool marked = widget.selected;
-    // 菜单打开也算"悬浮中"：否则弹窗一开、行就掉色（用户会以为选错了行）。
+    // 菜单打开也算"悬浮中"：否则弹窗一开、按钮就滑走了。
     final bool active = _hover || _menuOpen;
-    final bool barVisible = !widget.archived && (active || marked);
-    final Color bar = marked
-        ? scheme.primary
-        : scheme.primary.withValues(alpha: 0.45);
+    // hover 的回答是"纸被轻推了一下"——见下方 `TweenAnimationBuilder`。归档条目
+    // 不参与任何悬浮动效（它已经"放下了"）。
+    final bool lifted = active && !widget.archived && !widget.selectMode;
+    // hover **不画描边**（2026-10-17 用户定：发丝边在常显底色上像"框"）。
+    // 描边只留给选中——并且必须是单一颜色：`borderRadius` 与"四边异色"不能共存。
+    final Color edge = marked
+        ? scheme.primary.withValues(alpha: 0.4)
+        : Colors.transparent;
+    // **常显底色**（2026-10-17 用户定）：原来 hover 才铺的那层底色改成每行常驻，
+    // 悬浮时不再换底色——只留左侧颜色带与右上角按钮两个信号，安静得多。
+    //
+    // 底色**烤实**（alphaBlend 进 surface）：半透明底会让对比度检查把文字算在
+    // "未知/低对比"背景上，a11y 会红；而且行底本来就压在 panel 的 surface 上，
+    // 合成结果完全相同。
+    final Color rowFill = Color.alphaBlend(
+      AppTheme.hoverOverlay(brightness),
+      scheme.surface,
+    );
     final Color bg = marked
         ? scheme.primaryContainer.withValues(alpha: 0.35)
-        : active && !widget.archived
-        ? AppTheme.hoverOverlay(brightness)
-        : Colors.transparent;
+        : rowFill;
 
     return Semantics(
       button: !widget.archived,
@@ -971,25 +1010,35 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
               }
               return KeyEventResult.handled;
             },
-            child: AnimatedContainer(
+            // **轻推**：整体上移 2px。
+            //
+            // 只做纯位移、**不缩放**：放大哪怕 0.6%，卡片左右也会各溢出 1~2px，
+            // 被 `ListView` 的视口切掉一条边（2026-10-17 用户实报）。位移不改变
+            // 横向尺寸，永远不会被切；热区跟着走，也不会"看得见点不到"。
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: lifted ? 1.0 : 0.0),
+              curve: Curves.easeOut,
               duration: Tokens.durationHover,
-              padding: const EdgeInsets.fromLTRB(
-                Tokens.spaceSm,
-                Tokens.spaceSm,
-                Tokens.spaceSm,
-                Tokens.spaceSm,
-              ),
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                // 左侧竖条**固定占位**（透明时不位移）：hover 才显形。
-                border: Border(
-                  left: BorderSide(
-                    color: barVisible ? bar : Colors.transparent,
-                    width: 2,
+              builder: (BuildContext context, double t, Widget? child) =>
+                  Transform.translate(
+                    offset: Offset(0, -2.0 * t),
+                    child: child,
                   ),
+              child: AnimatedContainer(
+                curve: Curves.easeOut,
+                duration: Tokens.durationHover,
+                padding: const EdgeInsets.fromLTRB(
+                  Tokens.spaceSm,
+                  Tokens.spaceSm,
+                  Tokens.spaceSm,
+                  Tokens.spaceSm,
                 ),
-              ),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
+                  border: Border.all(color: edge),
+                ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -1047,9 +1096,32 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                     SizedBox(
                       width: _actionsWidth,
                       height: _actionSlot,
-                      child: (_hover || _menuOpen) && !widget.selectMode
-                          ? _actions(theme)
-                          : _timeLabel(theme, brightness),
+                      // **从右侧滑出来**（而不是凭空出现）：与时间标签交叉淡入
+                      // 淡出，动势指向"手是从右边过来取操作的"。槽位尺寸恒定，
+                      // 所以正文依旧不重排（与 hover 不挤动文字同一条规矩）。
+                      child: AnimatedSwitcher(
+                        duration: Tokens.durationHover,
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeOut,
+                        transitionBuilder: (Widget child, Animation<double> a) =>
+                            SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0.25, 0),
+                                end: Offset.zero,
+                              ).animate(a),
+                              child: FadeTransition(opacity: a, child: child),
+                            ),
+                        child: (_hover || _menuOpen) && !widget.selectMode
+                            ? _actions(
+                                theme,
+                                key: const ValueKey<String>('actions'),
+                              )
+                            : _timeLabel(
+                                theme,
+                                brightness,
+                                key: const ValueKey<String>('time'),
+                              ),
+                      ),
                     ),
                 ],
               ),
@@ -1057,12 +1129,13 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
           ),
         ),
       ),
+      ),
     );
   }
 
   /// 右上角的时间标签（与操作簇共用同一个槽位，右对齐、贴首行基线）。
-  Widget _timeLabel(ThemeData theme, Brightness brightness) => Align(
-    alignment: Alignment.topRight,
+  Widget _timeLabel(ThemeData theme, Brightness brightness, {Key? key}) => Align(
+    key: key,
     heightFactor: 1,
     child: Padding(
       padding: const EdgeInsets.only(
@@ -1088,8 +1161,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   ///   速记），而不是在速记列表里逐个推出去；
   /// - 图标 24 → **20 框**（视觉 ≈15），槽 24、槽间 6、左留白 8；整簇占位
   ///   **92** 且**始终保留**（见 [_actionsWidth]），所以 hover 不会挤动文字。
-  Widget _actions(ThemeData theme) {
+  Widget _actions(ThemeData theme, {Key? key}) {
     return Padding(
+      key: key,
       padding: const EdgeInsets.only(left: Tokens.spaceSm),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1217,11 +1291,13 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
           Tokens.spaceSm,
         ),
         decoration: BoxDecoration(
-          color: AppTheme.hoverOverlay(brightness),
+          // 行底色现在**常显**，编辑态反过来用纯 surface：正在改的那条像一张
+          // 白纸压在一叠浅灰纸片上，靠色差自然浮出来（仍无阴影）。
+          color: scheme.surface,
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          border: Border(
-            left: BorderSide(color: scheme.primary, width: 2),
-          ),
+          // 整圈主色发丝边：整浮动的语言一致（不再用左侧单竖条），也不踩
+          // "圆角 + 四边异色"的 paint 断言。
+          border: Border.all(color: scheme.primary),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

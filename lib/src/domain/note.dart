@@ -65,6 +65,81 @@ class StreamItem {
   bool get archived => archivedAt != null;
 }
 
+/// 一条速记「流去了哪里」的记录（2026-10-18 定：**处理台账**的数据行）。
+///
+/// 「已处理」原本只是一个能拿回来的仓库（等于可撤销的删除），它没回答速记真正
+/// 要的那件事——**这条灵感最后变成了什么**。台账每次导出写一行，回收列举：
+/// `一条想法 → 笔记《周五的闲聊》`。
+class StreamExport {
+  const StreamExport({
+    required this.id,
+    required this.streamId,
+    required this.targetType,
+    required this.targetId,
+    required this.targetTitle,
+    required this.kind,
+    required this.createdAt,
+    this.targetBlockId,
+  });
+
+  final String id;
+
+  /// 源速记 id。
+  final String streamId;
+
+  /// `'note'` / `'canvas'`。
+  final String targetType;
+
+  /// 目标笔记 / 画布 id（点击可跳过去）。
+  final String targetId;
+
+  /// **当时的标题快照**：目标之后改名甚至删了，台账里这条仍然读得懂
+  /// （它是回忆录，不是导航索引 ⇒ 不能跟着目标一起变）。
+  final String targetTitle;
+
+  final StreamExportKind kind;
+  final DateTime createdAt;
+
+  /// 导出时**真正写入的那个块**（ref 块 / 第一个段落块 / 画布卡的块）。
+  ///
+  /// P2 的落点：点「流向」时 `locate(noteId, blockId)` 直接定位并高亮这一段，
+  /// 而不是把人扔到那篇笔记的顶部自己找。老行（v18 之前）为 null ⇒ 退化为只跳笔记。
+  final String? targetBlockId;
+
+  bool get isCanvas => targetType == 'canvas';
+}
+
+/// 导出的**手法**：决定了台账里那一行动词怎么写。
+enum StreamExportKind {
+  /// 笔记里插了指向这条速记的 `ref`（活链，双向可跳）。
+  reference('引用'),
+
+  /// 复制成笔记段落 / 画布独立卡（快照，之后互不相干）。
+  copy('复制'),
+
+  /// 转成一篇新笔记。
+  toNote('转为笔记'),
+
+  /// 转成一张新画布。
+  toCanvas('转为画布'),
+
+  /// 与别的一起合并成一篇新笔记。
+  merge('合并进');
+
+  const StreamExportKind(this.label);
+
+  /// 台账里显示给用户的动词。
+  final String label;
+
+  static StreamExportKind parse(String s) => switch (s) {
+    'reference' => reference,
+    'toNote' => toNote,
+    'toCanvas' => toCanvas,
+    'merge' => merge,
+    _ => copy,
+  };
+}
+
 /// 一条笔记。
 class Note {
   const Note({

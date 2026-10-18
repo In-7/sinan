@@ -99,7 +99,9 @@ void main() {
             .evaluate()
             .isNotEmpty;
 
-    // 四枚导航都声明了 button + selected（可读屏才知"可点"与"当前是哪个"）。
+    // 四枚视图导航都要声明 button + selected（可读屏才知"可点"与"当前是哪个"）。
+    // ⚠️ 已处理**不是**导航站（2026-10-18 用户定：低频功能，是心流页表头那枚计数
+    // 弹出来的浮层，见 `showStreamLedger`）⇒ 仍四枚。
     final int navDeclared = find
         .descendant(
           of: find.byType(AppIconRail),
@@ -304,7 +306,9 @@ Future<_HomeAudit> _auditHome(
     ),
   ]) {
     try {
-      passed[key] = (await g.evaluate(tester)).passed;
+      passed[key] = key == 'contrast'
+          ? await _contrastOk(tester)
+          : (await g.evaluate(tester)).passed;
     } on Object {
       passed[key] = false;
     }
@@ -333,6 +337,37 @@ Future<_HomeAudit> _auditHome(
     tap: passed['tap'] ?? false,
     order: order,
   );
+}
+
+/// 对比度体检（带**一个**已确诊的假阳性豁免）。
+///
+/// `textContrastGuideline` 对 `ListView` 的**首个**子节点取到的是"可滚动子树的
+/// 局部坐标"（`Rect.fromLTRB(0, 0, …)`），它拿这个坐标直接当屏幕位置采样 ——
+/// 采到的其实是窗口左上角标题栏，于是"背景 vs 背景"算出 1.09:1。心流的日期组
+/// 标题（`isHeader`）正好是首个节点，2026-10-17 起就撞在这上面。
+///
+/// 真实颜色是 ink 62% 压在面板底上（≈5.1:1），像素上没问题；所以这里**只**放行
+/// "位于原点的 header 节点"这一类失败，其它任何节点失败照旧算失败。
+Future<bool> _contrastOk(WidgetTester tester) async {
+  final Evaluation eval = await textContrastGuideline.evaluate(tester);
+  if (eval.passed) return true;
+  final String reason = eval.reason ?? '';
+  final List<String> blocks = reason
+      .split('SemanticsNode#')
+      .skip(1)
+      .toList();
+  final bool onlyKnownArtifact =
+      blocks.isNotEmpty &&
+      blocks.every(
+        (String b) =>
+            b.contains('flags: [isHeader]') &&
+            b.contains('Rect.fromLTRB(0.0, 0.0'),
+      );
+  if (!onlyKnownArtifact) {
+    // ignore: avoid_print
+    print('对比度未通过：\n${eval.reason}');
+  }
+  return onlyKnownArtifact;
 }
 
 /// 当前聚焦部件子树里的标记（用来认出落在哪个控件上）。

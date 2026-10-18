@@ -50,3 +50,32 @@ class Backlink {
   /// - 画布侧 = 被引用块自己的文本（卡片的真身就是它）。
   final String context;
 }
+
+/// 一条**来自速记的反链**（双链的另一半，2026-10-18 收尾）。
+///
+/// 台账 `stream_exports` 记的是"速记 → 这里"；反链面板要反过来问"这篇笔记
+/// 收过哪些速记"。**复制是快照、没有结构化边**，所以这份关系只存在于台账里——
+/// 不读它，复制进本篇的速记就永久失联，双链只剩一半。
+class StreamSource {
+  const StreamSource({
+    required this.streamId,
+    required this.text,
+    required this.kind,
+    required this.createdAt,
+    this.blockId,
+  });
+
+  /// 源速记 id（点它 → 心流页定位这一条）。
+  final String streamId;
+
+  /// 速记原文（面板里当上下文显示：光有"引用/复制"看不出说的是什么）。
+  final String text;
+
+  /// 怎么来的：引用 / 复制 / 转为 / 合并。
+  final StreamExportKind kind;
+
+  final DateTime createdAt;
+
+  /// 落在本篇的那个块（点进去可高亮；老行可能为 null）。
+  final String? blockId;
+}

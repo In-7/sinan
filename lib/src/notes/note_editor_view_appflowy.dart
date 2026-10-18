@@ -840,6 +840,13 @@ class _NoteEditorViewAppFlowyState
     ref.read(locateProvider.notifier).locate(noteId: noteId);
   }
 
+  /// 反链面板里「来自速记」那一条：与引用块的速记跳转同一条路
+  /// （先告诉心流页停在哪，再切过去 —— 走统一导航历史，可「上一步」回来）。
+  void _openBacklinkStream(String streamId) {
+    _closeBacklink();
+    _openRefTarget(RefBlockKeys.refStream, streamId);
+  }
+
   /// 解析引用块的目标（标题 + 形态）；目标不存在返回 null ⇒ 块显示"引用已失效"。
   RefTarget? _resolveRefTarget(String refType, String refId) {
     final store = ref.read(noteStoreProvider);
@@ -920,6 +927,7 @@ class _NoteEditorViewAppFlowyState
             child: BacklinkPanel(
               noteId: widget.noteId,
               onOpenNote: _openBacklink,
+              onOpenStream: _openBacklinkStream,
             ),
           ),
         ),

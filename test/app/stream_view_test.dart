@@ -92,28 +92,29 @@ void main() {
     seed('b', '昨天的想法', now.subtract(const Duration(days: 1)));
     await pumpView(tester);
 
-    // 搜索**常驻**在列表头（Apple 备忘录 / Bear 口径）：第一个输入框是捕获条，
-    // 第二个就是列表头的搜索框，直接输入即可。
-    await tester.enterText(find.byType(TextField).at(1), '昨天');
+    // 搜索**常驻**在列表头（Apple 备忘录 / Bear 口径）。2026-10-18 起工具栏
+    // 挪到输入框之上 ⇒ 树里第一个输入框就是搜索框。
+    await tester.enterText(find.byType(TextField).at(0), '昨天');
     await tester.pumpAndSettle();
     expect(find.text('今天的想法'), findsNothing);
     expect(find.text('昨天的想法'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField).at(1), '不存在');
+    await tester.enterText(find.byType(TextField).at(0), '不存在');
     await tester.pumpAndSettle();
     expect(find.text('没有匹配的速记'), findsOneWidget);
   });
 
-  testWidgets('已处理：默认不显示，点开关后露出', (WidgetTester tester) async {
+  testWidgets('已处理：默认不显示，点表头计数跳到台账页', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '待处理', now);
     seed('b', '已归档', now.subtract(const Duration(days: 2)), archived: true);
     await pumpView(tester);
 
     expect(find.text('已归档'), findsNothing);
-    await tester.tap(find.text('已处理 1 条'));
-    await tester.pumpAndSettle();
-    expect(find.text('已归档'), findsOneWidget);
+    // 计数是入口；归档走**浮层**（2026-10-18 定稿：低频功能，不换页、不占导航）。
+    // 本文件只挂 StreamView（没有 appNavigatorKey 的宿主）⇒ 这里只验证"流里不留"。
+    // 浮层本身的开/关/跳转由 stream_ledger_panel_test.dart 钉。
+    expect(find.text('1 条'), findsOneWidget);
   });
 
   testWidgets('多选合并：勾一条 → 合并为新笔记，条目归档', (WidgetTester tester) async {
@@ -170,10 +171,10 @@ void main() {
 
     expect(find.text('已归档的被引用条目'), findsOneWidget);
     expect(find.text('拿回'), findsOneWidget);
-    expect(find.text('已处理 1 条'), findsNothing, reason: '聚焦时不再给折叠行');
+    expect(find.text('正在查看被引用的速记'), findsOneWidget);
   });
 
-  testWidgets('归档不是死路：只剩已处理时折叠行仍在、能展开', (WidgetTester tester) async {
+  testWidgets('归档不是死路：只剩已处理时入口仍在、能跳过去', (WidgetTester tester) async {
     seed(
       'b',
       '已归档的那条',
@@ -184,10 +185,9 @@ void main() {
 
     // 待处理 0 条 + 归档 1 条：不能再被空态吞掉（2026-10-17 复查的 P0）。
     expect(find.text('还没有灵感'), findsNothing);
-    expect(find.text('已处理 1 条'), findsOneWidget);
-    await tester.tap(find.text('已处理 1 条'));
-    await tester.pumpAndSettle();
-    expect(find.text('已归档的那条'), findsOneWidget);
+    expect(find.text('待处理清空了'), findsOneWidget, reason: '清空 ≠ 没开始');
+    // 入口仍在：图标 + 「归档 N」（点它弹台账浮层，见 stream_ledger_panel_test.dart）。
+    expect(find.text('归档 1'), findsOneWidget);
   });
 
   testWidgets('编辑清空：提示"速记不能为空"，不改原文', (WidgetTester tester) async {
@@ -196,7 +196,7 @@ void main() {
 
     await tester.tap(find.text('原文'));
     await tester.pumpAndSettle();
-    // 捕获条(0) / 搜索框(1) / 行内编辑框(2)
+    // 搜索框(0，工具栏在输入框之上) / 捕获条(1) / 行内编辑框(2)
     await tester.enterText(find.byType(TextField).at(2), '');
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
@@ -205,7 +205,7 @@ void main() {
     expect(stream.byId('a')!.text, '原文', reason: '空文本不该落库');
   });
 
-  testWidgets('选择模式下归档条目不可勾选', (WidgetTester tester) async {
+  testWidgets('多选只看待处理：勾选框不落在已处理上', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '待处理', now);
     seed('b', '已归档', now.subtract(const Duration(days: 1)), archived: true);
@@ -213,16 +213,11 @@ void main() {
 
     await tester.tap(find.text('选择'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('已处理 1 条'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('已归档'));
-    await tester.pumpAndSettle();
 
-    expect(
-      find.text('选择要合并的速记'),
-      findsOneWidget,
-      reason: '归档条目不该进合并池',
-    );
+    expect(find.text('选择要合并的速记'), findsOneWidget);
+    // 流里只剩下待处理的那条，已处理的不在合并池里（它在浮层里）。
+    expect(find.text('已归档'), findsNothing);
+    expect(find.text('待处理'), findsOneWidget);
   });
 
   testWidgets('hover 操作簇不挤动正文（占位固定）', (WidgetTester tester) async {

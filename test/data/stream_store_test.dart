@@ -227,6 +227,144 @@ void main() {
     expect(store.embedPreview('stream', 'no-such-id'), isEmpty);
   });
 
+  group('处理台账：每条速记记下它流去了哪', () {
+    test('引用 / 转新 / 合并 各记一笔，方法 label 是给人看的', () {
+      final StreamItem a = stream.add('第一条')!;
+      final StreamItem b = stream.add('第二条')!;
+      final Note target = store.create(title: '周五的闲聊');
+
+      expect(store.referenceStreamInNote(a.id, target.id), isTrue);
+      store.streamToNewNote(a.id);
+      store.streamMergeToNewNote(<String>[a.id, b.id]);
+
+      final Map<String, List<StreamExport>> book = store.allStreamExports();
+      expect(book[a.id], hasLength(3));
+      expect(book[b.id], hasLength(1), reason: '合并：每条各留自己的一笔');
+      expect(
+        book[a.id]!.map((StreamExport e) => e.kind).toSet(),
+        <StreamExportKind>{
+          StreamExportKind.reference,
+          StreamExportKind.toNote,
+          StreamExportKind.merge,
+        },
+      );
+      expect(
+        book[a.id]!
+            .singleWhere((StreamExport e) => e.kind == StreamExportKind.reference)
+            .targetTitle,
+        '周五的闲聊',
+        reason: '引用那条指向目标笔记',
+      );
+      expect(
+        book[a.id]!
+            .singleWhere((StreamExport e) => e.kind == StreamExportKind.toNote)
+            .targetTitle,
+        '第一条',
+        reason: '转出来的新笔记要有读得懂的标题（台账念的是它）',
+      );
+      expect(
+        StreamExportKind.toNote.label,
+        '转为笔记',
+        reason: '台账里的动词要能直接读',
+      );
+    });
+
+    test('P2：每笔都记下落点块（点流向能直达那一块）', () {
+      final StreamItem a = stream.add('第一条')!;
+      final Note target = store.create(title: '周五的闲聊');
+
+      store.referenceStreamInNote(a.id, target.id);
+      final StreamExport ref = store
+          .allStreamExports()[a.id]!
+          .singleWhere((StreamExport e) => e.kind == StreamExportKind.reference);
+      expect(ref.targetBlockId, isNotNull);
+      // ref 块真的落在目标笔记里（不是随手编的 id）。
+      expect(
+        db
+            .select(
+              "SELECT 1 FROM blocks WHERE note_id = ? AND id = ?",
+              <Object?>[target.id, ref.targetBlockId],
+            )
+            .isNotEmpty,
+        isTrue,
+      );
+
+      // 复制：落点是插入的**第一段**。
+      store.copyStreamIntoNote(a.id, target.id);
+      final StreamExport copy = store
+          .allStreamExports()[a.id]!
+          .singleWhere((StreamExport e) => e.kind == StreamExportKind.copy);
+      expect(copy.targetBlockId, isNotNull);
+      expect(
+        db
+            .select(
+              'SELECT 1 FROM blocks WHERE note_id = ? AND id = ?',
+              <Object?>[target.id, copy.targetBlockId],
+            )
+            .isNotEmpty,
+        isTrue,
+      );
+
+      // 转新笔记：落点是新笔记的第一个段落。
+      store.streamToNewNote(a.id);
+      final StreamExport toNote = store
+          .allStreamExports()[a.id]!
+          .singleWhere((StreamExport e) => e.kind == StreamExportKind.toNote);
+      expect(toNote.targetBlockId, isNotNull);
+    });
+
+    test('v18 迁移：老库没有 target_block_id 也能补上列', () {
+      // 直接建一张 v17 形状的表（没有落点列），跑迁移后应补上且老行读成 null。
+      db.execute('DROP TABLE stream_exports;');
+      db.execute('''
+        CREATE TABLE stream_exports (
+          id           TEXT PRIMARY KEY,
+          stream_id    TEXT NOT NULL,
+          target_type  TEXT NOT NULL,
+          target_id    TEXT NOT NULL,
+          target_title TEXT NOT NULL,
+          kind         TEXT NOT NULL,
+          created_at   INTEGER NOT NULL
+        );''');
+      db.execute(
+        'INSERT INTO stream_exports (id, stream_id, target_type, target_id, target_title, kind, created_at) '
+        "VALUES ('old', 's1', 'note', 'n1', '旧标题', 'copy', 1)",
+      );
+      db.userVersion = 17;
+      AppDatabase.migrateForTesting(db);
+
+      final StreamExport legacy = store.allStreamExports()['s1']!.single;
+      expect(legacy.targetBlockId, isNull, reason: '老行没有落点 ⇒ 只跳笔记');
+      expect(legacy.targetTitle, '旧标题');
+    });
+
+    test('目标改名 / 被删：台账仍是当时的快照（它是回忆录，不是索引）', () async {
+      final StreamItem a = stream.add('一句话')!;
+      final Note target = store.create(title: '旧标题');
+      store.copyStreamIntoNote(a.id, target.id);
+
+      await store.updateTitle(target.id, '新标题');
+      List<StreamExport> lines = store.allStreamExports()[a.id]!;
+      expect(lines.single.targetTitle, '旧标题');
+
+      // 直接 SQL 删目标：确认台账不受外键牵连（一开始就决定不加 FK 的理由）。
+      db.execute('DELETE FROM notes WHERE id = ?', <Object?>[target.id]);
+      lines = store.allStreamExports()[a.id]!;
+      expect(lines, hasLength(1), reason: '目标删了，台账那一行还在');
+      expect(
+        store.targetNoteExists(target.id),
+        isFalse,
+        reason: '删过的目标不能再跳（界面据此提示"去向已删"）',
+      );
+    });
+
+    test('只有"有去向"的动作才记账：单纯归档不产生台账行', () {
+      final StreamItem a = stream.add('手动结案的那条')!;
+      stream.archive(a.id);
+      expect(store.allStreamExports(), isEmpty);
+    });
+  });
+
   group('单向导出：速记 → 画布（只复制，不做活链）', () {
     test('复制成独立卡片：新块 + 卡片，速记之后与它无关', () {
       final StreamItem item = stream.add('画布卡')!;

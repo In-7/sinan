@@ -191,6 +191,14 @@ final streamStoreProvider = Provider<StreamStore>(
   (Ref ref) => StreamStore(ref.watch(databaseProvider)),
 );
 
+/// **处理台账**：每条速记流去了哪些笔记 / 画布（`stream_id` → 去向列表）。
+///
+/// 为什么不全塞进 [streamProvider]：去向是**笔记侧的写操作**产生的，速记 store
+/// 不该碰笔记表（硬隔离）。写完之后由导出调用方 `invalidate` 本 provider。
+final streamExportsProvider = Provider<Map<String, List<StreamExport>>>(
+  (Ref ref) => ref.watch(noteStoreProvider).allStreamExports(),
+);
+
 /// 从笔记里的**速记引用**跳过来时要停在哪一条（`null` = 正常时间流）。
 ///
 /// 引用块只知道 `ref_id`；心流页用这个 id 把列表临时收窄到那一条并给出

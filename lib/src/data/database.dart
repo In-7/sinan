@@ -467,6 +467,34 @@ class AppDatabase {
       db.userVersion = 16;
     }
 
+    // v17：**处理台账**（2026-10-18 定）。
+    //
+    // 「已处理」原本只是个能拿回来的仓库（＝可撤销的删除），它没回答速记真正要
+    // 的那件事：这条灵感最后**变成了什么**。现在每次导出（引用 / 复制 / 转新 /
+    // 合并）写一行 `stream_exports`，回收列举时就能念出
+    // `一条想法 → 笔记《周五的闲聊》`。
+    //
+    // 刻意**不加外键**：目标被删了，台账那条记录还应该留在那里（它是回忆录，
+    // 不是导航索引）；标题也是当时的快照，不跟着目标改名。
+    if (db.userVersion < 17) {
+      db.execute(_streamExportsDdl);
+      db.userVersion = 17;
+    }
+
+    // v18：台账记下**落点块**（2026-10-18 P2：双链的实质）。
+    //
+    // v17 只记"流去了哪篇"，点过去还得自己找那段；现在把导出时**真正写入的那个块**
+    // （ref 块 / 第一个段落 / 画布卡的块）一并记下，点流向可直接定位并高亮。
+    // 可空：老行没有这个信息（照旧只跳笔记），合并/转新的目标块按首个段落记。
+    if (db.userVersion < 18) {
+      if (!_hasColumn(db, 'stream_exports', 'target_block_id')) {
+        db.execute(
+          'ALTER TABLE stream_exports ADD COLUMN target_block_id TEXT;',
+        );
+      }
+      db.userVersion = 18;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
@@ -478,6 +506,26 @@ class AppDatabase {
   }
 
   static const Uuid _uuid = Uuid();
+
+  /// 处理台账的表（`note_store.dart` 的导出方法写、界面读）。
+  ///
+  /// `IF NOT EXISTS`：迁移必须能幂等重入（版本号被回拨的存量库、只造了部分表的
+  /// 测试夹具都会让门闩再次触发）。
+  static const String _streamExportsDdl = '''
+    CREATE TABLE IF NOT EXISTS stream_exports (
+      id           TEXT PRIMARY KEY,
+      stream_id    TEXT NOT NULL,
+      target_type  TEXT NOT NULL,
+      target_id    TEXT NOT NULL,
+      target_title TEXT NOT NULL,
+      kind         TEXT NOT NULL,
+      created_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_stream_exports_stream
+      ON stream_exports (stream_id);
+    CREATE INDEX IF NOT EXISTS idx_stream_exports_created
+      ON stream_exports (created_at DESC);
+  ''';
 
   /// v16：把旧的"隐藏心流笔记 + 段落块"搬进独立表 `stream_items`。
   ///

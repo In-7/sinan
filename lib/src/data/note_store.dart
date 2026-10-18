@@ -184,6 +184,115 @@ class NoteStore {
     return document['children'] as List<Object?>;
   }
 
+  /// **处理台账**：记一次"这条速记流去了哪里"（背景见 [StreamExport]）。
+  ///
+  /// 只追加、删目标**不清行**：台账是回忆录，不是导航索引。标题取**当时的快照**——
+  /// 之后目标改名甚至被删，这一行照样读得懂。
+  void _recordStreamExport(
+    String streamId, {
+    required String targetType,
+    required String targetId,
+    required StreamExportKind kind,
+    String? targetBlockId,
+  }) {
+    final ResultSet rs = db.select(
+      'SELECT title FROM notes WHERE id = ?',
+      <Object?>[targetId],
+    );
+    if (rs.isEmpty) return;
+    final String title = (rs.first['title'] as String?)?.trim() ?? '';
+    db.execute(
+      'INSERT INTO stream_exports '
+      '(id, stream_id, target_type, target_id, target_title, kind, created_at, target_block_id) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      <Object?>[
+        _uuid.v4(),
+        streamId,
+        targetType,
+        targetId,
+        title.isEmpty ? '（无标题）' : title,
+        kind.name,
+        DateTime.now().millisecondsSinceEpoch,
+        targetBlockId,
+      ],
+    );
+  }
+
+  /// **处理台账**：按速记分组读（一次 `IN` 查完再分组，不在界面里 N 次查）。
+  Map<String, List<StreamExport>> streamExportsOf(Iterable<String> streamIds) {
+    if (streamIds.isEmpty) return const <String, List<StreamExport>>{};
+    final String marks = List<String>.filled(streamIds.length, '?').join(',');
+    return _groupExports(
+      db.select(
+        'SELECT id, stream_id, target_type, target_id, target_title, kind, created_at, target_block_id '
+        'FROM stream_exports WHERE stream_id IN ($marks) '
+        'ORDER BY created_at DESC, rowid DESC',
+        <Object?>[...streamIds],
+      ),
+    );
+  }
+
+  /// 整本台账（界面用：面板一屏就是全部已处理条目，没必要先筛 id）。
+  Map<String, List<StreamExport>> allStreamExports() => _groupExports(
+    db.select(
+      'SELECT id, stream_id, target_type, target_id, target_title, kind, created_at, target_block_id '
+      'FROM stream_exports ORDER BY created_at DESC, rowid DESC',
+    ),
+  );
+
+  Map<String, List<StreamExport>> _groupExports(ResultSet rs) {
+    final Map<String, List<StreamExport>> out = <String, List<StreamExport>>{};
+    for (final Row r in rs) {
+      final String sid = r['stream_id'] as String;
+      out.putIfAbsent(sid, () => <StreamExport>[]).add(
+        StreamExport(
+          id: r['id'] as String,
+          streamId: sid,
+          targetType: r['target_type'] as String,
+          targetId: r['target_id'] as String,
+          targetTitle: r['target_title'] as String,
+          kind: StreamExportKind.parse(r['kind'] as String),
+          createdAt: DateTime.fromMillisecondsSinceEpoch(
+            r['created_at'] as int,
+          ),
+          targetBlockId: r['target_block_id'] as String?,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 块树 JSON 里**第一个块**的 id：新建笔记/合并笔记的流向落点。
+  ///
+  /// 解析失败返回 null（老数据 / 异常格式）⇒ 点流向退化为"只跳那篇"，不定位。
+  static String? _firstBlockIdOf(String treeJson) {
+    try {
+      final Object? decoded = jsonDecode(treeJson);
+      if (decoded is! Map<String, Object?>) return null;
+      final Object? document = decoded['document'];
+      if (document is! Map<String, Object?>) return null;
+      final Object? children = document['children'];
+      if (children is! List<Object?> || children.isEmpty) return null;
+      final Object? first = children.first;
+      return first is Map<String, Object?> ? first['id'] as String? : null;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 由速记文本推导标题（≤20 字，首行）：新建的笔记 / 画布不该叫"无标题"——
+  /// 台账念的是《标题》，空标题会让"这条流去了哪"读不出来。
+  static String _titleFromText(String text) {
+    final String first = text.trim().split('\n').first.trim();
+    if (first.isEmpty) return '速记';
+    return first.length <= 20 ? first : '${first.substring(0, 20)}…';
+  }
+
+  /// 台账要能点进去 ⇒ 跳之前先确认目标还在（删掉的话就别跳了）。
+  bool targetNoteExists(String targetId) => db
+      .select('SELECT 1 FROM notes WHERE id = ?', <Object?>[targetId])
+      .isNotEmpty;
+
   /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type='stream'`）。
   /// 速记留在心流；已引用过 ⇒ 幂等 false。
   bool referenceStreamInNote(String streamId, String noteId) {
@@ -201,8 +310,9 @@ class NoteStore {
         return false;
       }
     }
+    final String refBlockId = _uuid.v4();
     children.add(<String, Object?>{
-      'id': _uuid.v4(),
+      'id': refBlockId,
       'type': _refType,
       'data': <String, Object?>{
         'ref_type': _refTargetStream,
@@ -211,6 +321,13 @@ class NoteStore {
       },
     });
     _persistContentSync(noteId, jsonEncode(tree));
+    _recordStreamExport(
+      streamId,
+      targetType: 'note',
+      targetId: noteId,
+      kind: StreamExportKind.reference,
+      targetBlockId: refBlockId,
+    );
     return true;
   }
 
@@ -224,16 +341,30 @@ class NoteStore {
     final String? text = streamTextOf(streamId);
     if (text == null || text.trim().isEmpty) return false;
     final List<Object?> children = _treeChildren(tree);
-    for (final String line in StreamStore.linesOf(text)) {
-      children.add(_paragraphNode(_uuid.v4(), line));
+    // 第一段（多行速记会拆成多个块）就是"这条流去了哪"的落点。
+    final List<String> lines = StreamStore.linesOf(text);
+    final String firstBlockId = _uuid.v4();
+    for (int i = 0; i < lines.length; i++) {
+      children.add(_paragraphNode(i == 0 ? firstBlockId : _uuid.v4(), lines[i]));
     }
     _persistContentSync(noteId, jsonEncode(tree));
+    _recordStreamExport(
+      streamId,
+      targetType: 'note',
+      targetId: noteId,
+      kind: StreamExportKind.copy,
+      targetBlockId: firstBlockId,
+    );
     return true;
   }
 
   /// **复制到画布**（快照卡）：新建一张**独立**卡片（自己的块 + 自己的文本），
   /// 速记更新不会再推过来（2026-10-17 用户定：画布只复制、不做活链）。
-  bool copyStreamOntoCanvas(String streamId, String canvasId) {
+  bool copyStreamOntoCanvas(
+    String streamId,
+    String canvasId, {
+    StreamExportKind kind = StreamExportKind.copy,
+  }) {
     final String? text = streamTextOf(streamId);
     if (text == null || text.trim().isEmpty) return false;
     final Map<String, Object?>? doc = _canvasDoc(canvasId);
@@ -244,10 +375,11 @@ class NoteStore {
     if (items == null) return false;
 
     final String itemId = _nextCanvasItemId(items.keys);
+    final String cardBlockId = _uuid.v4();
     items[itemId] = <String, Object?>{
       'type': 'card',
       'id': itemId,
-      'blockId': _uuid.v4(),
+      'blockId': cardBlockId,
       'text': text,
       'angle': 0,
       'rect': _freeCardRect(items),
@@ -263,6 +395,13 @@ class NoteStore {
     // 落盘 + 投影：`_replaceCardBlocks` 会为这张新卡建好 `blocks` 行
     // （先内容后几何，外键才不会炸）。
     _persistContentSync(canvasId, jsonEncode(doc));
+    _recordStreamExport(
+      streamId,
+      targetType: 'canvas',
+      targetId: canvasId,
+      kind: kind,
+      targetBlockId: cardBlockId,
+    );
     return true;
   }
 
@@ -273,10 +412,19 @@ class NoteStore {
     if (text == null) return null;
     final Note n = createSpark(
       kind: kind,
+      // 标题取自首行：台账念的是《标题》，一篇"无标题"会让那行读不出去了哪。
+      title: _titleFromText(text),
       content: StreamStore.blocksTreeFromText(text),
       plainText: text,
     );
     StreamStore(db).archive(streamId);
+    _recordStreamExport(
+      streamId,
+      targetType: 'note',
+      targetId: n.id,
+      kind: StreamExportKind.toNote,
+      targetBlockId: _firstBlockIdOf(n.content),
+    );
     return n;
   }
 
@@ -305,12 +453,22 @@ class NoteStore {
     final String plain = lines.join('\n');
     final Note n = createSpark(
       kind: NoteKind.note,
+      // 同「转新」：台账要读得懂这条合并出来的是哪一篇。
+      title: _titleFromText(plain),
       content: StreamStore.blocksTreeFromText(plain),
       plainText: plain,
     );
     final StreamStore streams = StreamStore(db);
     for (final Row r in rs) {
-      streams.archive(r['id'] as String);
+      final String id = r['id'] as String;
+      streams.archive(id);
+      _recordStreamExport(
+        id,
+        targetType: 'note',
+        targetId: n.id,
+        kind: StreamExportKind.merge,
+        targetBlockId: _firstBlockIdOf(n.content),
+      );
     }
     return n;
   }
@@ -319,9 +477,7 @@ class NoteStore {
   Note? streamToNewCanvas(String streamId) {
     final String? text = streamTextOf(streamId);
     if (text == null) return null;
-    final String first = text.trim().split('\n').first.trim();
-    final String title = first.length <= 20 ? first : '${first.substring(0, 20)}…';
-    final Note n = create(kind: NoteKind.canvas, title: title);
+    final Note n = create(kind: NoteKind.canvas, title: _titleFromText(text));
     // 画布需要合法骨架才能被 `_canvasDoc` 认出来（create 只给空 content）。
     _persistContentSync(
       n.id,
@@ -335,7 +491,11 @@ class NoteStore {
     );
     // 卡片建失败就**别归档**（否则速记被标成已处理、却哪儿都没有）——顺手把这张
     // 空画布删掉，不留半成品。
-    if (!copyStreamOntoCanvas(streamId, n.id)) {
+    if (!copyStreamOntoCanvas(
+      streamId,
+      n.id,
+      kind: StreamExportKind.toCanvas,
+    )) {
       db.execute('DELETE FROM notes WHERE id = ?', <Object?>[n.id]);
       return null;
     }
@@ -717,6 +877,37 @@ class NoteStore {
     return textOfProps(rs.first['props_json'] as String?);
   }
 
+  /// **流向预览**（P2）：这条速记落地后那一块的**真实正文**。
+  ///
+  /// 台账不再只给一个标题——扫读时就想看到"它变成了什么"，所以直接把落点块的
+  /// 文本取回来（画布卡与笔记段落同在 `blocks` 里，一把查询通吃）。
+  ///
+  /// - 复制 / 转为：落点块的正文；
+  /// - 合并 / 引用：落点是整篇（ref 块本身没有可读正文）⇒ 给目标笔记的**开头两行**；
+  /// - 目标被删：返回 null（界面显示"原文已删"）。
+  String? streamExportPreview(StreamExport e) {
+    if (e.targetBlockId != null && e.kind != StreamExportKind.reference) {
+      final String? text = blockText(e.targetBlockId!)?.trim();
+      if (text != null && text.isNotEmpty) return text;
+    }
+    if (e.kind == StreamExportKind.merge ||
+        e.kind == StreamExportKind.reference) {
+      final ResultSet rs = db.select(
+        'SELECT plain_text FROM notes WHERE id = ?',
+        <Object?>[e.targetId],
+      );
+      if (rs.isEmpty) return null;
+      final String plain = (rs.first['plain_text'] as String?) ?? '';
+      final List<String> lines = plain
+          .split('\n')
+          .where((String l) => l.trim().isNotEmpty)
+          .take(2)
+          .toList();
+      return lines.isEmpty ? null : lines.join('\n');
+    }
+    return null;
+  }
+
   /// 把画布 JSON 里卡片的 `text` 刷新成 `blocks` 里的最新值（**打开画布前**调）。
   ///
   /// 卡片文本的真身在 `blocks`，画布 JSON 只是保存时的快照；文档侧改了被引用的
@@ -932,6 +1123,38 @@ class NoteStore {
     }
     for (final Row r in cards) {
       add(r, canvasCard: true);
+    }
+    return out;
+  }
+
+  /// **来自速记的反链**（双链的另一半）：这篇笔记收过哪些速记、怎么收的。
+  ///
+  /// 与 [backlinks] 的方向相反，数据来源也相反：结构化引用（`ref` 块 / 画布卡）
+  /// 那边已经能查到；而**复制是快照、没有边**，只能靠台账 `stream_exports`。
+  /// 一条速记对同一目标可能有多种手法（先复制后又转新）⇒ 按速记去重，留最新那笔。
+  List<StreamSource> streamSourcesOf(String noteId) {
+    final ResultSet rs = db.select(
+      'SELECT e.stream_id AS sid, s.text AS text, e.kind AS kind, '
+      '       e.created_at AS at, e.target_block_id AS block_id '
+      'FROM stream_exports e JOIN stream_items s ON s.id = e.stream_id '
+      'WHERE e.target_id = ? '
+      'ORDER BY e.created_at DESC, e.rowid DESC',
+      <Object?>[noteId],
+    );
+    final Set<String> seen = <String>{};
+    final List<StreamSource> out = <StreamSource>[];
+    for (final Row r in rs) {
+      final String sid = r['sid'] as String;
+      if (!seen.add(sid)) continue;
+      out.add(
+        StreamSource(
+          streamId: sid,
+          text: r['text'] as String,
+          kind: StreamExportKind.parse(r['kind'] as String),
+          createdAt: DateTime.fromMillisecondsSinceEpoch(r['at'] as int),
+          blockId: r['block_id'] as String?,
+        ),
+      );
     }
     return out;
   }
