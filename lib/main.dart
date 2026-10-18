@@ -18,6 +18,7 @@ import 'src/data/database.dart';
 import 'src/data/markdown/md_mirror.dart';
 import 'src/data/note_store.dart';
 import 'src/data/settings_store.dart';
+import 'src/data/stream_store.dart';
 import 'src/data/startup_backfill.dart';
 import 'src/dev/frame_probe.dart';
 import 'src/dev/startup_probe.dart';
@@ -78,6 +79,11 @@ Future<void> main() async {
   final NoteStore noteStore = NoteStore(db.db);
   final SettingsStore settingsStore = SettingsStore(db.db);
 
+  // 回收站 **30 天自动彻底删除**（2026-10-18 用户定）：放在 runApp 前，
+  // 保证列表 / 回收站角标读到的是清理后的状态。通常为空（一条索引 SELECT）。
+  await _purgeExpiredTrash(noteStore, db);
+  StartupProbe.mark('trashPurge');
+
   runApp(
     ProviderScope(
       overrides: [
@@ -118,6 +124,16 @@ Future<void> main() async {
     // 开关关着就整条跳过（默认关），fire-and-forget —— 镜像缺席不影响使用。
     _startMarkdownMirrorSweep(db, settingsStore, supportDir.path);
   });
+}
+
+/// 回收站 **30 天自动彻底删除**（笔记/画布 + 速记）。失败不影响启动。
+Future<void> _purgeExpiredTrash(NoteStore noteStore, AppDatabase db) async {
+  try {
+    await noteStore.purgeExpired(const Duration(days: 30));
+    StreamStore(db.db).purgeExpired(const Duration(days: 30));
+  } on Object catch (_) {
+    // 清理是附属能力：失败留给下次启动。
+  }
 }
 
 /// 启动期的一轮 Markdown 镜像同步（后台 isolate，见 `MdMirror`）。

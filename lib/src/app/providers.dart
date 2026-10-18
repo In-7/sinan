@@ -18,6 +18,7 @@ import '../data/settings_store.dart';
 import '../data/stream_store.dart';
 import '../domain/note.dart';
 import '../domain/settings.dart';
+import '../domain/trash.dart';
 import 'pending_saves.dart';
 
 // ── 数据层符号的**转口** ─────────────────────────────────────────────
@@ -260,17 +261,109 @@ class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
     _refresh();
   }
 
-  /// 真删。
+  /// 真删（彻底删除，不可恢复）。
   Future<void> remove(String id) async {
     await future;
     _store.remove(id);
     _refresh();
+    ref.invalidate(streamAttachmentsProvider(id));
+    ref.invalidate(trashProvider);
+  }
+
+  /// 软删（进回收站）。
+  Future<void> trash(String id) async {
+    await future;
+    _store.trash(id);
+    _refresh();
+    ref.invalidate(trashProvider);
+  }
+
+  /// 批量软删（多选删除）。
+  Future<void> trashMany(Iterable<String> ids) async {
+    final List<String> list = ids.toList(growable: false);
+    if (list.isEmpty) return;
+    await future;
+    _store.trashMany(list);
+    _refresh();
+    ref.invalidate(trashProvider);
+  }
+
+  /// 从回收站恢复（回到原状态：待处理 / 已处理）。
+  Future<void> restore(String id) async {
+    await future;
+    _store.restore(id);
+    _refresh();
+    ref.invalidate(trashProvider);
+  }
+
+  /// 批量彻底删除（回收站「清空」）。
+  Future<void> removeMany(Iterable<String> ids) async {
+    final List<String> list = ids.toList(growable: false);
+    if (list.isEmpty) return;
+    await future;
+    _store.removeMany(list);
+    _refresh();
+    for (final String id in list) {
+      ref.invalidate(streamAttachmentsProvider(id));
+    }
+    ref.invalidate(trashProvider);
+  }
+
+  /// 带附件录入（输入框贴了图片/视频）：先落速记（允许空文本当有附件），
+  /// 再逐条写附件元数据——文件已由 UI 拷进 app 私有目录，这里只收路径。
+  Future<StreamItem?> addMedia(
+    String text,
+    List<StreamAttachmentInput> attachments,
+  ) async {
+    await future;
+    final StreamItem? item = _store.add(text, allowEmpty: true);
+    if (item == null) return null;
+    for (final StreamAttachmentInput a in attachments) {
+      _store.addAttachment(
+        streamId: item.id,
+        kind: a.kind,
+        path: a.path,
+        width: a.width,
+        height: a.height,
+        durationMs: a.durationMs,
+      );
+    }
+    _refresh();
+    ref.invalidate(streamAttachmentsProvider(item.id));
+    return item;
   }
 }
+
+/// 某条速记的媒体附件（图片 / 视频）。落库即不变（MVP 不编辑附件），
+/// 故只在"新增附件 / 删除条目"时按需 invalidate。
+final streamAttachmentsProvider =
+    Provider.family<List<StreamAttachment>, String>(
+  (Ref ref, String id) => ref.watch(streamStoreProvider).attachmentsOf(id),
+);
 
 final streamProvider = AsyncNotifierProvider<StreamNotifier, List<StreamItem>>(
   StreamNotifier.new,
 );
+
+/// **全局回收站**：笔记/画布（`notes.deleted_at`）+ 速记（`stream_items.deleted_at`）。
+/// 写路径（trash / restore / purge）负责 invalidate。
+final trashProvider = Provider<List<TrashEntry>>((Ref ref) {
+  final List<TrashEntry> notes = ref.watch(noteStoreProvider).listTrashNotes();
+  final List<StreamItem> streams = ref.watch(streamStoreProvider).listTrash();
+  final List<TrashEntry> all = <TrashEntry>[
+    ...notes,
+    for (final StreamItem s in streams)
+      TrashEntry(
+        kind: TrashKind.stream,
+        id: s.id,
+        title: s.text.trim().isEmpty
+            ? '（图片速记）'
+            : s.text.trim().split('\n').first.trim(),
+        deletedAt: s.deletedAt!,
+      ),
+  ]..sort((TrashEntry a, TrashEntry b) => b.deletedAt.compareTo(a.deletedAt));
+  return all;
+});
 
 /// 应用数据根目录（`getApplicationSupportDirectory()` 的结果）。
 ///
@@ -927,6 +1020,59 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     _mirrorOne(note.id);
     // 不带 focus：撤销的入口在列表的 toast 上，用户的手还在列表那边。
     ref.read(locateProvider.notifier).locate(noteId: note.id);
+  }
+
+  /// 软删一条笔记（进**全局回收站**），并处理当前选中项。
+  Future<void> trashNote(String id) async {
+    await _settled();
+    final List<Note> before = state.value ?? <Note>[];
+    final int index = before.indexWhere((Note n) => n.id == id);
+    if (index < 0) return;
+    if (!_store.trash(id)) return;
+    // 回收站里的笔记不该继续留 Markdown 镜像文件（恢复时补写）。
+    _mirrorRemove(id);
+    final List<Note> rest = _store.allNotes();
+    state = AsyncData(rest);
+    if (ref.read(selectedNoteIdProvider) == id) {
+      if (rest.isEmpty) {
+        ref.read(selectedNoteIdProvider.notifier).select(null);
+      } else {
+        ref
+            .read(locateProvider.notifier)
+            .locate(noteId: rest[index.clamp(0, rest.length - 1)].id);
+      }
+    }
+    ref.invalidate(trashProvider);
+  }
+
+  /// 从全局回收站恢复一条笔记；补回关键词索引与 Markdown 镜像。
+  Future<void> restoreNoteFromTrash(String id) async {
+    if (!_store.restoreTrash(id)) return;
+    state = AsyncData(_store.allNotes());
+    _indexKeywordPath(id);
+    _mirrorOne(id);
+    ref.invalidate(trashProvider);
+  }
+
+  /// 彻底删除一条笔记（回收站「彻底删除」）。
+  Future<void> purgeNote(String id) async {
+    await _settled();
+    _mirrorRemove(id);
+    await _store.delete(id);
+    state = AsyncData(_store.allNotes());
+    if (ref.read(selectedNoteIdProvider) == id) {
+      ref.read(selectedNoteIdProvider.notifier).select(null);
+    }
+    ref.invalidate(trashProvider);
+  }
+
+  /// 清空回收站里的笔记部分（速记由调用方另行清空）。
+  Future<int> purgeAllTrashNotes() async {
+    await _settled();
+    final int n = await _store.purgeAllTrash();
+    state = AsyncData(_store.allNotes());
+    ref.invalidate(trashProvider);
+    return n;
   }
 
   /// 收藏 / 取消收藏（收藏项在列表里置顶，见 `NoteStore.allNotes`）。

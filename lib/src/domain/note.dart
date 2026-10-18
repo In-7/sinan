@@ -45,6 +45,7 @@ class StreamItem {
     required this.createdAt,
     DateTime? updatedAt,
     this.archivedAt,
+    this.deletedAt,
   }) : updatedAt = updatedAt ?? createdAt;
 
   /// 条目 id（引用块的 `ref_id` 认它；与 `blocks.id` 无关系）。
@@ -62,7 +63,12 @@ class StreamItem {
   /// 已处理 / 归档的时间；`null` = 还在「待处理」区。
   final DateTime? archivedAt;
 
+  /// 进回收站的时间；`null` = 未删除。
+  final DateTime? deletedAt;
+
   bool get archived => archivedAt != null;
+
+  bool get deleted => deletedAt != null;
 }
 
 /// 一条速记「流去了哪里」的记录（2026-10-18 定：**处理台账**的数据行）。
@@ -107,6 +113,63 @@ class StreamExport {
   final String? targetBlockId;
 
   bool get isCanvas => targetType == 'canvas';
+}
+
+/// 一条速记的**媒体附件**（2026-10-18 加）：图片 / 视频。
+///
+/// 只存**指向 app 私有目录里那份独立副本**的绝对路径——源截图被用户删了也不影响
+/// （见 [StreamStore] 的"拷贝导入"与删除级联）。二进制不进 SQLite（视频太大）。
+class StreamAttachment {
+  const StreamAttachment({
+    required this.id,
+    required this.streamId,
+    required this.kind,
+    required this.path,
+    this.width,
+    this.height,
+    this.durationMs,
+    required this.sort,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String streamId;
+
+  /// `'image'` | `'video'`。
+  final String kind;
+
+  /// app 私有目录里**副本**的绝对路径（绝不引用源位置）。
+  final String path;
+
+  final int? width;
+  final int? height;
+
+  /// 视频时长（毫秒）；图片为 null。
+  final int? durationMs;
+
+  /// 同条目内的展示顺序（升序）。
+  final int sort;
+
+  final DateTime createdAt;
+
+  bool get isVideo => kind == 'video';
+}
+
+/// 新增附件时的入参：UI 已完成"拷进私有目录"，把最终路径传进来即可。
+class StreamAttachmentInput {
+  const StreamAttachmentInput({
+    required this.kind,
+    required this.path,
+    this.width,
+    this.height,
+    this.durationMs,
+  });
+
+  final String kind;
+  final String path;
+  final int? width;
+  final int? height;
+  final int? durationMs;
 }
 
 /// 导出的**手法**：决定了台账里那一行动词怎么写。

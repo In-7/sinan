@@ -31,6 +31,9 @@ Widget sinanEditorContextMenu({
   required Offset position,
   required EditorState editorState,
   required VoidCallback onDismiss,
+  /// 自定义「粘贴」实现（缺省用官方 `pasteCommand`）。
+  /// 视图侧传入「先试剪贴板图片、否则回退文字」的智能粘贴，与 Ctrl+V 一致。
+  KeyEventResult Function(EditorState)? onPaste,
 }) {
   final Selection? selection = editorState.selection;
   final bool hasRange = selection != null && !selection.isCollapsed;
@@ -74,7 +77,7 @@ Widget sinanEditorContextMenu({
           _ContextMenuRow(
             label: '粘贴',
             shortcut: 'Ctrl+V',
-            onPressed: pasteCommand.handler,
+            onPressed: onPaste ?? pasteCommand.handler,
             editorState: editorState,
             onDismiss: onDismiss,
           ),

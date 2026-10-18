@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:ffi/ffi.dart' show Utf16, Utf16Pointer;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
+import 'package:pasteboard/pasteboard.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:win32/win32.dart';
 
@@ -94,6 +95,31 @@ abstract final class NoteMediaService {
       return '.bmp'; // BM
     }
     return '.png';
+  }
+
+  /// **跨平台**读剪贴板图片（Windows / macOS / Linux）。
+  ///
+  /// 首选 `pasteboard` 的平台通道（Win/Mac 零配置）；为空或失败时，Windows
+  /// 回落 win32 `CF_DIB` 原生路径（截图工具的标准格式）。返回值统一为 **PNG**。
+  static Future<Uint8List?> readClipboardImage() async {
+    try {
+      final Uint8List? bytes = await Pasteboard.image;
+      if (bytes != null && bytes.isNotEmpty) {
+        final Uint8List? png = _normalizeToPng(bytes);
+        if (png != null) return png;
+      }
+    } on Object catch (_) {
+      // 平台通道不可用 / 抛错 ⇒ 回落 Windows 原生路径。
+    }
+    return readWindowsClipboardImage();
+  }
+
+  /// 任意图片字节 → PNG：统一落盘扩展名，也让视觉模型读到的格式一致。
+  /// 解不开返回 null（当作"没图"，不写坏文件）。
+  static Uint8List? _normalizeToPng(Uint8List bytes) {
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    return Uint8List.fromList(img.encodePng(decoded));
   }
 
   /// 读取 Windows 剪贴板中的位图（截图工具/「复制图片」写入的

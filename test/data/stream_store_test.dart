@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/data/block_props.dart';
@@ -417,6 +418,67 @@ void main() {
       final Map<String, Object?> items =
           ((doc['document'] as Map)['items'] as Map).cast<String, Object?>();
       expect((items.values.single as Map)['text'], '旧文本');
+    });
+  });
+
+  group('媒体附件（贴图，2026-10-18 加）', () {
+    test('add / attachmentsOf：按 sort 升序，只存本地副本路径', () {
+      final StreamItem item = stream.add('带图')!;
+      stream.addAttachment(
+        streamId: item.id,
+        kind: 'image',
+        path: '/a/1.jpg',
+        width: 1200,
+        height: 800,
+      );
+      stream.addAttachment(streamId: item.id, kind: 'image', path: '/a/2.jpg');
+
+      final List<StreamAttachment> got = stream.attachmentsOf(item.id);
+      expect(got, hasLength(2));
+      expect(got[0].path, '/a/1.jpg');
+      expect(got[0].width, 1200);
+      expect(got[0].height, 800);
+      expect(got[1].path, '/a/2.jpg');
+      expect(got[1].width, isNull); // 没传尺寸不瞎填
+    });
+
+    test('remove 级联删文件：删条目时磁盘上的副本一并清掉', () {
+      final Directory tmp = Directory.systemTemp.createTempSync('stream_media');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File f1 = File('${tmp.path}/a.jpg')..writeAsBytesSync(<int>[1, 2, 3]);
+      final File f2 = File('${tmp.path}/b.jpg')..writeAsBytesSync(<int>[4, 5, 6]);
+
+      final StreamItem item = stream.add('有图')!;
+      stream.addAttachment(streamId: item.id, kind: 'image', path: f1.path);
+      stream.addAttachment(streamId: item.id, kind: 'image', path: f2.path);
+      expect(f1.existsSync(), isTrue);
+      expect(f2.existsSync(), isTrue);
+
+      expect(stream.remove(item.id), isTrue);
+      // 磁盘副本随条目一起消失（用户删速记 = 连图一起删）。
+      expect(f1.existsSync(), isFalse);
+      expect(f2.existsSync(), isFalse);
+      expect(stream.attachmentsOf(item.id), isEmpty);
+    });
+
+    test('sweepOrphans：盘上有、库里没记录的副本应被清掉', () {
+      final Directory tmp = Directory.systemTemp.createTempSync('stream_media');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final File orphan = File('${tmp.path}/orphan.jpg')
+        ..writeAsBytesSync(<int>[9]);
+      final File kept = File('${tmp.path}/kept.jpg')
+        ..writeAsBytesSync(<int>[9]);
+      final StreamItem item = stream.add('有图')!;
+      stream.addAttachment(streamId: item.id, kind: 'image', path: kept.path);
+
+      StreamStore.sweepOrphans(db, tmp.path);
+      expect(orphan.existsSync(), isFalse, reason: '孤儿清掉');
+      expect(kept.existsSync(), isTrue, reason: '有记录的留着');
+    });
+
+    test('add 允许空文本：仅当带着附件（用于只有图、没写字）', () {
+      expect(stream.add(''), isNull);
+      expect(stream.add('', allowEmpty: true), isNotNull);
     });
   });
 

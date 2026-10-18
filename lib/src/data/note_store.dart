@@ -7,6 +7,7 @@ import '../domain/backlink.dart';
 import '../domain/block_hit.dart';
 import '../domain/embed_line.dart';
 import '../domain/note.dart';
+import '../domain/trash.dart';
 import 'block_props.dart';
 import 'block_store.dart';
 import 'canvas_store.dart';
@@ -290,7 +291,10 @@ class NoteStore {
 
   /// 台账要能点进去 ⇒ 跳之前先确认目标还在（删掉的话就别跳了）。
   bool targetNoteExists(String targetId) => db
-      .select('SELECT 1 FROM notes WHERE id = ?', <Object?>[targetId])
+      .select(
+        'SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL',
+        <Object?>[targetId],
+      )
       .isNotEmpty;
 
   /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type='stream'`）。
@@ -328,6 +332,8 @@ class NoteStore {
       kind: StreamExportKind.reference,
       targetBlockId: refBlockId,
     );
+    // 被引用 = 已使用 ⇒ **自动归档**（2026-10-18 用户定：不再手动归档）。
+    StreamStore(db).archive(streamId);
     return true;
   }
 
@@ -355,6 +361,8 @@ class NoteStore {
       kind: StreamExportKind.copy,
       targetBlockId: firstBlockId,
     );
+    // 复制到笔记 = 已使用 ⇒ **自动归档**（2026-10-18 用户定）。
+    StreamStore(db).archive(streamId);
     return true;
   }
 
@@ -402,6 +410,8 @@ class NoteStore {
       kind: kind,
       targetBlockId: cardBlockId,
     );
+    // 复制到画布 = 已使用 ⇒ **自动归档**（2026-10-18 用户定）。
+    StreamStore(db).archive(streamId);
     return true;
   }
 
@@ -428,10 +438,11 @@ class NoteStore {
     return n;
   }
 
-  /// **合并成一篇新笔记**（归档）：多条速记按时间顺序（旧 → 新）拼成正文。
+  /// **合并成一篇新笔记**（**不归档**）：多条速记按时间顺序（旧 → 新）拼成正文。
   ///
-  /// 这是速记 → 深思考的主路径：零散记录攒够了，一次提炼成一篇笔记。
-  /// 参与合并的条目全部归档（可回看）；返回 null = 一条有效的都没有。
+  /// 2026-10-18 用户定：合并只是"整理"，条目还算不上被使用 ⇒ 留在心流里，
+  /// 等真正使用（引用 / 转为新笔记等）再归档。
+  /// 返回 null = 一条有效的都没有。
   Note? streamMergeToNewNote(List<String> streamIds) {
     if (streamIds.isEmpty) return null;
     // 顺序在 SQL 里定死：`created_at`（同一毫秒再按插入顺序 rowid）——
@@ -458,10 +469,9 @@ class NoteStore {
       content: StreamStore.blocksTreeFromText(plain),
       plainText: plain,
     );
-    final StreamStore streams = StreamStore(db);
     for (final Row r in rs) {
       final String id = r['id'] as String;
-      streams.archive(id);
+      // ⚠️ **不归档**（2026-10-18 用户定）：合并只是整理，条目还在"未使用"。
       _recordStreamExport(
         id,
         targetType: 'note',
@@ -516,7 +526,7 @@ class NoteStore {
     required String plainText,
   }) async {
     final ResultSet exists = db.select(
-      'SELECT content_hash FROM notes WHERE id = ?',
+      'SELECT content_hash FROM notes WHERE id = ? AND deleted_at IS NULL',
       <Object?>[noteId],
     );
     if (exists.isEmpty) return false;
@@ -582,6 +592,8 @@ class NoteStore {
     final ResultSet rs = db.select(
       'SELECT id, kind, title, content_hash, tags, summary, '
       'created_at, revised_at, promoted_at FROM notes '
+      // 回收站里的笔记不进列表（2026-10-18 全局回收站）。
+      'WHERE deleted_at IS NULL '
       // v16 起速记不再是笔记（独立表 `stream_items`）⇒ 已没有要排除的形态。
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
@@ -618,7 +630,8 @@ class NoteStore {
   Note? noteListRow(String id) {
     final ResultSet rs = db.select(
       'SELECT id, kind, title, content_hash, tags, summary, '
-      'created_at, revised_at, promoted_at FROM notes WHERE id = ?',
+      'created_at, revised_at, promoted_at FROM notes '
+      'WHERE id = ? AND deleted_at IS NULL',
       <Object?>[id],
     );
     if (rs.isEmpty) return null;
@@ -633,7 +646,7 @@ class NoteStore {
   /// 不存在 / 该列为空时返回空串（与 [_noteFrom] 的口径一致）。
   String plainTextOf(String noteId) {
     final ResultSet rs = db.select(
-      'SELECT plain_text FROM notes WHERE id = ?',
+      'SELECT plain_text FROM notes WHERE id = ? AND deleted_at IS NULL',
       <Object?>[noteId],
     );
     if (rs.isEmpty) return '';
@@ -648,7 +661,8 @@ class NoteStore {
   /// 不存在 / 非画布 / 空串都返回空串，调用方按空串渲染空画布占位。
   String canvasContentOf(String noteId) {
     final ResultSet rs = db.select(
-      'SELECT content FROM notes WHERE id = ? AND kind = ?',
+      'SELECT content FROM notes '
+      'WHERE id = ? AND kind = ? AND deleted_at IS NULL',
       <Object?>[noteId, NoteKind.canvas.name],
     );
     if (rs.isEmpty) return '';
@@ -661,7 +675,8 @@ class NoteStore {
   /// [canvasContentOf] + 全文解析。不存在 / 非画布也返回 null。
   List<Map<String, dynamic>>? canvasThumbnailItemJson(String noteId) {
     final ResultSet rs = db.select(
-      'SELECT content_hash FROM notes WHERE id = ? AND kind = ?',
+      'SELECT content_hash FROM notes '
+      'WHERE id = ? AND kind = ? AND deleted_at IS NULL',
       <Object?>[noteId, NoteKind.canvas.name],
     );
     if (rs.isEmpty) return null;
@@ -680,7 +695,7 @@ class NoteStore {
   /// 这里单开一个窄查询，只取 `kind='canvas'` 的那几行正文。
   List<String> canvasContents() {
     final ResultSet rs = db.select(
-      'SELECT content FROM notes WHERE kind = ?',
+      'SELECT content FROM notes WHERE kind = ? AND deleted_at IS NULL',
       <Object?>[NoteKind.canvas.name],
     );
     return <String>[
@@ -702,7 +717,7 @@ class NoteStore {
   /// ⇒ 可以无脑都试：对任何一篇笔记，另一条必然返回 null，不会互相抢。
   Note? noteById(String id) {
     final ResultSet rs = db.select(
-      'SELECT * FROM notes WHERE id = ?',
+      'SELECT * FROM notes WHERE id = ? AND deleted_at IS NULL',
       <Object?>[id],
     );
     if (rs.isEmpty) return null;
@@ -749,6 +764,94 @@ class NoteStore {
       'canvas.srcfp.$noteId',
     ]);
     db.execute('DELETE FROM notes WHERE id = ?', <Object?>[noteId]);
+  }
+
+  /// 软删（进全局回收站）：`deleted_at` 非空 ⇒ 列表/搜索/打开全部不可见。
+  bool trash(String noteId) {
+    db.execute(
+      'UPDATE notes SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL',
+      <Object?>[DateTime.now().millisecondsSinceEpoch, noteId],
+    );
+    return db.updatedRows > 0;
+  }
+
+  /// 批量软删。
+  bool trashMany(Iterable<String> ids) {
+    final List<String> list = ids.toList(growable: false);
+    if (list.isEmpty) return false;
+    final String marks = List<String>.filled(list.length, '?').join(',');
+    db.execute(
+      'UPDATE notes SET deleted_at = ? '
+      'WHERE id IN ($marks) AND deleted_at IS NULL',
+      <Object?>[DateTime.now().millisecondsSinceEpoch, ...list],
+    );
+    return db.updatedRows > 0;
+  }
+
+  /// 从回收站恢复。
+  bool restoreTrash(String noteId) {
+    db.execute(
+      'UPDATE notes SET deleted_at = NULL '
+      'WHERE id = ? AND deleted_at IS NOT NULL',
+      <Object?>[noteId],
+    );
+    return db.updatedRows > 0;
+  }
+
+  /// 回收站列表（笔记 + 画布），按删除时间倒序。
+  List<TrashEntry> listTrashNotes() {
+    final ResultSet rs = db.select(
+      'SELECT id, kind, title, summary, deleted_at FROM notes '
+      'WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, id ASC',
+    );
+    return <TrashEntry>[
+      for (final Row r in rs)
+        TrashEntry(
+          kind: (r['kind'] as String) == NoteKind.canvas.name
+              ? TrashKind.canvas
+              : TrashKind.note,
+          id: r['id'] as String,
+          title: _trashTitle(r),
+          deletedAt: DateTime.fromMillisecondsSinceEpoch(
+            r['deleted_at'] as int,
+          ),
+        ),
+    ];
+  }
+
+  /// 彻底删除回收站里超过 [maxAge] 的笔记（30 天自动清理）。返回条数。
+  Future<int> purgeExpired(Duration maxAge) async {
+    final int cutoff = DateTime.now().subtract(maxAge).millisecondsSinceEpoch;
+    final ResultSet rs = db.select(
+      'SELECT id FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
+      <Object?>[cutoff],
+    );
+    final List<String> ids = <String>[for (final Row r in rs) r['id'] as String];
+    for (final String id in ids) {
+      await delete(id);
+    }
+    return ids.length;
+  }
+
+  /// 清空回收站（彻底删除所有软删笔记）。返回条数。
+  Future<int> purgeAllTrash() async {
+    final ResultSet rs = db.select(
+      'SELECT id FROM notes WHERE deleted_at IS NOT NULL',
+    );
+    final List<String> ids = <String>[for (final Row r in rs) r['id'] as String];
+    for (final String id in ids) {
+      await delete(id);
+    }
+    return ids.length;
+  }
+
+  /// 回收站行的显示标题：标题 → 摘要首行 → 「未命名」。
+  String _trashTitle(Row r) {
+    final String title = (r['title'] as String? ?? '').trim();
+    if (title.isNotEmpty) return title;
+    final String summary = (r['summary'] as String? ?? '').trim();
+    if (summary.isNotEmpty) return summary.split('\n').first.trim();
+    return '未命名';
   }
 
   /// 把一条笔记**原样**写回（删除后的「撤销」用）。
@@ -1308,7 +1411,7 @@ class NoteStore {
 
   String? _rawContent(String noteId) {
     final ResultSet rs = db.select(
-      'SELECT content FROM notes WHERE id = ?',
+      'SELECT content FROM notes WHERE id = ? AND deleted_at IS NULL',
       <Object?>[noteId],
     );
     return rs.isEmpty ? null : rs.first['content'] as String?;

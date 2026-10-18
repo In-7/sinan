@@ -12,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show appNavigatorKey, settingsScrimAlpha;
+import 'stream_delete.dart';
 
 /// **已处理（处理台账）浮层**（2026-10-18 定稿）。
 ///
@@ -432,18 +433,21 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 28),
               child: TextButton(
-                onPressed: () =>
-                    ref.read(streamProvider.notifier).unarchive(item.id),
+                onPressed: () async {
+                  final bool ok = await confirmTrashStream(context, 1);
+                  if (!ok || !mounted) return;
+                  await ref.read(streamProvider.notifier).trash(item.id);
+                },
                 style: TextButton.styleFrom(
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(
                     horizontal: Tokens.spaceSm,
                   ),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  foregroundColor: Bauhaus.inkMuted(b),
+                  foregroundColor: theme.colorScheme.error,
                   textStyle: theme.textTheme.labelMedium,
                 ),
-                child: const Text('拿回'),
+                child: const Text('删除'),
               ),
             ),
           ),

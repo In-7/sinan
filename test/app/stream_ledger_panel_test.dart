@@ -21,7 +21,7 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// ② Esc / × / 点外面都能关；
 /// ③ 全貌正文不截断；
 /// ④ 点流向**带着块 id** 跳过去（P2 双链的实质）；
-/// ⑤ 拿回后条目回时间流。
+/// ⑤ 删除后条目进回收站。
 void main() {
   late Database db;
   late NoteStore store;
@@ -142,8 +142,8 @@ void main() {
       isNot(contains(3)),
       reason: '全貌正文不许 maxLines=3',
     );
-    // 每张卡自带「拿回」，不必进详情就能操作。
-    expect(find.text('拿回'), findsOneWidget);
+    // 每张卡自带「删除」，不必进详情就能操作。
+    expect(find.text('删除'), findsOneWidget);
   });
 
   testWidgets('扫读即见"它变成了什么"：流向带落地内容预览', (WidgetTester tester) async {
@@ -179,16 +179,20 @@ void main() {
     expect(find.text('已处理 1 条'), findsNothing);
   });
 
-  testWidgets('拿回：条目回时间流，浮层里消失', (WidgetTester tester) async {
+  testWidgets('删除：条目进回收站，浮层里消失', (WidgetTester tester) async {
     seed('a', '待处理', DateTime.now());
     seed('b', '已归档的那条', DateTime.now(), archived: true);
     await pumpStream(tester);
 
     await openLedger(tester);
-    await tester.tap(find.text('拿回'));
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    // 确认框：点实色确认按钮（标题与按钮同名，用 FilledButton 精确定位）。
+    await tester.tap(find.widgetWithText(FilledButton, '移入回收站'));
     await tester.pumpAndSettle();
 
-    expect(stream.byId('b')!.archived, isFalse);
+    expect(stream.byId('b'), isNull, reason: '软删后不再正向可读');
+    expect(stream.listTrash().map((i) => i.id), contains('b'));
     expect(find.text('还没有已处理的速记'), findsOneWidget);
   });
 }

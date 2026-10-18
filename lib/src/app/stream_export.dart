@@ -2,69 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/note.dart';
-import '../editor/blocks/note_picker.dart';
-import '../editor/blocks/reference_to_canvas.dart';
 import 'providers.dart';
 
 /// 速记（心流）导出：**单向，速记 → 笔记 / 画布**（2026-10-17 重定）。
 ///
-/// 三种语义：
-/// - **引用**（活链）：笔记里插 `ref` 块（`ref_type='stream'`）指向这条速记。
-///   只有笔记读速记，速记永不回读；删速记后引用处显示「已失效」，笔记内容不丢。
-/// - **复制**（快照）：笔记里插段落块 / 画布上建独立卡片，此后互不相干。
-/// - **转新**（归档）：建成一篇新笔记，速记条目**归档**（不删，可回看）。
+/// 保留两种语义：
+/// - **转新**：建成一篇新笔记 / 新画布（**归档**源速记）。
+/// - **合并**：多条按时间拼成一篇新笔记（**不归档**：合并只是整理，条目仍留在
+///   心流里，等真正使用再归档 —— 2026-10-18 用户定）。
 ///
-/// 画布**不做活链**（同日定）：卡片必须有自己的块，速记更新不推过去。
-/// 心流从不读笔记 / 画布正文——这里的对话框只列标题让你选目标。
-
-/// 复制到**笔记**（快照）：把文本复制成目标里的一个真段落块。
-///
-/// （原「引用到笔记」入口已按用户决定移除：引用应由笔记 / 画布那一端发起；
-/// 后端能力仍在 `NoteStore.referenceStreamInNote`，届时直接复用。）
-Future<void> copyStreamToNote({
-  required BuildContext context,
-  required String streamId,
-}) async {
-  final ProviderContainer container = ProviderScope.containerOf(
-    context,
-    listen: false,
-  );
-  final store = container.read(noteStoreProvider);
-  final String? target = await pickNoteToReference(
-    context,
-    docsOnly: true,
-    dialogTitle: '复制到哪篇笔记',
-  );
-  if (target == null || !context.mounted) return;
-  final bool ok = store.copyStreamIntoNote(streamId, target);
-  if (ok) {
-    container.invalidate(notesProvider);
-    // 台账多了一行（这条流去了哪），处理面板要重读。
-    container.invalidate(streamExportsProvider);
-  }
-  _toast(context, ok ? '已复制（快照，之后互不影响）' : '复制失败：目标不是可写的文档笔记');
-}
-
-/// 复制到**画布**（快照卡）：新建一张独立卡片，速记之后与它无关。
-Future<void> copyStreamToCanvas({
-  required BuildContext context,
-  required String streamId,
-}) async {
-  final ProviderContainer container = ProviderScope.containerOf(
-    context,
-    listen: false,
-  );
-  final store = container.read(noteStoreProvider);
-  final String? target = await pickCanvasToTarget(
-    context,
-    dialogTitle: '复制到哪张画布',
-    emptyHint: '还没有画布笔记 —— 先新建一张画布，再回来复制',
-  );
-  if (target == null || !context.mounted) return;
-  final bool ok = store.copyStreamOntoCanvas(streamId, target);
-  if (ok) container.invalidate(streamExportsProvider);
-  _toast(context, ok ? '已复制成独立卡片（与速记再无关联）' : '复制失败：目标不是画布');
-}
+/// 复制到笔记 / 画布的 UI 入口已撤（2026-10-18 用户定）：心流卡片的「复制」
+/// 改为直接写系统剪贴板，用户爱贴哪贴哪。后端 `NoteStore.copyStreamIntoNote`
+/// / `copyStreamOntoCanvas` 仍保留（能力不删）。
+/// 引用（活链）的 UI 入口同样已撤；后端 `referenceStreamInNote` 仍在。
 
 /// **转成新笔记**（归档）：建一篇正式笔记装上这段文本，速记条目归档。
 Future<void> streamToNewNote({
@@ -109,7 +59,7 @@ Future<void> streamToNewCanvas({
   if (context.mounted) _toast(context, '已建成新画布，速记已归档');
 }
 
-/// **合并成一篇新笔记**（多选）：按时间顺序拼起来，参与的都归档。
+/// **合并成一篇新笔记**（多选）：按时间顺序拼起来，**不归档**（条目仍留在心流）。
 Future<void> mergeStreamToNewNote({
   required BuildContext context,
   required List<String> streamIds,
@@ -125,10 +75,10 @@ Future<void> mergeStreamToNewNote({
     if (context.mounted) _toast(context, '合并失败：没有可用的速记');
     return;
   }
-  container.invalidate(streamProvider);
+  // 合并**不归档**（2026-10-18 用户定）：心流列表不变，只多一篇笔记 + 台账一行。
   container.invalidate(notesProvider);
   container.invalidate(streamExportsProvider);
-  if (context.mounted) _toast(context, '已合并成新笔记（${streamIds.length} 条已归档）');
+  if (context.mounted) _toast(context, '已合并成新笔记（${streamIds.length} 条）');
 }
 
 void _toast(BuildContext context, String message) {

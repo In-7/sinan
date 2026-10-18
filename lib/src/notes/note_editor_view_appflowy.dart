@@ -41,13 +41,13 @@ import '../editor/blocks/custom_block_components.dart';
 import '../editor/blocks/ref_block_component.dart';
 import '../editor/blocks/toggle_block_component.dart';
 import '../editor/toolbar/fixed_toolbar.dart';
-import '../editor/toolbar/link_toolbar_item.dart';
 import '../editor/toolbar/slash_menu_items.dart';
 import '../editor/panels/backlink_panel.dart';
 import '../editor/panels/tags_panel.dart';
 import '../editor/panels/toc_panel.dart';
 import '../editor/widgets/editor_context_menu.dart';
 import '../editor/widgets/link_hover_tooltip.dart';
+import 'services/editor_image_paste.dart';
 
 // **编辑器视图（appflowy_editor）**——迁移 ④ 的落地件，现在是**唯一**的编辑器
 // （quill 版 2026-09-10 退役并归档到 `archive/quill/src/notes/`，入口见
@@ -88,7 +88,8 @@ import '../editor/widgets/link_hover_tooltip.dart';
 //       末尾留白取代了 quill 的「点击固定 / 到底兜底」两条补偿规则）
 // - [x] 编辑器内搜索（**官方 Find&Replace**：ctrl+F 查找 / ctrl+H 替换，
 //       面板与匹配高亮都用官方的；工具栏只加一个入口按钮）
-// - [ ] 粘贴图片本地化（现有 _onClipboardPaste 是 quill 管线）
+// - [x] 粘贴图片本地化（Ctrl+V / 右键：读剪贴板 → 存媒体目录 → insertImageNode；
+//       见 services/editor_image_paste.dart。官方 appflowy 只给插入入口，无粘贴）
 // - [x] 右键菜单（2026-09-15：`contextMenuBuilder` 此前**没接** ⇒ 右键毫无反应；
 //       现为自建面板：剪切/复制/粘贴/全选，走浮层令牌、条目直接调官方命令
 //       handler；页面末尾留白另有一份同款菜单，见
@@ -1618,6 +1619,8 @@ class _NoteEditorViewAppFlowyState
                       position: position,
                       editorState: editorState,
                       onDismiss: onDismiss,
+                      // 右键「粘贴」与 Ctrl+V 同口径：图贴图、否则回退文字。
+                      onPaste: pasteIntoEditor,
                     ),
                 // 末尾留白 = 官方口径的**一屏可点热区**：点它 = 继续写
                 // （官方 `editor_page.dart` 的 footer 就是这么挂的；取值与取舍见
@@ -1675,10 +1678,11 @@ class _NoteEditorViewAppFlowyState
                 // 必须自己追加——这正是此前"Ctrl+F 完全无效"的原因。
                 // 追加时必须带上标准表，否则会顶掉全部内置快捷键。
                 commandShortcutEvents: <CommandShortcutEvent>[
-                  // 粘贴 URL 自动转链（Ctrl+V）：**必须排在官方 paste 之前**
-                  // （先命中先赢），并把官方那条从标准表里摘掉，避免两条 ctrl+v
-                  // 并存（我们的实现读不到网址时会回退调官方 paste）。
-                  sinanPasteCommand,
+                  // 智能粘贴（Ctrl+V）：**必须排在官方 paste 之前**（先命中先赢），
+                  // 并把官方那条从标准表里摘掉，避免两条 ctrl+v 并存。
+                  // 逻辑：剪贴板是图 ⇒ 落盘 + 插图；否则回退「粘贴 URL 自动转链」/
+                  // 官方文本粘贴（见 services/editor_image_paste.dart）。
+                  sinanPasteWithImageCommand,
                   ...standardCommandShortcutEvents.where(
                     (CommandShortcutEvent event) =>
                         event.key != pasteCommand.key &&

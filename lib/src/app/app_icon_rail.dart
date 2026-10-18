@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
@@ -9,6 +10,7 @@ import 'home_hub.dart' show HomeViewIcon, kHomeTabs;
 import 'new_note_capsule.dart';
 import 'providers.dart';
 import 'search_palette.dart';
+import 'trash_panel.dart' show showTrash;
 
 /// 最左**图标导航轨**（2026-10-16 用户定，Option 2 第一阶段）：60px 常驻脊梁，直接贴
 /// 窗口底（同旧 256 侧栏的扁平口径，无面板 / 描边 / 投影）。它把旧侧栏的
@@ -29,6 +31,7 @@ class AppIconRail extends ConsumerWidget {
     final Brightness b = theme.brightness;
     final HomeView current =
         ref.watch(navHistoryProvider.select((NavHistoryState s) => s.view));
+    final int trashCount = ref.watch(trashProvider).length;
 
     return SizedBox(
       width: Tokens.railWidth,
@@ -67,6 +70,18 @@ class AppIconRail extends ConsumerWidget {
                   size: Tokens.iconMd,
                 ),
               ),
+            const SizedBox(height: Tokens.spaceXs),
+            // **全局回收站**（2026-10-18）：笔记 / 画布 / 速记一个入口。
+            _RailButton(
+              tooltip: trashCount > 0 ? '回收站（$trashCount）' : '回收站',
+              onTap: showTrash,
+              child: tabler.Trash(
+                height: Tokens.iconMd,
+                width: Tokens.iconMd,
+                strokeWidth: Tokens.iconStroke,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),

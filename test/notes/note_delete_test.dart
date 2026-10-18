@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
+import 'package:sinan/src/domain/trash.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -178,5 +179,59 @@ void main() {
     expect(store.allNotes().map((Note n) => n.id).toList(), byIdAsc);
     // 同一份数据再查一次仍是同一顺序。
     expect(store.allNotes().map((Note n) => n.id).toList(), byIdAsc);
+  });
+
+  test('回收站：软删后列表不可见、回收站可见；恢复后回来', () async {
+    final NotesNotifier notifier = container.read(notesProvider.notifier);
+    final NoteStore store = container.read(noteStoreProvider);
+    final Note a = await notifier.createNote();
+    await notifier.saveTitle(a.id, '要删的');
+    final Note b = await notifier.createNote();
+    await notifier.saveTitle(b.id, '要留的');
+
+    container.read(selectedNoteIdProvider.notifier).select(a.id);
+    await notifier.trashNote(a.id);
+
+    expect(store.allNotes().map((Note n) => n.id), isNot(contains(a.id)));
+    expect(store.noteById(a.id), isNull, reason: '回收站不参与正向读取');
+    final List<TrashEntry> trash = store.listTrashNotes();
+    expect(trash.map((TrashEntry e) => e.id), contains(a.id));
+    expect(trash.first.kind, TrashKind.note);
+
+    await notifier.restoreNoteFromTrash(a.id);
+    expect(store.allNotes().map((Note n) => n.id), contains(a.id));
+    expect(store.listTrashNotes(), isEmpty);
+    expect(b.id, isNot(a.id));
+  });
+
+  test('回收站：超过 30 天自动彻底删除', () async {
+    final NoteStore store = container.read(noteStoreProvider);
+    final Note fresh = store.create();
+    final Note old = store.create();
+    final int oldAt = DateTime.now()
+        .subtract(const Duration(days: 31))
+        .millisecondsSinceEpoch;
+    db.execute('UPDATE notes SET deleted_at = ? WHERE id = ?', <Object?>[
+      oldAt,
+      old.id,
+    ]);
+    db.execute('UPDATE notes SET deleted_at = ? WHERE id = ?', <Object?>[
+      DateTime.now().millisecondsSinceEpoch,
+      fresh.id,
+    ]);
+
+    await store.purgeExpired(const Duration(days: 30));
+
+    expect(
+      store.listTrashNotes().map((TrashEntry e) => e.id),
+      <String>[fresh.id],
+      reason: '未过期的留在回收站',
+    );
+    final int remaining =
+        db.select('SELECT COUNT(*) AS c FROM notes WHERE id = ?', <Object?>[
+              old.id,
+            ]).first['c']
+            as int;
+    expect(remaining, 0, reason: '过期项被彻底删除');
   });
 }

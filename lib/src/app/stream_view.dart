@@ -1,18 +1,35 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart'
-    show HardwareKeyboard, KeyDownEvent, LogicalKeyboardKey;
+    show
+        Clipboard,
+        ClipboardData,
+        HardwareKeyboard,
+        KeyDownEvent,
+        LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+import 'package:uuid/uuid.dart';
 
 import '../domain/note.dart';
+import '../notes/services/note_media_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
-import 'providers.dart' show streamFocusProvider, streamProvider;
-import 'stream_ledger_panel.dart' show showStreamLedger;
+import 'providers.dart'
+    show
+        appDataDirProvider,
+        streamAttachmentsProvider,
+        streamFocusProvider,
+        streamProvider;
+import 'stream_delete.dart';
 import 'stream_export.dart';
+import 'stream_ledger_panel.dart' show showStreamLedger;
 
 /// **速记 / 心流**（2026-10-17 定：flomo 式低摩擦收件箱）。
 ///
@@ -60,8 +77,12 @@ class _StreamViewState extends ConsumerState<StreamView> {
     super.dispose();
   }
 
-  Future<void> _capture(String text) async {
-    await ref.read(streamProvider.notifier).add(text);
+  Future<StreamItem?> _capture(String text, List<StreamAttachmentInput> media) async {
+    if (media.isEmpty) {
+      await ref.read(streamProvider.notifier).add(text);
+      return null;
+    }
+    return ref.read(streamProvider.notifier).addMedia(text, media);
   }
 
   bool _matches(StreamItem item) {
@@ -82,6 +103,19 @@ class _StreamViewState extends ConsumerState<StreamView> {
     });
   }
 
+  /// 全选 / 取消全选**当前可见**的条目（含搜索过滤）。
+  void _toggleSelectAll(List<String> visibleIds) {
+    setState(() {
+      final bool all =
+          visibleIds.isNotEmpty && visibleIds.every(_selected.contains);
+      if (all) {
+        _selected.removeAll(visibleIds);
+      } else {
+        _selected.addAll(visibleIds);
+      }
+    });
+  }
+
   void _clearSearch() {
     _search.clear();
     setState(() => _query = '');
@@ -96,6 +130,39 @@ class _StreamViewState extends ConsumerState<StreamView> {
       _selectMode = false;
     });
     await mergeStreamToNewNote(context: context, streamIds: ids);
+  }
+
+  /// 复制选中条目：按列表顺序（新 → 旧）换行拼接。
+  Future<void> _copySelected() async {
+    final List<StreamItem> all =
+        ref.read(streamProvider).value ?? const <StreamItem>[];
+    final String text = <String>[
+      for (final StreamItem i in all)
+        if (_selected.contains(i.id) && i.text.trim().isNotEmpty) i.text,
+    ].join('\n');
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text('已复制 ${_selected.length} 条')));
+  }
+
+  /// 删除选中条目：确认后移入回收站。
+  Future<void> _deleteSelected() async {
+    final List<String> ids = _selected.toList(growable: false);
+    if (ids.isEmpty) return;
+    final bool ok = await confirmTrashStream(context, ids.length);
+    if (!ok || !mounted) return;
+    await ref.read(streamProvider.notifier).trashMany(ids);
+    if (!mounted) return;
+    setState(() {
+      _selected.clear();
+      _selectMode = false;
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('已移入回收站（${ids.length} 条）')),
+    );
   }
 
   @override
@@ -130,6 +197,10 @@ class _StreamViewState extends ConsumerState<StreamView> {
     ];
     // 时间流永远只有"当下"；聚焦（从引用跳来）时只给那一条。
     final List<StreamItem> shown = focusId != null ? scoped : open;
+    // 选择模式全选的候选：**当前可见**的待处理条目（含搜索过滤）。
+    final List<String> visibleIds = <String>[
+      for (final StreamItem i in open) i.id,
+    ];
     final bool empty = shown.isEmpty;
     // 聚焦：清掉搜索词，否则"引用的那条"可能被上次的搜索过滤掉，页面变成"什么都没有"。
     ref.listen<String?>(streamFocusProvider, (String? _, String? next) {
@@ -158,7 +229,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
           if (focusId != null)
             _pageColumn(_focusHeader())
           else if (_selectMode)
-            _pageColumn(_selectionToolbar())
+            _pageColumn(_selectionToolbar(visibleIds))
           else if (_query.isNotEmpty ||
               open.isNotEmpty ||
               archived.isNotEmpty)
@@ -208,13 +279,8 @@ class _StreamViewState extends ConsumerState<StreamView> {
                           },
                         ),
                   ),
-                if (_selectMode && _selected.isNotEmpty)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: Tokens.spaceLg,
-                    child: Center(child: _pageColumn(_mergeBar())),
-                  ),
+                // 批量动作已挪到顶部「全选」左边（2026-10-18 用户定）：
+                // 不再有底部浮条，选择控件与动作在同一处。
                 // 归档是浮层（2026-10-18 定稿）：点表头那枚「归档 N」弹出来，
                 // 背后这一页原样不动。
               ],
@@ -387,61 +453,95 @@ class _StreamViewState extends ConsumerState<StreamView> {
     );
   }
 
-  Widget _selectionToolbar() {
-    final ThemeData theme = Theme.of(context);
-    return SizedBox(
-      height: 28,
-      child: Row(
-        children: <Widget>[
-          Text(
-            _selected.isEmpty ? '选择要合并的速记' : '已选 ${_selected.length} 条',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          TextButton(
-            onPressed: () => setState(_selected.clear),
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: const Text('清空'),
-          ),
-          TextButton(
-            onPressed: _toggleSelectMode,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 底部唯一的实色主按钮：合并（页面里 primary 只出现在 focus / 选中 / 这里）。
-  Widget _mergeBar() {
+  Widget _selectionToolbar(List<String> visibleIds) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(Tokens.radiusLg),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Tokens.spaceLg,
-          Tokens.spaceSm,
-          Tokens.spaceSm,
-          Tokens.spaceSm,
-        ),
-        // 条数在工具行上，这里不再重复（同一句话出现两遍会读成两个控件）。
-        child: FilledButton(
-          onPressed: _merge,
-          style: FilledButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            textStyle: theme.textTheme.labelMedium,
-          ),
-          child: const Text('合并为新笔记'),
-        ),
-      ),
+    final bool allSelected =
+        visibleIds.isNotEmpty && visibleIds.every(_selected.contains);
+    final TextStyle? labelStyle = theme.textTheme.labelMedium?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+
+    final Widget count = Text(
+      _selected.isEmpty
+          ? '选择速记'
+          : '已选 ${_selected.length} / ${visibleIds.length} 条',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: labelStyle,
+    );
+    final Widget selectAll = TextButton(
+      onPressed: visibleIds.isEmpty ? null : () => _toggleSelectAll(visibleIds),
+      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      child: Text(allSelected ? '取消全选' : '全选'),
+    );
+    final Widget cancel = TextButton(
+      onPressed: _toggleSelectMode,
+      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      child: const Text('取消'),
+    );
+    // 批量动作：空选时不出现，避免一排置灰按钮常年占位。
+    final Widget? actions = _selected.isEmpty
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextButton(
+                onPressed: _copySelected,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: theme.textTheme.labelMedium,
+                ),
+                child: const Text('复制'),
+              ),
+              TextButton(
+                onPressed: _deleteSelected,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: scheme.error,
+                  textStyle: theme.textTheme.labelMedium,
+                ),
+                child: const Text('删除'),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              FilledButton(
+                onPressed: _merge,
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: theme.textTheme.labelMedium,
+                ),
+                child: const Text('合并为新笔记'),
+              ),
+            ],
+          );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // 宽窗：动作直接排在「全选」左边（2026-10-18 用户定：一眼可见，
+        // 不用去底部找）。窄窗（最小窗 720 时正文只有 ~430）动作换第二行。
+        if (actions == null || constraints.maxWidth >= 520) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: count),
+              if (actions != null) ...<Widget>[
+                actions,
+                const SizedBox(width: Tokens.spaceSm),
+              ],
+              selectAll,
+              cancel,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(children: <Widget>[Expanded(child: count), selectAll, cancel]),
+            const SizedBox(height: Tokens.spaceXs),
+            Align(alignment: Alignment.centerRight, child: actions),
+          ],
+        );
+      },
     );
   }
 
@@ -640,7 +740,11 @@ class _StreamEmpty extends StatelessWidget {
 class _CaptureBar extends ConsumerStatefulWidget {
   const _CaptureBar({required this.onSubmit});
 
-  final Future<void> Function(String text) onSubmit;
+  /// 提交：文本 + 已拷进 app 私有目录的附件（图片/视频）。无附件时只存文本。
+  final Future<StreamItem?> Function(
+    String text,
+    List<StreamAttachmentInput> attachments,
+  ) onSubmit;
 
   @override
   ConsumerState<_CaptureBar> createState() => _CaptureBarState();
@@ -649,6 +753,9 @@ class _CaptureBar extends ConsumerStatefulWidget {
 class _CaptureBarState extends ConsumerState<_CaptureBar> {
   final TextEditingController _controller = TextEditingController();
   late final FocusNode _focus = FocusNode(onKeyEvent: _onKey);
+
+  /// 待发送附件：选图后先暂存，提交时才拷进私有目录（不发就不落盘，零孤儿）。
+  final List<_PendingMedia> _pendingMedia = <_PendingMedia>[];
 
   /// 提交后的**一次性**反馈：按钮变绿勾 600ms，然后回纸飞机。
   ///
@@ -691,16 +798,118 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
       unawaited(_submit());
       return KeyEventResult.handled;
     }
+    // Ctrl / Cmd + V：剪贴板有图就贴成附件；没有图则把剪贴板文字手动插入。
+    // 读图是异步平台通道（macOS 没有同步 API），所以这里**始终拦截**、异步判定，
+    // 跨 Windows / macOS 行为一致（2026-10-18 用户定）。
+    // macOS 用 Cmd（meta）；Windows/Linux 用 Ctrl。不能两个都判：Windows 的
+    // meta 是 Win 键，兼判会把 Win+V（系统剪贴板历史）一起吞掉。
+    final bool pasteModifier = Platform.isMacOS
+        ? HardwareKeyboard.instance.isMetaPressed
+        : HardwareKeyboard.instance.isControlPressed;
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.keyV &&
+        pasteModifier) {
+      unawaited(_pasteIntoField());
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
+  }
+
+  /// 智能粘贴：剪贴板是图 ⇒ 贴成待发附件；否则把剪贴板文字插入当前选区。
+  ///
+  /// 读图走 [NoteMediaService.readClipboardImage]（`pasteboard` 平台通道，
+  /// Windows/macOS 通用；Windows 失败时回落 win32）。因为它是异步的，
+  /// Ctrl/Cmd+V 与右键「粘贴」都必须"先拦截、再异步决定"。
+  Future<void> _pasteIntoField() async {
+    try {
+      final Uint8List? img = await NoteMediaService.readClipboardImage();
+      if (img != null) {
+        if (!mounted) return;
+        setState(
+          () => _pendingMedia.add(
+            _PendingMedia(bytes: img, ext: '.png', kind: 'image'),
+          ),
+        );
+        return;
+      }
+      // 没有图 ⇒ 手动贴文字（等价于框架的纯文本粘贴；本输入框无输入法格式化器）。
+      final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+      final String? text = data?.text;
+      if (text == null || text.isEmpty || !mounted) return;
+      final TextEditingValue value = _controller.value;
+      final TextSelection sel = _controller.selection;
+      final int start = sel.isValid ? sel.start : value.text.length;
+      final int end = sel.isValid ? sel.end : value.text.length;
+      _controller.value = TextEditingValue(
+        text: value.text.replaceRange(start, end, text),
+        selection: TextSelection.collapsed(offset: start + text.length),
+      );
+    } on Object catch (_) {
+      // 平台通道 / 原生剪贴板异常：静默失败，不打断输入。
+    }
+  }
+
+  /// 右键菜单：把默认的「粘贴」换成**智能粘贴**（图贴图、文贴文）。
+  ///
+  /// 默认菜单只探测剪贴板里的**文字**（`ClipboardStatus` 走 `Clipboard.hasStrings`），
+  /// 剪贴板只有一张图时会把「粘贴」整项藏掉。这里在缺项时补回「粘贴」，让
+  /// "复制图片 → 右键粘贴" 也能贴成附件，和 Ctrl+V 行为完全一致（2026-10-18 用户定）。
+  Widget _buildContextMenu(BuildContext context, EditableTextState state) {
+    final List<ContextMenuButtonItem> items = <ContextMenuButtonItem>[];
+    bool hasPaste = false;
+    for (final ContextMenuButtonItem item in state.contextMenuButtonItems) {
+      if (item.type == ContextMenuButtonType.paste) {
+        hasPaste = true;
+        items.add(
+          ContextMenuButtonItem(
+            type: ContextMenuButtonType.paste,
+            onPressed: () {
+              // 贴图/贴字都在异步路径里完成；菜单先收起（官方文字粘贴的
+              // `_pasteText` 内部会 hideToolbar，我们这条自定义路径要手动关）。
+              unawaited(_pasteIntoField());
+              state.hideToolbar();
+            },
+          ),
+        );
+      } else {
+        items.add(item);
+      }
+    }
+    // 剪贴板只有图、没文字时默认列表里没有「粘贴」——缺就补一项。
+    // 不预先判断"有没有图"：跨平台读图是异步的，由 _pasteIntoField 决定
+    // 贴图还是贴字（空剪贴板时这一项无副作用），排「全选」前与默认顺序一致。
+    if (!hasPaste) {
+      final ContextMenuButtonItem paste = ContextMenuButtonItem(
+        type: ContextMenuButtonType.paste,
+        onPressed: () {
+          unawaited(_pasteIntoField());
+          state.hideToolbar(); // 同上：自定义路径要自己收菜单
+        },
+      );
+      final int insertAt = items.indexWhere(
+        (ContextMenuButtonItem i) => i.type == ContextMenuButtonType.selectAll,
+      );
+      if (insertAt < 0) {
+        items.add(paste);
+      } else {
+        items.insert(insertAt, paste);
+      }
+    }
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: state.contextMenuAnchors,
+      buttonItems: items,
+    );
   }
 
   Future<void> _submit() async {
     final String text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _pendingMedia.isEmpty) return;
+    // 提交前把待发送附件**拷进 app 私有目录**（拷成功才落库；不发则无副本）。
+    final List<StreamAttachmentInput> attachments = await _materializeMedia();
     // **先落库、再清空**：写失败时把原文留在输入框里并给一句提示，别让人以为
     // "记下了"却什么都没存（2026-10-17 复查）。
     try {
-      await widget.onSubmit(text);
+      await widget.onSubmit(text, attachments);
     } on Object {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(
@@ -712,6 +921,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
     if (_controller.text.trim() == text) {
       _controller.clear(); // 清空但保留焦点，方便连续记录
     }
+    if (_pendingMedia.isNotEmpty) setState(_pendingMedia.clear);
     _sentTimer?.cancel();
     setState(() => _justSent = true);
     _sentTimer = Timer(Tokens.durationFeedback, () {
@@ -731,6 +941,103 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
         ? 'Enter 记下 · Shift+Enter 换行'
         : 'Ctrl+Shift+M 随时记 · Enter 记下';
     return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+  }
+
+  /// 文件选择器里挑图（桌面端原生对话框，`file_picker` 支持一次多选）。
+  /// 默认打开**桌面**目录，贴近"截图刚存桌面"的随手导入场景。
+  /// 视频在第二步接入，这里先只开图片（用户确认先做图片附件）。
+  Future<void> _pickFiles() async {
+    // 12.x：`pickFiles` 返回非空列表（取消则为空列表）；`allowMultiple` 已废弃
+    // （本身就是多选取）。取消时循环直接不进，无需判空。
+    final List<PlatformFile> files = await FilePicker.pickFiles(
+      type: FileType.image,
+      initialDirectory: _desktopDir,
+    );
+    if (!mounted) return;
+    for (final PlatformFile f in files) {
+      final String? path = f.path;
+      if (path == null) continue;
+      final Uint8List bytes = await File(path).readAsBytes();
+      setState(
+        () => _pendingMedia.add(
+          _PendingMedia(bytes: bytes, ext: p.extension(path), kind: 'image'),
+        ),
+      );
+    }
+  }
+
+  /// 文件框默认打开位置：桌面（Windows=`%USERPROFILE%\Desktop`，其它=`~/Desktop`）。
+  String get _desktopDir {
+    final String? home = Platform.isWindows
+        ? Platform.environment['USERPROFILE']
+        : Platform.environment['HOME'];
+    if (home == null) return '.';
+    return p.join(home, 'Desktop');
+  }
+
+  /// 把待发送附件逐张**拷进 app 私有目录**（`stream_media/`），返回落库用的入参。
+  ///
+  /// 这里才真正落盘：用户选了又不发，磁盘上不会留下任何副本（零孤儿）。
+  Future<List<StreamAttachmentInput>> _materializeMedia() async {
+    if (_pendingMedia.isEmpty) return const <StreamAttachmentInput>[];
+    final String base = p.join(ref.read(appDataDirProvider), 'stream_media');
+    await Directory(base).create(recursive: true);
+    final List<StreamAttachmentInput> result = <StreamAttachmentInput>[];
+    const Uuid uuid = Uuid();
+    for (final _PendingMedia m in _pendingMedia) {
+      final String ext = m.ext.isEmpty ? '.img' : m.ext;
+      final String dest = p.join(base, '${uuid.v4()}$ext');
+      await File(dest).writeAsBytes(m.bytes);
+      result.add(StreamAttachmentInput(kind: m.kind, path: dest));
+    }
+    return result;
+  }
+
+  /// 待发送附件的预览条（提交前看一眼贴了什么）。
+  Widget _pendingStrip(ThemeData theme) {
+    final ColorScheme scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Tokens.spaceXs),
+      child: Wrap(
+        spacing: Tokens.spaceXs,
+        runSpacing: Tokens.spaceXs,
+        children: <Widget>[
+          for (int i = 0; i < _pendingMedia.length; i++)
+            Stack(
+              children: <Widget>[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  child: Image.memory(
+                    _pendingMedia[i].bytes,
+                    width: 56,
+                    height: 56,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _pendingMedia.removeAt(i)),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.54),
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                      ),
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.close,
+                        size: 14,
+                        color: scheme.onError,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -765,6 +1072,8 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
             child: TextField(
               controller: _controller,
               focusNode: _focus,
+              // 右键「粘贴」也走智能判定（图贴图、文贴文），与 Ctrl+V 一致。
+              contextMenuBuilder: _buildContextMenu,
               // **一屏的视觉重心**：至少三行文字的高度（≈ 96），空态也是一块
               // 可以往里写的区域，而不是一条细输入框（2026-10-17 用户实报
               // "输入框太小、重心不在这里"）。内容长了继续长到 12 行。
@@ -788,6 +1097,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
               ),
             ),
           ),
+          if (_pendingMedia.isNotEmpty) _pendingStrip(theme),
           const SizedBox(height: Tokens.spaceSm),
           // 底行：左 = 当下输入的状态（字数 / 键位提示），右 = 发送。
           // 字数用 ValueListenableBuilder 读输入框自身——不在每次按键都 setState
@@ -798,6 +1108,19 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
               final int length = value.text.trim().length;
               return Row(
                 children: <Widget>[
+                  // **贴图入口**：左下图钉，点一下直接打开图片文件框（默认桌面，可多选）。
+                  // 截图走 Ctrl+V（输入框里直接贴上剪贴板的图）；右键菜单粘贴文本即可。
+                  IconButton(
+                    onPressed: _pickFiles,
+                    tooltip: '贴图片',
+                    iconSize: Tokens.iconMd,
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(36, 36),
+                      foregroundColor: scheme.onSurfaceVariant,
+                    ),
+                    icon: const tabler.Photo(),
+                  ),
+                  const SizedBox(width: Tokens.spaceXs),
                   // `Expanded`（不是 Flexible）：状态文案吃掉左侧剩余宽度，把
                   // 发送钮顶到**最右边**——Flexible 只按内容取宽，按钮会紧贴文字
                   // （2026-10-17 用户截图实报）。
@@ -838,13 +1161,28 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   }
 }
 
+/// 待发送附件的暂存：选图后先留在这里，提交时才拷进私有目录。
+///
+/// 只存**解码后的字节 + 扩展名**（不存源文件句柄）——文件选择器 / 剪贴板两条
+/// 来源都最终汇成字节，提交时统一落盘到 `stream_media/`。源截图被删也不影响。
+class _PendingMedia {
+  const _PendingMedia({
+    required this.bytes,
+    required this.ext,
+    required this.kind,
+  });
+  final Uint8List bytes;
+  final String ext; // 含点的扩展名，如 '.png'
+  final String kind; // 'image' | 'video'
+}
+
 // ───────────────────────────── 速记行 ─────────────────────────────
 
 /// 一行速记：**没有卡片边框**，静止透明；hover / 选中才铺底色与左侧蓝竖条。
 ///
 /// - 点击就地编辑（`Esc` / `Ctrl+Enter` 保存），不是"放大成卡片"；
-/// - hover 时右侧浮出操作簇（引用 / 复制 / 归档 / 更多）；
-/// - 归档条目只读、降对比，行尾给「拿回」。
+/// - hover 时右侧浮出操作簇（复制 / 更多；**归档由使用/转换自动触发**，无手动钮）；
+/// - 归档条目只读、降对比，行尾给「删除」。
 class _StreamRow extends ConsumerStatefulWidget {
   const _StreamRow({
     super.key,
@@ -924,19 +1262,36 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     if (mounted) setState(() => _expanded = false);
   }
 
+  /// 复制到系统剪贴板（纯文本）。**不归档**——复制不等于"在应用里使用"，
+  /// 随手复制一下不该让条目从收件箱消失（2026-10-18 用户定）。
+  Future<void> _copyToClipboard() async {
+    final String text = widget.item.text.trim();
+    if (text.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(const SnackBar(content: Text('没有可复制的文字')));
+      }
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+  }
+
   Future<void> _onMenu(String value) async {
     final String id = widget.item.id;
     switch (value) {
-      case 'copy-note':
-        await copyStreamToNote(context: context, streamId: id);
-      case 'copy-canvas':
-        await copyStreamToCanvas(context: context, streamId: id);
       case 'to-note':
         await streamToNewNote(context: context, streamId: id);
       case 'to-canvas':
         await streamToNewCanvas(context: context, streamId: id);
       case 'delete':
-        await ref.read(streamProvider.notifier).remove(id);
+        if (await confirmTrashStream(context, 1) && mounted) {
+          await ref.read(streamProvider.notifier).trash(id);
+        }
     }
   }
 
@@ -957,6 +1312,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   Widget _buildView(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
+    // 这条速记贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
+    final List<StreamAttachment> attachments =
+        ref.watch(streamAttachmentsProvider(widget.item.id));
     final bool marked = widget.selected;
     // 菜单打开也算"悬浮中"：否则弹窗一开、按钮就滑走了。
     final bool active = _hover || _menuOpen;
@@ -1050,16 +1408,25 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                     // 正文由外层 [Semantics.label] 朗读（整条一起念），这里排除，
                     // 免得"标签 + 正文"念两遍；行内按钮的语义**保留**（可单独聚焦）。
                     child: ExcludeSemantics(
-                      child: Text(
-                        widget.item.text,
-                        maxLines: 8,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: widget.archived
-                              ? Bauhaus.inkMuted(brightness)
-                              : Bauhaus.ink(brightness),
-                          height: 1.6,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          if (widget.item.text.trim().isNotEmpty)
+                            Text(
+                              widget.item.text,
+                              maxLines: 8,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: widget.archived
+                                    ? Bauhaus.inkMuted(brightness)
+                                    : Bauhaus.ink(brightness),
+                                height: 1.6,
+                              ),
+                            ),
+                          // 贴的图：缩略图条（视频在第二步接入）。
+                          if (attachments.isNotEmpty)
+                            _attachmentStrip(theme, attachments),
+                        ],
                       ),
                     ),
                   ),
@@ -1083,14 +1450,19 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                       ),
                     ),
                     TextButton(
-                      onPressed: () => ref
-                          .read(streamProvider.notifier)
-                          .unarchive(widget.item.id),
+                      onPressed: () async {
+                        final bool ok = await confirmTrashStream(context, 1);
+                        if (!ok || !mounted) return;
+                        await ref
+                            .read(streamProvider.notifier)
+                            .trash(widget.item.id);
+                      },
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
+                        foregroundColor: scheme.error,
                         textStyle: theme.textTheme.labelSmall,
                       ),
-                      child: const Text('拿回'),
+                      child: const Text('删除'),
                     ),
                   ] else
                     SizedBox(
@@ -1133,6 +1505,33 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     );
   }
 
+  /// 速记贴图的缩略图条：左对齐、可横向滚动（图多时不挤正文）。
+  Widget _attachmentStrip(ThemeData theme, List<StreamAttachment> items) {
+    return Padding(
+      padding: const EdgeInsets.only(top: Tokens.spaceXs),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (final StreamAttachment a in items)
+              Padding(
+                padding: const EdgeInsets.only(right: Tokens.spaceXs),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  child: Image.file(
+                    File(a.path),
+                    width: 96,
+                    height: 96,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 右上角的时间标签（与操作簇共用同一个槽位，右对齐、贴首行基线）。
   Widget _timeLabel(ThemeData theme, Brightness brightness, {Key? key}) => Align(
     key: key,
@@ -1154,7 +1553,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     ),
   );
 
-  /// hover 操作簇：复制 / 归档 / 更多。
+  /// hover 操作簇：复制 / 更多（归档自动，不在这里）。
   ///
   /// 2026-10-17 调整：
   /// - **去掉「引用到笔记」**——引用应从笔记 / 画布那一端发起（在正文里挑一条
@@ -1168,23 +1567,10 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _popupSlot(
-            tooltip: '复制到…',
-            icon: const tabler.Copy(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-            ),
-            items: const <PopupMenuEntry<String>>[
-              PopupMenuItem(value: 'copy-note', child: Text('复制到笔记…')),
-              PopupMenuItem(value: 'copy-canvas', child: Text('复制到画布…')),
-            ],
-          ),
-          const SizedBox(width: _actionGap),
           _iconSlot(
-            tooltip: '归档（已处理）',
-            onPressed: () =>
-                ref.read(streamProvider.notifier).archive(widget.item.id),
-            icon: const tabler.Archive(
+            tooltip: '复制',
+            onPressed: _copyToClipboard,
+            icon: const tabler.Copy(
               height: Tokens.iconMdSm,
               width: Tokens.iconMdSm,
             ),
@@ -1214,18 +1600,18 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   /// 槽间留白：6（比图标间距松一档，避免三个图标糊成一团）。
   static const double _actionGap = 6;
 
-  /// 操作簇的**固定占位宽** = 左留白 8 + 3 槽 24 + 2 间隙 6 = 92。
+  /// 操作簇的**固定占位宽** = 左留白 8 + 2 槽 24 + 1 间隙 6 = 62。
   ///
-  /// 行内永远留出这 92，hover 只是把内容填进来 ⇒ 文字宽度恒定，不会重排。
+  /// 行内永远留出这 62，hover 只是把内容填进来 ⇒ 文字宽度恒定，不会重排。
   static const double _actionsWidth =
-      Tokens.spaceSm + _actionSlot * 3 + _actionGap * 2;
+      Tokens.spaceSm + _actionSlot * 2 + _actionGap;
 
+  /// 24 槽的图标按钮（复制用）：不用 IconButton（M3 最小 40×40，塞进 24 槽会溢出）。
   Widget _iconSlot({
     required String tooltip,
     required VoidCallback onPressed,
     required Widget icon,
   }) {
-    // 不用 IconButton：M3 默认最小 40×40，塞进 24 槽会溢出。
     return Tooltip(
       message: tooltip,
       child: InkResponse(

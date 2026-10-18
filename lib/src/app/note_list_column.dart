@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
@@ -12,6 +13,7 @@ import 'home_hub.dart'
 import 'note_display.dart';
 import 'providers.dart';
 import 'search_provider.dart';
+import 'stream_delete.dart' show showStreamConfirm;
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
 /// （编辑器 / 画布 / 空态）。**只服务「全部 / 收藏」**——速记（心流）是一页纸时间流，
@@ -96,6 +98,7 @@ class NoteListColumn extends ConsumerWidget {
                       onOpen: () => ref
                           .read(locateProvider.notifier)
                           .locate(noteId: n.id),
+                      onDelete: () => _trash(context, ref, n),
                       // ↑/↓：读当前顺序 + 选中，算上/下一篇，走 [LocateNotifier.preview]
                       // （静默选中、**不入历史**，不刷爆前进/后退栈）。选中行自己在
                       // didUpdateWidget 里滚入视野 + 接管焦点（焦点锚跟着选中走）。
@@ -118,6 +121,18 @@ class NoteListColumn extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// 删除 = 软删进**全局回收站**（30 天后自动彻底删除）。
+  Future<void> _trash(BuildContext context, WidgetRef ref, Note note) async {
+    final bool ok = await showStreamConfirm(
+      context: context,
+      title: '移入回收站',
+      message: '将「${noteDisplayTitle(note)}」移入回收站？30 天后自动彻底删除。',
+      confirmLabel: '移入回收站',
+    );
+    if (!ok) return;
+    await ref.read(notesProvider.notifier).trashNote(note.id);
   }
 }
 
@@ -165,6 +180,7 @@ class _NoteRow extends StatefulWidget {
     required this.selected,
     required this.onOpen,
     required this.onNavigate,
+    required this.onDelete,
   });
 
   final Note note;
@@ -173,6 +189,9 @@ class _NoteRow extends StatefulWidget {
 
   /// ↑/↓ 由本行方向键快捷键触发，回调给父列切上/下一篇（父才知道全局顺序）。
   final ValueChanged<int> onNavigate;
+
+  /// 行内「删除」（软删进全局回收站）。
+  final VoidCallback onDelete;
 
   @override
   State<_NoteRow> createState() => _NoteRowState();
@@ -334,6 +353,29 @@ class _NoteRowState extends State<_NoteRow> {
                         color: Bauhaus.inkMuted(b),
                       ),
                     ),
+                    // hover / 选中时露出删除（进全局回收站）。
+                    if (_hover || selected) ...<Widget>[
+                      const SizedBox(width: Tokens.spaceXs),
+                      Tooltip(
+                        message: '删除',
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onDelete,
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: Center(
+                              child: tabler.Trash(
+                                height: Tokens.iconXs,
+                                width: Tokens.iconXs,
+                                strokeWidth: Tokens.iconStroke,
+                                color: scheme.error,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

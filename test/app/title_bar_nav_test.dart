@@ -535,4 +535,43 @@ void main() {
     });
   }
 
+  testWidgets('全局回收站：图标轨底部入口打开浮层（空态）', (WidgetTester tester) async {
+    await pump(tester);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AppIconRail),
+        matching: find.byTooltip('回收站'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('回收站 0 条'), findsOneWidget);
+    expect(find.text('回收站是空的'), findsOneWidget);
+  });
+
+  testWidgets('笔记列表行内删除：确认后进回收站（软删）', (WidgetTester tester) async {
+    final ProviderContainer container = await pump(tester);
+    await tapViewTab(tester, '全部');
+
+    final NotesNotifier notifier = container.read(notesProvider.notifier);
+    final Note note = await notifier.createNote();
+    await notifier.saveTitle(note.id, '要删的');
+    container.read(locateProvider.notifier).locate(noteId: note.id);
+    await tester.pumpAndSettle();
+
+    // 行内删除在 hover / 选中时露出；当前笔记已选中 ⇒ 按钮可见。
+    await tester.tap(find.byTooltip('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '移入回收站'));
+    await tester.pumpAndSettle();
+
+    final NoteStore store = container.read(noteStoreProvider);
+    expect(store.allNotes().map((Note n) => n.id), isNot(contains(note.id)));
+    expect(
+      store.listTrashNotes().map((e) => e.id),
+      contains(note.id),
+      reason: '软删进回收站，不是硬删',
+    );
+  });
 }

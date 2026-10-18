@@ -11,6 +11,7 @@ import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/data/stream_store.dart';
+import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
@@ -117,7 +118,9 @@ void main() {
     expect(find.text('1 条'), findsOneWidget);
   });
 
-  testWidgets('多选合并：勾一条 → 合并为新笔记，条目归档', (WidgetTester tester) async {
+  testWidgets('多选合并：勾一条 → 合并为新笔记，条目仍留在心流（不归档）', (
+    WidgetTester tester,
+  ) async {
     final DateTime now = DateTime.now();
     seed('a', '要合并的想法', now);
     await pumpView(tester);
@@ -128,7 +131,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('要合并的想法'));
     await tester.pumpAndSettle();
-    expect(find.text('已选 1 条'), findsOneWidget);
+    expect(find.text('已选 1 / 1 条'), findsOneWidget);
 
     await tester.tap(find.text('合并为新笔记'));
     await tester.pumpAndSettle();
@@ -138,9 +141,10 @@ void main() {
       hasLength(1),
       reason: '合并要真的建出一篇笔记',
     );
-    expect(stream.list(), isEmpty, reason: '参与合并的条目进归档，不再是待处理');
-    expect(stream.byId('a')!.archived, isTrue);
-    expect(find.text('要合并的想法'), findsNothing);
+    // 合并只是"整理"，不算使用 ⇒ **不归档**，条目仍留在心流（2026-10-18 用户定）。
+    expect(stream.list(), hasLength(1), reason: '合并后条目仍待处理');
+    expect(stream.byId('a')!.archived, isFalse);
+    expect(find.text('要合并的想法'), findsOneWidget);
   });
 
   testWidgets('聚焦：从引用跳来只显示那一条，可"显示全部"', (WidgetTester tester) async {
@@ -159,7 +163,7 @@ void main() {
     expect(find.text('别的速记'), findsOneWidget);
   });
 
-  testWidgets('聚焦到已归档条目：仍然看得见、可拿回', (WidgetTester tester) async {
+  testWidgets('聚焦到已归档条目：仍然看得见、可删除（进回收站）', (WidgetTester tester) async {
     seed(
       'b',
       '已归档的被引用条目',
@@ -170,7 +174,7 @@ void main() {
     await pumpView(tester);
 
     expect(find.text('已归档的被引用条目'), findsOneWidget);
-    expect(find.text('拿回'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
     expect(find.text('正在查看被引用的速记'), findsOneWidget);
   });
 
@@ -214,14 +218,14 @@ void main() {
     await tester.tap(find.text('选择'));
     await tester.pumpAndSettle();
 
-    expect(find.text('选择要合并的速记'), findsOneWidget);
+    expect(find.text('选择速记'), findsOneWidget);
     // 流里只剩下待处理的那条，已处理的不在合并池里（它在浮层里）。
     expect(find.text('已归档'), findsNothing);
     expect(find.text('待处理'), findsOneWidget);
   });
 
   testWidgets('hover 操作簇不挤动正文（占位固定）', (WidgetTester tester) async {
-    const String text = '这一行足够长，用来量宽度是否会被悬浮出现的三枚图标挤动';
+    const String text = '这一行足够长，用来量宽度是否会被悬浮出现的图标挤动';
     seed('a', text, DateTime.now());
     await pumpView(tester);
 
@@ -234,9 +238,10 @@ void main() {
     await mouse.moveTo(tester.getCenter(find.text(text)));
     await tester.pumpAndSettle();
 
-    // 操作簇确实出现了……
-    expect(find.byTooltip('归档（已处理）'), findsOneWidget);
-    // ……但正文宽度一点没变（92 的占位是常驻的，只是"填不填内容"）。
+    // 操作簇确实出现了（复制 / 更多两枚；归档改为自动，不再有手动钮）……
+    expect(find.byTooltip('复制'), findsOneWidget);
+    expect(find.byTooltip('归档（已处理）'), findsNothing);
+    // ……但正文宽度一点没变（62 的占位是常驻的，只是"填不填内容"）。
     expect(tester.getSize(find.text(text)).width, before.width);
   });
 
@@ -275,5 +280,93 @@ void main() {
 
     expect(stream.list().map((i) => i.text), contains('刚想到的一句'));
     expect(find.text('刚想到的一句'), findsOneWidget);
+  });
+
+  testWidgets('贴图入口：单枚图钉按钮，不再有来源子菜单', (WidgetTester tester) async {
+    await pumpView(tester);
+    // 用户要最简：图钉就是直接开系统文件框（默认桌面），不再弹
+    // 「选文件 / 粘贴剪贴板」的来源选择器；截图走输入框里的 Ctrl+V。
+    expect(find.byTooltip('贴图片'), findsOneWidget);
+    expect(find.text('选择图片文件…'), findsNothing);
+    expect(find.text('粘贴剪贴板图片'), findsNothing);
+  });
+
+  testWidgets('全选：只选当前可见（搜索过滤后的）条目', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    seed('a', '苹果 想法', now);
+    seed('b', '香蕉 想法', now.subtract(const Duration(seconds: 1)));
+    await pumpView(tester);
+
+    // 搜索到只剩一条（选择模式的候选 = open 过滤结果）。
+    await tester.enterText(find.byType(TextField).at(0), '苹果');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全选'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已选 1 / 1 条'), findsOneWidget);
+    expect(find.text('取消全选'), findsOneWidget);
+  });
+
+  testWidgets('批量删除：确认后进回收站，主列表清空', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    seed('a', '第一条', now);
+    seed('b', '第二条', now.subtract(const Duration(seconds: 1)));
+    await pumpView(tester);
+
+    await tester.tap(find.text('选择'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全选'));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 2 / 2 条'), findsOneWidget);
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    // 确认框：点实色确认按钮（标题与按钮同名，用 FilledButton 精确定位）。
+    await tester.tap(find.widgetWithText(FilledButton, '移入回收站'));
+    await tester.pumpAndSettle();
+
+    expect(stream.list(), isEmpty, reason: '两条都软删');
+    expect(stream.listTrash(), hasLength(2), reason: '进回收站而不是硬删');
+  });
+
+  test('回收站：软删 → 恢复 → 彻底删除', () {
+    final String a = stream.add('要删的')!.id;
+    final String b = stream.add('要留的')!.id;
+    expect(stream.list().map((i) => i.id), containsAll(<String>[a, b]));
+
+    expect(stream.trash(a), isTrue);
+    expect(stream.byId(a), isNull, reason: '回收站不参与正向读取');
+    expect(stream.list().map((i) => i.id), <String>[b]);
+    expect(stream.listTrash().map((i) => i.id), <String>[a]);
+
+    expect(stream.restore(a), isTrue);
+    expect(stream.listTrash(), isEmpty);
+    expect(stream.list().map((i) => i.id), containsAll(<String>[a, b]));
+
+    expect(stream.trashMany(<String>[a, b]), isTrue);
+    expect(stream.listTrash(), hasLength(2));
+    expect(stream.removeMany(<String>[a, b]), isTrue);
+    expect(stream.listTrash(), isEmpty);
+    expect(stream.byId(a), isNull);
+  });
+
+  test('使用即归档：复制 / 引用 / 复制到画布后，源速记自动进归档', () {
+    // 先用一条速记建出合法的文档目标（createSpark 的默认 content 不是块树）。
+    final Note target = store.streamToNewNote(stream.add('目标笔记内容')!.id)!;
+    final Note canvas = store.streamToNewCanvas(stream.add('目标画布内容')!.id)!;
+
+    final String copied = stream.add('要复制到笔记的')!.id;
+    expect(store.copyStreamIntoNote(copied, target.id), isTrue);
+    expect(stream.byId(copied)!.archived, isTrue, reason: '复制=使用，应自动归档');
+
+    final String referenced = stream.add('要被引用的')!.id;
+    expect(store.referenceStreamInNote(referenced, target.id), isTrue);
+    expect(stream.byId(referenced)!.archived, isTrue, reason: '引用=使用，应自动归档');
+
+    final String onCanvas = stream.add('要复制到画布的')!.id;
+    expect(store.copyStreamOntoCanvas(onCanvas, canvas.id), isTrue);
+    expect(stream.byId(onCanvas)!.archived, isTrue, reason: '复制到画布=使用，应自动归档');
   });
 }

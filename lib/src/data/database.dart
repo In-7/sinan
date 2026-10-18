@@ -54,6 +54,8 @@ class AppDatabase {
     final Database db = sqlite3.open(file.path);
     walEnabled = applyConnectionPragmas(db, requestWal: true) == 'wal';
     ensureSchema(db);
+    // 启动兜底：清掉"盘上有、库里没"的孤儿附件副本（导入中途崩溃可能留下）。
+    StreamStore.sweepOrphans(db, p.join(dir.path, 'stream_media'));
     return AppDatabase._(file.path, db);
   }
 
@@ -495,6 +497,52 @@ class AppDatabase {
       db.userVersion = 18;
     }
 
+    // v19：速记**媒体附件**（2026-10-18 加：输入框可贴图片/视频）。
+    //
+    // 只存"app 私有目录里那份独立副本"的路径——源截图被删也不影响（[StreamStore.remove]
+    // 级联删文件）。二进制不进 SQLite（视频太大）。`kind` 枚举在应用层约束，
+    // 这里用 CHECK 兜底；`sort` 是同条目内的展示顺序。
+    if (db.userVersion < 19) {
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS stream_attachments (
+          id          TEXT PRIMARY KEY,
+          stream_id   TEXT NOT NULL,
+          kind        TEXT NOT NULL CHECK (kind IN ('image', 'video')),
+          path        TEXT NOT NULL,
+          width       INTEGER,
+          height      INTEGER,
+          duration_ms INTEGER,
+          sort        INTEGER NOT NULL,
+          created_at  INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_stream_attachments_stream
+          ON stream_attachments (stream_id);
+      ''');
+      db.userVersion = 19;
+    }
+
+    // v20：速记**回收站**（2026-10-18 定）：删除 = 软删（`deleted_at` 非空），
+    // 列表默认过滤；回收站里可恢复或彻底删除。归档仍走 `archived_at`。
+    if (db.userVersion < 20) {
+      if (!_hasColumn(db, 'stream_items', 'deleted_at')) {
+        db.execute('ALTER TABLE stream_items ADD COLUMN deleted_at INTEGER;');
+      }
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_stream_items_trash '
+        'ON stream_items (deleted_at) WHERE deleted_at IS NOT NULL;',
+      );
+      db.userVersion = 20;
+    }
+
+    // v21：全局回收站查询索引（`notes.deleted_at` 列 v6 已有，这里只补索引）。
+    if (db.userVersion < 21) {
+      db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_notes_deleted '
+        'ON notes (deleted_at) WHERE deleted_at IS NOT NULL;',
+      );
+      db.userVersion = 21;
+    }
+
     // 主键自愈：早期 v8（本会话中途修正过）把 `canvas_items` 的主键建成了单列 id。
     // 表是**影子副本**（只写不读，画布仍从 `notes.content` 读）⇒ 重建不丢用户数据，
     // 下一轮保存或回填会把它重新写满。见 [_canvasItemsDdl] 的主键说明。
@@ -503,6 +551,22 @@ class AppDatabase {
     // 缺的列要在这里补（否则首次保存就抛 "no such column"，见用户 2026-09-18 报错）。
     _repairCanvasEdgesTable(db);
     _repairCanvasItemsBlockId(db);
+    // 同一条教训：`userVersion` 已是 20 但列缺失时补列（幂等）。
+    _repairStreamDeletedAt(db);
+  }
+
+  /// 存量库 `userVersion` 已是 20 但 `stream_items.deleted_at` 缺失时补列。
+  /// （新建表走 [StreamStore.ddl] 已含该列；这里只护历史库。）
+  static void _repairStreamDeletedAt(Database db) {
+    final bool tableExists = db
+        .select(
+          "SELECT name FROM sqlite_master "
+          "WHERE type = 'table' AND name = 'stream_items';",
+        )
+        .isNotEmpty;
+    if (tableExists && !_hasColumn(db, 'stream_items', 'deleted_at')) {
+      db.execute('ALTER TABLE stream_items ADD COLUMN deleted_at INTEGER;');
+    }
   }
 
   static const Uuid _uuid = Uuid();
