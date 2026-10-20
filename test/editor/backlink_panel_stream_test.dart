@@ -11,7 +11,7 @@ import 'package:sinan/src/theme/app_float_surface.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 反链面板的**速记侧**（双链的另一半，2026-10-18）。
+/// 反链面板的**灵感侧**（双链的另一半，2026-10-18）。
 ///
 /// 结构化引用（ref 块 / 画布卡）的反链早就有了；这里钉的是**复制**这类快照边——
 /// 它没有结构化痕迹，只存在于台账 `stream_exports`，所以必须由面板反过来读。
@@ -29,7 +29,7 @@ void main() {
 
   tearDown(() => db.close());
 
-  testWidgets('「来自速记」段：列出来源、手法与原文；点它去心流定位', (WidgetTester tester) async {
+  testWidgets('「来自灵感」段：列出来源、手法与原文；点它去灵感定位', (WidgetTester tester) async {
     final Note target = store.create(title: '周五的闲聊');
     final StreamItem s = streams.add('想清楚的那句话')!;
     expect(store.copyStreamIntoNote(s.id, target.id), isTrue);
@@ -71,16 +71,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('来自速记'), findsOneWidget);
+    expect(find.text('来自灵感'), findsOneWidget);
     expect(find.text('想清楚的那句话'), findsOneWidget, reason: '原文当上下文');
     expect(find.text('复制'), findsOneWidget, reason: '手法要说清');
 
     await tester.tap(find.text('想清楚的那句话'));
     await tester.pumpAndSettle();
-    expect(opened, s.id, reason: '点它 = 心流页定位这一条');
+    expect(opened, s.id, reason: '点它 = 灵感页定位这一条');
   });
 
-  testWidgets('空态：既无引用也无速记来源时，还是那句引导', (WidgetTester tester) async {
+  testWidgets('空态：既无引用也无灵感来源时，还是那句引导', (WidgetTester tester) async {
     final Note lonely = store.create(title: '谁都没引用我');
 
     final ProviderContainer container = ProviderContainer(
@@ -121,7 +121,7 @@ void main() {
       find.text('还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接'),
       findsOneWidget,
     );
-    expect(find.text('来自速记'), findsNothing);
+    expect(find.text('来自灵感'), findsNothing);
   });
 }
 

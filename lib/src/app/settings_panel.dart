@@ -1530,7 +1530,7 @@ class _MirrorEnabledRowState extends ConsumerState<_MirrorEnabledRow> {
       description:
           '把笔记写成 .md 文件，Obsidian 或任意编辑器都能打开。'
           '只写不读：你在文件里的手改不会被回收，下次保存以应用为准覆写；'
-          '画布与心流不导出。',
+          '画布与灵感不导出。',
       control: _busy
           ? const SizedBox(
               height: Tokens.iconMd,

@@ -24,7 +24,7 @@ class MdRefLink {
   /// 否则 = 给读者看的纯文本（可带形态后缀，如「标题（画布）」）。
   final String label;
 
-  /// 目标有没有镜像文件：`false`（画布 / 心流）写纯文本——链过去只会是死链。
+  /// 目标有没有镜像文件：`false`（画布 / 灵感）写纯文本——链过去只会是死链。
   final bool linked;
 }
 
@@ -221,7 +221,7 @@ class _MdWriter {
   ///
   /// - 有镜像文件：`[[文件名]]`；`ref_view='embed'` ⇒ `![[文件名]]`
   ///   （Obsidian 的嵌入语法，正好对应编辑器里的"就地展开"）；
-  /// - 目标是画布 / 心流（没有 .md）：纯文本，**不造死链**；
+  /// - 目标是画布 / 灵感（没有 .md）：纯文本，**不造死链**；
   /// - 目标已删：`引用已失效（<id8>）`——与编辑器里那块「引用已失效」同口径。
   String _refOf(Map<String, Object?> data) {
     final String refType =

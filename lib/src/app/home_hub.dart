@@ -25,7 +25,7 @@ import 'search_provider.dart';
 /// 五个视图各答一个问题，浏览时**正交于搜索框**（[searchNotifierProvider]）；
 /// 一旦输入查询词，内容区统一切到**全局搜索结果态**（[_SearchResultsView]），
 /// 与当前 tab 无关——搜索跨笔记/画布、覆盖日历（2026-09-30 用户定）。
-/// - [HomeView.timeline]：**心流**——按 `revisedAt` 分组的时间流（今天 /
+/// - [HomeView.timeline]：**灵感**——按 `revisedAt` 分组的时间流（今天 /
 ///   昨天 / 本周…），**启动默认视图**且是 tab 行第一枚（2026-10-05 决策 C）。
 /// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
 ///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
@@ -52,9 +52,9 @@ extension HomeViewIcon on HomeView {
   /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
   Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
-    // 心流 = **速记收件箱**（不是笔记的时间流）⇒ 收件箱图标。
-    // 2026-10-17：这一格曾用 `Clock`（当时的"心流"是按 revisedAt 的笔记时间线）；
-    // 现在它是一页纸速记流，语义换成"收进来、待处理"。
+    // 灵感 = **收件箱**（不是笔记的时间流）⇒ 收件箱图标。
+    // 2026-10-17：这一格曾用 `Clock`（当时的"灵感"是按 revisedAt 的笔记时间线）；
+    // 现在它是一页纸灵感流，语义换成"收进来、待处理"。
     HomeView.timeline => tabler.Inbox(
       height: size,
       width: size,
@@ -83,7 +83,7 @@ extension HomeViewIcon on HomeView {
 }
 
 /// 最左图标导航轨的**四个常驻目的地**（2026-10-09 用户定外移；此前是主页
-/// 顶栏横排 tab）：**心流 | 全部 | 日历 | 收藏**，心流首位且为启动默认
+/// 顶栏横排 tab）：**灵感 | 全部 | 日历 | 收藏**，灵感首位且为启动默认
 ///（与 [NavHistoryNotifier.build] 的默认值一致）。
 ///
 /// ⚠️ 笔记 / 画布**不在这里**（决策 E）——它们是形态筛选，走漏斗钮的
@@ -98,7 +98,7 @@ const List<HomeView> kHomeTabs = <HomeView>[
 /// **形态筛选 facet**（2026-10-05 决策 E 新增）：全部 / 笔记 / 画布。
 ///
 /// ## 为什么它不是 [HomeView] 的值
-/// 视图答的是"我怎么看"（投影：心流 / 全部 / 日历 / 收藏），形态答的是
+/// 视图答的是"我怎么看"（投影：灵感 / 全部 / 日历 / 收藏），形态答的是
 /// "它是什么"（类型：文档类 spark+note / 画布 canvas）。两个维度塞进一排
 /// tab 就是类别错误——本项目上一次是以"空间切换器"的形式解决它的（只过滤
 /// 列表、不切主区），这里沿用同一个结论：**只做筛选，不做视图**。
@@ -200,9 +200,9 @@ final homeItemsProvider = Provider.autoDispose
       final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
       final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
       final List<Note> scope = switch (args.view) {
-        // 心流（速记）**不读笔记池**：它是独立表 `stream_items`，由
+        // 灵感**不读笔记池**：它是独立表 `stream_items`，由
         // `StreamView` 自行渲染。这里给空列表是"此视图没有笔记项"的诚实回答——
-        // 绝不能让谁把文库里的笔记塞进速记页（单向契约）。
+        // 绝不能让谁把文库里的笔记塞进灵感页（单向契约）。
         HomeView.timeline => const <Note>[],
         // 全部：跨形态统一池，跟随全局排序。
         HomeView.all => all.toList()..sort(order),
@@ -286,7 +286,7 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// ## 现在的职责（2026-10-17 收口）
 /// 桌面外壳只在「日历」视图、且**未选中笔记**时挂载本页：
 /// - 「全部 / 收藏」→ 主从布局（240 列表列 + 详情），不经过这里；
-/// - 「心流（速记）」→ 独立的一页纸流 `StreamView`，同样不经过这里。
+/// - 「灵感」→ 独立的一页纸流 `StreamView`，同样不经过这里。
 ///
 /// 内容区仍按 `view` 分发（日历 / 卡片网格 / 搜索结果）——网格与搜索分支是
 /// 本页被**单独**挂载时的兜底形态（测试、以及将来移动端复用），桌面壳不走它们。
@@ -406,7 +406,7 @@ class _HomeBody extends ConsumerWidget {
       return _SearchResultsView(search: search);
     }
 
-    // ⚠️ 心流（速记）**不由本页渲染**：它是独立的一页纸时间流，由外壳
+    // ⚠️ 灵感**不由本页渲染**：它是独立的一页纸时间流，由外壳
     // `HomeScreen` 直接挂 `StreamView`（2026-10-17 修：此前挂在这里，而桌面壳
     // 改走主从布局后这条分支再也没被走到 —— 表现为"改了界面没变化"）。
     // 本页在桌面上只承担「日历」（以及单独挂载时的网格 / 搜索兜底）。

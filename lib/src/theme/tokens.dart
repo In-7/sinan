@@ -49,7 +49,7 @@ class Tokens {
   // 比例分级（2026-10-16 用户定）：圆角随元素尺寸 / 层级走，不再全局一个数。
   // - 控件档（按钮 / 单行输入 / chip / 列表行 / 焦点环）：**10px**
   // - 卡片档（笔记卡 / 内面板 / 日历卡）：**12px**
-  // - 浮层+创作条档（菜单 / 对话框 / popover / sheet / 心流 Composer / 新建胶囊浮层）：**16px**
+  // - 浮层+创作条档（菜单 / 对话框 / popover / sheet / 灵感 Composer / 新建胶囊浮层）：**16px**
   // 10 在 32px 小控件上比例最稳；16 落在 iOS sheet / M3 dialog 甜区上沿，浮起更柔。
   /// **硬边小件档**：勾选框 / 徽标这类 <24px 的方件用 **4px**。
   /// 再小看不出圆角，再大就不像"方件"（包豪斯几何的最小圆角）。
@@ -121,7 +121,7 @@ class Tokens {
   static const double appPanelInset = 4;
 
   /// 顶条动作按钮（历史 / 设置 / AI）的固定方块：32。与居中目的地图标药丸
-  /// （心流 / 全部 / 日历 / 收藏，走全局 [toolbarButtonSize] = 32）同大——
+  /// （灵感 / 全部 / 日历 / 收藏，走全局 [toolbarButtonSize] = 32）同大——
   /// 2026-10-11 用户定：悬浮背景齐平。条高 44 时垂直居中，上下各 6 呼吸；
   /// 图标 [iconMd]=24。
   static const double chromeButtonSize = 32;
@@ -277,6 +277,6 @@ class Tokens {
   /// **一次性操作确认**（保存 / 发送成功）的驻留时长：**600ms**。
   ///
   /// 比 [durationNormal] 长：这类反馈不是"过程"，而是"结果必须被看见一眼"，
-  /// 250ms 容易被错过；又不该像文案那样常驻（2026-10-17 速记发送钮的绿勾）。
+  /// 250ms 容易被错过；又不该像文案那样常驻（2026-10-17 灵感发送钮的绿勾）。
   static const Duration durationFeedback = Duration(milliseconds: 600);
 }

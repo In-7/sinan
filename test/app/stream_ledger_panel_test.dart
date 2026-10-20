@@ -17,7 +17,7 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// **已处理浮层（处理台账）**的回归（2026-10-18 定稿）。
 ///
 /// 钉五件事：
-/// ① 它是**浮层不是页面**——背后心流页原样在，导航历史不被占；
+/// ① 它是**浮层不是页面**——背后灵感页原样在，导航历史不被占；
 /// ② Esc / × / 点外面都能关；
 /// ③ 全貌正文不截断；
 /// ④ 点流向**带着块 id** 跳过去（P2 双链的实质）；
@@ -91,19 +91,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('浮层不是页面：背后心流页原样在，导航历史不占', (WidgetTester tester) async {
+  testWidgets('浮层不是页面：背后灵感页原样在，导航历史不占', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '待处理', now);
     seed('b', '已归档', now.subtract(const Duration(days: 1)), archived: true);
     await pumpStream(tester);
-    expect(find.text('1 条'), findsOneWidget, reason: '表头计数待处理 1 条');
+    expect(find.text('灵感 1 条'), findsOneWidget, reason: '表头计数灵感 1 条');
 
     await openLedger(tester);
 
     expect(find.text('已处理 1 条'), findsOneWidget, reason: '面板标题');
-    // 背后心流页仍在渲染（浮层不换页）。
+    // 背后灵感页仍在渲染（浮层不换页）。
     expect(find.text('待处理'), findsOneWidget);
-    expect(find.bySemanticsLabel('速记输入，回车记下'), findsOneWidget);
+    expect(find.bySemanticsLabel('灵感输入，回车记下'), findsOneWidget);
     // 视图没被切走，导航历史也没被占一步。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     expect(container.read(navHistoryProvider).canGoBack, isFalse);
@@ -160,7 +160,7 @@ void main() {
   testWidgets('P2 双链：点流向带着块 id 跳过去', (WidgetTester tester) async {
     seed('a', '想清楚的那句话', DateTime.now(), archived: true);
     final Note target = store.create(title: '周五的闲聊');
-    store.referenceStreamInNote('a', target.id);
+    store.copyStreamIntoNote('a', target.id);
     await pumpStream(tester);
     await openLedger(tester);
 
@@ -193,6 +193,6 @@ void main() {
 
     expect(stream.byId('b'), isNull, reason: '软删后不再正向可读');
     expect(stream.listTrash().map((i) => i.id), contains('b'));
-    expect(find.text('还没有已处理的速记'), findsOneWidget);
+    expect(find.text('还没有已处理的灵感'), findsOneWidget);
   });
 }

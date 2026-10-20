@@ -204,7 +204,7 @@ void main() {
     final ProviderContainer container = newContainer();
     addTearDown(container.dispose);
     final Note note = await container.read(notesProvider.notifier).createNote();
-    await container.read(notesProvider.notifier).saveTitle(note.id, '速记');
+    await container.read(notesProvider.notifier).saveTitle(note.id, '灵感');
     const String body = '今天在会议室聊了量子计算的落地节奏';
     db.execute(
       'INSERT INTO blocks (id, note_id, type, props_json, ord, parent_id, '

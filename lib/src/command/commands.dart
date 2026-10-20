@@ -108,14 +108,14 @@ List<Command> buildCommands(Ref ref) => <Command>[
     ],
     run: (CommandContext _) => runCreateNote(ref, NoteKind.canvas),
   ),
-  // 速记（2026-10-17）：任意界面唤起小窗，Enter 存入即关，不打断当前工作。
-  // 与主页心流输入条写的是同一张表（`stream_items`），不进笔记 / 画布。
+  // 灵感（2026-10-17）：任意界面唤起小窗，Enter 存入即关，不打断当前工作。
+  // 与主页灵感输入条写的是同一张表（`stream_items`），不进笔记 / 画布。
   Command(
     id: 'stream.capture',
-    title: '速记一条',
+    title: '记一条灵感',
     group: CommandGroup.file,
     scope: CommandScope.global,
-    hint: '唤起速记小窗：Enter 记下，Esc 关闭（不离开当前页面）',
+    hint: '唤起灵感小窗：Enter 记下，Esc 关闭（不离开当前页面）',
     keys: <KeyBinding>[
       const KeyBinding(
         key: LogicalKeyboardKey.keyM,

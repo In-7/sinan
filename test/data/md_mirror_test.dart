@@ -151,10 +151,10 @@ void main() {
     expect(names, hasLength(2));
   });
 
-  test('画布不导；速记也不导（它不在 notes 里，天然看不见）', () {
+  test('画布不导；灵感也不导（它不在 notes 里，天然看不见）', () {
     final Note canvas = store.create(kind: NoteKind.canvas, title: '画布');
-    // v16 起速记是独立表（`stream_items`），不在 `notes` ⇒ 镜像连扫都扫不到。
-    StreamStore(db).add('一条速记');
+    // v16 起灵感是独立表（`stream_items`），不在 `notes` ⇒ 镜像连扫都扫不到。
+    StreamStore(db).add('一条灵感');
     expect(mirror.exportPending(dir: tmp.path), 0);
     expect(tmp.listSync(), isEmpty);
     expect(mirror.exportOne(canvas.id, dir: tmp.path), isFalse);

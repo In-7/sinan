@@ -176,19 +176,19 @@ void main() {
     expect(store.backlinks(lonely.id), isEmpty);
   });
 
-  // ── 来自速记的反链（双链的另一半）─────────────────────────────────
+  // ── 来自灵感的反链（双链的另一半）─────────────────────────────────
 
-  test('streamSourcesOf：复制 / 引用都算"这篇收过它"，合并算进产出那篇', () {
+  test('streamSourcesOf：复制算"这篇收过它"，合并算进产出那篇', () {
     final Note target = store.create(title: '周五的闲聊');
     final StreamItem a = StreamStore(db).add('想清楚的那句话')!;
     final StreamItem b = StreamStore(db).add('另一条灵感')!;
     final StreamItem c = StreamStore(db).add('被合并的那条')!;
 
     expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
-    expect(store.referenceStreamInNote(b.id, target.id), isTrue);
+    expect(store.copyStreamIntoNote(b.id, target.id), isTrue);
     store.streamMergeToNewNote(<String>[c.id]);
 
-    // target 收了 a（复制）与 b（引用）；合并那篇是**另一篇**，不算 target 的。
+    // target 收了 a、b（都是复制）；合并那篇是**另一篇**，不算 target 的。
     final List<StreamSource> mine = store.streamSourcesOf(target.id);
     expect(
       mine.map((StreamSource s) => s.streamId).toSet(),
@@ -213,15 +213,15 @@ void main() {
     expect(
       store.streamSourcesOf(mergedId).single.streamId,
       c.id,
-      reason: '合并出来的笔记要能反查参与合并的速记',
+      reason: '合并出来的笔记要能反查参与合并的灵感',
     );
   });
 
-  test('streamSourcesOf：同一条速记对同一目标多种手法只列一次（留最新）', () {
+  test('streamSourcesOf：同一条灵感对同一目标重复复制只列一次（留最新）', () {
     final Note target = store.create(title: '周五的闲聊');
-    final StreamItem a = StreamStore(db).add('先引用后复制')!;
-    // 两种手法都指向**同一篇**（引用插 ref 块、复制插段落）⇒ 反链里只该出现一次。
-    expect(store.referenceStreamInNote(a.id, target.id), isTrue);
+    final StreamItem a = StreamStore(db).add('重复复制')!;
+    // 同一篇复制两次 ⇒ 反链里只该出现一次（留最新那一笔）。
+    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
     expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
 
     final List<StreamSource> mine = store.streamSourcesOf(target.id);
@@ -230,7 +230,7 @@ void main() {
     expect(mine.single.kind, StreamExportKind.copy, reason: '留最新一笔');
   });
 
-  test('streamSourcesOf：没收到过速记 ⇒ 空', () {
+  test('streamSourcesOf：没收到过灵感 ⇒ 空', () {
     final Note lonely = store.create(title: '只被引用的笔记');
     expect(store.streamSourcesOf(lonely.id), isEmpty);
   });

@@ -32,7 +32,7 @@ Future<void> referenceBlockToCanvas({
   _toast(context, added ? '已在画布上引用这张卡片' : '这张卡片已经在画布上了');
 }
 
-/// 选一张画布（只有一张就直接用）。速记导出与块引用共用同一套选择口径。
+/// 选一张画布（只有一张就直接用）。灵感导出与块引用共用同一套选择口径。
 ///
 /// 返回 `null` = 用户取消 / 没有画布（已弹提示）。
 Future<String?> pickCanvasToTarget(

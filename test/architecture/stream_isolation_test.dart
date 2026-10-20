@@ -2,15 +2,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// **速记（心流）与笔记 / 画布是分离的** —— 这条是产品契约（2026-10-17 用户定），
+/// **灵感与笔记 / 画布是分离的** —— 这条是产品契约（2026-10-17 用户定），
 /// 不是实现细节，所以用测试钉住，而不是写在文档里等下一个改动的人忽略。
 ///
 /// 三件事：
-/// 1. 数据层：速记只经 `StreamStore` 读写独立表，**不碰** notes / blocks；
-/// 2. 形态：`NoteKind` 里不再有 `stream`（速记不是笔记）；
+/// 1. 数据层：灵感只经 `StreamStore` 读写独立表，**不碰** notes / blocks；
+/// 2. 形态：`NoteKind` 里不再有 `stream`（灵感不是笔记）；
 /// 3. 下游：`kind = 'stream'` 这类特例只允许出现在迁移脚本里（历史数据）。
 void main() {
-  group('速记隔离', () {
+  group('灵感隔离', () {
     test('StreamStore 不依赖笔记 / 画布的任何 store', () {
       // 依赖白名单：多一个都要人有意放行。
       const Set<String> allowed = <String>{
@@ -28,18 +28,18 @@ void main() {
         violations,
         isEmpty,
         reason:
-            '速记存储越界了。它必须只碰 `stream_items`：\n'
+            '灵感存储越界了。它必须只碰 `stream_items`：\n'
             '  ${violations.join('\n  ')}\n'
-            '速记的真相源独立，笔记 / 画布只能经 NoteStore 的导出方法单向取用。',
+            '灵感的真相源独立，笔记 / 画布只能经 NoteStore 的导出方法单向取用。',
       );
     });
 
-    test('NoteKind 里没有 stream（速记不是笔记形态）', () {
+    test('NoteKind 里没有 stream（灵感不是笔记形态）', () {
       final String source = File('lib/src/domain/note.dart').readAsStringSync();
       expect(
         source.contains('NoteKind.stream'),
         isFalse,
-        reason: 'v16 起速记在独立表 `stream_items`，`notes.kind` 不再有 stream。',
+        reason: 'v16 起灵感在独立表 `stream_items`，`notes.kind` 不再有 stream。',
       );
     });
 
@@ -58,12 +58,12 @@ void main() {
         offenders,
         isEmpty,
         reason:
-            '速记已不在 notes 表，任何地方都不该再为它写特例：\n'
+            '灵感已不在 notes 表，任何地方都不该再为它写特例：\n'
             '  ${offenders.join('\n  ')}',
       );
     });
 
-    test('速记表没有指向 notes / blocks 的外键', () {
+    test('灵感表没有指向 notes / blocks 的外键', () {
       final String source = File('lib/src/data/stream_store.dart').readAsStringSync();
       expect(source.contains('REFERENCES notes'), isFalse);
       expect(source.contains('REFERENCES blocks'), isFalse);

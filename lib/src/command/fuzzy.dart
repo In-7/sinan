@@ -49,7 +49,9 @@ const Map<int, String> _initialByRune = <int, String>{
   0x9009: 'x', // 选
   0x4E00: 'y', // 一
   0x7BC7: 'p', // 篇
-  // ── `stream.capture`：「速记一条」/ hint「唤起速记小窗…」（2026-10-17）──
+  // ── `stream.capture`：「记一条灵感」/ hint「唤起灵感小窗…」（2026-10-17）──
+  0x7075: 'l', // 灵
+  0x611F: 'g', // 感
   0x6761: 't', // 条
   0x5524: 'h', // 唤
   0x8D77: 'q', // 起

@@ -82,7 +82,7 @@ class NoteStore {
   /// 快照的 [Note]——`summary` 已填 ⇒ 卡片预览立即可见，无「先建空卡再填」的中间
   /// 闪烁。与 [create] 的差别：正文一起落，且写好摘要投影列。
   ///
-  /// 两个使用者：心流输入框（[NoteKind.spark]）与心流「转成新笔记」导出
+  /// 两个使用者：灵感输入框（[NoteKind.spark]）与灵感「转成新笔记」导出
   /// （[NoteKind.note]）——都是「文本一步落成一篇」。
   Note createSpark({
     NoteKind kind = NoteKind.spark,
@@ -123,20 +123,20 @@ class NoteStore {
     );
   }
 
-  // ── 速记（心流）→ 笔记 / 画布：**单向导出** ─────────────────────────────
+  // ── 灵感→ 笔记 / 画布：**单向导出** ─────────────────────────────
   //
-  // 速记的真相源是独立表 `stream_items`（见 `StreamStore`），与 notes / blocks
-  // **无外键**。这里只做"用户手动把一条速记变成内容"的写路径：
+  // 灵感的真相源是独立表 `stream_items`（见 `StreamStore`），与 notes / blocks
+  // **无外键**。这里只做"用户手动把一条灵感变成内容"的写路径：
   //
-  // - **引用**（活链）：笔记里插 `ref` 块（`ref_type='stream'`）。只有笔记读速记，
-  //   速记永不回读；删速记后引用处显示「已失效」，笔记内容不丢。
+  // - **引用**（活链）：笔记里插 `ref` 块（`ref_type='stream'`）。只有笔记读灵感，
+  //   灵感永不回读；删灵感后引用处显示「已失效」，笔记内容不丢。
   // - **复制**（快照）：笔记里插独立段落块 / 画布上建独立块 + 卡片，之后互不相干。
-  // - **转新**（归档）：建成一篇新笔记，速记条目**归档**（2026-10-17 定：不删，
+  // - **转新**（归档）：建成一篇新笔记，灵感条目**归档**（2026-10-17 定：不删，
   //   可回看、可撤销）。
   //
-  // 画布**不做**活链（同日定）：卡片必须有自己的块，速记更新不推送过去。
+  // 画布**不做**活链（同日定）：卡片必须有自己的块，灵感更新不推送过去。
 
-  /// 速记文本（引用解析 / 复制 / 转新的唯一读口）。条目不存在返回 null。
+  /// 灵感文本（引用解析 / 复制 / 转新的唯一读口）。条目不存在返回 null。
   String? streamTextOf(String streamId) => StreamStore(db).textOf(streamId);
 
   /// 复制 / 注入共用的段落块节点。**同时写 `delta` 与 `text`**：`delta` 给 AppFlowy
@@ -185,7 +185,7 @@ class NoteStore {
     return document['children'] as List<Object?>;
   }
 
-  /// **处理台账**：记一次"这条速记流去了哪里"（背景见 [StreamExport]）。
+  /// **处理台账**：记一次"这条灵感流去了哪里"（背景见 [StreamExport]）。
   ///
   /// 只追加、删目标**不清行**：台账是回忆录，不是导航索引。标题取**当时的快照**——
   /// 之后目标改名甚至被删，这一行照样读得懂。
@@ -219,7 +219,7 @@ class NoteStore {
     );
   }
 
-  /// **处理台账**：按速记分组读（一次 `IN` 查完再分组，不在界面里 N 次查）。
+  /// **处理台账**：按灵感分组读（一次 `IN` 查完再分组，不在界面里 N 次查）。
   Map<String, List<StreamExport>> streamExportsOf(Iterable<String> streamIds) {
     if (streamIds.isEmpty) return const <String, List<StreamExport>>{};
     final String marks = List<String>.filled(streamIds.length, '?').join(',');
@@ -281,11 +281,11 @@ class NoteStore {
     }
   }
 
-  /// 由速记文本推导标题（≤20 字，首行）：新建的笔记 / 画布不该叫"无标题"——
+  /// 由灵感文本推导标题（≤20 字，首行）：新建的笔记 / 画布不该叫"无标题"——
   /// 台账念的是《标题》，空标题会让"这条流去了哪"读不出来。
   static String _titleFromText(String text) {
     final String first = text.trim().split('\n').first.trim();
-    if (first.isEmpty) return '速记';
+    if (first.isEmpty) return '灵感';
     return first.length <= 20 ? first : '${first.substring(0, 20)}…';
   }
 
@@ -297,49 +297,13 @@ class NoteStore {
       )
       .isNotEmpty;
 
-  /// **引用到笔记**（活链）：在目标块树里插一个 `ref` 块（`ref_type='stream'`）。
-  /// 速记留在心流；已引用过 ⇒ 幂等 false。
-  bool referenceStreamInNote(String streamId, String noteId) {
-    final Map<String, Object?>? tree = _targetDocTree(noteId);
-    if (tree == null) return false;
-    // 目标条目必须还在：否则插进去的就是一条天生的断链。
-    if (streamTextOf(streamId) == null) return false;
-    final List<Object?> children = _treeChildren(tree);
-    for (final Object? n in children) {
-      if (n is! Map<String, Object?> || n['type'] != _refType) continue;
-      final Object? data = n['data'];
-      if (data is Map<String, Object?> &&
-          data['ref_type'] == _refTargetStream &&
-          data['ref_id'] == streamId) {
-        return false;
-      }
-    }
-    final String refBlockId = _uuid.v4();
-    children.add(<String, Object?>{
-      'id': refBlockId,
-      'type': _refType,
-      'data': <String, Object?>{
-        'ref_type': _refTargetStream,
-        'ref_id': streamId,
-        'ref_view': 'link',
-      },
-    });
-    _persistContentSync(noteId, jsonEncode(tree));
-    _recordStreamExport(
-      streamId,
-      targetType: 'note',
-      targetId: noteId,
-      kind: StreamExportKind.reference,
-      targetBlockId: refBlockId,
-    );
-    // 被引用 = 已使用 ⇒ **自动归档**（2026-10-18 用户定：不再手动归档）。
-    StreamStore(db).archive(streamId);
-    return true;
-  }
+  // 灵感「引用到笔记」的**写入口**已于 2026-10-18 移除（用户定：不再加笔记端
+  // 的插入入口，简化功能）。读侧**保留**：存量 `ref_type='stream'` 块仍能解析 /
+  // 跳转，旧台账里的 `reference` 行也仍能读——只是不能再新建。
 
-  /// **复制到笔记**（快照）：把速记文本复制成目标里的**段落**。
+  /// **复制到笔记**（快照）：把灵感文本复制成目标里的**段落**。
   ///
-  /// 多行速记按行拆成多个段落块——与 `streamToNewNote` 同一口径；否则整段换行
+  /// 多行灵感按行拆成多个段落块——与 `streamToNewNote` 同一口径；否则整段换行
   /// 塞进一个块里，在编辑器里表现成"一块超大段落"（2026-10-17 复查）。
   bool copyStreamIntoNote(String streamId, String noteId) {
     final Map<String, Object?>? tree = _targetDocTree(noteId);
@@ -347,7 +311,7 @@ class NoteStore {
     final String? text = streamTextOf(streamId);
     if (text == null || text.trim().isEmpty) return false;
     final List<Object?> children = _treeChildren(tree);
-    // 第一段（多行速记会拆成多个块）就是"这条流去了哪"的落点。
+    // 第一段（多行灵感会拆成多个块）就是"这条流去了哪"的落点。
     final List<String> lines = StreamStore.linesOf(text);
     final String firstBlockId = _uuid.v4();
     for (int i = 0; i < lines.length; i++) {
@@ -367,7 +331,7 @@ class NoteStore {
   }
 
   /// **复制到画布**（快照卡）：新建一张**独立**卡片（自己的块 + 自己的文本），
-  /// 速记更新不会再推过来（2026-10-17 用户定：画布只复制、不做活链）。
+  /// 灵感更新不会再推过来（2026-10-17 用户定：画布只复制、不做活链）。
   bool copyStreamOntoCanvas(
     String streamId,
     String canvasId, {
@@ -415,8 +379,8 @@ class NoteStore {
     return true;
   }
 
-  /// **转成新笔记**（归档）：建一篇正式笔记装上这段文本，速记条目**归档**
-  /// （不删 —— 速记最怕误删，归档区还能找回来）。
+  /// **转成新笔记**（归档）：建一篇正式笔记装上这段文本，灵感条目**归档**
+  /// （不删 —— 灵感最怕误删，归档区还能找回来）。
   Note? streamToNewNote(String streamId, {NoteKind kind = NoteKind.note}) {
     final String? text = streamTextOf(streamId);
     if (text == null) return null;
@@ -438,9 +402,9 @@ class NoteStore {
     return n;
   }
 
-  /// **合并成一篇新笔记**（**不归档**）：多条速记按时间顺序（旧 → 新）拼成正文。
+  /// **合并成一篇新笔记**（**不归档**）：多条灵感按时间顺序（旧 → 新）拼成正文。
   ///
-  /// 2026-10-18 用户定：合并只是"整理"，条目还算不上被使用 ⇒ 留在心流里，
+  /// 2026-10-18 用户定：合并只是"整理"，条目还算不上被使用 ⇒ 留在灵感里，
   /// 等真正使用（引用 / 转为新笔记等）再归档。
   /// 返回 null = 一条有效的都没有。
   Note? streamMergeToNewNote(List<String> streamIds) {
@@ -483,7 +447,7 @@ class NoteStore {
     return n;
   }
 
-  /// **转成新画布**（归档）：新建一张画布，里面放一条独立卡片（速记文本）。
+  /// **转成新画布**（归档）：新建一张画布，里面放一条独立卡片（灵感文本）。
   Note? streamToNewCanvas(String streamId) {
     final String? text = streamTextOf(streamId);
     if (text == null) return null;
@@ -499,7 +463,7 @@ class NoteStore {
         },
       }),
     );
-    // 卡片建失败就**别归档**（否则速记被标成已处理、却哪儿都没有）——顺手把这张
+    // 卡片建失败就**别归档**（否则灵感被标成已处理、却哪儿都没有）——顺手把这张
     // 空画布删掉，不留半成品。
     if (!copyStreamOntoCanvas(
       streamId,
@@ -594,7 +558,7 @@ class NoteStore {
       'created_at, revised_at, promoted_at FROM notes '
       // 回收站里的笔记不进列表（2026-10-18 全局回收站）。
       'WHERE deleted_at IS NULL '
-      // v16 起速记不再是笔记（独立表 `stream_items`）⇒ 已没有要排除的形态。
+      // v16 起灵感不再是笔记（独立表 `stream_items`）⇒ 已没有要排除的形态。
       'ORDER BY (promoted_at IS NULL) ASC, promoted_at DESC, '
       'revised_at DESC, created_at DESC, id ASC',
     );
@@ -980,7 +944,7 @@ class NoteStore {
     return textOfProps(rs.first['props_json'] as String?);
   }
 
-  /// **流向预览**（P2）：这条速记落地后那一块的**真实正文**。
+  /// **流向预览**（P2）：这条灵感落地后那一块的**真实正文**。
   ///
   /// 台账不再只给一个标题——扫读时就想看到"它变成了什么"，所以直接把落点块的
   /// 文本取回来（画布卡与笔记段落同在 `blocks` 里，一把查询通吃）。
@@ -1230,11 +1194,11 @@ class NoteStore {
     return out;
   }
 
-  /// **来自速记的反链**（双链的另一半）：这篇笔记收过哪些速记、怎么收的。
+  /// **来自灵感的反链**（双链的另一半）：这篇笔记收过哪些灵感、怎么收的。
   ///
   /// 与 [backlinks] 的方向相反，数据来源也相反：结构化引用（`ref` 块 / 画布卡）
   /// 那边已经能查到；而**复制是快照、没有边**，只能靠台账 `stream_exports`。
-  /// 一条速记对同一目标可能有多种手法（先复制后又转新）⇒ 按速记去重，留最新那笔。
+  /// 一条灵感对同一目标可能有多种手法（先复制后又转新）⇒ 按灵感去重，留最新那笔。
   List<StreamSource> streamSourcesOf(String noteId) {
     final ResultSet rs = db.select(
       'SELECT e.stream_id AS sid, s.text AS text, e.kind AS kind, '
@@ -1280,7 +1244,7 @@ class NoteStore {
   ///
   /// [limit] 只在 `refType='note'` 时生效（整篇可能很长，不能全展开）。
   List<EmbedLine> embedPreview(String refType, String refId, {int limit = 30}) {
-    // 速记是独立表：不在这里拦，`ref_view='embed'` 的速记引用会得到一个空嵌入框。
+    // 灵感是独立表：不在这里拦，`ref_view='embed'` 的灵感引用会得到一个空嵌入框。
     if (refType == _refTargetStream) {
       final ResultSet rs = db.select(
         'SELECT text FROM stream_items WHERE id = ?',

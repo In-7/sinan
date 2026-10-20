@@ -27,9 +27,9 @@ class RefBlockKeys {
   static const String refId = 'ref_id';
   static const String refView = 'ref_view';
 
-  /// [refType] 的取值：引用整篇笔记 / 引用某一块 / 引用一条**速记**。
+  /// [refType] 的取值：引用整篇笔记 / 引用某一块 / 引用一条**灵感**。
   ///
-  /// `stream` 的目标在独立表 `stream_items`（心流，见 `StreamStore`）——
+  /// `stream` 的目标在独立表 `stream_items`（灵感，见 `StreamStore`）——
   /// 不在 `notes` / `blocks` 里，所以解析与跳转都走自己那条路。
   static const String refNote = 'note';
   static const String refBlock = 'block';
@@ -369,8 +369,8 @@ class _RefBlockComponentWidgetState extends State<RefBlockComponentWidget>
     if (missing) return '断链';
     return switch (refType) {
       RefBlockKeys.refBlock => '引用',
-      // 速记是独立数据（不在任何笔记里），标签与笔记 / 块都不同。
-      RefBlockKeys.refStream => '速记',
+      // 灵感是独立数据（不在任何笔记里），标签与笔记 / 块都不同。
+      RefBlockKeys.refStream => '灵感',
       _ => '笔记',
     };
   }

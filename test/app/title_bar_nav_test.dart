@@ -23,10 +23,10 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// 替代当日早上的 50 最左图标轨）。
 ///
 /// 钉的是这几条结构性事实：
-/// ① **标题栏不放导航**（2026-10-12 用户定：取消左侧索引面板后，四枚目的地
+/// ① **标题栏不放目的地导航**（2026-10-12 用户定：取消左侧索引面板后，四枚目的地
 ///    + 新建胶囊搬到工作区**左侧扁平导航** [AppIconRail]，无面板、贴窗口底）；
-///    上一步 / 下一步 的 UI 入口已撤（功能仍在全局键 `Alt+←/→`）。条内只剩
-///    拖拽区 + 右簇设置钮 + 窗控；
+///    上一步 / 下一步 在条内左簇（内容卡左缘 + 12px 呼吸，不随布局移动，
+///    2026-10-19 用户定），栈空置灰；
 /// ② 条下无分割线：工作区是 8px 环缝内的圆角浮面卡（CalendarPage 几何即卡几何）；
 /// ③ 问笔记不是顶条钮：它是工作区右角折叠钮，钉在内容卡内缘 4px、y 与编辑页
 ///    顶栏「标签」耳按钮同高；
@@ -107,7 +107,7 @@ void main() {
   }
 
   /// 四枚目的地的名称（= [HomeView.label]，左侧 [AppIconRail] 导航文字）。
-  const List<String> kDestinations = <String>['心流', '全部', '日历', '收藏'];
+  const List<String> kDestinations = <String>['灵感', '全部', '日历', '收藏'];
 
   /// 点左侧 [AppIconRail] 的某个视图导航（切换主区视图）。
   Future<void> tapViewTab(WidgetTester tester, String label) async {
@@ -117,7 +117,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('标题栏无目的地导航：目的地不在条内；历史钮在条内左端且与内容卡对齐', (
+  testWidgets('标题栏无目的地导航：目的地不在条内；历史钮在内容卡左缘内缩 12px', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
@@ -134,8 +134,8 @@ void main() {
         reason: '$label 在左侧 AppIconRail（tooltip），标题栏不该再有',
       );
     }
-    // 上一步 / 下一步：2026-10-15 用户定**加回标题栏左端**（左缘由
-    // leadingInset = 侧栏宽 ⇒ 与内容卡左缘对齐）；栈空时置灰（不进 Tab 链）。
+    // 上一步 / 下一步：2026-10-19 用户定**内容卡左缘 + 12px 呼吸**；
+    // 两枚钮相接、位置不随列表折叠 / 视图移动。栈空时置灰（不进 Tab 链）。
     expect(
       find.byTooltip('上一步（Alt+←）'),
       findsOneWidget,
@@ -146,12 +146,19 @@ void main() {
       findsOneWidget,
       reason: '下一步钮在标题栏左簇',
     );
-    // 左缘与内容卡左缘严格对齐（内容卡左缝为 0 ⇒ 就是轨宽 48）。
     final Rect backRect = tester.getRect(find.byTooltip('上一步（Alt+←）'));
+    final Rect forwardRect = tester.getRect(find.byTooltip('下一步（Alt+→）'));
+    // 两枚钮相接（64 宽簇）。
+    expect(
+      backRect.right,
+      closeTo(forwardRect.left, 0.5),
+      reason: '两枚钮相接',
+    );
+    // 内容卡左缘（轨宽 60）+ 12px 呼吸。
     expect(
       backRect.left,
-      closeTo(Tokens.railWidth, 0.5),
-      reason: '左簇与内容卡左缘对齐（轨宽 48）',
+      closeTo(Tokens.railWidth + Tokens.spaceMd, 0.5),
+      reason: '历史簇在内容卡左缘内缩 12px',
     );
     // 条内垂直居中（条高 32 ⇒ 中心 16）。
     expect(
@@ -161,13 +168,20 @@ void main() {
     );
     // 视图导航 + 新建胶囊在工作区左侧扁平导航（AppIconRail）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    // 2026-10-17：心流 = **速记页**（一页纸流），不做主从布局 ⇒ 默认视图里
+    // 2026-10-17：灵感 = **灵感页**（一页纸流），不做主从布局 ⇒ 默认视图里
     // 没有列表列；列表列只服务「全部 / 收藏」（下面切过去再验）。
     expect(find.byType(NoteListColumn), findsNothing);
-    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '心流是速记页');
+    expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '灵感是灵感页');
     await tapViewTab(tester, '全部');
     expect(find.byType(NoteListColumn), findsOneWidget,
         reason: '全部 / 收藏才走主从列表列');
+    // 固定锚点：切到「全部」（列表 + 折叠钮出现）后历史簇位置不变。
+    final Rect backAll = tester.getRect(find.byTooltip('上一步（Alt+←）'));
+    expect(
+      backAll.left,
+      closeTo(backRect.left, 0.5),
+      reason: '历史簇不随列表/折叠钮出现而移动',
+    );
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
@@ -209,7 +223,7 @@ void main() {
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 四枚目的地以**视图导航**形式常驻最左 AppIconRail（心流 / 全部 / 日历 / 收藏）。
+    // 四枚目的地以**视图导航**形式常驻最左 AppIconRail（灵感 / 全部 / 日历 / 收藏）。
     // 轨上钮是图标 + tooltip（不是文字行）⇒ 用 find.byTooltip 定位。
     for (final String label in kDestinations) {
       expect(
@@ -232,7 +246,7 @@ void main() {
     expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
         reason: '新建胶囊（图标模式）在 AppIconRail');
 
-    // 默认视图 = 心流。
+    // 默认视图 = 灵感。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
 
     // 编辑态：CalendarPage 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航 /
@@ -264,7 +278,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(WindowStrip),
-        matching: find.byTooltip('心流'),
+        matching: find.byTooltip('灵感'),
       ),
       findsNothing,
       reason: '标题栏不放导航',
@@ -274,12 +288,12 @@ void main() {
   testWidgets('顶条目的地切视图驱动统一历史：切到日历后箭头可退回、可重做', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
-    // 起点是「心流」（2026-10-05 决策 C 的默认视图），点左侧 AppIconRail「日历」导航换视图。
+    // 起点是「灵感」（2026-10-05 决策 C 的默认视图），点左侧 AppIconRail「日历」导航换视图。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     await tapViewTab(tester, '日历');
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
 
-    // 上一步：退回「心流」。UI 入口已撤，走 provider（与全局键 Alt+←/→ 同一条路）。
+    // 上一步：退回「灵感」。UI 入口已撤，走 provider（与全局键 Alt+←/→ 同一条路）。
     container.read(navHistoryProvider.notifier).goBack();
     await tester.pumpAndSettle();
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
@@ -291,7 +305,7 @@ void main() {
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
   });
 
-  testWidgets('编辑器在统一历史栈里：切心流→上一步=回笔记，再上一步=回日历', (WidgetTester tester) async {
+  testWidgets('编辑器在统一历史栈里：切灵感→上一步=回笔记，再上一步=回日历', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
     // 与真实点击路径一致：点左侧 AppIconRail「日历」导航换视图，再走 locateProvider
@@ -305,15 +319,15 @@ void main() {
     expect(find.byTooltip('上一步'), findsNothing);
     expect(find.byTooltip('下一步'), findsNothing);
 
-    // AppIconRail 两态常驻 ⇒ 编辑器里直接点「心流」导航离开编辑器、落回「心流」，
+    // AppIconRail 两态常驻 ⇒ 编辑器里直接点「灵感」导航离开编辑器、落回「灵感」，
     // 并把"这篇笔记"记入统一历史。
-    await tapViewTab(tester, '心流');
+    await tapViewTab(tester, '灵感');
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull, reason: '先离开编辑器');
     expect(
       container.read(navHistoryProvider).view,
       HomeView.timeline,
-      reason: '心流是默认落地页（2026-10-05 决策 C）',
+      reason: '灵感是默认落地页（2026-10-05 决策 C）',
     );
 
     // 上一步：按点击顺序回到刚离开的那篇笔记（重新打开编辑器）。
@@ -327,7 +341,7 @@ void main() {
     expect(container.read(selectedNoteIdProvider), isNull, reason: '离开编辑器');
     expect(container.read(navHistoryProvider).view, HomeView.calendar);
 
-    // 下一步×2：原路重做——先回笔记，再回心流。
+    // 下一步×2：原路重做——先回笔记，再回灵感。
     container.read(navHistoryProvider.notifier).goForward();
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), note.id);

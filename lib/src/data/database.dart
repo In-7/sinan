@@ -434,7 +434,7 @@ class AppDatabase {
       db.userVersion = 13;
     }
 
-    // v14：notes 表重建——`kind` 加第四个取值 `'stream'`（心流收件箱的系统容器，
+    // v14：notes 表重建——`kind` 加第四个取值 `'stream'`（灵感收件箱的系统容器，
     // 隐藏，不进文库/搜索/日历）。SQLite 不能改 CHECK ⇒ 同 v6 整表重建，但这次把
     // v6 之后新增的 `deleted_at` / `tags` / `summary` 一并拷过去。
     if (db.userVersion < 14) {
@@ -458,10 +458,10 @@ class AppDatabase {
       db.userVersion = 15;
     }
 
-    // v16：心流**独立存储**（2026-10-17 用户定）。
+    // v16：灵感**独立存储**（2026-10-17 用户定）。
     //
-    // 此前心流是"一篇隐藏笔记（`kind='stream'`）+ 一串段落块"，每处下游都要写
-    // `kind != 'stream'` 的特例，且速记会混进块选择器 / 反链上下文。现在搬进
+    // 此前灵感是"一篇隐藏笔记（`kind='stream'`）+ 一串段落块"，每处下游都要写
+    // `kind != 'stream'` 的特例，且灵感会混进块选择器 / 反链上下文。现在搬进
     // 独立表 `stream_items`（无外键指向 notes/blocks），**id 沿用旧块 id**，
     // 于是已有的 `ref` 引用只需把 `ref_type` 改成 `'stream'` 就不断链。
     if (db.userVersion < 16) {
@@ -471,7 +471,7 @@ class AppDatabase {
 
     // v17：**处理台账**（2026-10-18 定）。
     //
-    // 「已处理」原本只是个能拿回来的仓库（＝可撤销的删除），它没回答速记真正要
+    // 「已处理」原本只是个能拿回来的仓库（＝可撤销的删除），它没回答灵感真正要
     // 的那件事：这条灵感最后**变成了什么**。现在每次导出（引用 / 复制 / 转新 /
     // 合并）写一行 `stream_exports`，回收列举时就能念出
     // `一条想法 → 笔记《周五的闲聊》`。
@@ -497,7 +497,7 @@ class AppDatabase {
       db.userVersion = 18;
     }
 
-    // v19：速记**媒体附件**（2026-10-18 加：输入框可贴图片/视频）。
+    // v19：灵感**媒体附件**（2026-10-18 加：输入框可贴图片/视频）。
     //
     // 只存"app 私有目录里那份独立副本"的路径——源截图被删也不影响（[StreamStore.remove]
     // 级联删文件）。二进制不进 SQLite（视频太大）。`kind` 枚举在应用层约束，
@@ -521,7 +521,7 @@ class AppDatabase {
       db.userVersion = 19;
     }
 
-    // v20：速记**回收站**（2026-10-18 定）：删除 = 软删（`deleted_at` 非空），
+    // v20：灵感**回收站**（2026-10-18 定）：删除 = 软删（`deleted_at` 非空），
     // 列表默认过滤；回收站里可恢复或彻底删除。归档仍走 `archived_at`。
     if (db.userVersion < 20) {
       if (!_hasColumn(db, 'stream_items', 'deleted_at')) {
@@ -591,14 +591,14 @@ class AppDatabase {
       ON stream_exports (created_at DESC);
   ''';
 
-  /// v16：把旧的"隐藏心流笔记 + 段落块"搬进独立表 `stream_items`。
+  /// v16：把旧的"隐藏灵感笔记 + 段落块"搬进独立表 `stream_items`。
   ///
   /// 四件事，顺序不能换：
   /// 1. 建表；把容器里的段落逐条搬过去（**id 沿用旧块 id**，`created_at` 优先
   ///    取块行的时间，"最新在上"的排序不飘）；
   /// 2. 笔记里指向这些块的 `ref` 块：`ref_type` 由 `block` 改为 `stream`
   ///    （id 没变 ⇒ 引用不断）；
-  /// 3. 画布上指向这些块的卡片：转成**独立复制卡**（v16 起心流不做画布活链，
+  /// 3. 画布上指向这些块的卡片：转成**独立复制卡**（v16 起灵感不做画布活链，
   ///    详见方案"画布只复制、不引用"）——不先处理，删容器时它们会变成空框；
   /// 4. 删容器（CASCADE 清它的块）。删前把原文备份进 `settings`，可人工找回。
   ///
@@ -673,7 +673,7 @@ class AppDatabase {
     }
   }
 
-  /// 旧心流容器的一块：id + 文本（`data.text` 优先，回退 `delta` 拼接）。
+  /// 旧灵感容器的一块：id + 文本（`data.text` 优先，回退 `delta` 拼接）。
   static List<_LegacyStream> _legacyStreamItems(String raw) {
     if (raw.trim().isEmpty) return const <_LegacyStream>[];
     Object? decoded;
@@ -711,7 +711,7 @@ class AppDatabase {
     return '';
   }
 
-  /// 把画布上**指向旧心流块**的卡片转成独立复制卡：换一个新块 id（块行当场建好）、
+  /// 把画布上**指向旧灵感块**的卡片转成独立复制卡：换一个新块 id（块行当场建好）、
   /// 保留文本，再删掉旧投影行（指向即将消失的块）。缩略图快路径会因行数不符自动
   /// 回落到 JSON，下一次保存/回填重建投影。
   static void _repointStreamCardsV16(Database db, Set<String> streamIds) {
@@ -980,7 +980,7 @@ class AppDatabase {
     }
   }
 
-  /// v14：`notes.kind` 的 CHECK 加 `'stream'`（心流系统容器，见 [NoteKind.stream]）。
+  /// v14：`notes.kind` 的 CHECK 加 `'stream'`（灵感系统容器，见 [NoteKind.stream]）。
   /// 同 v6 整表重建，但拷贝**当前全部列**（含 v6 之后的 `deleted_at` / `tags` / `summary`）。
   static void _rebuildNotesForV14(Database db) {
     db.execute('PRAGMA foreign_keys = OFF;');
@@ -1026,7 +1026,7 @@ class AppDatabase {
   void close() => db.close();
 }
 
-/// v16 迁移用：旧心流容器里的一条（块 id + 文本）。
+/// v16 迁移用：旧灵感容器里的一条（块 id + 文本）。
 class _LegacyStream {
   const _LegacyStream(this.id, this.text);
 

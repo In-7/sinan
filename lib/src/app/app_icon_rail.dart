@@ -17,7 +17,7 @@ import 'trash_panel.dart' show showTrash;
 /// 「品牌行 + 搜索 + 新建 + 四视图」收成一列图标。
 ///
 /// 上→下：**logo（装饰）· 搜索（Ctrl+K）· 新建「+」**，弹性 spacer，**四枚视图图标**
-/// （心流 / 全部 / 日历 / 收藏）。选中 = hover 2× 的 selectedBg（亮 onSurface@8% /
+/// （灵感 / 全部 / 日历 / 收藏）。选中 = hover 2× 的 selectedBg（亮 onSurface@8% /
 /// 暗 white@12%），hover = [AppTheme.hoverOverlay]，同旧侧栏口径。
 ///
 /// 第二阶段的 208 列表列接在它右边；本轨是 App 脊梁（Phase D 起常驻不折叠）。
@@ -71,7 +71,7 @@ class AppIconRail extends ConsumerWidget {
                 ),
               ),
             const SizedBox(height: Tokens.spaceXs),
-            // **全局回收站**（2026-10-18）：笔记 / 画布 / 速记一个入口。
+            // **全局回收站**（2026-10-18）：笔记 / 画布 / 灵感一个入口。
             _RailButton(
               tooltip: trashCount > 0 ? '回收站（$trashCount）' : '回收站',
               onTap: showTrash,
@@ -90,7 +90,7 @@ class AppIconRail extends ConsumerWidget {
 }
 
 String _viewLabel(HomeView v) => switch (v) {
-  HomeView.timeline => '心流',
+  HomeView.timeline => '灵感',
   HomeView.all => '全部',
   HomeView.calendar => '日历',
   HomeView.favorites => '收藏',

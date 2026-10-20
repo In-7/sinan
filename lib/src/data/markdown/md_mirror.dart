@@ -21,7 +21,7 @@ import 'block_serializer.dart';
 ///
 /// ## 不导的
 /// - `canvas`：画布是空间排版，压成 Markdown 没有意义；
-/// - `stream`：心流收件箱的系统隐藏容器，不该出现在用户文件系统里。
+/// - `stream`：灵感收件箱的系统隐藏容器，不该出现在用户文件系统里。
 ///
 /// ## 引用 = wikilink
 /// `ref` 块导出成 `[[文件名]]`（`ref_view='embed'` ⇒ `![[文件名]]`）：引用边本来
@@ -164,7 +164,7 @@ class MdMirror {
 
   MdRefLink? _resolveRef(String refType, String refId) {
     if (refId.isEmpty) return null;
-    // 速记（心流）没有镜像文件 ⇒ 落纯文本，不往 Obsidian 图谱里塞死链。
+    // 灵感没有镜像文件 ⇒ 落纯文本，不往 Obsidian 图谱里塞死链。
     if (refType == 'stream') {
       final ResultSet rs = db.select(
         'SELECT text FROM stream_items WHERE id = ?',
@@ -176,7 +176,7 @@ class MdMirror {
       final String label = first.length <= 24
           ? first
           : '${first.substring(0, 24)}…';
-      return MdRefLink('速记：${label.isEmpty ? '（空）' : label}', linked: false);
+      return MdRefLink('灵感：${label.isEmpty ? '（空）' : label}', linked: false);
     }
     final ResultSet rs = refType == 'block'
         ? db.select(
@@ -196,9 +196,9 @@ class MdMirror {
     // 有镜像文件的形态：链接目标必须**等于文件名**（`_slug`），否则 Obsidian
     // 解析不到（标题里的 `/ : *` 在文件名里已被消毒）。
     if (kind == 'note' || kind == 'spark') return MdRefLink(_slug(title));
-    // 画布 / 心流没有 .md：写纯文本并标出形态，避免在 Obsidian 里长出死链节点。
+    // 画布 / 灵感没有 .md：写纯文本并标出形态，避免在 Obsidian 里长出死链节点。
     final String label = title.isEmpty ? '未命名笔记' : title;
-    return MdRefLink('$label（${kind == 'canvas' ? '画布' : '心流'}）', linked: false);
+    return MdRefLink('$label（${kind == 'canvas' ? '画布' : '灵感'}）', linked: false);
   }
 
   /// 块树（v2 文档 JSON 里的 `document` 节点）；无块行 ⇒ null（走纯文本兜底）。

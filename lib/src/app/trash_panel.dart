@@ -13,7 +13,7 @@ import 'providers.dart';
 import 'settings_panel.dart' show appNavigatorKey, settingsScrimAlpha;
 import 'stream_delete.dart' show showStreamConfirm;
 
-/// **全局回收站浮层**（2026-10-18）：笔记 / 画布 / 速记 统一一个入口。
+/// **全局回收站浮层**（2026-10-18）：笔记 / 画布 / 灵感 统一一个入口。
 ///
 /// 与设置 / 台账同一套浮层形态：背后页面原样留着，Esc / 点卡片外关闭。
 /// 入口在最左图标轨底部（见 `app_icon_rail.dart`）。
@@ -245,7 +245,7 @@ class _TrashCardState extends ConsumerState<_TrashCard> {
                 ),
                 ButtonSegment<_TrashFilter>(
                   value: _TrashFilter.stream,
-                  label: Text('速记 ${count(TrashKind.stream)}'),
+                  label: Text('灵感 ${count(TrashKind.stream)}'),
                 ),
                 ButtonSegment<_TrashFilter>(
                   value: _TrashFilter.note,
@@ -322,7 +322,7 @@ class _TrashCardState extends ConsumerState<_TrashCard> {
             ),
             child: Text(
               switch (e.kind) {
-                TrashKind.stream => '速记',
+                TrashKind.stream => '灵感',
                 TrashKind.note => '笔记',
                 TrashKind.canvas => '画布',
               },

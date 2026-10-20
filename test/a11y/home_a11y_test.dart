@@ -21,13 +21,13 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// 这里的断言（回归即红）：
 ///
 /// 1. **状态缺失**：侧栏导航 `button=false / selected=false / enabled=false`
-///    ⇒ 读屏只念"心流"，既不知可点、也不知哪个是当前视图；
+///    ⇒ 读屏只念"灵感"，既不知可点、也不知哪个是当前视图；
 /// 2. **状态缺失**：「新建」枢纽 `button=false / hasExpandedState=false`
 ///    ⇒ 不知可点、也不知展开态；
 /// 3. **顺序重复**：`FocusableActionDetector` + `InkWell` 各自建焦点
 ///    ⇒ 笔记/画布在 Tab 链里各占两站；
 /// 4. **顺序交错**：默认 `ReadingOrder` 按几何位置排 ⇒ 侧栏与内容区交错
-///    （实测：心流→全部→日历→卡片乙→收藏→卡片甲）。
+///    （实测：灵感→全部→日历→卡片乙→收藏→卡片甲）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -77,7 +77,7 @@ void main() {
     await _auditHome(tester, store, settings, Brightness.light);
 
     // 侧栏四枚导航：都必须是**可操作的按钮**，且带选中态位；
-    // 当前视图（默认心流）必须 selected=true。
+    // 当前视图（默认灵感）必须 selected=true。
     // 断言**控件声明**（比读运行时语义树可靠：标签与状态标记在树里可能未合并到
     // 同一个节点，但控件确实声明了它们 ⇒ 读屏最终能拿到）。
     bool declares({
@@ -100,7 +100,7 @@ void main() {
             .isNotEmpty;
 
     // 四枚视图导航都要声明 button + selected（可读屏才知"可点"与"当前是哪个"）。
-    // ⚠️ 已处理**不是**导航站（2026-10-18 用户定：低频功能，是心流页表头那枚计数
+    // ⚠️ 已处理**不是**导航站（2026-10-18 用户定：低频功能，是灵感页表头那枚计数
     // 弹出来的浮层，见 `showStreamLedger`）⇒ 仍四枚。
     final int navDeclared = find
         .descendant(
@@ -158,19 +158,19 @@ void main() {
     int at(String mark) => a.order.indexWhere((List<String> m) => m.contains(mark));
 
     // 侧栏四枚导航依次出现。
-    final int flow = at('心流');
+    final int flow = at('灵感');
     final int all = at('全部');
     final int cal = at('日历');
     final int fav = at('收藏');
     for (final (String k, int i) in <(String, int)>[
-      ('心流', flow),
+      ('灵感', flow),
       ('全部', all),
       ('日历', cal),
       ('收藏', fav),
     ]) {
       expect(i, isNot(-1), reason: '「$k」不在 Tab 链里');
     }
-    expect(flow, lessThan(all), reason: '导航顺序：心流在全部之前');
+    expect(flow, lessThan(all), reason: '导航顺序：灵感在全部之前');
     expect(all, lessThan(cal), reason: '导航顺序：全部在日历之前');
     expect(cal, lessThan(fav), reason: '导航顺序：日历在收藏之前');
 
@@ -178,7 +178,7 @@ void main() {
     final int card = at('甲');
     expect(card, isNot(-1), reason: '内容卡片不在 Tab 链里');
     for (final (String k, int i) in <(String, int)>[
-      ('心流', flow),
+      ('灵感', flow),
       ('全部', all),
       ('日历', cal),
       ('收藏', fav),
@@ -250,8 +250,8 @@ Future<_HomeAudit> _auditHome(
 ) async {
   store.create(title: '甲');
   store.create(title: '乙');
-  // 心流默认视图要有一张卡可聚焦：心流**不读笔记**（独立速记表）⇒ 必须显式录一条
-  // 速记，否则默认视图里没有任何内容控件，焦点顺序测试找不到"内容卡片"标记。
+  // 灵感默认视图要有一张卡可聚焦：灵感**不读笔记**（独立灵感表）⇒ 必须显式录一条
+  // 灵感，否则默认视图里没有任何内容控件，焦点顺序测试找不到"内容卡片"标记。
   StreamStore(store.db).add('甲');
 
   // 宽逻辑面跑：HomeScreen 有窄窗自动折列表（< [Tokens.noteListBreakpoint]=1040），
@@ -268,7 +268,7 @@ Future<_HomeAudit> _auditHome(
         noteStoreProvider.overrideWithValue(store),
         settingsStoreProvider.overrideWithValue(settings),
         appDataDirProvider.overrideWithValue('C:\\test\\sinan'),
-        // 速记走独立 store（`stream_items`），它经 databaseProvider 取连接。
+        // 灵感走独立 store（`stream_items`），它经 databaseProvider 取连接。
         databaseProvider.overrideWithValue(store.db),
       ],
       child: MaterialApp(
@@ -316,7 +316,7 @@ Future<_HomeAudit> _auditHome(
 
   // 语义节点快照（在 Tab 打乱焦点前先取）。
   //
-  // 2026-10-17：速记页挂载后会自动聚焦顶部捕获区（"进入即写"的产品决定）。
+  // 2026-10-17：灵感页挂载后会自动聚焦顶部捕获区（"进入即写"的产品决定）。
   // 本用例验的是**遍历顺序**（侧栏先于内容），不是初始焦点 ⇒ 先清掉焦点，
   // 让 Tab 从根开始走，否则第一站会落在内容区的输入框上。
   FocusManager.instance.primaryFocus?.unfocus();
@@ -343,7 +343,7 @@ Future<_HomeAudit> _auditHome(
 ///
 /// `textContrastGuideline` 对 `ListView` 的**首个**子节点取到的是"可滚动子树的
 /// 局部坐标"（`Rect.fromLTRB(0, 0, …)`），它拿这个坐标直接当屏幕位置采样 ——
-/// 采到的其实是窗口左上角标题栏，于是"背景 vs 背景"算出 1.09:1。心流的日期组
+/// 采到的其实是窗口左上角标题栏，于是"背景 vs 背景"算出 1.09:1。灵感的日期组
 /// 标题（`isHeader`）正好是首个节点，2026-10-17 起就撞在这上面。
 ///
 /// 真实颜色是 ink 62% 压在面板底上（≈5.1:1），像素上没问题；所以这里**只**放行

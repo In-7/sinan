@@ -187,22 +187,22 @@ final notesProvider = AsyncNotifierProvider<NotesNotifier, List<Note>>(
   NotesNotifier.new,
 );
 
-/// 速记存储（心流收件箱）。独立表、独立 store，与笔记 / 画布无反向依赖。
+/// 灵感存储（灵感收件箱）。独立表、独立 store，与笔记 / 画布无反向依赖。
 final streamStoreProvider = Provider<StreamStore>(
   (Ref ref) => StreamStore(ref.watch(databaseProvider)),
 );
 
-/// **处理台账**：每条速记流去了哪些笔记 / 画布（`stream_id` → 去向列表）。
+/// **处理台账**：每条灵感流去了哪些笔记 / 画布（`stream_id` → 去向列表）。
 ///
-/// 为什么不全塞进 [streamProvider]：去向是**笔记侧的写操作**产生的，速记 store
+/// 为什么不全塞进 [streamProvider]：去向是**笔记侧的写操作**产生的，灵感 store
 /// 不该碰笔记表（硬隔离）。写完之后由导出调用方 `invalidate` 本 provider。
 final streamExportsProvider = Provider<Map<String, List<StreamExport>>>(
   (Ref ref) => ref.watch(noteStoreProvider).allStreamExports(),
 );
 
-/// 从笔记里的**速记引用**跳过来时要停在哪一条（`null` = 正常时间流）。
+/// 从笔记里的**灵感引用**跳过来时要停在哪一条（`null` = 正常时间流）。
 ///
-/// 引用块只知道 `ref_id`；心流页用这个 id 把列表临时收窄到那一条并给出
+/// 引用块只知道 `ref_id`；灵感页用这个 id 把列表临时收窄到那一条并给出
 /// 「显示全部」出口——比"切过去然后自己往下翻"准确得多（没有滚动索引）。
 class StreamFocusNotifier extends Notifier<String?> {
   @override
@@ -217,7 +217,7 @@ final streamFocusProvider = NotifierProvider<StreamFocusNotifier, String?>(
   StreamFocusNotifier.new,
 );
 
-/// **速记 / 心流**（2026-10-17 定：独立存储的单向捕获流）。
+/// **灵感**（2026-10-17 定：独立存储的单向捕获流）。
 ///
 /// 只经 [StreamStore] 读写 `stream_items`：文库 / 搜索 / 日历 / Markdown 镜像
 /// 都看不到它。条目只能**单向流出**（引用 / 复制到笔记、复制到画布、转新），
@@ -309,7 +309,7 @@ class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
     ref.invalidate(trashProvider);
   }
 
-  /// 带附件录入（输入框贴了图片/视频）：先落速记（允许空文本当有附件），
+  /// 带附件录入（输入框贴了图片/视频）：先落灵感（允许空文本当有附件），
   /// 再逐条写附件元数据——文件已由 UI 拷进 app 私有目录，这里只收路径。
   Future<StreamItem?> addMedia(
     String text,
@@ -334,7 +334,7 @@ class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
   }
 }
 
-/// 某条速记的媒体附件（图片 / 视频）。落库即不变（MVP 不编辑附件），
+/// 某条灵感的媒体附件（图片 / 视频）。落库即不变（MVP 不编辑附件），
 /// 故只在"新增附件 / 删除条目"时按需 invalidate。
 final streamAttachmentsProvider =
     Provider.family<List<StreamAttachment>, String>(
@@ -345,7 +345,7 @@ final streamProvider = AsyncNotifierProvider<StreamNotifier, List<StreamItem>>(
   StreamNotifier.new,
 );
 
-/// **全局回收站**：笔记/画布（`notes.deleted_at`）+ 速记（`stream_items.deleted_at`）。
+/// **全局回收站**：笔记/画布（`notes.deleted_at`）+ 灵感（`stream_items.deleted_at`）。
 /// 写路径（trash / restore / purge）负责 invalidate。
 final trashProvider = Provider<List<TrashEntry>>((Ref ref) {
   final List<TrashEntry> notes = ref.watch(noteStoreProvider).listTrashNotes();
@@ -357,7 +357,7 @@ final trashProvider = Provider<List<TrashEntry>>((Ref ref) {
         kind: TrashKind.stream,
         id: s.id,
         title: s.text.trim().isEmpty
-            ? '（图片速记）'
+            ? '（图片）'
             : s.text.trim().split('\n').first.trim(),
         deletedAt: s.deletedAt!,
       ),
@@ -543,9 +543,10 @@ final answerServiceProvider = Provider<AnswerService>(
 /// 扫描）。视图的 `icon()` 扩展仍在 home_hub.dart——要引用 tabler /
 /// CustomIcons，不进 DI 层。
 enum HomeView {
-  /// **心流**：按 `revisedAt` 分组的时间流（今天 / 昨天 / 本周…）。
+  /// **灵感**：按 `revisedAt` 分组的时间流（今天 / 昨天 / 本周…）。
   /// **启动默认视图**（2026-10-05 决策 C），也是最左图标轨第一枚。
-  timeline('心流'),
+  /// （2026-10-20 用户定：页面名统一为「灵感」；代码仍叫 stream。）
+  timeline('灵感'),
   all('全部'),
   calendar('日历'),
   favorites('收藏');
@@ -633,7 +634,7 @@ class NavHistoryNotifier extends Notifier<NavHistoryState> {
 
   @override
   NavHistoryState build() => const NavHistoryState(
-    // 启动默认落「心流」（2026-10-05 决策 C）——与 [kHomeTabs] 首枚保持一致。
+    // 启动默认落「灵感」（2026-10-05 决策 C）——与 [kHomeTabs] 首枚保持一致。
     view: HomeView.timeline,
     canGoBack: false,
     canGoForward: false,
@@ -1066,7 +1067,7 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     ref.invalidate(trashProvider);
   }
 
-  /// 清空回收站里的笔记部分（速记由调用方另行清空）。
+  /// 清空回收站里的笔记部分（灵感由调用方另行清空）。
   Future<int> purgeAllTrashNotes() async {
     await _settled();
     final int n = await _store.purgeAllTrash();

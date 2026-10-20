@@ -19,7 +19,7 @@ import 'package:sqlite3/sqlite3.dart';
 /// 日历页（原名 `HomeHub`，2026-10-17 改名 `CalendarPage`）的回归。
 ///
 /// 钉的是"这一页是什么"这几条结构性事实：
-/// ① 目的地（心流/全部/日历/收藏）**不在本页里**——在工作区左侧扁平导航
+/// ① 目的地（灵感/全部/日历/收藏）**不在本页里**——在工作区左侧扁平导航
 ///    [AppIconRail]（title_bar_nav_test.dart 钉）；标题栏 [WindowStrip] 也不放；
 ///    本文件用 [navHistoryProvider] 直接驱动视图来验内容分发；
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
@@ -145,7 +145,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('速记（心流）不再由本页渲染：宿主是外壳的 StreamView', (
+  testWidgets('灵感不再由本页渲染：宿主是外壳的 StreamView', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pumpHub(
@@ -153,16 +153,16 @@ void main() {
       titles: <String>['甲', '乙'],
     );
 
-    // 2026-10-05 决策 C：启动默认落「心流」——导航态不变。
+    // 2026-10-05 决策 C：启动默认落「灵感」——导航态不变。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    // ⚠️ 2026-10-17 修：速记页曾经挂在本组件的 timeline 分支里，而桌面壳改走
-    // 主从布局后该分支永远走不到（用户实报"改了速记界面、打开完全没有变化"）。
+    // ⚠️ 2026-10-17 修：灵感页曾经挂在本组件的 timeline 分支里，而桌面壳改走
+    // 主从布局后该分支永远走不到（用户实报"改了灵感界面、打开完全没有变化"）。
     // 现在它由 `HomeScreen` 直接挂载 ⇒ 本页（CalendarPage）里**不该**再有
     // 输入条 / 空态。
     expect(find.text('记下此刻的想法…'), findsNothing);
     expect(find.text('还没有灵感'), findsNothing);
     // 2026-10-12：视图目的地已移到左侧 [AppIconRail]，本页顶栏没有这些 tab。
-    for (final String t in <String>['心流', '全部', '日历', '收藏']) {
+    for (final String t in <String>['灵感', '全部', '日历', '收藏']) {
       expect(find.text(t), findsNothing, reason: '视图 tab 已移到左侧 AppIconRail');
     }
     // 筛选与排序是一枚全局控件钮（不是页面）⇒ 恒在顶栏。
@@ -184,7 +184,7 @@ void main() {
         );
     await tester.pumpAndSettle();
 
-    // 卡片网格在「全部」视图（默认视图已是心流的时间流）⇒ 先切过去。
+    // 卡片网格在「全部」视图（默认视图已是灵感的时间流）⇒ 先切过去。
     await selectView(tester, container, HomeView.all);
 
     expect(find.text('会议纪要：定了三件事'), findsOneWidget, reason: '首行站标题位');
@@ -221,7 +221,7 @@ void main() {
       canvasTitles: <String>['乙画布'],
     );
 
-    // 形态是**筛选维度**，在跨形态视图（全部）生效；心流只收 spark、不适用形态 facet。
+    // 形态是**筛选维度**，在跨形态视图（全部）生效；灵感只收 spark、不适用形态 facet。
     await selectView(tester, container, HomeView.all);
     await tester.tap(find.byTooltip('筛选与排序'));
     await tester.pumpAndSettle();
@@ -268,7 +268,7 @@ void main() {
       canvasContentByTitle: <String, String>{'图形画布': content},
     );
 
-    // 缩略图是**卡片**的部件 ⇒ 切到「全部」视图（心流只画一行，不画缩略图）。
+    // 缩略图是**卡片**的部件 ⇒ 切到「全部」视图（灵感只画一行，不画缩略图）。
     await selectView(tester, container, HomeView.all);
 
     // 有 item 的画布卡：内核 ItemPainter 上台（真实几何 fit 绘制）。
@@ -320,7 +320,7 @@ void main() {
       titles: <String>['甲'],
     );
 
-    // 卡片在「全部」视图（心流是列表行，静止态透明）。
+    // 卡片在「全部」视图（灵感是列表行，静止态透明）。
     await selectView(tester, container, HomeView.all);
 
     final Material card = tester.widget<Material>(
@@ -340,7 +340,7 @@ void main() {
       canvasTitles: <String>['乙画布'],
     );
 
-    // 形态筛选在跨形态视图（全部）生效；心流只收自己的收件箱、不读笔记。
+    // 形态筛选在跨形态视图（全部）生效；灵感只收自己的收件箱、不读笔记。
     await selectView(tester, container, HomeView.all);
 
     // 选形态「笔记」（顶栏漏斗钮的「形态」段，2026-10-05 决策 E）。
@@ -410,12 +410,12 @@ void main() {
   testWidgets('搜索结果卡片：摘要吃命中片段，查询词高亮', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
-      titles: <String>['速记'],
+      titles: <String>['灵感'],
     );
     final Note note = container
         .read(notesProvider)
         .value!
-        .firstWhere((Note n) => n.title == '速记');
+        .firstWhere((Note n) => n.title == '灵感');
     // 内容路的 FTS 建在 blocks 投影上（纯文本 content 过不了格式门闩）⇒
     // 直插一个段落块并同步关键词索引（同 search_test 的 seedContent）。
     const String body = '今天在会议室聊了量子计算的落地节奏';
@@ -533,7 +533,7 @@ void main() {
       titles: <String>['甲', '乙'],
     );
 
-    // 标签筛选对**笔记视图**（全部）生效；心流只收自己的收件箱、不读笔记。
+    // 标签筛选对**笔记视图**（全部）生效；灵感只收自己的收件箱、不读笔记。
     await selectView(tester, container, HomeView.all);
 
     // createNote 新笔记置顶 ⇒ 按标题找，别按下标猜。
@@ -646,9 +646,9 @@ void main() {
     expect(container.read(locateProvider), isNull);
   });
 
-  test('navHistoryProvider：默认心流，selectHome 入栈、goBack/goForward 重做', () {
+  test('navHistoryProvider：默认灵感，selectHome 入栈、goBack/goForward 重做', () {
     final ProviderContainer container = newContainer();
-    // 2026-10-05 决策 C：默认视图改「心流」。
+    // 2026-10-05 决策 C：默认视图改「灵感」。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
 
     final NavHistoryNotifier nav = container.read(navHistoryProvider.notifier);

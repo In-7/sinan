@@ -19,7 +19,7 @@ import 'stream_delete.dart';
 /// ## 为什么是浮层而不是一页
 /// 它是「偶尔翻一下」的功能：看一眼某条归档灵感后来流去了哪里，然后继续写。
 /// 做成页面会换掉整个主区、还会往导航历史里塞一步（`Alt+←` 得多退一次）；
-/// 做成浮层则背后心流页**原样留着**——滚动位置、输入框里的草稿、选中态都不动，
+/// 做成浮层则背后灵感页**原样留着**——滚动位置、输入框里的草稿、选中态都不动，
 /// 与设置面板同一种形态（用户 2026-10-18 原话："和设置一样不影响当前页面"）。
 ///
 /// ## 为什么是双列卡片流而不是「列表 ┃ 详情」
@@ -28,7 +28,7 @@ import 'stream_delete.dart';
 /// **可选的跳转**，不是查看前提。
 ///
 /// ## 入口
-/// 只有心流页表头那枚 `N 已处理`（低频 ⇒ 不占侧栏常驻位）。
+/// 只有灵感页表头那枚 `N 已处理`（低频 ⇒ 不占侧栏常驻位）。
 void showStreamLedger() {
   final OverlayState overlay = appNavigatorKey.currentState!.overlay!;
   final Completer<void> closed = Completer<void>();
@@ -85,7 +85,7 @@ class _LedgerOverlayState extends State<_LedgerOverlay>
   );
 
   /// 面板自己的**作用域**节点：打开时接管焦点，同时它就是 Tab 的边界
-  /// （否则 Tab 会走到背后心流页的控件上，看起来"按了没反应"）。
+  /// （否则 Tab 会走到背后灵感页的控件上，看起来"按了没反应"）。
   final FocusScopeNode _panelScope = FocusScopeNode(
     debugLabel: 'stream.ledger',
   );
@@ -336,8 +336,8 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
   Widget _board(List<StreamItem> done, ThemeData theme, Brightness b) {
     if (done.isEmpty) {
       return _hint(
-        _query.trim().isNotEmpty ? '没有匹配的已处理速记' : '还没有已处理的速记',
-        _query.trim().isNotEmpty ? '换个词试试' : '速记归档后会出现在这里',
+        _query.trim().isNotEmpty ? '没有匹配的已处理灵感' : '还没有已处理的灵感',
+        _query.trim().isNotEmpty ? '换个词试试' : '灵感归档后会出现在这里',
         theme,
         b,
       );
@@ -387,13 +387,13 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
   Widget _card(StreamItem item, ThemeData theme, Brightness b) {
     final List<StreamExport> exports =
         ref.watch(streamExportsProvider)[item.id] ?? const <StreamExport>[];
-    // 卡片底色与心流页的速记卡同源（同一支"纸"的色），圆角同为控件档。
+    // 卡片底色与灵感页的灵感卡同源（同一支"纸"的色），圆角同为控件档。
     final Color fill = Color.alphaBlend(
       AppTheme.hoverOverlay(b),
       theme.colorScheme.surface,
     );
     return Container(
-      // 与速记页同规格的 6px 卡片间距。
+      // 与灵感页同规格的 6px 卡片间距。
       margin: const EdgeInsets.only(bottom: Tokens.spaceXs + Tokens.spaceXxs),
       padding: const EdgeInsets.all(Tokens.spaceSm),
       decoration: BoxDecoration(

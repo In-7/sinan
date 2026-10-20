@@ -31,10 +31,10 @@ import 'stream_delete.dart';
 import 'stream_export.dart';
 import 'stream_ledger_panel.dart' show showStreamLedger;
 
-/// **速记 / 心流**（2026-10-17 定：flomo 式低摩擦收件箱）。
+/// **灵感**（2026-10-17 定：flomo 式低摩擦收件箱）。
 ///
 /// ## 版式（本轮定稿）
-/// `单列 · 上限 640 · 居中`：速记靠时间序读，不铺网格；宽屏把留白当设计，
+/// `单列 · 上限 640 · 居中`：灵感靠时间序读，不铺网格；宽屏把留白当设计，
 /// 不把内容拉成一整行（长文本每行 50+ 字时反而难扫）。
 ///
 /// 一屏三区，从上到下：
@@ -54,7 +54,7 @@ import 'stream_ledger_panel.dart' show showStreamLedger;
 class StreamView extends ConsumerStatefulWidget {
   const StreamView({super.key, this.tag});
 
-  /// 顶栏标签筛选。**速记刻意忽略它**（速记是纯文本、没有标签）。
+  /// 顶栏标签筛选。**灵感刻意忽略它**（灵感是纯文本、没有标签）。
   final String? tag;
 
   @override
@@ -169,7 +169,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
   Widget build(BuildContext context) {
     final AsyncValue<List<StreamItem>> streamAsync = ref.watch(streamProvider);
     final List<StreamItem> all = streamAsync.value ?? const <StreamItem>[];
-    // 从笔记里的速记引用跳过来：只显示那一条（`null` = 正常时间流）。
+    // 从笔记里的灵感引用跳过来：只显示那一条（`null` = 正常时间流）。
     final String? focusId = ref.watch(streamFocusProvider);
     final List<StreamItem> scoped = focusId == null
         ? all
@@ -190,11 +190,15 @@ class _StreamViewState extends ConsumerState<StreamView> {
         if (!i.archived && _matches(i)) i,
     ];
     // 已处理**不在这里**：它是一整页（`StreamLedgerView`，2026-10-18 P1）。
-    // 这里仍算出归档集，只为了让工具栏报「N 条 · M 已处理」的计数。
+    // 工具栏的「归档 N」入口要报**归档总数**，不能参与搜索过滤：否则一搜
+    // 不到归档条目，按钮就消失、右侧操作簇跟着跳（2026-10-20 实报）。
     final List<StreamItem> archived = <StreamItem>[
       for (final StreamItem i in scoped)
         if (i.archived && _matches(i)) i,
     ];
+    final int archivedTotal = scoped
+        .where((StreamItem i) => i.archived)
+        .length;
     // 时间流永远只有"当下"；聚焦（从引用跳来）时只给那一条。
     final List<StreamItem> shown = focusId != null ? scoped : open;
     // 选择模式全选的候选：**当前可见**的待处理条目（含搜索过滤）。
@@ -215,11 +219,9 @@ class _StreamViewState extends ConsumerState<StreamView> {
         : _entries(shown, withDates: focusId == null);
 
     return Padding(
-      // 上留白 **24** / 下 0（2026-10-18 用户改）：工具栏上移之后，页首不需要
-      // 再靠 48 的留白把书写区推到"黄金位"了——输入块本身就在视线起手处，
-      // 24 与输入块下方留白同档，整页是均匀的呼吸。
-      // 上留白 24 / 下 0；**左右不留**——留白区域也要能滚（见下方 [_pageColumn]）。
-      padding: const EdgeInsets.only(top: Tokens.spaceXl),
+      // 上留白 **12**（2026-10-20 用户改；原来 24）：页眉 + 搜索框上移，
+      // 落笔更靠上；下 0、左右 0，留白区域也要能滚（见下方 [_pageColumn]）。
+      padding: const EdgeInsets.only(top: Tokens.spaceMd),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -233,7 +235,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
           else if (_query.isNotEmpty ||
               open.isNotEmpty ||
               archived.isNotEmpty)
-            _pageColumn(_listHeader(open.length, archived.length)),
+            _pageColumn(_listHeader(open.length, archivedTotal)),
           if (focusId != null ||
               _selectMode ||
               _query.isNotEmpty ||
@@ -293,7 +295,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
   /// 页面内容的**水平栅格**：左右 `gridMargin` 呼吸 + 640 阅读列居中。
   ///
-  /// 头部 / 书写区 / 每一条速记都走它 ⇒ 三者的左缘永远同在一条竖线上；
+  /// 头部 / 书写区 / 每一条灵感都走它 ⇒ 三者的左缘永远同在一条竖线上；
   /// 而**滚动视口本身是整卡宽**（见 build 里的 ListView），滚动条因此贴边、
   /// 留白也能滚。
   Widget _pageColumn(Widget child) => Padding(
@@ -311,12 +313,12 @@ class _StreamViewState extends ConsumerState<StreamView> {
   // ── 列表头（条数 + 搜索框 + 选择）────────────────────────────────────
 
   /// 列表头，照 Apple 备忘录 / Bear / flomo 的做法：
-  /// - **搜索常驻**（不是"点开才出现"）：右侧一个 190×28 的搜索框，点一下就能
-  ///   打字，边打边过滤；有词时右侧出现清空 ×；
+  /// - **搜索常驻**（不是"点开才出现"）：左起一个 190×28 的搜索框，点一下就能
+  ///   打字，边打边过滤；有词时出现清空 ×；
   /// - **选择是文字**（不是一枚看不懂的图标）：`选择` 两字，中性色、hover 铺底，
   ///   与搜索框同一条基线——之前那枚虚线方框图标在实机上根本认不出（用户实报）；
-  /// - 左侧报条数；`N 已处理` 是**入口**（2026-10-18 用户定：归档不放在流里，
-  ///   就挂在这个计数上，点进去看清单）。
+  /// - **左起** `归档 N` 入口（箱子图标 + 动词，低频功能不指望用户猜）；
+  ///   **最右** `灵感 N 条` 计数 + `选择`。2026-10-20 用户定：归档与计数左右对调。
   Widget _listHeader(int openCount, int archivedCount) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -327,77 +329,20 @@ class _StreamViewState extends ConsumerState<StreamView> {
     final double searchWidth = MediaQuery.sizeOf(context).width < 560
         ? 120
         : 190;
+    // 输入行高度 = 字号 × 行高；contentPadding 上下对称补齐到 28，
+    // 让 `InputDecorator` 的内容区正好 28，`EditableText` 才会真居中。
+    // 否则 `isCollapsed` + 0 padding 会把 15 高的文本行顶到上沿，
+    // caret 与占位符差 ~5px（2026-10-20 实报"输入位置不对"）。
+    final TextStyle? searchStyle = theme.textTheme.bodySmall;
+    final double searchLineHeight =
+        (searchStyle?.fontSize ?? 11) * (searchStyle?.height ?? 1.4);
+    final double searchVerticalPadding = (28 - searchLineHeight) / 2;
     return SizedBox(
       height: 28,
       child: Row(
         children: <Widget>[
-          Expanded(
-            child: Text(
-              // 左端只报**待处理**条数：归档数由右侧那枚「归档 N」按钮说
-              // （2026-10-18 用户定稿）——同一个数字出现两遍只会让人以为能点两次。
-              '$openCount 条',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: muted,
-            ),
-          ),
-          SizedBox(
-            width: searchWidth,
-            height: 28,
-            child: TextField(
-              controller: _search,
-              focusNode: _searchFocus,
-              style: theme.textTheme.bodySmall,
-              cursorColor: scheme.primary,
-              textAlignVertical: TextAlignVertical.center,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: '搜索',
-                hintStyle: muted,
-                // 与捕获条同一口径（2026-10-17 用户定）：**不要底色**，只有
-                // 1px 边线；聚焦时边线转蓝。填充色会让这枚小控件看起来像一块
-                // 按钮，和周围的纸面不搭。
-                filled: false,
-                prefixIcon: const tabler.Search(
-                  height: Tokens.iconXs,
-                  width: Tokens.iconXs,
-                ),
-                prefixIconConstraints: const BoxConstraints(minWidth: 28),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: '清空搜索',
-                        iconSize: Tokens.iconXs,
-                        onPressed: _clearSearch,
-                        icon: const tabler.X(),
-                      ),
-                suffixIconConstraints: const BoxConstraints(minWidth: 28),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: Tokens.spaceXs,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                  borderSide: BorderSide(color: scheme.outlineVariant),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                  borderSide: BorderSide(color: scheme.outlineVariant),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                  borderSide: BorderSide(color: scheme.primary),
-                ),
-              ),
-              onChanged: (String v) => setState(() => _query = v),
-              onSubmitted: (String _) => _searchFocus.unfocus(),
-            ),
-          ),
-          const SizedBox(width: Tokens.spaceSm),
-          // **归档入口**（2026-10-18 用户定稿）：图标 + 「归档 N」。
-          //
-          // 曾经它是左端计数里的一枚文字链（`3 条 · 2 已处理`）——用户实报"不知道
-          // 这是干啥的"。低频功能不能指望用户猜：给它一枚箱子图标和一个动词，
-          // 与「选择」并排放到右侧操作区，观感与语义才一致。
+          // **归档入口** → 左端（2026-10-20 用户定：从右侧操作区移到最左，
+          // 与右侧的「灵感 N 条 / 选择」交换位置）。
           if (archivedCount > 0) ...<Widget>[
             ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 28),
@@ -418,13 +363,130 @@ class _StreamViewState extends ConsumerState<StreamView> {
                     horizontal: Tokens.spaceSm,
                   ),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  foregroundColor: scheme.onSurfaceVariant,
+                  // 归档入口用主题蓝，在操作区里突出重点（其余按钮保持中性）。
+                  foregroundColor: scheme.primary,
                   textStyle: theme.textTheme.labelMedium,
                 ),
               ),
             ),
-            const SizedBox(width: Tokens.spaceXs),
+            const SizedBox(width: Tokens.spaceSm),
           ],
+          // **搜索框**：结构自己定高 28，不用 `InputDecorator` 的 border /
+          // isDense / contentPadding / prefixIcon —— 那套会让 hint 按基线
+          // 贴底，怎么调都不稳（2026-10-20 实报）。这里：
+          //   外框 Container 画 1px 边线（焦点转蓝）
+          //   内部 Row：放大镜 + 28 高 Stack（占位符 / 无装饰 TextField 都居中）
+          SizedBox(
+            width: searchWidth,
+            height: 28,
+            child: ListenableBuilder(
+              listenable: _searchFocus,
+              builder: (BuildContext context, Widget? _) {
+                final bool focused = _searchFocus.hasFocus;
+                return Container(
+                  height: 28,
+                  padding: const EdgeInsets.only(left: 12, right: 4),
+                  foregroundDecoration: BoxDecoration(
+                    border: Border.all(
+                      color: focused ? scheme.primary : scheme.outlineVariant,
+                    ),
+                    borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const tabler.Search(
+                        height: Tokens.iconXs,
+                        width: Tokens.iconXs,
+                      ),
+                      const SizedBox(width: Tokens.spaceSm),
+                      Expanded(
+                        child: SizedBox(
+                          height: 28,
+                          child: Stack(
+                            alignment: Alignment.centerLeft,
+                            children: <Widget>[
+                              if (_query.isEmpty)
+                                ExcludeSemantics(
+                                  child: IgnorePointer(
+                                    child: Text(
+                                      '搜索',
+                                      style: searchStyle?.copyWith(
+                                        color: Bauhaus.inkMuted(
+                                          theme.brightness,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              Positioned.fill(
+                                child: Semantics(
+                                  label: '搜索',
+                                  child: TextField(
+                                    controller: _search,
+                                    focusNode: _searchFocus,
+                                    style: searchStyle,
+                                    cursorColor: scheme.primary,
+                                    textAlignVertical: TextAlignVertical.center,
+                                    // ⚠️ 不能只用 `InputDecoration.collapsed`：
+                                    // 它只把 `border` 设成 none，`enabledBorder` /
+                                    // `focusedBorder` 仍是 null，会被主题的
+                                    // `inputDecorationTheme` 兜底成 OutlineInputBorder
+                                    // ⇒ 外面一层 Container 边 + 里面一层输入框边，
+                                    // 看起来像"两个搜索框"（2026-10-20 实报）。
+                                    decoration: InputDecoration(
+                                      contentPadding: EdgeInsets.symmetric(
+                                        vertical: searchVerticalPadding,
+                                      ),
+                                      hintText: '',
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      focusedErrorBorder: InputBorder.none,
+                                    ),
+                                    onChanged: (String v) =>
+                                        setState(() => _query = v),
+                                    onSubmitted: (String _) =>
+                                        _searchFocus.unfocus(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_query.isNotEmpty)
+                        IconButton(
+                          tooltip: '清空搜索',
+                          iconSize: Tokens.iconXs,
+                          onPressed: _clearSearch,
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(28, 28),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const tabler.X(),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: Tokens.spaceSm),
+          // **灵感 N 条** → 最右（2026-10-20 用户定：从最左挪到最右，右对齐贴住「选择」）。
+          // 用 Expanded + textAlign.right：既把计数推到最右，窄屏又能自动省略号收缩。
+          Expanded(
+            child: Text(
+              '灵感 $openCount 条',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: muted,
+            ),
+          ),
+          const SizedBox(width: Tokens.spaceSm),
           // `minimumSize` 会被 compact 密度再压成 20 高（触达尺寸会红）⇒ 用
           // ConstrainedBox 把**按钮本身**撑到 28，语义矩形同步变大。
           ConstrainedBox(
@@ -464,7 +526,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
     final Widget count = Text(
       _selected.isEmpty
-          ? '选择速记'
+          ? '选择灵感'
           : '已选 ${_selected.length} / ${visibleIds.length} 条',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -576,7 +638,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
         children: <Widget>[
           Expanded(
             child: Text(
-              '正在查看被引用的速记',
+              '正在查看被引用的灵感',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
@@ -603,7 +665,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
     );
   }
 
-  /// 单条速记：**铺满整列**（没有左侧日期栏，正文左缘 = 行内 padding 8 + 竖条 2）。
+  /// 单条灵感：**铺满整列**（没有左侧日期栏，正文左缘 = 行内 padding 8 + 竖条 2）。
   ///
   /// 行间距 6：底色**常显**之后，相邻两行的色块会连成一条长带；6px 让每条是
   /// 独立的一张"纸片"，又还没松到把一组日期拆成两份（2026-10-17 用户定）。
@@ -633,7 +695,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
   }
 }
 
-/// 列表里的一项：日期标题 / 一条速记 / 「已处理」折叠行。
+/// 列表里的一项：日期标题 / 一条灵感 / 「已处理」折叠行。
 ///
 /// 拍平成一维再交给 `ListView.builder`——不为列表性能保留 widget 树。
 sealed class _Entry {
@@ -663,7 +725,7 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     // 日期是**分类标题**：没有自己的底色、没有纸片，只是正文上方的一行字
-    // （2026-10-17 用户定）。行的底色只在速记卡上。
+    // （2026-10-17 用户定）。行的底色只在灵感卡上。
     return Padding(
       // 左缘对齐列表头的「N 条」（= 内容区左缘，0 缩进）：日期是这一段的标签，
       // 和上面的条数、下面的卡片同一条竖线，才有"段落"的读法（2026-10-17 用户定）。
@@ -706,7 +768,7 @@ class _StreamEmpty extends StatelessWidget {
         children: <Widget>[
           Text(
             searching
-                ? '没有匹配的速记'
+                ? '没有匹配的灵感'
                 : archivedCount > 0
                 ? '待处理清空了'
                 : '还没有灵感',
@@ -769,7 +831,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   void initState() {
     super.initState();
     _focus.addListener(_onFocusChange);
-    // **进入心流页即可写**（2026-10-17 用户定）：捕获区是这一页的入口，挂载后
+    // **进入灵感页即可写**（2026-10-17 用户定）：捕获区是这一页的入口，挂载后
     // 直接把焦点交给它，省掉"先点一下输入框"。放帧末请求，避免与首帧焦点树打架
     // （也保证 `_focus` 已挂上 RenderObject）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1068,7 +1130,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
         children: <Widget>[
           Semantics(
             textField: true,
-            label: '速记输入，回车记下',
+            label: '灵感输入，回车记下',
             child: TextField(
               controller: _controller,
               focusNode: _focus,
@@ -1148,7 +1210,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
                     ),
                     icon: _justSent
                         ? const tabler.Check()
-                        // 纸飞机（原 ArrowUp）：速记是"发出去"，不是"上传"。
+                        // 纸飞机（原 ArrowUp）：灵感是"发出去"，不是"上传"。
                         : const tabler.Send2(),
                   ),
                 ],
@@ -1176,9 +1238,9 @@ class _PendingMedia {
   final String kind; // 'image' | 'video'
 }
 
-// ───────────────────────────── 速记行 ─────────────────────────────
+// ───────────────────────────── 灵感行 ─────────────────────────────
 
-/// 一行速记：**没有卡片边框**，静止透明；hover / 选中才铺底色与左侧蓝竖条。
+/// 一行灵感：**没有卡片边框**，静止透明；hover / 选中才铺底色与左侧蓝竖条。
 ///
 /// - 点击就地编辑（`Esc` / `Ctrl+Enter` 保存），不是"放大成卡片"；
 /// - hover 时右侧浮出操作簇（复制 / 更多；**归档由使用/转换自动触发**，无手动钮）；
@@ -1251,7 +1313,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     // 明确说一句、留在编辑态，让人自己再写。
     if (text.trim().isEmpty && widget.item.text.trim().isNotEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('速记不能为空')),
+        const SnackBar(content: Text('灵感不能为空')),
       );
       if (mounted) _editFocus.requestFocus();
       return;
@@ -1312,7 +1374,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   Widget _buildView(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    // 这条速记贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
+    // 这条灵感贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
     final List<StreamAttachment> attachments =
         ref.watch(streamAttachmentsProvider(widget.item.id));
     final bool marked = widget.selected;
@@ -1505,7 +1567,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     );
   }
 
-  /// 速记贴图的缩略图条：左对齐、可横向滚动（图多时不挤正文）。
+  /// 灵感贴图的缩略图条：左对齐、可横向滚动（图多时不挤正文）。
   Widget _attachmentStrip(ThemeData theme, List<StreamAttachment> items) {
     return Padding(
       padding: const EdgeInsets.only(top: Tokens.spaceXs),
@@ -1557,7 +1619,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   ///
   /// 2026-10-17 调整：
   /// - **去掉「引用到笔记」**——引用应从笔记 / 画布那一端发起（在正文里挑一条
-  ///   速记），而不是在速记列表里逐个推出去；
+  ///   灵感），而不是在灵感列表里逐个推出去；
   /// - 图标 24 → **20 框**（视觉 ≈15），槽 24、槽间 6、左留白 8；整簇占位
   ///   **92** 且**始终保留**（见 [_actionsWidth]），所以 hover 不会挤动文字。
   Widget _actions(ThemeData theme, {Key? key}) {

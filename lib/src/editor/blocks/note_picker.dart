@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import 'dart:ui' as ui;
 
@@ -17,7 +17,7 @@ import '../../theme/tokens.dart';
 ///
 /// [excludeId] 用来排掉"正在编辑的这篇"：引用自己几乎总是误操作。
 ///
-/// [docsOnly] 只列**文档笔记**（排除画布与心流容器）——给「引用 / 注入到笔记」这类
+/// [docsOnly] 只列**文档笔记**（排除画布与灵感容器）——给「引用 / 注入到笔记」这类
 /// 只认块树的目标用（画布没有块树，选它必然失败）。[dialogTitle] 让调用方按动作命名。
 Future<String?> pickNoteToReference(
   BuildContext context, {

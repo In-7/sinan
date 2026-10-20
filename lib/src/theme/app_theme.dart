@@ -441,14 +441,14 @@ class AppTheme {
   /// 被盒子自己的不透明底盖住 = **一条线都画不出来**；② 只想要部分边时用
   /// `offset` 硬偏移（如 (1,1) 只露右 / 下）——现在要四边，用 spread。
   ///
-  /// ⚠️ 浓淡档位（2026-10-15 实测，暗色、相对面板的 CIE ΔL\*）：
-  /// 5% ≈ +1.2（Linear 原味，极淡）→ **8% ≈ +5.2（当前，用户定"再亮点"）**
-  /// → 10% ≈ +7.6（强描边感）。改这两个 alpha 即可，无其它牵连。
+  /// ⚠️ 暗色档位（2026-10-15 实测，相对面板的 CIE ΔL\*）：
+  /// 5% ≈ +1.2（Linear 原味，极淡）→ 8% ≈ +5.2 → **10%（当前，2026-10-20 定）**。
+  /// 亮色：**黑 8%**（2026-10-20 从 10% 降到 8%）；暗色：白 10%。
   static List<BoxShadow> surfaceRing(Brightness brightness) => <BoxShadow>[
         BoxShadow(
           color: brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.10),
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.black.withValues(alpha: 0.08),
           spreadRadius: 1,
         ),
       ];

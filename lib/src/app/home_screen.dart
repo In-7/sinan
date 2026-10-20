@@ -33,7 +33,7 @@ import '../domain/settings.dart';
 /// - 桌面外壳（2026-10-09 用户定，opencode 风"内嵌浮面"）：由
 ///   [Tokens.titleBarHeightMain] 定高（当前 **32**）的全宽 [WindowStrip]，仅含
 ///   拖拽带（可选应用名）+ 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+
-///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：心流 / 全部 / 日历 /
+///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：灵感 / 全部 / 日历 /
 ///   收藏 + 新建胶囊）落在最左 60 图标轨 [AppIconRail]（常驻脊梁、平铺窗口底）。
 ///   **问笔记（AI）是标题栏 `trailing` 钮**——2026-10-16 从工作区右角搬来，落在
 ///   设置右、最小化左；AI 轨由这枚钮开合（单一开合入口，其余入口走同一条
@@ -170,13 +170,20 @@ class HomeScreen extends ConsumerWidget {
       final HomeView view = ref.watch(
         navHistoryProvider.select((NavHistoryState s) => s.view),
       );
+      // 历史钮：**内容卡左缘 + 12px 呼吸**（2026-10-19 用户定：固定锚点看过不好，
+      // 回到左缘但留出呼吸；不加竖线）。有折叠钮时再减它的 32（折叠钮在 x=0）。
+      final double historyInset =
+          (view == HomeView.timeline
+              ? Tokens.railWidth
+              : Tokens.railWidth - Tokens.chromeButtonSize) +
+          Tokens.spaceMd;
       final Widget detail = detailPane();
       final bool isDark = brightness == Brightness.dark;
       final Widget cardChild = switch (view) {
-        // **速记（心流）**：一页纸流，**不走主从布局**。
-        // 速记没有"详情页"——右侧没有可展示的东西，240 列表列在这里只会与
-        // 速记自己的时间流打架（2026-10-17 用户实报"打开没有任何变化"：
-        // 速记页当年挂在日历页（原名 HomeHub）的 timeline 分支里，而新外壳
+        // **灵感**：一页纸流，**不走主从布局**。
+        // 灵感没有"详情页"——右侧没有可展示的东西，240 列表列在这里只会与
+        // 灵感自己的时间流打架（2026-10-17 用户实报"打开没有任何变化"：
+        // 灵感页当年挂在日历页（原名 HomeHub）的 timeline 分支里，而新外壳
         // 早已改走 NoteListColumn ⇒ 那份实现成了孤儿。现在由外壳直接挂载）。
         HomeView.timeline => const StreamView(),
         // 日历：列表列无意义，整卡显示日历（选中某篇后仍出详情）。
@@ -230,24 +237,22 @@ class HomeScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在最左
-            // [AppIconRail] 图标轨）；**上一步 / 下一步 2026-10-15 加回
-            // 条内左端**（`leading`，左缘与内容卡对齐）。
+            // [AppIconRail] 图标轨）；**上一步 / 下一步 在条内左簇**
+            // （`leading`，内容卡左缘 + 12px 呼吸；2026-10-19 定）。
             // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
             // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
             // + 窗控按钮。
             // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
             WindowStrip(
               // 最左缘：折叠 / 展开**列表列**（2026-10-16 起；60 轨常驻不折）。
-              // 速记页没有列表列 ⇒ 这一视图里不出现折叠钮（否则按了什么都不动）。
+              // 灵感页没有列表列 ⇒ 这一视图里不出现折叠钮（否则按了什么都不动）。
               leadingEdge: view == HomeView.timeline
                   ? null
                   : const SidebarCollapseButton(),
               leading: _historyNavButtons(context, ref),
-              // 左簇左缘与内容卡对齐 = 折叠钮 + (railWidth − chromeButtonSize) ⇒ 落在
-              // 60 轨右缘。速记页没有折叠钮 ⇒ 那 32 由 inset 自己让出，仍然对齐 60。
-              leadingInset: view == HomeView.timeline
-                  ? Tokens.railWidth
-                  : Tokens.railWidth - Tokens.chromeButtonSize,
+              // 内容卡左缘 + 12px 呼吸（见上方 [historyInset]）；位置稳定，
+              // 不随列表折叠 / 视图切换移动。
+              leadingInset: historyInset,
               // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
               // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
               trailing: const <Widget>[
@@ -265,7 +270,7 @@ class HomeScreen extends ConsumerWidget {
               // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
               //
               // ⚠️ 焦点顺序必须按**控件树**走：默认的 ReadingOrder 策略按**几何位置**
-              // 排序 ⇒ 侧栏与内容区会**交错**（实测：心流→全部→日历→卡片乙→收藏→
+              // 排序 ⇒ 侧栏与内容区会**交错**（实测：灵感→全部→日历→卡片乙→收藏→
               // 卡片甲），读屏/键盘用户会在导航和内容间乱跳。改成 WidgetOrder 后是
               // 侧栏（新建→笔记→画布→四视图）→ 内容区。
               child: FocusTraversalGroup(

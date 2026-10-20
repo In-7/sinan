@@ -9,9 +9,9 @@ import 'package:sinan/src/data/stream_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 速记（心流）独立存储 + 单向导出 + v16 迁移的回归。
+/// 灵感独立存储 + 单向导出 + v16 迁移的回归。
 ///
-/// 2026-10-17 起速记不再借笔记的壳：它有独立表 `stream_items`，与
+/// 2026-10-17 起灵感不再借笔记的壳：它有独立表 `stream_items`，与
 /// `notes` / `blocks` **无外键**。这里钉五件事：
 /// ① CRUD / 归档（不删）；② 与笔记数据互不渗漏；③ 三种导出各自的语义
 /// （引用=单向活链、复制=快照、转新=归档）；④ 画布只复制不做活链；
@@ -81,41 +81,16 @@ void main() {
       expect(stream.remove(item.id), isFalse);
     });
 
-    test('与笔记数据互不渗漏：速记不进 notes / blocks / 文库', () {
-      stream.add('一条速记');
+    test('与笔记数据互不渗漏：灵感不进 notes / blocks / 文库', () {
+      stream.add('一条灵感');
       expect(store.allNotes(), isEmpty);
       expect(db.select('SELECT id FROM notes'), isEmpty);
       expect(db.select('SELECT id FROM blocks'), isEmpty);
     });
   });
 
-  group('单向导出：速记 → 笔记', () {
-    test('引用（活链）：插 ref 块 ref_type=stream，幂等，速记不动', () {
-      final StreamItem item = stream.add('可被引用')!;
-      final Note target = store.createSpark(
-        kind: NoteKind.note,
-        content: _emptyBlocks,
-        plainText: '',
-      );
-
-      expect(store.referenceStreamInNote(item.id, target.id), isTrue);
-      // 幂等：同一篇再引一次不重复插。
-      expect(store.referenceStreamInNote(item.id, target.id), isFalse);
-      // 速记不动（引用不消耗）。
-      expect(stream.byId(item.id), isNotNull);
-
-      final Row ref = db.select(
-        "SELECT props_json FROM blocks WHERE note_id = ? AND type = 'ref'",
-        <Object?>[target.id],
-      ).single;
-      final Map<String, Object?> props =
-          (jsonDecode(ref['props_json'] as String) as Map)
-              .cast<String, Object?>();
-      expect(props['ref_type'], 'stream');
-      expect(props['ref_id'], item.id);
-    });
-
-    test('复制（快照）：目标多一个真段落块，速记不动', () {
+  group('单向导出：灵感 → 笔记', () {
+    test('复制（快照）：目标多一个真段落块，灵感不动', () {
       final StreamItem item = stream.add('复制我')!;
       final Note target = store.createSpark(
         kind: NoteKind.note,
@@ -133,7 +108,7 @@ void main() {
       expect(stream.byId(item.id), isNotNull);
     });
 
-    test('复制到笔记：多行速记按行拆成多个段落（与转新同一口径）', () {
+    test('复制到笔记：多行灵感按行拆成多个段落（与转新同一口径）', () {
       final StreamItem item = stream.add('第一行\n第二行')!;
       final Note target = store.createSpark(
         kind: NoteKind.note,
@@ -153,7 +128,7 @@ void main() {
       );
     });
 
-    test('转新笔记（归档）：新笔记落块、速记归档但不删', () {
+    test('转新笔记（归档）：新笔记落块、灵感归档但不删', () {
       final StreamItem item = stream.add('转我')!;
       final Note? created = store.streamToNewNote(item.id);
 
@@ -171,7 +146,7 @@ void main() {
       expect(stream.byId(item.id)!.archived, isTrue);
     });
 
-    test('合并成新笔记：按时间（旧→新）成段，参与的都归档', () {
+    test('合并成新笔记：按时间（旧→新）成段，**不归档**（条目仍留在灵感）', () {
       final StreamItem older = stream.add('第一句')!;
       final StreamItem newer = stream.add('第二句')!;
       // 反着传，验证内部按创建时间排序。
@@ -188,12 +163,13 @@ void main() {
         rows.map((Row r) => textOfProps(r['props_json'] as String?)).toList(),
         <String>['第一句', '第二句'],
       );
-      expect(stream.list(), isEmpty);
-      expect(stream.byId(older.id)!.archived, isTrue);
-      expect(stream.byId(newer.id)!.archived, isTrue);
+      // 合并只是整理，不算使用 ⇒ **不归档**（2026-10-18 用户定）。
+      expect(stream.list(), hasLength(2));
+      expect(stream.byId(older.id)!.archived, isFalse);
+      expect(stream.byId(newer.id)!.archived, isFalse);
     });
 
-    test('转成新画布：建画布 + 一条卡片，速记归档', () {
+    test('转成新画布：建画布 + 一条卡片，灵感归档', () {
       final StreamItem item = stream.add('画布开局')!;
       final Note? created = store.streamToNewCanvas(item.id);
       expect(created, isNotNull);
@@ -209,17 +185,15 @@ void main() {
       expect(stream.byId(item.id)!.archived, isTrue);
     });
 
-    test('画布 / 不存在的速记：引用与复制都拒绝', () {
+    test('画布 / 不存在的灵感：复制都拒绝', () {
       final StreamItem item = stream.add('x')!;
       final Note canvas = store.create(kind: NoteKind.canvas);
-      expect(store.referenceStreamInNote(item.id, canvas.id), isFalse);
       expect(store.copyStreamIntoNote(item.id, canvas.id), isFalse);
-      expect(store.referenceStreamInNote('no-such-id', canvas.id), isFalse);
       expect(store.copyStreamIntoNote('no-such-id', canvas.id), isFalse);
     });
   });
 
-  test('嵌入预览：速记按行给出（不再是空框）', () {
+  test('嵌入预览：灵感按行给出（不再是空框）', () {
     final StreamItem item = stream.add('第一行\n第二行')!;
     expect(
       store.embedPreview('stream', item.id).map((l) => l.text).toList(),
@@ -228,13 +202,13 @@ void main() {
     expect(store.embedPreview('stream', 'no-such-id'), isEmpty);
   });
 
-  group('处理台账：每条速记记下它流去了哪', () {
-    test('引用 / 转新 / 合并 各记一笔，方法 label 是给人看的', () {
+  group('处理台账：每条灵感记下它流去了哪', () {
+    test('复制 / 转新 / 合并 各记一笔，方法 label 是给人看的', () {
       final StreamItem a = stream.add('第一条')!;
       final StreamItem b = stream.add('第二条')!;
       final Note target = store.create(title: '周五的闲聊');
 
-      expect(store.referenceStreamInNote(a.id, target.id), isTrue);
+      expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
       store.streamToNewNote(a.id);
       store.streamMergeToNewNote(<String>[a.id, b.id]);
 
@@ -244,17 +218,17 @@ void main() {
       expect(
         book[a.id]!.map((StreamExport e) => e.kind).toSet(),
         <StreamExportKind>{
-          StreamExportKind.reference,
+          StreamExportKind.copy,
           StreamExportKind.toNote,
           StreamExportKind.merge,
         },
       );
       expect(
         book[a.id]!
-            .singleWhere((StreamExport e) => e.kind == StreamExportKind.reference)
+            .singleWhere((StreamExport e) => e.kind == StreamExportKind.copy)
             .targetTitle,
         '周五的闲聊',
-        reason: '引用那条指向目标笔记',
+        reason: '复制那条指向目标笔记',
       );
       expect(
         book[a.id]!
@@ -270,25 +244,9 @@ void main() {
       );
     });
 
-    test('P2：每笔都记下落点块（点流向能直达那一块）', () {
+    test('P2：复制记下落点块（点流向能直达那一块）', () {
       final StreamItem a = stream.add('第一条')!;
       final Note target = store.create(title: '周五的闲聊');
-
-      store.referenceStreamInNote(a.id, target.id);
-      final StreamExport ref = store
-          .allStreamExports()[a.id]!
-          .singleWhere((StreamExport e) => e.kind == StreamExportKind.reference);
-      expect(ref.targetBlockId, isNotNull);
-      // ref 块真的落在目标笔记里（不是随手编的 id）。
-      expect(
-        db
-            .select(
-              "SELECT 1 FROM blocks WHERE note_id = ? AND id = ?",
-              <Object?>[target.id, ref.targetBlockId],
-            )
-            .isNotEmpty,
-        isTrue,
-      );
 
       // 复制：落点是插入的**第一段**。
       store.copyStreamIntoNote(a.id, target.id);
@@ -366,8 +324,8 @@ void main() {
     });
   });
 
-  group('单向导出：速记 → 画布（只复制，不做活链）', () {
-    test('复制成独立卡片：新块 + 卡片，速记之后与它无关', () {
+  group('单向导出：灵感 → 画布（只复制，不做活链）', () {
+    test('复制成独立卡片：新块 + 卡片，灵感之后与它无关', () {
       final StreamItem item = stream.add('画布卡')!;
       final Note canvas = _canvasNote(store, '画布甲');
 
@@ -386,7 +344,7 @@ void main() {
       expect(card['type'], 'card');
       expect(card['text'], '画布卡');
       final String blockId = card['blockId'] as String;
-      expect(blockId, isNot(item.id), reason: '卡片必须有自己的块，不能指向速记');
+      expect(blockId, isNot(item.id), reason: '卡片必须有自己的块，不能指向灵感');
       // 卡片内容落进 blocks（画布卡的通用契约）。
       expect(
         textOfProps(
@@ -406,7 +364,7 @@ void main() {
       expect(after, hasLength(2));
     });
 
-    test('速记更新不推送：卡片文本保持复制时的快照', () {
+    test('灵感更新不推送：卡片文本保持复制时的快照', () {
       final StreamItem item = stream.add('旧文本')!;
       final Note canvas = _canvasNote(store, '画布乙');
       store.copyStreamOntoCanvas(item.id, canvas.id);
@@ -455,7 +413,7 @@ void main() {
       expect(f2.existsSync(), isTrue);
 
       expect(stream.remove(item.id), isTrue);
-      // 磁盘副本随条目一起消失（用户删速记 = 连图一起删）。
+      // 磁盘副本随条目一起消失（用户删灵感 = 连图一起删）。
       expect(f1.existsSync(), isFalse);
       expect(f2.existsSync(), isFalse);
       expect(stream.attachmentsOf(item.id), isEmpty);
@@ -482,7 +440,7 @@ void main() {
     });
   });
 
-  group('v16 迁移：旧心流容器 → 独立表', () {
+  group('v16 迁移：旧灵感容器 → 独立表', () {
     test('条目搬迁、引用改类型、容器消失、原文有备份', () {
       // 1. 造一个"v15 的世界"：隐藏容器 + 两条段落块 + 目标笔记里一条块引用。
       const String s1 = 'stream-1';
@@ -567,7 +525,7 @@ void main() {
       expect(StreamStore(db).byId(s1)!.text, '旧的');
     });
 
-    test('画布上指向心流块的卡片：转成独立复制卡（不留悬空块引用）', () {
+    test('画布上指向灵感块的卡片：转成独立复制卡（不留悬空块引用）', () {
       const String s1 = 'stream-x';
       const String containerId = 'container-x';
       final String tree = jsonEncode(<String, Object?>{
@@ -616,7 +574,7 @@ void main() {
       db.userVersion = 15;
       AppDatabase.migrateForTesting(db);
 
-      // 卡片换了自己的块（不再是速记 id）。
+      // 卡片换了自己的块（不再是灵感 id）。
       final Map<String, Object?> doc =
           (jsonDecode(
                     db.select(

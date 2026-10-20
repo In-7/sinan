@@ -6,13 +6,13 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/note.dart';
 
-/// 速记 / 心流的**唯一**读写入口（2026-10-17 用户定：心流独立存储）。
+/// 灵感的**唯一**读写入口（2026-10-17 用户定：灵感独立存储）。
 ///
 /// ## 为什么不再借笔记的壳
-/// v16 之前心流是"一篇隐藏笔记（`kind='stream'`）+ 一串段落块"，代价是：
+/// v16 之前灵感是"一篇隐藏笔记（`kind='stream'`）+ 一串段落块"，代价是：
 /// - 文库 / 搜索 / 索引 / 日历 / 收藏 / Markdown 镜像**每处都要为它写一条
 ///   "排除隐藏容器"的特例**，漏一处就漏一次；
-/// - 每条速记都是 `blocks` 的一行，会被块选择器、反链上下文当成"笔记的块"看到；
+/// - 每条灵感都是 `blocks` 的一行，会被块选择器、反链上下文当成"笔记的块"看到；
 /// - 编辑一条要重写整个容器并全量重投影（O(N) 写放大）。
 ///
 /// 现在它是独立表 [table]：与 `notes` / `blocks` **无外键、无反向读写**，
@@ -50,7 +50,7 @@ class StreamStore {
       ON $table (deleted_at) WHERE deleted_at IS NOT NULL;
   ''';
 
-  /// 列表：**最新在上**（速记是流，时间序即语义）。
+  /// 列表：**最新在上**（灵感是流，时间序即语义）。
   ///
   /// [includeArchived] 为 false（默认）时只给「待处理」区；归档区单独读，
   /// 免得处理过的旧想法混在眼前干扰回看。
@@ -92,7 +92,7 @@ class StreamStore {
   /// 新增一条。
   ///
   /// 普通录入要求非空文本；[allowEmpty] 为 true 时允许空文本（仅当带着附件，
-  /// 用于"只有一张图、没写字的速记"）。两种情况都拒绝"既没有字也没有附件"。
+  /// 用于"只有一张图、没写字的灵感"）。两种情况都拒绝"既没有字也没有附件"。
   StreamItem? add(String text, {bool allowEmpty = false}) {
     final String t = text.trim();
     if (t.isEmpty && !allowEmpty) return null;
@@ -140,7 +140,7 @@ class StreamStore {
     return id;
   }
 
-  /// 某条速记的全部附件（按展示顺序升序）。
+  /// 某条灵感的全部附件（按展示顺序升序）。
   List<StreamAttachment> attachmentsOf(String streamId) {
     final ResultSet rs = db.select(
       'SELECT id, stream_id, kind, path, width, height, duration_ms, sort, '
@@ -192,7 +192,7 @@ class StreamStore {
     }
   }
 
-  /// 改文本（不改创建时间 —— 速记的位置由"记下来的时刻"决定）。没这条返回 false。
+  /// 改文本（不改创建时间 —— 灵感的位置由"记下来的时刻"决定）。没这条返回 false。
   bool update(String id, String text) {
     final String t = text.trim();
     if (t.isEmpty) return false;
@@ -258,7 +258,7 @@ class StreamStore {
     return db.updatedRows > 0;
   }
 
-  /// 批量彻底删除（回收站「清空」）：先删附件文件，再删附件行与速记行。
+  /// 批量彻底删除（回收站「清空」）：先删附件文件，再删附件行与灵感行。
   bool removeMany(Iterable<String> ids) {
     final List<String> list = ids.toList(growable: false);
     if (list.isEmpty) return false;
@@ -286,7 +286,7 @@ class StreamStore {
     return removed;
   }
 
-  /// 彻底删除回收站里超过 [maxAge] 的速记（30 天自动清理）。返回条数。
+  /// 彻底删除回收站里超过 [maxAge] 的灵感（30 天自动清理）。返回条数。
   bool purgeExpired(Duration maxAge) {
     final int cutoff = DateTime.now().subtract(maxAge).millisecondsSinceEpoch;
     final ResultSet rs = db.select(
@@ -299,7 +299,7 @@ class StreamStore {
 
   /// 真删（用户显式点删除，不可撤销）。
   ///
-  /// **级联删文件**：先把这条的附件文件从 app 私有目录删掉，再清附件行与速记行。
+  /// **级联删文件**：先把这条的附件文件从 app 私有目录删掉，再清附件行与灵感行。
   /// 源文件早被用户删了也没关系——`deleteSync` 失败只当"已经没了"，不挡删除。
   bool remove(String id) {
     final List<StreamAttachment> files = attachmentsOf(id);

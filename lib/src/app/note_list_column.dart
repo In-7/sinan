@@ -16,7 +16,7 @@ import 'search_provider.dart';
 import 'stream_delete.dart' show showStreamConfirm;
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
-/// （编辑器 / 画布 / 空态）。**只服务「全部 / 收藏」**——速记（心流）是一页纸时间流，
+/// （编辑器 / 画布 / 空态）。**只服务「全部 / 收藏」**——灵感是一页纸时间流，
 /// 由外壳直接挂 `StreamView`，不经过这里（2026-10-17 收口）。
 ///
 /// - 头 = 视图名 + 篇数 + 「筛选」钮（[FilterMenuButton]：排序 / 形态 / 标签，全局控件）。
@@ -45,11 +45,11 @@ class NoteListColumn extends ConsumerWidget {
       )),
     );
     final String? selectedId = ref.watch(selectedNoteIdProvider);
-    // ⚠️ 速记（心流）**不走这里**：它是独立的一页纸流（`StreamView`，由外壳直接
+    // ⚠️ 灵感**不走这里**：它是独立的一页纸流（`StreamView`，由外壳直接
     // 挂载）。列表列只服务「全部 / 收藏」——2026-10-17 前它还把 timeline 当成
-    // "笔记时间流"并按日期分桶，与速记页形成两套语义（用户实报"改了没变化"）。
+    // "笔记时间流"并按日期分桶，与灵感页形成两套语义（用户实报"改了没变化"）。
     //
-    // 于是这里不再有分组条目，也没有"心流"这一档的专属显示口径。
+    // 于是这里不再有分组条目，也没有"灵感"这一档的专属显示口径。
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -137,7 +137,7 @@ class NoteListColumn extends ConsumerWidget {
 }
 
 String _viewLabel(HomeView v) => switch (v) {
-  HomeView.timeline => '心流',
+  HomeView.timeline => '灵感',
   HomeView.all => '全部',
   HomeView.calendar => '日历',
   HomeView.favorites => '收藏',
@@ -173,7 +173,7 @@ class _ListEmpty extends StatelessWidget {
 }
 
 /// 单行笔记：kind 图标 + 标题（1 行 w600 浓墨）+ 摘要（2 行 w400 淡墨）[+ 右对齐相对
-/// 时间，仅非心流]。选中 / hover 底与 60 轨同口径（选中 = hover 2×）。
+/// 时间，仅非灵感]。选中 / hover 底与 60 轨同口径（选中 = hover 2×）。
 class _NoteRow extends StatefulWidget {
   const _NoteRow({
     required this.note,

@@ -15,8 +15,8 @@ import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// 速记（心流）界面 2026-10-17 P1：
-/// 按日分组的时间流、心流内搜索、已处理折叠区、多选合并、Enter 即录。
+/// 灵感界面 2026-10-17 P1：
+/// 按日分组的时间流、灵感内搜索、已处理折叠区、多选合并、Enter 即录。
 void main() {
   late Database db;
   late NoteStore store;
@@ -87,7 +87,7 @@ void main() {
     expect(find.text('昨天的想法'), findsOneWidget);
   });
 
-  testWidgets('心流内搜索：即时过滤，不命中给"没有匹配"', (WidgetTester tester) async {
+  testWidgets('灵感内搜索：即时过滤，不命中给"没有匹配"', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '今天的想法', now);
     seed('b', '昨天的想法', now.subtract(const Duration(days: 1)));
@@ -102,7 +102,7 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), '不存在');
     await tester.pumpAndSettle();
-    expect(find.text('没有匹配的速记'), findsOneWidget);
+    expect(find.text('没有匹配的灵感'), findsOneWidget);
   });
 
   testWidgets('已处理：默认不显示，点表头计数跳到台账页', (WidgetTester tester) async {
@@ -115,10 +115,10 @@ void main() {
     // 计数是入口；归档走**浮层**（2026-10-18 定稿：低频功能，不换页、不占导航）。
     // 本文件只挂 StreamView（没有 appNavigatorKey 的宿主）⇒ 这里只验证"流里不留"。
     // 浮层本身的开/关/跳转由 stream_ledger_panel_test.dart 钉。
-    expect(find.text('1 条'), findsOneWidget);
+    expect(find.text('灵感 1 条'), findsOneWidget);
   });
 
-  testWidgets('多选合并：勾一条 → 合并为新笔记，条目仍留在心流（不归档）', (
+  testWidgets('多选合并：勾一条 → 合并为新笔记，条目仍留在灵感（不归档）', (
     WidgetTester tester,
   ) async {
     final DateTime now = DateTime.now();
@@ -126,7 +126,7 @@ void main() {
     await pumpView(tester);
 
     // 列表头（2026-10-17）：搜索常驻输入框，选择是文字钮（图标版本实机认不出）。
-    expect(find.text('1 条'), findsOneWidget, reason: '列表头只报条数');
+    expect(find.text('灵感 1 条'), findsOneWidget, reason: '列表头报灵感条数');
     await tester.tap(find.text('选择'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('要合并的想法'));
@@ -141,7 +141,7 @@ void main() {
       hasLength(1),
       reason: '合并要真的建出一篇笔记',
     );
-    // 合并只是"整理"，不算使用 ⇒ **不归档**，条目仍留在心流（2026-10-18 用户定）。
+    // 合并只是"整理"，不算使用 ⇒ **不归档**，条目仍留在灵感（2026-10-18 用户定）。
     expect(stream.list(), hasLength(1), reason: '合并后条目仍待处理');
     expect(stream.byId('a')!.archived, isFalse);
     expect(find.text('要合并的想法'), findsOneWidget);
@@ -150,17 +150,17 @@ void main() {
   testWidgets('聚焦：从引用跳来只显示那一条，可"显示全部"', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '被引用的那条', now);
-    seed('b', '别的速记', now);
+    seed('b', '别的灵感', now);
     container.read(streamFocusProvider.notifier).focusOn('a');
     await pumpView(tester);
 
-    expect(find.text('正在查看被引用的速记'), findsOneWidget);
+    expect(find.text('正在查看被引用的灵感'), findsOneWidget);
     expect(find.text('被引用的那条'), findsOneWidget);
-    expect(find.text('别的速记'), findsNothing);
+    expect(find.text('别的灵感'), findsNothing);
 
     await tester.tap(find.text('显示全部'));
     await tester.pumpAndSettle();
-    expect(find.text('别的速记'), findsOneWidget);
+    expect(find.text('别的灵感'), findsOneWidget);
   });
 
   testWidgets('聚焦到已归档条目：仍然看得见、可删除（进回收站）', (WidgetTester tester) async {
@@ -175,7 +175,7 @@ void main() {
 
     expect(find.text('已归档的被引用条目'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
-    expect(find.text('正在查看被引用的速记'), findsOneWidget);
+    expect(find.text('正在查看被引用的灵感'), findsOneWidget);
   });
 
   testWidgets('归档不是死路：只剩已处理时入口仍在、能跳过去', (WidgetTester tester) async {
@@ -194,7 +194,7 @@ void main() {
     expect(find.text('归档 1'), findsOneWidget);
   });
 
-  testWidgets('编辑清空：提示"速记不能为空"，不改原文', (WidgetTester tester) async {
+  testWidgets('编辑清空：提示"灵感不能为空"，不改原文', (WidgetTester tester) async {
     seed('a', '原文', DateTime.now());
     await pumpView(tester);
 
@@ -205,7 +205,7 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
-    expect(find.text('速记不能为空'), findsOneWidget);
+    expect(find.text('灵感不能为空'), findsOneWidget);
     expect(stream.byId('a')!.text, '原文', reason: '空文本不该落库');
   });
 
@@ -218,7 +218,7 @@ void main() {
     await tester.tap(find.text('选择'));
     await tester.pumpAndSettle();
 
-    expect(find.text('选择速记'), findsOneWidget);
+    expect(find.text('选择灵感'), findsOneWidget);
     // 流里只剩下待处理的那条，已处理的不在合并池里（它在浮层里）。
     expect(find.text('已归档'), findsNothing);
     expect(find.text('待处理'), findsOneWidget);
@@ -252,19 +252,19 @@ void main() {
     expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '输入框常驻，空库也能写');
   });
 
-  testWidgets('单向：笔记绝不漏进速记页', (WidgetTester tester) async {
-    // 文库里的甲 / 乙（普通笔记）与速记是两条数据线，速记页只读 `stream_items`。
+  testWidgets('单向：笔记绝不漏进灵感页', (WidgetTester tester) async {
+    // 文库里的甲 / 乙（普通笔记）与灵感是两条数据线，灵感页只读 `stream_items`。
     store.create(title: '甲');
     store.create(title: '乙');
-    seed('a', '一条速记', DateTime.now());
+    seed('a', '一条灵感', DateTime.now());
     await pumpView(tester);
 
-    expect(find.text('一条速记'), findsOneWidget);
-    expect(find.text('甲'), findsNothing, reason: '速记不读笔记数据（单向）');
+    expect(find.text('一条灵感'), findsOneWidget);
+    expect(find.text('甲'), findsNothing, reason: '灵感不读笔记数据（单向）');
     expect(find.text('乙'), findsNothing);
   });
 
-  test('版式闸门：心流页零投影 / 零模糊 / 零 Opacity（Bauhaus 口径）', () {
+  test('版式闸门：灵感页零投影 / 零模糊 / 零 Opacity（Bauhaus 口径）', () {
     final String src = File('lib/src/app/stream_view.dart').readAsStringSync();
     expect(src.contains('BoxShadow'), isFalse, reason: '全站零投影：浮起靠边线与留白');
     expect(src.contains('BackdropFilter'), isFalse);
@@ -307,6 +307,70 @@ void main() {
 
     expect(find.text('已选 1 / 1 条'), findsOneWidget);
     expect(find.text('取消全选'), findsOneWidget);
+  });
+
+  testWidgets('页头：搜索框/占位符/归档/选择 中心线一致（28 高）', (
+    WidgetTester tester,
+  ) async {
+    seed('a', '一条', DateTime.now());
+    seed('b', '归档的', DateTime.now(), archived: true);
+    await pumpView(tester);
+
+    final Rect search = tester.getRect(find.byType(TextField).at(0));
+    final Rect hint = tester.getRect(find.text('搜索'));
+    final Rect arch = tester.getRect(find.text('归档 1'));
+    final Rect sel = tester.getRect(find.text('选择'));
+
+    // 主题 `inputDecorationTheme` 会用 OutlineInputBorder 兜底 enabled/focused；
+    // 必须显式 none，否则会画出"第二个搜索框"（2026-10-20 实报）。
+    final TextField field = tester.widget<TextField>(
+      find.byType(TextField).at(0),
+    );
+    expect(field.decoration?.enabledBorder, InputBorder.none);
+    expect(field.decoration?.focusedBorder, InputBorder.none);
+
+    final Rect editable = tester.getRect(find.byType(EditableText).first);
+    expect(
+      editable.center.dy,
+      closeTo(search.center.dy, 1.0),
+      reason: '输入行垂直居中（不能顶到上沿）',
+    );
+    expect(
+      editable.center.dy,
+      closeTo(hint.center.dy, 1.0),
+      reason: '输入行与占位符对齐',
+    );
+
+    expect(search.height, 28, reason: '搜索框与按钮同高');
+    expect(hint.center.dy, closeTo(search.center.dy, 0.5), reason: '占位符居中');
+    expect(arch.center.dy, closeTo(search.center.dy, 0.5), reason: '归档标签对齐');
+    expect(sel.center.dy, closeTo(search.center.dy, 0.5), reason: '选择标签对齐');
+
+    final Rect count = tester.getRect(find.text('灵感 1 条'));
+    expect(arch.center.dx, lessThan(search.center.dx), reason: '归档在最左');
+    expect(search.center.dx, lessThan(count.center.dx),
+        reason: '搜索框在归档右侧');
+    expect(count.center.dx, lessThan(sel.center.dx),
+        reason: '灵感计数在最右、「选择」更右');
+  });
+
+  testWidgets('搜索时归档入口不消失（计数用归档总数）', (
+    WidgetTester tester,
+  ) async {
+    seed('a', '一条', DateTime.now());
+    seed('b', '归档的', DateTime.now(), archived: true);
+    await pumpView(tester);
+
+    expect(find.text('归档 1'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).at(0), '一条');
+    await tester.pump();
+
+    expect(
+      find.text('归档 1'),
+      findsOneWidget,
+      reason: '归档入口不参与搜索过滤，不能因为搜不到归档条目就消失',
+    );
   });
 
   testWidgets('批量删除：确认后进回收站，主列表清空', (WidgetTester tester) async {
@@ -352,18 +416,14 @@ void main() {
     expect(stream.byId(a), isNull);
   });
 
-  test('使用即归档：复制 / 引用 / 复制到画布后，源速记自动进归档', () {
-    // 先用一条速记建出合法的文档目标（createSpark 的默认 content 不是块树）。
+  test('使用即归档：复制到笔记 / 复制到画布后，源灵感自动进归档', () {
+    // 先用一条灵感建出合法的文档目标（createSpark 的默认 content 不是块树）。
     final Note target = store.streamToNewNote(stream.add('目标笔记内容')!.id)!;
     final Note canvas = store.streamToNewCanvas(stream.add('目标画布内容')!.id)!;
 
     final String copied = stream.add('要复制到笔记的')!.id;
     expect(store.copyStreamIntoNote(copied, target.id), isTrue);
     expect(stream.byId(copied)!.archived, isTrue, reason: '复制=使用，应自动归档');
-
-    final String referenced = stream.add('要被引用的')!.id;
-    expect(store.referenceStreamInNote(referenced, target.id), isTrue);
-    expect(stream.byId(referenced)!.archived, isTrue, reason: '引用=使用，应自动归档');
 
     final String onCanvas = stream.add('要复制到画布的')!.id;
     expect(store.copyStreamOntoCanvas(onCanvas, canvas.id), isTrue);

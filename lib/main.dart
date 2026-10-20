@@ -126,7 +126,7 @@ Future<void> main() async {
   });
 }
 
-/// 回收站 **30 天自动彻底删除**（笔记/画布 + 速记）。失败不影响启动。
+/// 回收站 **30 天自动彻底删除**（笔记/画布 + 灵感）。失败不影响启动。
 Future<void> _purgeExpiredTrash(NoteStore noteStore, AppDatabase db) async {
   try {
     await noteStore.purgeExpired(const Duration(days: 30));

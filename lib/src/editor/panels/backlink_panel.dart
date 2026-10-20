@@ -14,9 +14,9 @@ import '../../theme/tokens.dart';
 /// 数据来自 [NoteStore.backlinks]，它把指向本笔记的两类结构化边合起来：
 /// 别的笔记里的 `ref` 块、画布上的卡片（见 `domain/backlink.dart`）。
 ///
-/// 2026-10-18 起多一段 **「来自速记」**：速记的「复制 / 引用 / 转新 / 合并」都记在
+/// 2026-10-18 起多一段 **「来自灵感」**：灵感的「复制 / 引用 / 转新 / 合并」都记在
 /// 台账 `stream_exports` 里，而**复制是快照、没有结构化边**——不反过来读，复制进
-/// 本篇的速记就永久失联，双链只剩一半（见 [NoteStore.streamSourcesOf]）。
+/// 本篇的灵感就永久失联，双链只剩一半（见 [NoteStore.streamSourcesOf]）。
 ///
 /// ## 为什么是 ConsumerWidget 而不是宿主把数据传进来
 /// 面板**只在打开时挂载**，所以它可以放心 `watch(notesProvider)`：任何笔记内容
@@ -40,7 +40,7 @@ class BacklinkPanel extends ConsumerWidget {
   /// 点条目 → 打开来源笔记。
   final ValueChanged<String> onOpenNote;
 
-  /// 点「来自速记」那一条 → 心流页定位该速记（双链的速记侧出口）。
+  /// 点「来自灵感」那一条 → 灵感页定位该灵感（双链的灵感侧出口）。
   final ValueChanged<String> onOpenStream;
 
   @override
@@ -50,7 +50,7 @@ class BacklinkPanel extends ConsumerWidget {
     // 类型由 provider 推断（本层不 import `data/`，见架构闸门）。
     final store = ref.read(noteStoreProvider);
     final List<Backlink> links = store.backlinks(noteId);
-    // **来自速记**：复制是快照、没有结构化边，这份关系只存在于台账里
+    // **来自灵感**：复制是快照、没有结构化边，这份关系只存在于台账里
     // （见 [NoteStore.streamSourcesOf]）⇒ 双链的另一半在此补齐。
     final List<StreamSource> sources = store.streamSourcesOf(noteId);
 
@@ -110,10 +110,10 @@ class BacklinkPanel extends ConsumerWidget {
                         crossAxisAlignment: .stretch,
                         children: <Widget>[
                           for (final Backlink b in links) _row(context, b),
-                          // 速记单独一段：它与 ref 反链不是同一种边（快照 vs 活链），
+                          // 灵感单独一段：它与 ref 反链不是同一种边（快照 vs 活链），
                           // 混在一锅会让人以为点进去是同一回事。
                           if (sources.isNotEmpty) ...<Widget>[
-                            _sectionLabel('来自速记', theme, scheme),
+                            _sectionLabel('来自灵感', theme, scheme),
                             for (final StreamSource s in sources)
                               _streamRow(context, s),
                           ],
@@ -145,7 +145,7 @@ class BacklinkPanel extends ConsumerWidget {
         ),
       );
 
-  /// 一条速记反链：原文首行 + 手法。点它 → 心流页定位那一条。
+  /// 一条灵感反链：原文首行 + 手法。点它 → 灵感页定位那一条。
   Widget _streamRow(BuildContext context, StreamSource s) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -175,7 +175,7 @@ class BacklinkPanel extends ConsumerWidget {
                 mainAxisSize: .min,
                 children: <Widget>[
                   Text(
-                    first.isEmpty ? '（空速记）' : first,
+                    first.isEmpty ? '（空灵感）' : first,
                     maxLines: 2,
                     overflow: .ellipsis,
                     style: theme.textTheme.bodyLarge,

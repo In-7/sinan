@@ -198,7 +198,7 @@ void main() {
       isFalse,
       reason: '浮层显隐不归这个布尔管，降级后必须立刻复位',
     );
-    // 只数「AI 轨自己的浮层」：用 Key 精确命中，避开工作区里那根常驻的 心流
+    // 只数「AI 轨自己的浮层」：用 Key 精确命中，避开工作区里那根常驻的 灵感
     // Composer（它也是 AppFloatSurface，会污染全量计数）。
     final Finder railSurface = find.byKey(const Key('askRailFloatSurface'));
     expect(
@@ -230,7 +230,7 @@ void main() {
 
     container.read(aiPanelOpenProvider.notifier).open();
     await tester.pumpAndSettle();
-    // 宽窗常驻轨不进浮层；用 Key 精确命中 AI 轨浮层，避开常驻的 心流 Composer。
+    // 宽窗常驻轨不进浮层；用 Key 精确命中 AI 轨浮层，避开常驻的 灵感 Composer。
     expect(
       find.byKey(const Key('askRailFloatSurface')),
       findsNothing,
