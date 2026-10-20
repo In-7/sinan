@@ -445,6 +445,64 @@ void main() {
     }
   });
 
+  testWidgets('面板档：AppFloatSurface(panel: true) 对齐工作区浮面卡', (
+    WidgetTester tester,
+  ) async {
+    for (final ThemeData theme in <ThemeData>[
+      AppTheme.light(),
+      AppTheme.dark(),
+    ]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            body: AppFloatSurface(
+              panel: true,
+              child: SizedBox(width: 8, height: 8),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Brightness brightness = theme.brightness;
+      final Material surface = tester.widget<Material>(
+        find
+            .descendant(
+              of: find.byType(AppFloatSurface),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(surface.color, AppTheme.panelFill(brightness));
+      final RoundedRectangleBorder shape =
+          surface.shape! as RoundedRectangleBorder;
+      expect(
+        shape.side.color,
+        AppTheme.surfaceRingColor(brightness),
+        reason: '面板档用 1px 内描边（同发丝环色）',
+      );
+      expect(shape.side.width, 1, reason: '面板档内描边必须 1px');
+      expect(
+        shape.borderRadius,
+        BorderRadius.circular(Tokens.radiusMd),
+        reason: '面板档圆角与工作区浮面卡一致（radiusMd）',
+      );
+      final DecoratedBox backdrop = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find.byType(AppFloatSurface),
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      expect(
+        (backdrop.decoration as BoxDecoration).boxShadow,
+        isEmpty,
+        reason: '面板档不再用外扩光环（会被外层裁掉）',
+      );
+    }
+  });
+
   test('浮动工具条：浮层口径（floatSurface 底色 + menuBorder 描边，无模糊阴影）', () {
     for (final ThemeData theme in <ThemeData>[
       AppTheme.light(),

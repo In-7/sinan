@@ -193,9 +193,9 @@ class StreamStore {
   }
 
   /// 改文本（不改创建时间 —— 灵感的位置由"记下来的时刻"决定）。没这条返回 false。
+  /// 允许空文本：把卡片清成空（`''` 落库），空卡留着而非拒绝。
   bool update(String id, String text) {
     final String t = text.trim();
-    if (t.isEmpty) return false;
     final int changed = db
         .select('SELECT 1 FROM $table WHERE id = ?', <Object?>[id])
         .length;

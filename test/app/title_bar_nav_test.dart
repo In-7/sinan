@@ -469,14 +469,14 @@ void main() {
 
   // 2026-10-15 面板契约（承接已删的 panelShadow/panelEdge 主题闸门，改在真实
   // 外壳上钉）：① 底色 = ladder 的 panelFill（画布页同档，切笔记类型不"变色"）；
-  // ② **明暗同规则**——都只叠一条发丝环 [AppTheme.surfaceRing]（外扩 1px 的
-  // shadow spread，不占布局、不被子级盖住）；③ **无柔影**（暗色黑影无对比度，
-  // 立体感由明度阶梯 + 环 + 圆角承担）；④ 不再用 border + foregroundDecoration
-  // 兜底那套。
+  // ② **明暗同规则**——收边统一为 1px 发丝线，颜色 = [AppTheme.surfaceRingColor]；
+  //    主卡 / 右栏走 foreground 内描边（2026-10-20 用户定：内描边比外扩环好看），
+  //    [AppTheme.surfaceRing] 外扩环作为合法备选保留；③ **无柔影**（暗色黑影无
+  //    对比度，立体感由明度阶梯 + 1px 线 + 圆角承担）。
   // ⚠️ 明暗**必须分成两条** testWidgets：同一测试体里连 pump 两棵 App 会让
   // 第一棵的挂起定时器（AI 轨过渡等）在收尾时炸 "!timersPending"。
   for (final Brightness brightness in Brightness.values) {
-    testWidgets('工作区浮面卡（$brightness）：panelFill 实面 + 只有发丝环 + 无柔影', (
+    testWidgets('工作区浮面卡（$brightness）：panelFill 实面 + 1px 收边 + 无柔影', (
       WidgetTester tester,
     ) async {
       setSurfaceSize(tester, 1200, 900);
@@ -512,17 +512,36 @@ void main() {
       for (final Element e in panels.evaluate()) {
         final DecoratedBox w = e.widget as DecoratedBox;
         final BoxDecoration d = w.decoration as BoxDecoration;
-        // 明暗**同规则**：都只有一条发丝环（外扩 1px 的 shadow spread），**不含柔影**。
-        // [DecoratedBox] 本就没有 foregroundDecoration 位 ⇒ 收边不可能走 border 兜底，
-        // 只可能是下面这条 boxShadow 环。
+        // 收边有**两种**合法形态，取决于外面有没有裁切：
+        // - 主内容卡：外扩 1px 的 [AppTheme.surfaceRing]（boxShadow spread）；
+        // - AI 轨：外面套着 `ClipRect` 给宽度动画裁切，顶/底/右没有 1px 缝，
+        //   外扩环会被裁掉 ⇒ 改走 foreground 1px 内描边（同色），见 `_AiRailSlot`。
+        // 两者都**不许**混进柔影（blur > 0）。
         final List<BoxShadow>? shadows = d.boxShadow;
+        if (shadows == null || shadows.isEmpty) {
+          final DecoratedBox? fg =
+              e.findAncestorWidgetOfExactType<DecoratedBox>();
+          final BoxDecoration? fd = fg?.decoration as BoxDecoration?;
+          final Border? border = fd?.border as Border?;
+          expect(
+            border,
+            isNotNull,
+            reason: '$brightness：浮面卡既没有外扩环、也没有 1px 内描边',
+          );
+          expect(
+            border!.top.width,
+            1,
+            reason: '$brightness：内描边必须 1px',
+          );
+          expect(
+            border.top.color,
+            AppTheme.surfaceRingColor(brightness),
+            reason: '$brightness：内描边颜色必须与发丝环同色',
+          );
+          continue;
+        }
         expect(
-          shadows,
-          isNotNull,
-          reason: '$brightness：浮面卡必须有发丝环（明度阶梯 + 环 + 圆角 = 立体）',
-        );
-        expect(
-          shadows!.length,
+          shadows.length,
           1,
           reason: '$brightness：只能有一条环，不许混进柔影',
         );
@@ -544,6 +563,11 @@ void main() {
           shadows.single.offset,
           Offset.zero,
           reason: '$brightness：整圈等宽 ⇒ 不许有偏移（有偏移就只露两边）',
+        );
+        expect(
+          shadows.single.color,
+          AppTheme.surfaceRingColor(brightness),
+          reason: '$brightness：环色必须走表面环令牌',
         );
       }
     });

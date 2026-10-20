@@ -442,15 +442,15 @@ class AppTheme {
   /// `offset` 硬偏移（如 (1,1) 只露右 / 下）——现在要四边，用 spread。
   ///
   /// ⚠️ 暗色档位（2026-10-15 实测，相对面板的 CIE ΔL\*）：
-  /// 5% ≈ +1.2（Linear 原味，极淡）→ 8% ≈ +5.2 → **10%（当前，2026-10-20 定）**。
-  /// 亮色：**黑 8%**（2026-10-20 从 10% 降到 8%）；暗色：白 10%。
+  /// 5% ≈ +1.2（Linear 原味，极淡）→ **8%（当前，2026-10-20 定）** ≈ +5.2。
+  /// 亮色：**黑 8%**（2026-10-20 从 10% 降到 8%）；暗色：白 8%。
+  /// [surfaceRing] 的**裸色**：1px 发丝线共用（外扩光环 / 面板内描边同色）。
+  static Color surfaceRingColor(Brightness brightness) => brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.08)
+      : Colors.black.withValues(alpha: 0.08);
+
   static List<BoxShadow> surfaceRing(Brightness brightness) => <BoxShadow>[
-        BoxShadow(
-          color: brightness == Brightness.dark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.black.withValues(alpha: 0.08),
-          spreadRadius: 1,
-        ),
+        BoxShadow(color: surfaceRingColor(brightness), spreadRadius: 1),
       ];
 
   /// **外扩收边线需要的顶部退让**（= **1**）：[surfaceRing] 是 `spread: 1` 的

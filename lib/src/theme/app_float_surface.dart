@@ -98,6 +98,7 @@ class AppFloatSurface extends StatelessWidget {
     this.borderRadius,
     this.blur = false,
     this.glass = false,
+    this.panel = false,
     this.color,
   });
 
@@ -146,17 +147,26 @@ class AppFloatSurface extends StatelessWidget {
   /// 有描边**的面上——本容器三件套齐全，安全。
   final bool glass;
 
+  /// **面板档**：读作"内容面板"而不是"浮在空中的浮层"——与工作区的浮面卡
+  /// （`_FloatingPanel` / 问笔记右栏 `_AiRailSlot`）同一观感：
+  /// [AppTheme.panelFill] 实底 + [Tokens.radiusMd] 圆角 + [AppTheme.surfaceRing]
+  /// 外扩光环，**不要** [AppTheme.menuBorder] 描边 / [AppTheme.floatShadows] 柔影。
+  ///
+  /// 用途：同一功能在宽窗是右栏、窄窗降级成浮层时，两边不该换皮
+  /// （问笔记浮层态 2026-10-20 对齐主内容面板与右栏）。
+  final bool panel;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     // 默认圆角 radiusLg（2026-09-19 起，Apple 菜单口径的柔和感）；
     // 工具条胶囊等刻意指定自己曲率的仍从 [borderRadius] 传入。
-    final BorderRadius radius =
-        borderRadius ?? BorderRadius.circular(Tokens.radiusLg);
-    // 投影走**双层软阴影**（[AppTheme.floatShadows]：贴地影 + 环境影，Apple
-    // 菜单口径），由外层 [DecoratedBox] 承担——Material 的 elevation 只有
-    // 单层固定投影，出不来这个质感。Material 本体只负责底色 + 描边 + 裁剪
-    // （elevation 归零，避免两层影子叠加发脏）。
+    final BorderRadius radius = borderRadius ??
+        BorderRadius.circular(panel ? Tokens.radiusMd : Tokens.radiusLg);
+    // 默认浮层档：投影走**双层软阴影**（[AppTheme.floatShadows]：贴地影 + 环境
+    // 影，Apple 菜单口径），由外层 [DecoratedBox] 承担——Material 的 elevation
+    // 只有单层固定投影，出不来这个质感。面板档改用 [AppTheme.surfaceRing] 光环。
+    // Material 本体只负责底色 + 描边 + 裁剪（elevation 归零，避免两层影子叠加发脏）。
     Widget content = Padding(
       padding: padding ?? EdgeInsets.zero,
       child: width == null ? child : SizedBox(width: width, child: child),
@@ -165,10 +175,16 @@ class AppFloatSurface extends StatelessWidget {
       content = AppGlass(child: content);
     }
     Widget surface = Material(
-      color: color ?? AppTheme.floatSurface(theme.brightness),
+      color: color ??
+          (panel
+              ? AppTheme.panelFill(theme.brightness)
+              : AppTheme.floatSurface(theme.brightness)),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
-        side: AppTheme.menuBorder(theme.colorScheme),
+        // 面板档：1px 内描边（与主卡 / AI 轨同款，2026-10-20 用户定）。
+        side: panel
+            ? BorderSide(color: AppTheme.surfaceRingColor(theme.brightness))
+            : AppTheme.menuBorder(theme.colorScheme),
       ),
       clipBehavior: Clip.antiAlias,
       child: content,
@@ -190,7 +206,11 @@ class AppFloatSurface extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: radius,
-        boxShadow: AppTheme.floatShadows(theme.brightness),
+        // 面板档不再用外扩光环（会被外层裁掉，且内描边更受青睐）；
+        // 默认浮层档仍是双层柔影。
+        boxShadow: panel
+            ? const <BoxShadow>[]
+            : AppTheme.floatShadows(theme.brightness),
       ),
       child: surface,
     );

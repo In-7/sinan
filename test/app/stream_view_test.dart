@@ -194,7 +194,9 @@ void main() {
     expect(find.text('归档 1'), findsOneWidget);
   });
 
-  testWidgets('编辑清空：提示"灵感不能为空"，不改原文', (WidgetTester tester) async {
+  testWidgets('编辑清空：空卡保留（flomo 式），不弹错、落库空', (
+    WidgetTester tester,
+  ) async {
     seed('a', '原文', DateTime.now());
     await pumpView(tester);
 
@@ -205,8 +207,21 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
-    expect(find.text('灵感不能为空'), findsOneWidget);
-    expect(stream.byId('a')!.text, '原文', reason: '空文本不该落库');
+    expect(
+      find.text('灵感不能为空'),
+      findsNothing,
+      reason: '清空不再弹"不能为空"',
+    );
+    expect(
+      stream.byId('a')!.text,
+      '',
+      reason: '空文本应落库、卡片保留',
+    );
+    expect(
+      find.text('（空）'),
+      findsOneWidget,
+      reason: '空卡收起态显示占位',
+    );
   });
 
   testWidgets('多选只看待处理：勾选框不落在已处理上', (WidgetTester tester) async {
@@ -238,11 +253,17 @@ void main() {
     await mouse.moveTo(tester.getCenter(find.text(text)));
     await tester.pumpAndSettle();
 
-    // 操作簇确实出现了（复制 / 更多两枚；归档改为自动，不再有手动钮）……
-    expect(find.byTooltip('复制'), findsOneWidget);
+    // 操作簇现在只剩「更多」一枚（复制已收进菜单；归档自动，不再有手动钮）……
+    expect(find.byTooltip('复制'), findsNothing);
+    expect(find.byTooltip('更多'), findsOneWidget);
     expect(find.byTooltip('归档（已处理）'), findsNothing);
-    // ……但正文宽度一点没变（62 的占位是常驻的，只是"填不填内容"）。
+    // ……但正文宽度一点没变（40 的占位是常驻的，只是"填不填内容"）。
     expect(tester.getSize(find.text(text)).width, before.width);
+
+    // 复制确实收在「更多」菜单里。
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    expect(find.text('复制'), findsOneWidget);
   });
 
   testWidgets('空库：邀请文案 + 输入条常驻', (WidgetTester tester) async {

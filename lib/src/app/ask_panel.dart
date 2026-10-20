@@ -88,6 +88,10 @@ class _AskOverlay extends StatelessWidget {
               child: AppFloatSurface(
                 key: const Key('askRailFloatSurface'),
                 width: 560,
+                // 与主内容面板 / 宽窗问笔记右栏同款：panelFill + radiusMd +
+                // surfaceRing 光环，而不是浮层档的 floatSurface + menuBorder +
+                // 柔影（2026-10-20 用户：浮层边框不如内容面板）。
+                panel: true,
                 child: FocusScope(child: _AskModalCard(onClose: onClose)),
               ),
             ),

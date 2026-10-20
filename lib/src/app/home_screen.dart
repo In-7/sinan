@@ -561,22 +561,18 @@ const BorderRadius _kPanelRadius = BorderRadius.all(
 );
 
 /// 工作区的**内嵌浮面卡**（2026-10-14 统一到 surface_ladder 的 panel 档）：
-/// [AppTheme.panelFill] 实色 + 8px 硬角，**无投影 / 无 bevel**；内容用
-/// [ClipRRect] 裁进圆角，滚动条 / 铺底色块不会顶出方角。
+/// [AppTheme.panelFill] 实色 + [Tokens.radiusMd] 圆角，**无柔影 / 无 bevel**；
+/// 内容用 [ClipRRect] 裁进圆角，滚动条 / 铺底色块不会顶出方角。
 ///
 /// 📌 底色**必须走 panelFill**（不再 Bauhaus.surface）：画布页
 /// （`canvas_surface`）早就涂这一档，两处不同色 ⇒ 切笔记类型时卡片"变色"。
 ///
-/// 描边按明暗分治（2026-10-14，与新建胶囊同规则）：
-/// - **暗色不画边**：4px 环缝露出窗口底 + 面板对底的明度差已足够分层，
-///   Linear 暗色语言 = 零边框；
-/// - **亮色留 1px 发丝边**：亮 panel 与窗口底只差约 4 L\*，去边会糊成一片。
+/// 收边 = **1px 内描边**（2026-10-20 用户定：内描边比外扩光环好看），颜色走
+/// [AppTheme.surfaceRingColor]，明暗同规则；走 `foregroundDecoration` 画在内容
+/// **之上**——编辑器等子树会把底色铺到卡缘，背景层 border 会被盖住。
 ///
 /// 📌 2026-10-15 起**暗色内容区也是浮面**（不垫的凹陷已废）：阶梯两侧单调向上
 /// （底最深 → 面板 → 卡片 → 浮层），与 Linear 一致。
-///
-/// 亮色边仍走 `foregroundDecoration` 画在内容**之上**：编辑器等子树会把底色
-/// 铺到卡缘，普通 border 画在子层下面会被盖住。
 class _FloatingPanel extends StatelessWidget {
   const _FloatingPanel({required this.child});
 
@@ -585,14 +581,16 @@ class _FloatingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Brightness brightness = Theme.of(context).brightness;
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
         color: AppTheme.panelFill(brightness),
         borderRadius: _kPanelRadius,
-        // 发丝环（外扩 1px：**不占布局、不会被子级盖住**；无 blur、无 saveLayer）。
-        // ⚠️ 明暗**同规则**（不再分治）：暗色零边那条 2026-10-15 已废——
-        // 立体感 = 明度阶梯 + 这圈环 + 圆角，**不加柔影**（暗色黑影无对比度）。
-        boxShadow: AppTheme.surfaceRing(brightness),
+      ),
+      // 1px 内描边画在**前层**：不占布局、无 saveLayer，且不会被编辑器等子树
+      // 铺到卡缘的底色盖住（背景层 border 会被盖）。
+      foregroundDecoration: BoxDecoration(
+        borderRadius: _kPanelRadius,
+        border: Border.all(color: AppTheme.surfaceRingColor(brightness)),
       ),
       child: ClipRRect(borderRadius: _kPanelRadius, child: child),
     );
@@ -633,13 +631,20 @@ class _AiRailSlot extends StatelessWidget {
             child: Padding(
               // 左 8 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
               padding: const EdgeInsets.only(left: seam),
-              child: DecoratedBox(
-                // 与主卡同款：panelFill 实面 + 8px 硬角 + 发丝环（同
-                // [AppTheme.surfaceRing]，见 [_FloatingPanel]），无柔影。
+              child: Container(
+                // 与主卡同款：panelFill 实面 + 8px 硬角 + 1px 发丝边，无柔影。
                 decoration: BoxDecoration(
                   color: AppTheme.panelFill(brightness),
                   borderRadius: _kPanelRadius,
-                  boxShadow: AppTheme.surfaceRing(brightness),
+                ),
+                // 边必须画在**前层**：`_AiRailSlot` 外面套着 `ClipRect` 给宽度
+                // 动画裁切，外扩 1px 的 `surfaceRing` 会在顶/底/右被裁掉、只剩
+                // 左边一条线（2026-10-20 用户实报"顶部和底部没有边框线"）。
+                foregroundDecoration: BoxDecoration(
+                  borderRadius: _kPanelRadius,
+                  border: Border.all(
+                    color: AppTheme.surfaceRingColor(brightness),
+                  ),
                 ),
                 child: const ClipRRect(
                   borderRadius: _kPanelRadius,

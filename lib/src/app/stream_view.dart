@@ -1243,7 +1243,7 @@ class _PendingMedia {
 /// 一行灵感：**没有卡片边框**，静止透明；hover / 选中才铺底色与左侧蓝竖条。
 ///
 /// - 点击就地编辑（`Esc` / `Ctrl+Enter` 保存），不是"放大成卡片"；
-/// - hover 时右侧浮出操作簇（复制 / 更多；**归档由使用/转换自动触发**，无手动钮）；
+/// - hover 时右侧浮出「更多」（复制已收进菜单；**归档由使用/转换自动触发**，无手动钮）；
 /// - 归档条目只读、降对比，行尾给「删除」。
 class _StreamRow extends ConsumerStatefulWidget {
   const _StreamRow({
@@ -1308,16 +1308,8 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
 
   Future<void> _saveAndCollapse() async {
     final String text = _editController.text;
-    // **不许改空**：`StreamStore.update` 会拒绝空文本，但这里若直接收起，用户
-    // 看到的还是旧文本——像是"我删的内容又回来了"（2026-10-17 复查）。
-    // 明确说一句、留在编辑态，让人自己再写。
-    if (text.trim().isEmpty && widget.item.text.trim().isNotEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('灵感不能为空')),
-      );
-      if (mounted) _editFocus.requestFocus();
-      return;
-    }
+    // 允许清空：flomo 式——已有卡片可清成空，空卡留着、输入态保留、不弹错。
+    // 空文本直接写回 store（`StreamStore.update` 已放行空）。
     if (text.trim() != widget.item.text.trim()) {
       await ref.read(streamProvider.notifier).edit(widget.item.id, text);
     }
@@ -1346,6 +1338,8 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   Future<void> _onMenu(String value) async {
     final String id = widget.item.id;
     switch (value) {
+      case 'copy':
+        await _copyToClipboard();
       case 'to-note':
         await streamToNewNote(context: context, streamId: id);
       case 'to-canvas':
@@ -1430,18 +1424,20 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
               }
               return KeyEventResult.handled;
             },
-            // **轻推**：整体上移 2px。
+            // **轻推**：整体左移 2px（不缩放、不上下移）。
             //
             // 只做纯位移、**不缩放**：放大哪怕 0.6%，卡片左右也会各溢出 1~2px，
             // 被 `ListView` 的视口切掉一条边（2026-10-17 用户实报）。位移不改变
             // 横向尺寸，永远不会被切；热区跟着走，也不会"看得见点不到"。
+            // 左移安全：每张卡经 `_pageColumn` 左右各缩进 24px（gridMargin），
+            // 2px 推不到视口裁剪边，比上移（顶边是硬边）还稳（2026-10-20 改）。
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0, end: lifted ? 1.0 : 0.0),
               curve: Curves.easeOut,
               duration: Tokens.durationHover,
               builder: (BuildContext context, double t, Widget? child) =>
                   Transform.translate(
-                    offset: Offset(0, -2.0 * t),
+                    offset: Offset(-2.0 * t, 0),
                     child: child,
                   ),
               child: AnimatedContainer(
@@ -1473,18 +1469,23 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          if (widget.item.text.trim().isNotEmpty)
-                            Text(
-                              widget.item.text,
-                              maxLines: 8,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: widget.archived
-                                    ? Bauhaus.inkMuted(brightness)
-                                    : Bauhaus.ink(brightness),
-                                height: 1.6,
-                              ),
+                          // 空卡（flomo 式，清空后保留）：显示淡灰占位，保证卡片
+                          // 仍可见、可点、能重新展开编辑，而不是一行纯空白。
+                          Text(
+                            widget.item.text.trim().isNotEmpty
+                                ? widget.item.text
+                                : '（空）',
+                            maxLines: 8,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: widget.item.text.trim().isEmpty
+                                  ? Bauhaus.inkMuted(brightness)
+                                  : (widget.archived
+                                      ? Bauhaus.inkMuted(brightness)
+                                      : Bauhaus.ink(brightness)),
+                              height: 1.6,
                             ),
+                          ),
                           // 贴的图：缩略图条（视频在第二步接入）。
                           if (attachments.isNotEmpty)
                             _attachmentStrip(theme, attachments),
@@ -1615,42 +1616,32 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     ),
   );
 
-  /// hover 操作簇：复制 / 更多（归档自动，不在这里）。
+  /// hover 操作入口：只有「更多」一枚（复制已收进它的菜单，2026-10-20 用户定；
+  /// 归档自动，不在这里）。
   ///
   /// 2026-10-17 调整：
   /// - **去掉「引用到笔记」**——引用应从笔记 / 画布那一端发起（在正文里挑一条
   ///   灵感），而不是在灵感列表里逐个推出去；
-  /// - 图标 24 → **20 框**（视觉 ≈15），槽 24、槽间 6、左留白 8；整簇占位
-  ///   **92** 且**始终保留**（见 [_actionsWidth]），所以 hover 不会挤动文字。
+  /// - 图标 24 → **20 框**（视觉 ≈15），槽 24；整簇占位 **40** 且**始终保留**
+  ///   （见 [_actionsWidth]），所以 hover 不会挤动文字。
   Widget _actions(ThemeData theme, {Key? key}) {
-    return Padding(
+    // 只剩一枚图标，靠右对齐，位置与原来的「更多」一致。
+    return Align(
       key: key,
-      padding: const EdgeInsets.only(left: Tokens.spaceSm),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          _iconSlot(
-            tooltip: '复制',
-            onPressed: _copyToClipboard,
-            icon: const tabler.Copy(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-            ),
-          ),
-          const SizedBox(width: _actionGap),
-          _popupSlot(
-            tooltip: '更多',
-            icon: const tabler.Dots(
-              height: Tokens.iconMdSm,
-              width: Tokens.iconMdSm,
-            ),
-            items: const <PopupMenuEntry<String>>[
-              PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
-              PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'delete', child: Text('删除')),
-            ],
-          ),
+      alignment: Alignment.centerRight,
+      child: _popupSlot(
+        tooltip: '更多',
+        icon: const tabler.Dots(
+          height: Tokens.iconMdSm,
+          width: Tokens.iconMdSm,
+        ),
+        items: const <PopupMenuEntry<String>>[
+          PopupMenuItem(value: 'copy', child: Text('复制')),
+          PopupMenuDivider(),
+          PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
+          PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
+          PopupMenuDivider(),
+          PopupMenuItem(value: 'delete', child: Text('删除')),
         ],
       ),
     );
@@ -1659,34 +1650,12 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   /// 动作槽边长（热区）：24（= a11y 触达下限）。图标 20 框居中，留 2。
   static const double _actionSlot = 24;
 
-  /// 槽间留白：6（比图标间距松一档，避免三个图标糊成一团）。
-  static const double _actionGap = 6;
-
-  /// 操作簇的**固定占位宽** = 左留白 8 + 2 槽 24 + 1 间隙 6 = 62。
+  /// 操作簇的**固定占位宽** = 左留白 8 + 1 槽 24 + 右留白 8 = 40。
   ///
-  /// 行内永远留出这 62，hover 只是把内容填进来 ⇒ 文字宽度恒定，不会重排。
+  /// 只剩「更多」一枚，但仍要留够时间标签 `17:52`（约 30 + 右内边距）的宽度；
+  /// 行内永远留出这 40，hover 只是把图标填进来 ⇒ 文字宽度恒定，不会重排。
   static const double _actionsWidth =
-      Tokens.spaceSm + _actionSlot * 2 + _actionGap;
-
-  /// 24 槽的图标按钮（复制用）：不用 IconButton（M3 最小 40×40，塞进 24 槽会溢出）。
-  Widget _iconSlot({
-    required String tooltip,
-    required VoidCallback onPressed,
-    required Widget icon,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkResponse(
-        onTap: onPressed,
-        radius: _actionSlot / 2,
-        child: SizedBox(
-          width: _actionSlot,
-          height: _actionSlot,
-          child: Center(child: icon),
-        ),
-      ),
-    );
-  }
+      Tokens.spaceSm + _actionSlot + Tokens.spaceSm;
 
   Widget _popupSlot({
     required String tooltip,
