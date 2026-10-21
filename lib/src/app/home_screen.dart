@@ -145,8 +145,7 @@ class HomeScreen extends ConsumerWidget {
       // Ctrl+K 搜索面板（列表收起时也能跳）。
       final bool narrow =
           MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
-      final bool listCollapsed =
-          narrow || ref.watch(listCollapsedProvider);
+      final bool listCollapsed = narrow || ref.watch(listCollapsedProvider);
 
       // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
       //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
@@ -187,10 +186,13 @@ class HomeScreen extends ConsumerWidget {
         // 早已改走 NoteListColumn ⇒ 那份实现成了孤儿。现在由外壳直接挂载）。
         HomeView.timeline => const StreamView(),
         // 日历：列表列无意义，整卡显示日历（选中某篇后仍出详情）。
-        HomeView.calendar =>
-          selectedId == null ? const CalendarPage() : detail,
-        // 全部 / 收藏：主从（240 列表列 + 详情）。
+        HomeView.calendar => selectedId == null ? const CalendarPage() : detail,
+        // 全部 / 笔记 / 画布 / 收藏：主从（240 列表列 + 详情）。笔记 / 画布
+        // 2026-10-21 用户定升为视图，布局与「全部」同，只是池子按类型收
+        //（见 [homeItemsProvider]）。
         HomeView.all ||
+        HomeView.notes ||
+        HomeView.canvas ||
         HomeView.favorites => TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 1.0, end: listCollapsed ? 0.0 : 1.0),
           duration: Tokens.durationNormal,
@@ -200,19 +202,22 @@ class HomeScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 // 列表列：宽 noteListWidth×t，本体钉 noteListWidth（OverflowBox 不塌缩）、
-                // ClipRect 从右裁；收起按**布尔**移出焦点 / 读屏。
-                ExcludeFocus(
-                  excluding: listCollapsed,
-                  child: ExcludeSemantics(
+                // ClipRect 从右裁；收起按**布尔**移出焦点 / 读屏。**第 2 段**。
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(20),
+                  child: ExcludeFocus(
                     excluding: listCollapsed,
-                    child: ClipRect(
-                      child: SizedBox(
-                        width: Tokens.noteListWidth * t,
-                        child: const OverflowBox(
-                          alignment: Alignment.centerLeft,
-                          minWidth: Tokens.noteListWidth,
-                          maxWidth: Tokens.noteListWidth,
-                          child: NoteListColumn(),
+                    child: ExcludeSemantics(
+                      excluding: listCollapsed,
+                      child: ClipRect(
+                        child: SizedBox(
+                          width: Tokens.noteListWidth * t,
+                          child: const OverflowBox(
+                            alignment: Alignment.centerLeft,
+                            minWidth: Tokens.noteListWidth,
+                            maxWidth: Tokens.noteListWidth,
+                            child: NoteListColumn(),
+                          ),
                         ),
                       ),
                     ),
@@ -224,7 +229,14 @@ class HomeScreen extends ConsumerWidget {
                   color: Bauhaus.ink(brightness)
                       .withValues(alpha: (isDark ? 0.16 : 0.14) * t),
                 ),
-                Expanded(child: detail),
+                // 详情（编辑器 / 画布 / 空态）：**第 3 段**。编辑器内部的块、
+                // 工具条等未编号节点由 secondary 策略按几何排，语义仍是"详情之内"。
+                Expanded(
+                  child: FocusTraversalOrder(
+                    order: const NumericFocusOrder(30),
+                    child: detail,
+                  ),
+                ),
               ],
             );
           },
@@ -274,37 +286,38 @@ class HomeScreen extends ConsumerWidget {
               // 卡片甲），读屏/键盘用户会在导航和内容间乱跳。改成 WidgetOrder 后是
               // 侧栏（新建→笔记→画布→四视图）→ 内容区。
               child: FocusTraversalGroup(
-                policy: WidgetOrderTraversalPolicy(),
+                // **显式编号**取代 widget 树序（2026-10-21，P0）：
+                // 树序一旦被重排（加一层包装、挪一个分支）Tab 顺序会悄悄变，而
+                // 这里的顺序是"先导航、再列表、最后详情"的**产品决定**，不该由
+                // 实现细节决定。未编号的节点（编辑器内部块、日历等）由策略的
+                // secondary（默认 ReadingOrder，按几何）兜底。
+                policy: OrderedTraversalPolicy(),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    // 60 图标轨：常驻脊梁，平铺窗口底，不折叠。
-                    const AppIconRail(),
+                    // 60 图标轨：常驻脊梁，平铺窗口底，不折叠。**第 1 段**。
+                    const FocusTraversalOrder(
+                      order: NumericFocusOrder(10),
+                      child: AppIconRail(),
+                    ),
                     Expanded(
-                      child: Padding(
-                        // 环缝：**顶 1px / 左 0 / 右 4 / 底 4**（2026-10-15 用户定；
-                        // 顶由 2 降到 1）。顶这道缝给卡的外扩亮线留落脚位——0 会让线
-                        // 压到标题栏最后一行（读作"重叠"，用户实报过），1 正好够。
-                        // 左缝 0：卡左缘贴 60 轨右界，外扩亮线落在轨那一列像素上。
-                        padding: const EdgeInsets.fromLTRB(
-                          0,
-                          AppTheme.surfaceRingRetreat,
-                          Tokens.appPanelInset,
-                          Tokens.appPanelInset,
-                        ),
-                        child: Stack(
-                          children: <Widget>[
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(
-                                  child: _FloatingPanel(child: cardChild),
-                                ),
-                                _AiRailSlot(open: aiInline),
-                              ],
-                            ),
-                          ],
-                        ),
+                      // 环缝已**全部取消**（2026-10-20 用户定）：顶 0 / 左 0 之后，
+                      // 右 / 下边距也去掉 ⇒ 卡片右缘贴窗右、下缘贴窗底；贴窗的那
+                      // 三只角随之改直角，只有左上角留圆角（见 [_kPanelRadius]）。
+                      child: Stack(
+                        children: <Widget>[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Expanded(child: _FloatingPanel(child: cardChild)),
+                              // AI 右栏：**最后一段**（导航 → 列表 → 详情 → AI）。
+                              FocusTraversalOrder(
+                                order: const NumericFocusOrder(40),
+                                child: _AiRailSlot(open: aiInline),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -554,11 +567,22 @@ class _EmptyDetail extends StatelessWidget {
       const Center(child: Text('选择左侧笔记，或新建一篇'));
 }
 
-/// 浮面卡统一圆角：内面板 **10px**（2026-10-15 用户定；8 → 10，比默认
-/// [Bauhaus.radius] 的 4px 更舒展）；主卡与 AI 卡共用，保证拼缝处半径一致。
-const BorderRadius _kPanelRadius = BorderRadius.all(
-  Radius.circular(Tokens.radiusMd),
+/// 浮面卡圆角：**只留左上角**（2026-10-20 用户定）——它是唯一的内嵌角，上接
+/// 标题栏、左邻 60 图标轨，留出圆角才有"卡嵌在工作区里"的读法。
+///
+/// 其余三角 —— **右上 / 右下 / 左下** —— 在右 / 下边距取消后都贴着窗口沿：
+/// 贴窗的角若留圆角，窗口角会露出两块窗口底的**月牙**，看着就不像一整块
+///（与左侧导航板底同一条规矩，见 `hub_nav` 那条测试）。主卡与 AI 卡共用。
+const BorderRadius _kPanelRadius = BorderRadius.only(
+  topLeft: Radius.circular(Tokens.radiusMd),
 );
+
+/// **AI 问答右栏的圆角：四角全直角**（2026-10-20 用户定）。
+///
+/// 它四周都不"悬空"：上接标题栏、右贴窗右、下贴窗底、左是 4px 拼缝（邻主卡，
+/// 而主卡那一侧已是直角）⇒ 任何一只角留圆角都会露出窗口底的**月牙**或拼缝
+/// 缺口，看着就不像一整块。收边仍是同一条 1px 内描边。
+const BorderRadius _kRailRadius = BorderRadius.zero;
 
 /// 工作区的**内嵌浮面卡**（2026-10-14 统一到 surface_ladder 的 panel 档）：
 /// [AppTheme.panelFill] 实色 + [Tokens.radiusMd] 圆角，**无柔影 / 无 bevel**；
@@ -581,6 +605,7 @@ class _FloatingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Brightness brightness = Theme.of(context).brightness;
+    final Color line = AppTheme.surfaceRingColor(brightness);
     return Container(
       decoration: BoxDecoration(
         color: AppTheme.panelFill(brightness),
@@ -588,9 +613,17 @@ class _FloatingPanel extends StatelessWidget {
       ),
       // 1px 内描边画在**前层**：不占布局、无 saveLayer，且不会被编辑器等子树
       // 铺到卡缘的底色盖住（背景层 border 会被盖）。
+      //
+      // **只画顶 / 左两条**（2026-10-21 用户定）：描边只用在"与邻面相接"的边上
+      // ——顶接标题栏、左接 60 图标轨。**右 / 下都贴窗沿**（环缝已为 0），
+      // 窗沿本身就是边界，再画一条等于在窗口最后一行像素上画线，多余；
+      // 右缘在 AI 打开时变成拼缝，缝露出的窗口底就是分界，同样不该画。
       foregroundDecoration: BoxDecoration(
         borderRadius: _kPanelRadius,
-        border: Border.all(color: AppTheme.surfaceRingColor(brightness)),
+        border: Border(
+          top: BorderSide(color: line),
+          left: BorderSide(color: line),
+        ),
       ),
       child: ClipRRect(borderRadius: _kPanelRadius, child: child),
     );
@@ -618,6 +651,7 @@ class _AiRailSlot extends StatelessWidget {
     const double seam = Tokens.appPanelInset;
     const double fullWidth = Tokens.askRailWidth + seam;
     final Brightness brightness = Theme.of(context).brightness;
+    final Color line = AppTheme.surfaceRingColor(brightness);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeInOut,
@@ -632,23 +666,28 @@ class _AiRailSlot extends StatelessWidget {
               // 左 8 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
               padding: const EdgeInsets.only(left: seam),
               child: Container(
-                // 与主卡同款：panelFill 实面 + 8px 硬角 + 1px 发丝边，无柔影。
+                // 与主卡同底同边（panelFill 实面 + 1px 发丝边、无柔影），
+                // 但圆角取自己的 **四角直角**（见 [_kRailRadius]）。
                 decoration: BoxDecoration(
                   color: AppTheme.panelFill(brightness),
-                  borderRadius: _kPanelRadius,
+                  borderRadius: _kRailRadius,
                 ),
                 // 边必须画在**前层**：`_AiRailSlot` 外面套着 `ClipRect` 给宽度
                 // 动画裁切，外扩 1px 的 `surfaceRing` 会在顶/底/右被裁掉、只剩
                 // 左边一条线（2026-10-20 用户实报"顶部和底部没有边框线"）。
                 foregroundDecoration: BoxDecoration(
-                  borderRadius: _kPanelRadius,
-                  border: Border.all(
-                    color: AppTheme.surfaceRingColor(brightness),
+                  borderRadius: _kRailRadius,
+                  // 与主卡同一口径：**只画顶一条**（接标题栏）。
+                  // 左 = 拼缝（缝露出的窗口底就是分界）；右 / 下 = 贴窗沿
+                  //（窗沿本身即边界）⇒ 都不画。
+                  border: Border(
+                    top: BorderSide(color: line),
                   ),
                 ),
-                child: const ClipRRect(
-                  borderRadius: _kPanelRadius,
-                  child: SizedBox(width: Tokens.askRailWidth, child: AskRail()),
+                // 直角卡不需要 `ClipRRect`（它默认就是 zero 圆角）⇒ 少一层裁剪。
+                child: const SizedBox(
+                  width: Tokens.askRailWidth,
+                  child: AskRail(),
                 ),
               ),
             ),
@@ -739,9 +778,7 @@ class SidebarCollapseButton extends ConsumerWidget {
         width: Tokens.iconMdSm,
         strokeWidth: 1.5,
       ),
-      tooltip: narrow
-          ? '放宽窗口可展开列表'
-          : (collapsed ? '展开列表' : '收起列表'),
+      tooltip: narrow ? '放宽窗口可展开列表' : (collapsed ? '展开列表' : '收起列表'),
       onPressed: narrow
           ? null
           : () => ref.read(listCollapsedProvider.notifier).toggle(),

@@ -35,9 +35,10 @@ import 'search_provider.dart';
 ///   的页面背景上）。
 /// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
 ///
-/// ⚠️ **四个视图都不分笔记与画布**（用户 2026-09-29 明确）：形态是**筛选
-/// 维度**而不是视图（2026-10-05 决策 E）⇒ 走顶栏漏斗钮里的「形态」facet
-/// （[NoteKindFacet]），不再占用 tab 位，三点溢出菜单随之退役。
+/// 📌 形态与视图的关系（2026-10-21 更新）：灵感 / 全部 / 日历 / 收藏仍不分
+/// 笔记与画布；**笔记 / 画布自当日起升为独立视图**（布局同「全部」，见
+/// [kHomeTabs]），顶栏漏斗钮的「形态」facet（[NoteKindFacet]）保留为视图内
+/// 再筛选。
 ///
 /// ⚠️ **排序 / 标签 / 形态都不是页面**：它们是全局控件，合住顶栏右侧一枚
 /// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、三段——形态 / 排序 /
@@ -67,6 +68,20 @@ extension HomeViewIcon on HomeView {
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
+    // 笔记：FileText——全 app 的"笔记"图形语言（搜索结果行 / 附件卡同款）。
+    HomeView.notes => tabler.FileText(
+      height: size,
+      width: size,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
+    // 画布：Shape2——本 app 画布空态水印同款（方圆叠形 = 白板/图形）。
+    HomeView.canvas => tabler.Shape2(
+      height: size,
+      width: size,
+      strokeWidth: Tokens.iconStroke,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
     HomeView.calendar => tabler.Calendar(
       height: size,
       width: size,
@@ -82,17 +97,23 @@ extension HomeViewIcon on HomeView {
   };
 }
 
-/// 最左图标导航轨的**四个常驻目的地**（2026-10-09 用户定外移；此前是主页
-/// 顶栏横排 tab）：**灵感 | 全部 | 日历 | 收藏**，灵感首位且为启动默认
-///（与 [NavHistoryNotifier.build] 的默认值一致）。
+/// 最左图标导航轨的**常驻目的地**：**灵感 | 笔记 | 画布 | 日历**，灵感首位且为
+/// 启动默认（与 [NavHistoryNotifier.build] 的默认值一致）。
 ///
-/// ⚠️ 笔记 / 画布**不在这里**（决策 E）——它们是形态筛选，走漏斗钮的
-/// [NoteKindFacet]；三点溢出菜单已随之退役。
+/// 📌 2026-10-21 用户定，两步走：
+/// 1. 笔记 / 画布**升为独立视图**（推翻 2026-10-05 决策 E 的"只做筛选"）：与
+///    原来的「全部」同布局（主从 + 240 列表列），只是池子按类型收；
+/// 2. 同日再定：**「全部」「收藏」撤出图标轨**——笔记 + 画布已覆盖「全部」的
+///    内容，轨上不再堆冗余目的地。
+///
+/// ⚠️ 两枚枚举值本身**保留**：`HomeView.all` 仍是「从编辑器 / 画布页返回主页」
+/// 的落点（`search_palette` 的兜底 + 搜索结果空态文案在用）；「收藏」页暂留
+/// 代码（[Note.promotedAt] 语义未变），但**当前没有 UI 入口**。
 const List<HomeView> kHomeTabs = <HomeView>[
   HomeView.timeline,
-  HomeView.all,
+  HomeView.notes,
+  HomeView.canvas,
   HomeView.calendar,
-  HomeView.favorites,
 ];
 
 /// **形态筛选 facet**（2026-10-05 决策 E 新增）：全部 / 笔记 / 画布。
@@ -206,6 +227,15 @@ final homeItemsProvider = Provider.autoDispose
         HomeView.timeline => const <Note>[],
         // 全部：跨形态统一池，跟随全局排序。
         HomeView.all => all.toList()..sort(order),
+        // 笔记 / 画布（2026-10-21 用户定升为视图）：在**视图层**就按类型收池，
+        // 全局排序照走。facet（形态筛选）在其上仍是再筛一遍——如「笔记」视图
+        // 里选「画布」facet 得空集，两个控件叠加的正常结果。
+        HomeView.notes =>
+          all.where((Note n) => n.kind != NoteKind.canvas).toList()
+            ..sort(order),
+        HomeView.canvas =>
+          all.where((Note n) => n.kind == NoteKind.canvas).toList()
+            ..sort(order),
         // 收藏不读全局排序：最近收藏的排前面。
         HomeView.favorites => <Note>[
           ...all.where((Note n) => n.promotedAt != null),
@@ -1255,6 +1285,8 @@ class _EmptyView extends ConsumerWidget {
       text = switch (view) {
         HomeView.timeline => '还没有笔记或画布',
         HomeView.all => '还没有笔记或画布',
+        HomeView.notes => '还没有笔记',
+        HomeView.canvas => '还没有画布',
         HomeView.favorites => '还没有收藏',
         HomeView.calendar => '', // 不会走到。
       };

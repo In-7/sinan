@@ -99,9 +99,10 @@ void main() {
             .evaluate()
             .isNotEmpty;
 
-    // 四枚视图导航都要声明 button + selected（可读屏才知"可点"与"当前是哪个"）。
+    // 视图导航都要声明 button + selected（可读屏才知"可点"与"当前是哪个"）。
     // ⚠️ 已处理**不是**导航站（2026-10-18 用户定：低频功能，是灵感页表头那枚计数
-    // 弹出来的浮层，见 `showStreamLedger`）⇒ 仍四枚。
+    // 弹出来的浮层，见 `showStreamLedger`）。2026-10-21 起四枚
+    //（灵感 / 笔记 / 画布 / 日历，见 [kHomeTabs]；「全部」「收藏」已撤出轨）。
     final int navDeclared = find
         .descendant(
           of: find.byType(AppIconRail),
@@ -157,31 +158,39 @@ void main() {
     /// 某标记在 Tab 序列里出现的下标（未出现 = -1）。
     int at(String mark) => a.order.indexWhere((List<String> m) => m.contains(mark));
 
-    // 侧栏四枚导航依次出现。
+    // 采样是"采到绕回起点为止"（2026-10-21，无魔法步数）：先确认真的闭合了
+    // 一圈，否则后面的顺序断言只是在一段残缺序列上自说自话。
+    expect(
+      a.cycleClosed,
+      isTrue,
+      reason: 'Tab 一圈没有闭合：某处吞掉了 Tab，或焦点掉空（顺序断言会失去意义）',
+    );
+
+    // 侧栏导航依次出现（2026-10-21 起四枚：灵感 | 笔记 | 画布 | 日历）。
     final int flow = at('灵感');
-    final int all = at('全部');
+    final int notes = at('笔记');
+    final int canvas = at('画布');
     final int cal = at('日历');
-    final int fav = at('收藏');
     for (final (String k, int i) in <(String, int)>[
       ('灵感', flow),
-      ('全部', all),
+      ('笔记', notes),
+      ('画布', canvas),
       ('日历', cal),
-      ('收藏', fav),
     ]) {
       expect(i, isNot(-1), reason: '「$k」不在 Tab 链里');
     }
-    expect(flow, lessThan(all), reason: '导航顺序：灵感在全部之前');
-    expect(all, lessThan(cal), reason: '导航顺序：全部在日历之前');
-    expect(cal, lessThan(fav), reason: '导航顺序：日历在收藏之前');
+    expect(flow, lessThan(notes), reason: '导航顺序：灵感在笔记之前');
+    expect(notes, lessThan(canvas), reason: '导航顺序：笔记在画布之前');
+    expect(canvas, lessThan(cal), reason: '导航顺序：画布在日历之前');
 
-    // **侧栏先于内容**：四枚导航必须都排在内容卡片之前（防"交错"回归）。
+    // **侧栏先于内容**：全部导航必须都排在内容卡片之前（防"交错"回归）。
     final int card = at('甲');
     expect(card, isNot(-1), reason: '内容卡片不在 Tab 链里');
     for (final (String k, int i) in <(String, int)>[
       ('灵感', flow),
-      ('全部', all),
+      ('笔记', notes),
+      ('画布', canvas),
       ('日历', cal),
-      ('收藏', fav),
     ]) {
       expect(i, lessThan(card), reason: '焦点顺序：侧栏「$k」必须在内容卡片之前');
     }
@@ -193,11 +202,16 @@ void main() {
     expect(trigger, isNot(-1), reason: '「新建」枢纽不在 Tab 链里');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
+    // 同样不设魔法步数：走到「新建」或**绕回一轮**为止（后者即失败）。
     List<String> marks = <String>[];
-    for (int i = 0; i < 10 && !marks.contains('新建'); i++) {
+    final Set<FocusNode> walked = <FocusNode>{};
+    for (int i = 0; i < 200; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pumpAndSettle();
       marks = _marksOfFocus(tester);
+      if (marks.contains('新建')) break;
+      final FocusNode? f = FocusManager.instance.primaryFocus;
+      if (f == null || !walked.add(f)) break;
     }
     expect(marks, contains('新建'), reason: 'Tab 要能到达「新建」枢纽');
 
@@ -229,6 +243,7 @@ class _HomeAudit {
     required this.contrast,
     required this.tap,
     required this.order,
+    required this.cycleClosed,
   });
 
   final bool labeled;
@@ -240,6 +255,12 @@ class _HomeAudit {
 
   /// Tab 序列：每一步聚焦部件子树里的 Text / Tooltip 标记。
   final List<List<String>> order;
+
+  /// Tab 是否**真的绕回起点**（`closedLoop` 一圈闭合）。
+  ///
+  /// 为假 = 撞到采样上限或焦点掉空：说明某处吞掉了 Tab（或焦点被隐藏），
+  /// 此时 `order` 不完整，顺序断言失去意义。
+  final bool cycleClosed;
 }
 
 Future<_HomeAudit> _auditHome(
@@ -322,11 +343,23 @@ Future<_HomeAudit> _auditHome(
   FocusManager.instance.primaryFocus?.unfocus();
   await tester.pumpAndSettle();
 
-  // Tab 序列。
+  // Tab 序列：**采到绕回起点为止**，不再用魔法步数（2026-10-21，P3）。
+  //
+  // 以前是"定 24 步"：每加一枚控件都得调预算，而且失败信息只说"某站不在链里"
+  //（实际常常是预算不够，误导排查）。现在按 `closedLoop` 的必然性采完整一圈：
+  // 以 `FocusNode` **身份**去重，重复出现即绕回 ⇒ 同时天然保证"每站不重复"。
+  // 200 只是死循环保险，不参与断言。
   final List<List<String>> order = <List<String>>[];
-  for (int i = 0; i < 14; i++) {
+  final Set<FocusNode> seenStops = <FocusNode>{};
+  bool cycleClosed = false;
+  for (int i = 0; i < 200; i++) {
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
+    final FocusNode? focus = FocusManager.instance.primaryFocus;
+    if (focus == null || !seenStops.add(focus)) {
+      cycleClosed = true; // 绕回起点（或焦点掉空）⇒ 一圈结束
+      break;
+    }
     order.add(_marksOfFocus(tester));
   }
 
@@ -336,6 +369,7 @@ Future<_HomeAudit> _auditHome(
     contrast: passed['contrast'] ?? false,
     tap: passed['tap'] ?? false,
     order: order,
+    cycleClosed: cycleClosed,
   );
 }
 

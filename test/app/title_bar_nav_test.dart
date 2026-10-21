@@ -106,8 +106,9 @@ void main() {
     return container;
   }
 
-  /// 四枚目的地的名称（= [HomeView.label]，左侧 [AppIconRail] 导航文字）。
-  const List<String> kDestinations = <String>['灵感', '全部', '日历', '收藏'];
+  /// 目的地名称（= [HomeView.label]，左侧 [AppIconRail] 导航文字）。
+  /// 2026-10-21 起四枚：灵感 / 笔记 / 画布 / 日历（「全部」「收藏」已撤出图标轨）。
+  const List<String> kDestinations = <String>['灵感', '笔记', '画布', '日历'];
 
   /// 点左侧 [AppIconRail] 的某个视图导航（切换主区视图）。
   Future<void> tapViewTab(WidgetTester tester, String label) async {
@@ -169,13 +170,13 @@ void main() {
     // 视图导航 + 新建胶囊在工作区左侧扁平导航（AppIconRail）上。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     // 2026-10-17：灵感 = **灵感页**（一页纸流），不做主从布局 ⇒ 默认视图里
-    // 没有列表列；列表列只服务「全部 / 收藏」（下面切过去再验）。
+    // 没有列表列；列表列服务「笔记 / 画布」（下面切过去再验）。
     expect(find.byType(NoteListColumn), findsNothing);
     expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '灵感是灵感页');
-    await tapViewTab(tester, '全部');
+    await tapViewTab(tester, '笔记');
     expect(find.byType(NoteListColumn), findsOneWidget,
-        reason: '全部 / 收藏才走主从列表列');
-    // 固定锚点：切到「全部」（列表 + 折叠钮出现）后历史簇位置不变。
+        reason: '笔记 / 画布（以及保留的「全部 / 收藏」）走主从列表列');
+    // 固定锚点：切到「笔记」（列表 + 折叠钮出现）后历史簇位置不变。
     final Rect backAll = tester.getRect(find.byTooltip('上一步（Alt+←）'));
     expect(
       backAll.left,
@@ -218,13 +219,14 @@ void main() {
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
   });
 
-  testWidgets('AppIconRail：四枚视图导航带图标、新建胶囊两态常驻', (
+  testWidgets('AppIconRail：六枚视图导航带图标、新建胶囊两态常驻', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
 
-    // 四枚目的地以**视图导航**形式常驻最左 AppIconRail（灵感 / 全部 / 日历 / 收藏）。
-    // 轨上钮是图标 + tooltip（不是文字行）⇒ 用 find.byTooltip 定位。
+    // 目的地以**视图导航**形式常驻最左 AppIconRail（灵感 / 笔记 / 画布 / 日历；
+    // 「全部」「收藏」2026-10-21 撤出轨）。轨上钮是图标 + tooltip（不是文字行）
+    // ⇒ 用 find.byTooltip 定位。
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
@@ -283,6 +285,41 @@ void main() {
       findsNothing,
       reason: '标题栏不放导航',
     );
+  });
+
+  testWidgets('笔记 / 画布视图：主从与「全部」同布局，列表按类型收池', (
+    WidgetTester tester,
+  ) async {
+    final ProviderContainer container = await pump(tester);
+    final Note n = await container.read(notesProvider.notifier).createNote();
+    await container.read(notesProvider.notifier).saveTitle(n.id, '一篇笔记');
+    final Note c = await container
+        .read(notesProvider.notifier)
+        .createNote(kind: NoteKind.canvas);
+    await container.read(notesProvider.notifier).saveTitle(c.id, '一张画布');
+
+    Finder header(String label) => find.descendant(
+      of: find.byType(NoteListColumn),
+      matching: find.text(label),
+    );
+
+    // 「笔记」：主从照旧（列表列在、折叠钮出现），且只剩文档类。
+    await tapViewTab(tester, '笔记');
+    expect(
+      find.byType(NoteListColumn),
+      findsOneWidget,
+      reason: '笔记视图与全部同走主从列表列（2026-10-21 用户定）',
+    );
+    expect(header('笔记'), findsOneWidget);
+    expect(find.text('一篇笔记'), findsOneWidget);
+    expect(find.text('一张画布'), findsNothing, reason: '画布不进笔记视图');
+
+    // 「画布」：只剩画布。
+    await tapViewTab(tester, '画布');
+    expect(find.byType(NoteListColumn), findsOneWidget);
+    expect(header('画布'), findsOneWidget);
+    expect(find.text('一张画布'), findsOneWidget);
+    expect(find.text('一篇笔记'), findsNothing, reason: '笔记不进画布视图');
   });
 
   testWidgets('顶条目的地切视图驱动统一历史：切到日历后箭头可退回、可重做', (WidgetTester tester) async {
@@ -570,6 +607,113 @@ void main() {
           reason: '$brightness：环色必须走表面环令牌',
         );
       }
+
+      // 环缝已全部取消（2026-10-20）：顶缝 0（改为内描边后不再需要卡外的
+      // "外扩线落脚位"）、右 / 下边距也 0 ⇒ 卡片上端贴合标题栏、右缘贴窗右、
+      // 下缘贴窗底；贴窗的三只角随之改直角（见 [_kPanelRadius]）。
+      final double stripBottom = tester.getRect(find.byType(WindowStrip)).bottom;
+      final Size win = tester.view.physicalSize / tester.view.devicePixelRatio;
+      for (final Element e in panels.evaluate()) {
+        final Rect r = tester.getRect(find.byWidget(e.widget));
+        expect(
+          r.top,
+          stripBottom,
+          reason: '$brightness：卡片顶端必须贴合标题栏下沿（顶缝 0）',
+        );
+        if (r.left >= win.width) continue; // AI 轨收起时整卡在视口外，只量主卡
+        expect(
+          r.right,
+          win.width,
+          reason: '$brightness：卡片右缘必须贴窗右（右边距 0）',
+        );
+        expect(
+          r.bottom,
+          win.height,
+          reason: '$brightness：卡片下缘必须贴窗底（下边距 0）',
+        );
+      }
+
+      // AI 问答右栏：四角**全直角**（2026-10-20 用户定，四周都不悬空），
+      // 但收边仍必须是同一条 1px 内描边——它不再被上面的 `panels` 查找器命中
+      //（那边按 radiusMd 认卡），所以单独钉一条。
+      final Finder railCards = find.byWidgetPredicate((Widget w) {
+        if (w is! DecoratedBox) return false;
+        final Object d = w.decoration;
+        if (d is! BoxDecoration) return false;
+        return d.color == AppTheme.panelFill(brightness) &&
+            d.borderRadius == BorderRadius.zero;
+      });
+      expect(
+        railCards,
+        findsOneWidget,
+        reason: '$brightness：找不到 AI 右栏的直角浮面卡',
+      );
+      for (final Element e in railCards.evaluate()) {
+        final DecoratedBox? fg =
+            e.findAncestorWidgetOfExactType<DecoratedBox>();
+        final BoxDecoration? fd = fg?.decoration as BoxDecoration?;
+        final Border? border = fd?.border as Border?;
+        expect(border, isNotNull, reason: '$brightness：右栏缺 1px 收边');
+        expect(border!.top.width, 1, reason: '$brightness：右栏收边必须 1px');
+        expect(
+          border.top.color,
+          AppTheme.surfaceRingColor(brightness),
+          reason: '$brightness：右栏收边颜色必须走表面环令牌',
+        );
+        expect(
+          border.left.width,
+          0,
+          reason: '$brightness：右栏拼缝侧（左）不描边，缝靠露出的窗口底分界',
+        );
+        expect(
+          border.right.width,
+          0,
+          reason: '$brightness：右栏右缘贴窗 ⇒ 不描边（窗沿本身即边界）',
+        );
+        expect(
+          border.bottom.width,
+          0,
+          reason: '$brightness：右栏下缘贴窗底 ⇒ 不描边（窗沿本身即边界）',
+        );
+      }
+
+      // **只画与邻面相接的边**（2026-10-21 用户定）：主卡顶接标题栏、左接 60
+      // 图标轨 ⇒ 画 1px；右 / 下都贴窗沿（环缝已为 0）⇒ 不画 —— 窗沿本身就
+      // 是边界。右缘在 AI 打开时变成拼缝，缝露出的窗口底就是分界，同样不画。
+      final Finder mainBg = find.byWidgetPredicate((Widget w) {
+        if (w is! DecoratedBox) return false;
+        final Object d = w.decoration;
+        if (d is! BoxDecoration) return false;
+        return d.color == AppTheme.panelFill(brightness) &&
+            d.borderRadius is BorderRadius &&
+            (d.borderRadius as BorderRadius).topLeft.x == Tokens.radiusMd;
+      });
+      final DecoratedBox? mainFg = mainBg
+          .evaluate()
+          .first
+          .findAncestorWidgetOfExactType<DecoratedBox>();
+      final Border? mainBorder =
+          (mainFg?.decoration as BoxDecoration?)?.border as Border?;
+      expect(
+        mainBorder?.top.width,
+        1,
+        reason: '$brightness：主卡顶边（接标题栏）必须 1px',
+      );
+      expect(
+        mainBorder?.left.width,
+        1,
+        reason: '$brightness：主卡左边（接图标轨）必须 1px',
+      );
+      expect(
+        mainBorder?.right.width,
+        0,
+        reason: '$brightness：主卡右缘贴窗 / 拼缝 ⇒ 不描边',
+      );
+      expect(
+        mainBorder?.bottom.width,
+        0,
+        reason: '$brightness：主卡下缘贴窗底 ⇒ 不描边',
+      );
     });
   }
 
@@ -588,9 +732,29 @@ void main() {
     expect(find.text('回收站是空的'), findsOneWidget);
   });
 
-  testWidgets('笔记列表行内删除：确认后进回收站（软删）', (WidgetTester tester) async {
+  testWidgets('Tab 顺序显式编号：轨 10 < 列表 20 < 详情 30 < AI 40', (
+    WidgetTester tester,
+  ) async {
+    await pump(tester);
+    await tapViewTab(tester, '笔记');
+
+    // 顺序是**产品决定**（导航 → 列表 → 详情），不该由控件树序决定：
+    // 外壳用 OrderedTraversalPolicy，三段各自带 NumericFocusOrder。
+    final List<double> orders = tester
+        .widgetList<FocusTraversalOrder>(find.byType(FocusTraversalOrder))
+        .map((FocusTraversalOrder o) => (o.order as NumericFocusOrder).order)
+        .toList();
+    expect(orders, containsAll(<double>[10, 20, 30]), reason: '轨/列表/详情三段编号');
+    expect(
+      orders.where((double o) => o == 10).length,
+      1,
+      reason: '图标轨只有一段',
+    );
+  });
+
+  testWidgets('笔记列表右键删除：确认后进回收站（软删）', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
-    await tapViewTab(tester, '全部');
+    await tapViewTab(tester, '笔记');
 
     final NotesNotifier notifier = container.read(notesProvider.notifier);
     final Note note = await notifier.createNote();
@@ -598,8 +762,17 @@ void main() {
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
 
-    // 行内删除在 hover / 选中时露出；当前笔记已选中 ⇒ 按钮可见。
-    await tester.tap(find.byTooltip('删除'));
+    // 删除已收进**右键菜单**（2026-10-21 用户定：行内不再有垃圾桶按钮）。
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NoteListColumn),
+        matching: find.text('要删的'),
+      ),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsOneWidget, reason: '右键菜单要有删除项');
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '移入回收站'));
     await tester.pumpAndSettle();

@@ -35,3 +35,20 @@ String relativeTime(DateTime at) {
   if (d.inDays < 7) return '${d.inDays} 天前';
   return '${at.month}-${at.day.toString().padLeft(2, '0')}';
 }
+
+/// **日期分组标签**（今天 / 昨天 / `12 月 31 日` / `2025 年 12 月 31 日`）。
+///
+/// 列表列与灵感页共用同一套分段词：组头替行内日期说话（2026-10-21 用户定，
+/// 列表行里的"2 天前"整列取消——它把右缘占成一条竖列，且每行重复同一天）。
+///
+/// ⚠️ 灵感页 `stream_view.dart` 的 `_dayLabel` 是同一口径；两处要一起改。
+String dayLabel(DateTime at) {
+  final DateTime now = DateTime.now();
+  final DateTime day = DateTime(at.year, at.month, at.day);
+  final DateTime today = DateTime(now.year, now.month, now.day);
+  final int diff = today.difference(day).inDays;
+  if (diff == 0) return '今天';
+  if (diff == 1) return '昨天';
+  if (day.year == today.year) return '${day.month} 月 ${day.day} 日';
+  return '${day.year} 年 ${day.month} 月 ${day.day} 日';
+}

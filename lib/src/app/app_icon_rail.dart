@@ -15,6 +15,7 @@ import 'trash_panel.dart' show showTrash;
 /// 最左**图标导航轨**（2026-10-16 用户定，Option 2 第一阶段）：60px 常驻脊梁，直接贴
 /// 窗口底（同旧 256 侧栏的扁平口径，无面板 / 描边 / 投影）。它把旧侧栏的
 /// 「品牌行 + 搜索 + 新建 + 四视图」收成一列图标。
+///（2026-10-21 曾试加宽到 70，同日撤回——图标 / 钮不变时纯加宽只是多出空白边距。）
 ///
 /// 上→下：**logo（装饰）· 搜索（Ctrl+K）· 新建「+」**，弹性 spacer，**四枚视图图标**
 /// （灵感 / 全部 / 日历 / 收藏）。选中 = hover 2× 的 selectedBg（亮 onSurface@8% /
@@ -92,6 +93,8 @@ class AppIconRail extends ConsumerWidget {
 String _viewLabel(HomeView v) => switch (v) {
   HomeView.timeline => '灵感',
   HomeView.all => '全部',
+  HomeView.notes => '笔记',
+  HomeView.canvas => '画布',
   HomeView.calendar => '日历',
   HomeView.favorites => '收藏',
 };

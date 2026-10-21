@@ -1,3 +1,5 @@
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,7 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
+import 'package:sinan/src/theme/focus_ring.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
@@ -167,5 +170,229 @@ void main() {
       isTrue,
       reason: '回退后可在“下一步”重进点开的那篇',
     );
+  });
+
+  testWidgets('悬浮不挤动布局；删除在右键菜单里', (tester) async {
+    // 2026-10-21：hover 曾插入删除钮（行宽变化 ⇒ 标题折行/右移）；随后删除**整体
+    // 收进右键菜单**。两条一起钉：hover 不出现任何行内按钮、几何完全不动，
+    // 右键能拿到「删除」。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    // 标题够长：若行宽被挤，省略号位置会变 ⇒ 宽度可测地缩水。
+    const String title = '一个足够长的标题用来观察是否被删除按钮挤动';
+    store.create(title: title);
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder titleFinder = find.text(title);
+    expect(titleFinder, findsOneWidget);
+    final Rect before = tester.getRect(titleFinder);
+    expect(find.byTooltip('删除'), findsNothing, reason: '行内已无删除钮');
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(before.center);
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('删除'), findsNothing, reason: 'hover 不再出现行内按钮');
+    final Rect after = tester.getRect(titleFinder);
+    expect(after.left, before.left, reason: '标题左缘不动');
+    expect(after.width, before.width, reason: '标题宽度不动（无重排）');
+    expect(after.top, before.top, reason: '标题行高不动');
+
+    // 右键 ⇒ 条目菜单里能拿到「删除」。
+    await tester.tap(titleFinder, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsOneWidget, reason: '右键菜单提供删除');
+  });
+
+  testWidgets('列表按时间分组：今天 / 昨天组头，行内不再显示日期', (tester) async {
+    // 2026-10-21 方案 A：组头替行内日期说话（行内"2 天前"整列取消）。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    // 用 restore 精确钉 revisedAt（create 只给当下）。
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day, 9);
+    final DateTime yesterday = today.subtract(const Duration(days: 1));
+    Future<void> put(String id, DateTime at) => store.restore(
+      Note(
+        id: id,
+        kind: NoteKind.note,
+        title: id,
+        content: '',
+        plainText: '',
+        summary: '',
+        contentHash: '',
+        createdAt: at,
+        revisedAt: at,
+      ),
+    );
+    await put('今日笔记', today);
+    await put('昨日笔记', yesterday);
+    container.invalidate(notesProvider);
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder inColumn(String t) => find.descendant(
+      of: find.byType(NoteListColumn),
+      matching: find.text(t),
+    );
+    expect(inColumn('今天'), findsOneWidget, reason: '今天的组头');
+    expect(inColumn('昨天'), findsOneWidget, reason: '昨天的组头');
+    expect(
+      tester.getRect(inColumn('今天')).top,
+      lessThan(tester.getRect(inColumn('昨天')).top),
+      reason: '最近编辑倒序 ⇒ 今天那组在昨天之前',
+    );
+    expect(inColumn('今日笔记'), findsOneWidget);
+    expect(inColumn('昨日笔记'), findsOneWidget);
+    expect(inColumn('刚刚'), findsNothing, reason: '行内不再显示相对时间');
+  });
+
+  testWidgets('点行不出蓝框（环只给键盘）', (tester) async {
+    // 2026-10-21 用户实报"列表有蓝色选中框"：点行会 requestFocus（为了 ↑/↓ 的
+    // 键盘锚）⇒ FocusRing 一见焦点就画 primary 蓝环，被误读成选中态。
+    // 现在环只在**键盘**聚焦时出现（与 60 轨一致）。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    store.create(title: '甲');
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 打开后编辑器标题也叫「甲」⇒ 必须限定在**列表列**里找，否则找到两个。
+    final Finder titleFinder = find.descendant(
+      of: find.byType(NoteListColumn),
+      matching: find.text('甲'),
+    );
+    final Finder rowRing = find.descendant(
+      of: find.ancestor(of: titleFinder, matching: find.byType(FocusRing)),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is Container && w.foregroundDecoration != null,
+      ),
+    );
+    expect(rowRing, findsNothing, reason: '初始无环');
+
+    // 鼠标点行 ⇒ 选中，但**不戴蓝框**。
+    await tester.tap(titleFinder);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(selectedNoteIdProvider),
+      store.allNotes().single.id,
+      reason: '点行即选中',
+    );
+    expect(rowRing, findsNothing, reason: '鼠标点出来的焦点不该画环');
+
+    // **用户实报的场景**：按的键不是遍历键（Ctrl+N / Ctrl+K 这类命令键）⇒
+    // 即使行随后被程序化聚焦，也不该出蓝框。
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.pumpAndSettle();
+    tester
+        .widget<FocusRing>(
+          find.ancestor(of: titleFinder, matching: find.byType(FocusRing)),
+        )
+        .focusNode
+        .requestFocus();
+    await tester.pumpAndSettle();
+    expect(rowRing, findsNothing, reason: '非遍历键之后的聚焦不该出蓝框');
+
+    // 遍历键（Tab / 方向键 / Home·End·PageUp·PageDown）之后 ⇒ 环必须回来，
+    // 否则键盘用户在列表里就失去"我在哪"的指示。
+    await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
+    await tester.pumpAndSettle();
+    expect(rowRing, findsOneWidget, reason: '遍历键之后的聚焦要出环');
+
+    // 指针按下 ⇒ 立刻熄灭。
+    await tester.tap(titleFinder);
+    await tester.pumpAndSettle();
+    expect(rowRing, findsNothing, reason: '点一下就熄灭');
   });
 }
