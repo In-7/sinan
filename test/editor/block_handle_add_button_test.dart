@@ -1,13 +1,13 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
-import 'package:flutter/services.dart'
-    show FontLoader, LogicalKeyboardKey, rootBundle;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
-import 'package:sinan/src/theme/app_theme.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+
+import '../support/app_font.dart';
 
 /// 块手柄的两个按钮（**对齐官方 `BlockAddButton` / `OptionButton`**，2026-09-15）：
 ///
@@ -25,9 +25,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    final FontLoader loader = FontLoader(AppTheme.editorFont)
-      ..addFont(rootBundle.load('assets/fonts/LXGWNeoXiHeiScreen.ttf'));
-    await loader.load();
+    await loadAppFont();
   });
 
   testWidgets('默认：在下方插入空段落', (WidgetTester tester) async {

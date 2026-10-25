@@ -888,6 +888,32 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     return n;
   }
 
+  /// **导入**（= **新建**，2026-10-21 用户定）：外部文件转成一篇新笔记。
+  ///
+  /// 与 [createNote] 的差别：**正文一起落库**——调用方已把文件转成 v2 块树 JSON
+  /// （md 走 appflowy 的 `markdownToDocument`、画布走 bundle 还原，见
+  /// `note_import.dart`）。导入**不是覆盖**：永远新建一篇，不动当前笔记。
+  ///
+  /// 新笔记置顶，返回它供调用方定位打开。
+  Future<Note> importNote({
+    required NoteKind kind,
+    required String title,
+    required String content,
+    required String plainText,
+  }) async {
+    await _settled();
+    final Note n = _store.createSpark(
+      kind: kind,
+      title: title,
+      content: content,
+      plainText: plainText,
+    );
+    state = AsyncData(<Note>[n, ...state.value ?? <Note>[]]);
+    // 导入的正文是实打实的内容 ⇒ 顺手进关键词索引（新建的空笔记没这步）。
+    _indexKeywordPath(n.id);
+    return n;
+  }
+
   /// **保存即索引**（关键词路）的**容错**外壳。
   ///
   /// ⚠️ 索引失败**绝不能连累落盘**：检索是**附属能力**（FTS 一时写不动、

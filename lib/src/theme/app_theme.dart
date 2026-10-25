@@ -1029,9 +1029,26 @@ class AppTheme {
   /// 回退链 [cjkFontFallback] 仍要保留：打包字体缺字（生僻字 / emoji /
   /// 其它语种）时逐字体兜底。
   ///
+  /// 思源黑体 SC **可变字体**（v2.005，SIL OFL，30MB）：`wght` 轴 100~900 ⇒
+  /// 标题 w600、行内加粗 w600 都是**真字重**（此前霞鹜新晰黑是单字重，只能合成
+  /// 加粗、笔画糊边）。换装记录见 `docs`。
+  static const String _fontSourceHanVF = 'SourceHanSansSC-VF';
+
   /// 编辑器正文 = **全应用主字体**（`ThemeData.fontFamily` 也取它，见 `_build`）：
   /// 界面 + 正文同一套字形，全平台观感一致；缺字走 [cjkFontFallback] 兜底。
-  static const String editorFont = 'LXGWNeoXiHeiScreen';
+  static const String editorFont = _fontSourceHanVF;
+
+  /// **可变字体的字重轴**： Flutter **不会**把 `fontWeight` 映射到 `wght` 轴
+  ///（已核对 3.47 源码：`'wght'` 只出现在显式传 `fontVariations` 的地方）⇒
+  /// **必须**显式给轴，否则"要 600"时引擎仍按合成加粗处理（换了等于白换）。
+  ///
+  /// 静态字体收到 `fontVariations` 会忽略它，所以将来换成非可变字体也安全。
+  ///
+  /// ⚠️ 字重档位要**收敛**（现在只用 400 / 600 / 700 三档）：每个不同的 wght 值
+  /// 都会实例化出一份独立 typeface，Impeller 的字形图集按实例缓存 ⇒ 连续值会让
+  /// 图集内存无谓增长（中文字形尤其贵）。
+  static List<FontVariation>? weightVariation(double weight) =>
+      <FontVariation>[FontVariation.weight(weight)];
 
   /// 等宽字体链（代码块/行内代码）：Windows Consolas → Cascadia。
   /// 用途不同（代码等宽是功能性要求），与正文有意分离。
@@ -1128,42 +1145,58 @@ class AppTheme {
     bodySmall: base.bodySmall?.copyWith(fontSize: 11, height: 1.35),
     labelLarge: base.labelLarge?.copyWith(fontSize: 13),
     labelMedium: base.labelMedium?.copyWith(fontSize: 11),
-    // 包豪斯标题层（2026-10-12）：重字重 + 紧字距 + 收紧行高，靠 scale/weight 拉
-    // 层级（不靠投影）。⚠️ 打包的 LXGW 是**单字重**，w700 走合成加粗（观感有限；
-    // 真·重展示字需另引粗字重/几何字体资产）；**字距是可靠杠杆**。正文/标签档不动
-    // （笔记 app 长文可读性优先）。编辑器走 EditorTypography，不吃这组值。
+    // 包豪斯标题层（2026-10-12）：**重字重 + 收紧行高**拉层级（不靠投影）。
+    // 编辑器走 EditorTypography，不吃这组值。
+    //
+    // ## 字距一律 0（2026-10-25 用户定：取消原先的负字距 −0.2/−0.3/−0.4）
+    // 两条理由：
+    // 1. **汉字是等宽方块字**，西文那套"大字号就压字距"的惯例搬到中文上会让
+    //    笔画相碰（同一条理由让编辑器正文 / 标题常年保持 0）；
+    // 2. 换思源 VF 后 w700 是**真字重**、字面比合成加粗更实 ⇒ 同样 −0.3 会显得
+    //    比过去更挤。字重（真）已经足以分层，不再需要字距帮忙。
+    //
+    // ⚠️ 显式写 0 而不是"不写"：M3 的 base 给标题档带的是**正**字距
+    // （titleSmall 0.1 等，按拉丁标定），不写就等于继承那个值，与"0"不是一回事。
+    //
+    // `fontVariations`：思源 VF 下这六档才是**真字重**（静态字体收到它是忽略的）。
     headlineSmall: base.headlineSmall?.copyWith(
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.2,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
       height: 1.2,
     ),
     headlineMedium: base.headlineMedium?.copyWith(
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.3,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
       height: 1.15,
     ),
     headlineLarge: base.headlineLarge?.copyWith(
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.4,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
       height: 1.1,
     ),
     titleSmall: base.titleSmall?.copyWith(
       fontSize: 13,
       height: 1.2,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.2,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
     ),
     titleMedium: base.titleMedium?.copyWith(
       fontSize: 15,
       height: 1.2,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.3,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
     ),
     titleLarge: base.titleLarge?.copyWith(
       fontSize: 17,
       height: 1.15,
       fontWeight: FontWeight.w700,
-      letterSpacing: -0.4,
+      fontVariations: weightVariation(700),
+      letterSpacing: 0,
     ),
   );
 

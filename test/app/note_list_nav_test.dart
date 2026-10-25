@@ -310,6 +310,122 @@ void main() {
     expect(inColumn('刚刚'), findsNothing, reason: '行内不再显示相对时间');
   });
 
+  testWidgets('列表行按 noteId 钉 key（Element 复用不串行）', (tester) async {
+    // 2026-10-21：`ListView.builder` 按下标复用 Element，行没 key 时行的 State
+    // （hover / 键盘焦点锚）会跟着位置走，新建插到最前就错配到别的笔记。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    final List<Note> seeded = <Note>[
+      for (int i = 0; i < 3; i++) store.create(title: '甲$i'),
+    ];
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final Note n in seeded) {
+      expect(
+        find.descendant(
+          of: find.byType(NoteListColumn),
+          matching: find.byKey(ValueKey<String>('note-row-${n.id}')),
+        ),
+        findsOneWidget,
+        reason: '每行都要有自己的 key（${n.title}）',
+      );
+    }
+  });
+
+  testWidgets('点击可见行不滚动（不"置顶"）', (tester) async {
+    // 2026-10-21 用户实报"点击后会置顶"：根因是 `Scrollable.ensureVisible` 默认
+    // alignment 0 ⇒ 把目标行对齐到视口**顶端**，点一行本来就可见的笔记也会猛滚。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    // 24 篇 ⇒ 列表可滚（900 高下大约只放得下 13 行）。
+    for (int i = 0; i < 24; i++) {
+      store.create(title: '笔记 $i');
+    }
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder listScroll = find.descendant(
+      of: find.byType(NoteListColumn),
+      matching: find.byType(Scrollable),
+    );
+    final ScrollPosition pos = tester
+        .state<ScrollableState>(listScroll)
+        .position;
+    pos.jumpTo(pos.maxScrollExtent / 2);
+    await tester.pumpAndSettle();
+    final double before = pos.pixels;
+    expect(before, greaterThan(0), reason: '先滚到中部');
+
+    // 点一处**当前可见**的行（列表头下方 120px，稳落在某行内）。
+    final Rect list = tester.getRect(find.byType(NoteListColumn));
+    await tester.tapAt(Offset(list.center.dx, list.top + 120));
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(selectedNoteIdProvider),
+      isNotNull,
+      reason: '点的是某一行的行体，应确实打开一篇',
+    );
+    expect(pos.pixels, before, reason: '点击可见行不该滚动列表（不"置顶"）');
+  });
+
   testWidgets('点行不出蓝框（环只给键盘）', (tester) async {
     // 2026-10-21 用户实报"列表有蓝色选中框"：点行会 requestFocus（为了 ↑/↓ 的
     // 键盘锚）⇒ FocusRing 一见焦点就画 primary 蓝环，被误读成选中态。

@@ -1,11 +1,12 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart' as official;
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
+
+import '../support/app_font.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -24,9 +25,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    final FontLoader loader = FontLoader(AppTheme.editorFont)
-      ..addFont(rootBundle.load('assets/fonts/LXGWNeoXiHeiScreen.ttf'));
-    await loader.load();
+    await loadAppFont(); // 真实字体（否则走 Flutter 测试字体，1em 方格测不准）
   });
 
   testWidgets('块操作菜单：底色/描边/投影 = 浮层令牌', (WidgetTester tester) async {

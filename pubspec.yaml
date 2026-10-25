@@ -81,14 +81,23 @@ flutter:
   # 见 lib/src/theme/app_custom_icons.dart。
   assets:
     - assets/icons/custom/
-  # 打包字体：霞鹜新晰黑·屏幕阅读版（轻微加粗、调整度量；SIL OFL 开源可
-  # 商用）。作为编辑器正文字体（AppTheme.editorFont）：自带中英全套字形 ⇒
-  # 中英混排同源、基线恒定；全平台同一份文件，观感一致（11MB）。
-  # 与原版霞鹜/南西新圆体的差异：轮廓轻微加粗（暗色主题不发虚）；
-  # 降部 0.120→0.244em、行盒 1.0→1.1719em（墨迹在自然行盒内更居中）。
-  # 水平度量逐项一致（拉丁/数字/CJK 宽度全同）⇒ 列宽、折行、预测器不变；
-  # 但基线在行盒内的位置变了 ⇒ cjkInkCompensation 已按新度量重标定（实测）。
+  # 打包字体：思源黑体 SC **可变字体**（v2.005，SIL OFL 开源可商用，30MB）。
+  # 作为编辑器正文字体（AppTheme.editorFont）兼全应用界面字体：自带中英全套
+  # 字形 ⇒ 中英混排同源、基线恒定；全平台同一份文件，观感一致。
+  #
+  # 为什么是它：wght 轴 100~900 ⇒ 标题 w600 / 行内加粗 w600 都是**真字重**。
+  # 上一代（霞鹜新晰黑·屏幕阅读版，11MB）是单字重， wsz600/700 只能靠引擎合成
+  # 加粗（笔画糊边），层级做不细；2026-10-24 换装并移除上一代。
   fonts:
-    - family: LXGWNeoXiHeiScreen
+    # ⚠️ 同一个文件登记两档 weight：Flutter 只按 `fontWeight` 选面、**不会**把它
+    # 映射到 wght 轴 ⇒ 真字重必须另由 `TextStyle.fontVariations` 给（见
+    # [AppTheme.weightVariation]）。登记两档只是为了"要 600 时能选中一个 600 的
+    # 条目"，免得引擎判定"无此字重"再叠一层合成加粗。
+    #
+    # 测试侧加载同一份资产的路径见 `test/support/app_font.dart`（换字体只改那一处）。
+    - family: SourceHanSansSC-VF
       fonts:
-        - asset: assets/fonts/LXGWNeoXiHeiScreen.ttf
+        - asset: assets/fonts/SourceHanSansSC-VF.otf
+          weight: 400
+        - asset: assets/fonts/SourceHanSansSC-VF.otf
+          weight: 600

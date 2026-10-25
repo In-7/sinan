@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/editor/core/block_height_predictor.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
+
+import '../support/app_font.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
 import 'package:sinan/src/editor/core/word_count.dart';
 import 'package:sinan/src/theme/app_theme.dart';
@@ -165,16 +167,15 @@ double _layoutParagraph(String? fontFamily) {
   return ms;
 }
 
-/// 用 [FontLoader] 显式加载**打包的那份 11MB 中英字体**，返回耗时（ms）。
+/// 用 [FontLoader] 显式加载**打包的那份中英字体**（思源 SC 可变字体，30MB），
+/// 返回耗时（ms）。
 ///
 /// [family] 每次传不同名字：已注册过的族重复 `load()` 没有意义（也没法量
-/// "第二次加载"），而另起族名能同时避开 pubspec 里已声明的
-/// `LXGWNeoXiHeiScreen`。
+/// "第二次加载"），而另起族名能同时避开 pubspec 里已声明的那一族。
 Future<double> _loadFont(String family) async {
   final Stopwatch sw = Stopwatch()..start();
-  final FontLoader loader = FontLoader(family)
-    ..addFont(rootBundle.load('assets/fonts/LXGWNeoXiHeiScreen.ttf'));
-  await loader.load();
+  // 资产路径走共享助手（不再写死），族名另起以量"冷加载"。
+  await loadAppFont(family: family, asset: appFontAsset);
   return sw.elapsedMicroseconds / 1000;
 }
 

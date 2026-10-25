@@ -626,7 +626,9 @@ void main() {
         expect(t.bodySmall?.fontSize, 11, reason: '$label：辅助文字 11');
         expect(t.labelMedium?.fontSize, 11, reason: '$label：标签 11');
         expect(t.titleSmall?.fontSize, 13, reason: '$label：面板标题不放大字号');
-        // 包豪斯标题层（2026-10-12）：重字重 + 负字距分层（不靠投影）。
+        // 包豪斯标题层（2026-10-12）：**重字重**分层（不靠投影）；
+        // 字距 2026-10-25 起一律 0（原先是 −0.2/−0.3/−0.4）——汉字是等宽方块字，
+        // 压字距会让笔画相碰；且思源 VF 下 w700 是**真字重**，字重本身已够分层。
         expect(
           t.titleSmall?.fontWeight,
           FontWeight.w700,
@@ -634,14 +636,12 @@ void main() {
         );
         expect(
           t.titleSmall?.letterSpacing,
-          lessThan(0),
-          reason: '$label：标题负字距（包豪斯紧排）',
+          0,
+          reason: '$label：标题字距 0（不压字距，笔画才不碰）',
         );
-        expect(
-          t.titleLarge?.letterSpacing,
-          lessThan(0),
-          reason: '$label：大字号负字距',
-        );
+        expect(t.titleMedium?.letterSpacing, 0, reason: '$label：标题字距 0');
+        expect(t.titleLarge?.letterSpacing, 0, reason: '$label：大字号也是 0');
+        expect(t.headlineMedium?.letterSpacing, 0, reason: '$label：headline 也是 0');
         expect(
           t.headlineSmall?.fontWeight,
           FontWeight.w700,

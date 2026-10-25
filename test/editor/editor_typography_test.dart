@@ -38,6 +38,23 @@ void main() {
       expect(typography.heading(99).fontSize, 16);
     });
 
+    test('行内加粗 = w600（不是官方默认的 w700）', () {
+      // 官方 `TextStyleConfiguration.bold` 默认是 `FontWeight.bold`(w700)。
+      // 中文字体（苹方 / 打包的单字重 LXGW）没有真 Bold 字重 ⇒ w700 是合成加粗
+      // （笔画糊边）；且会让"加粗的字比标题还重"（标题是 w600）。
+      final TextStyleConfiguration config = typography.toTextStyleConfiguration(
+        text: const official.Color(0xFF3A3A3A),
+        link: const official.Color(0xFF0000FF),
+        codeBackground: const official.Color(0xFFEEEEEE),
+        muted: const official.Color(0xFF999999),
+      );
+      expect(config.bold.fontWeight, FontWeight.w600);
+      // 只给字重这一项：字族 / 回退链 / 字距由 span 基样式提供（`combine` 语义），
+      // 写多了会顶掉它们。
+      expect(config.bold.fontFamily, isNull);
+      expect(config.bold.fontFamilyFallback, isNull);
+    });
+
     test('标题：行盒吸附整像素（设计倍数 1.4）/ 零字距 / w600，且**不设字色**', () {
       final official.TextStyle heading = typography.heading(1);
       // `height` 是回填的"整数行盒 / 字号"（28px 字号 → 38px 行盒），
@@ -100,13 +117,25 @@ void main() {
       expect(EditorTypography.snap(17 * EditorTypography.titleScale), 24);
     });
 
-    test('编辑器字体 = 打包的霞鹜新晰黑 Plus（全平台同一字族）', () {
+    test('编辑器字体 = 打包的思源黑体 SC 可变字体（全平台同一字族）', () {
       // 打包字体自带中英全套字形 ⇒ 混排天然同源、基线恒定，且全平台观感
-      // 一致（2026-09-11 从"按平台选雅黑/苹方/思源"切换而来；2026-09-15
-      // 换霞鹜新晰黑屏幕阅读版——轮廓轻微加粗、度量特调，水平度量不变）。
+      // 一致（2026-09-11 从"按平台选雅黑/苹方/思源"切换而来）。
+      // 2026-10-24：霞鹜新晰黑（单字重）→ 思源黑体 SC VF（wght 轴 100~900）
+      // ⇒ 标题 / 加粗是真字重，不再是合成加粗。
       // 缺字仍由 cjkFontFallback（雅黑/苹方/思源）逐字体兜底。
-      expect(AppTheme.editorFont, 'LXGWNeoXiHeiScreen');
+      expect(AppTheme.editorFont, 'SourceHanSansSC-VF');
       expect(AppTheme.cjkFontFallback, contains('Microsoft YaHei UI'));
+    });
+
+    test('字重轴：正文 / 标题都显式带 wght（否则 VF 等于白换）', () {
+      // 关键口径：Flutter **不会**把 fontWeight 映射到 wght 轴 ⇒ 真字重必须显式
+      // 给 fontVariations，否则"要 600"时引擎仍是**合成加粗**。
+      expect(typography.body().fontVariations, <FontVariation>[
+        const FontVariation('wght', 400),
+      ]);
+      expect(typography.heading(1).fontVariations, <FontVariation>[
+        const FontVariation('wght', 600),
+      ]);
     });
 
     test('基样式带前景色；链接 / 行内代码 / 自动补全只改色，不破坏中文项', () {

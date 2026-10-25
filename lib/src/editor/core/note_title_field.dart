@@ -74,6 +74,8 @@ class NoteTitleField extends StatelessWidget {
           // Semibold 而非 Bold：Apple 的中文要求——苹方没有 Bold 真字重，
           // w700 会合成加粗（笔画糊边）；Semibold 两侧都是真实字重。
           fontWeight: .w600,
+          // 可变字体才需要（静态字体收到 null ⇒ 无副作用）。
+          fontVariations: AppTheme.weightVariation(600),
           height: height,
           letterSpacing: 0,
           fontFamily: AppTheme.editorFont,

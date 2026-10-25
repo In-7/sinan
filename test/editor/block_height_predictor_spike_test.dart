@@ -1,11 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 // 与 appflowy 内部同一套 material（官方 material 同名类型是**另一套**，
 // 两边同时导入会 ambiguous，见 `editor_spike_verification_test.dart` 的说明）。
 import 'package:material_ui/material_ui.dart';
+
+import '../support/app_font.dart';
 import 'package:sinan/src/domain/settings.dart';
 import 'package:sinan/src/editor/core/block_height_predictor.dart';
 import 'package:sinan/src/editor/core/block_heights.dart';
@@ -51,9 +52,7 @@ void main() {
 
   setUpAll(() async {
     // 真实字体：不加载就只能测"测试字体"，测出来的精度外推不到生产。
-    final FontLoader loader = FontLoader(AppTheme.editorFont)
-      ..addFont(rootBundle.load('assets/fonts/LXGWNeoXiHeiScreen.ttf'));
-    await loader.load();
+    await loadAppFont();
   });
 
   testWidgets('真实字体已加载（否则本文件的精度数字外推不到生产）', (

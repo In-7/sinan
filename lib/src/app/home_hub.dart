@@ -803,14 +803,20 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
     // 错位 8~40px）。外壳尺寸与位置就是可视按钮的真实矩形。
     return SizedBox(
       key: _key,
-      width: 32,
-      height: 32,
+      // 与列表头另两枚（新建 / 搜索）及编辑页撤销 / 重做同一档热区
+      // [Tokens.headerActionSize]（30）——2026-10-22 统一，此前是 32，
+      // 三枚钮底边会差 2px。
+      width: Tokens.headerActionSize,
+      height: Tokens.headerActionSize,
       child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        constraints: const BoxConstraints.tightFor(
+          width: Tokens.headerActionSize,
+          height: Tokens.headerActionSize,
+        ),
         padding: EdgeInsets.zero,
         icon: tabler.Filter(
-          height: Tokens.iconMdSm,
-          width: Tokens.iconMdSm,
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
           strokeWidth: Tokens.iconStroke,
           colorFilter: active
               ? ui.ColorFilter.mode(

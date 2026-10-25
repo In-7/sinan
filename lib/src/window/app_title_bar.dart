@@ -40,7 +40,6 @@ class WindowStrip extends ConsumerStatefulWidget {
     this.title,
     this.trailing,
     this.leading,
-    this.leadingEdge,
     this.leadingInset = 0,
   });
 
@@ -59,15 +58,9 @@ class WindowStrip extends ConsumerStatefulWidget {
   final List<Widget>? leading;
 
   /// [leading] 左侧的留白：把左簇推到调用方指定的 x（桌面外壳 = 内容卡左缘
-  /// `railWidth` 再 + 12px 呼吸；有折叠钮时调用方会先减掉它的 32）。
+  /// `railWidth` 再 + 12px 呼吸）。
   /// 这段留白本身仍是拖拽区——它上方的条带要能拖窗口。
   final double leadingInset;
-
-  /// **最左缘动作**（2026-10-15 新增）：渲染在窗口左缘（x=0）、[leadingInset] 之前的
-  /// **单一**动作——现放「折叠 / 展开左侧导航」钮。与 [leading] / [trailing] 一样过
-  /// [chromeActionButton]（32×32 方块）。侧栏折叠后 home 把 [leadingInset] 归 0，此钮
-  /// 仍钉在最左缘，是展开回来的唯一入口。
-  final Widget? leadingEdge;
 
   @override
   ConsumerState<WindowStrip> createState() => _WindowStripState();
@@ -127,10 +120,7 @@ class _WindowStripState extends ConsumerState<WindowStrip> with WindowListener {
             // 底层：左簇（含侧栏宽留白）+ 拖拽带 + 右簇 + 窗控。
             Row(
               children: <Widget>[
-                // 最左缘：折叠 / 展开侧栏钮（x=0，独立于 [leading] 的左簇）。
-                if (widget.leadingEdge != null)
-                  chromeActionButton(context, widget.leadingEdge!),
-                // 左簇：先让出侧栏宽度的拖拽区（左簇从此开始 ⇒ 与内容卡左缘
+                // 左簇：先让出内容卡左缘的拖拽区（左簇从此开始 ⇒ 与内容卡
                 // 对齐），再过 chromeActionButton 统一主题。
                 if (widget.leading != null) ...<Widget>[
                   SizedBox(

@@ -50,8 +50,19 @@ class EditorTypography {
   /// 正文基准字号（来自 `AppSettings.fontSize`，默认 17）。
   final double fontSize;
 
-  /// 正文行高倍数（来自 `AppSettings.lineHeight`，默认 1.5；新几何下即
+  /// 正文行高倍数（来自 `AppSettings.lineHeight`，默认 1.75；新几何下即
   /// 真实行距倍数，见 [lineBox]）。
+  ///
+  /// ## 长文本观感：这个数是"可推算"的，不是拍出来的
+  /// 思源黑体 SC（2026-10-24 实测，字号 200px / height 1.5 / even）：
+  /// - 汉字**墨迹高 ≈ 0.88em**（国：78→254px @200px）；
+  /// - 由此 **视觉行距 ≈ 行高 − 0.91em**（h=1.5 时实测 0.591em，与式子差
+  ///   0.03em，来自字形离散）。
+  ///
+  /// 于是默认 1.75 ⇒ 视觉行距 ≈ **0.84em**：在 CJK 长文舒适区（约 0.6~0.9em）
+  /// 的偏松一侧，适合"读长文不累"。想压密就往下调（1.65 ⇒ ≈0.74em）。
+  ///
+  /// ⚠️ 换字体时**重算一次这个式子**（墨迹高会变），别沿用旧值。
   final double lineHeight;
 
   // ───────────────────────── 整像素（Impeller 锐度杠杆） ─────────────────────────
@@ -304,6 +315,8 @@ class EditorTypography {
       fontFamily: AppTheme.editorFont,
       fontFamilyFallback: AppTheme.cjkFontFallback,
       fontWeight: FontWeight.w400,
+      // 可变字体才需要（静态字体收到 null ⇒ 什么都不做，与现在逐字节相同）。
+      fontVariations: AppTheme.weightVariation(400),
       leadingDistribution: TextLeadingDistribution.even,
     );
   }
@@ -317,7 +330,10 @@ class EditorTypography {
   TextStyle heading(int level) => body(
     size: fontSize * headingScale(level),
     height: headingLineHeight,
-  ).copyWith(fontWeight: FontWeight.w600);
+  ).copyWith(
+    fontWeight: FontWeight.w600,
+    fontVariations: AppTheme.weightVariation(600),
+  );
 
   /// 代码块的等宽文字样式：**字号与行盒都吸附整像素**（与 [body] / [heading]
   /// 同一口径）。
@@ -384,6 +400,17 @@ class EditorTypography {
     required Color muted,
   }) => TextStyleConfiguration(
     text: body().copyWith(color: text),
+    // 行内加粗：**w600（Semibold）而非官方默认的 w700（Bold）**——与标题档
+    // [heading]、笔记标题输入框同一套判断：中文（苹方 / 单字重的 LXGW）没有真
+    // Bold 字重，w700 是**引擎合成加粗**，笔画会糊边；w600 观感更干净，也让
+    // "加粗的字比标题还重"这种倒挂消失（2026-10-24 用户定）。
+    //
+    // 只给 fontWeight（+ 可变字体的轴）两项：官方是用 `TextStyle.combine` 合并到
+    // span 基样式上的，字族 / 回退链 / 字距由基样式提供，写多了反而会顶掉它们。
+    bold: TextStyle(
+      fontWeight: FontWeight.w600,
+      fontVariations: AppTheme.weightVariation(600),
+    ),
     // 链接：只加色与下划线，字体/回退链沿用基样式（`combine` 是合并语义）。
     href: TextStyle(
       color: link,

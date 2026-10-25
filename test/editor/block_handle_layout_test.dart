@@ -1,14 +1,14 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 // 与 appflowy 内部同一套 material（官方 material 同名类型是**另一套**，
 // 两边同时导入会 ambiguous，见 `block_height_predictor_spike_test.dart`）。
 import 'package:material_ui/material_ui.dart';
+
+import '../support/app_font.dart';
 import 'package:sinan/src/editor/core/block_height_predictor.dart';
 import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
-import 'package:sinan/src/theme/app_theme.dart';
 
 /// 块手柄的**布局契约**：手柄是行内布局
 /// （`BlockComponentActionWrapper` 的 `Row[手柄, 正文]` + `maintainSize`
@@ -27,9 +27,7 @@ void main() {
 
   setUpAll(() async {
     // 真实字体：与 spike 同理，测试字体的字符全是 1em 方格，测不准。
-    final FontLoader loader = FontLoader(AppTheme.editorFont)
-      ..addFont(rootBundle.load('assets/fonts/LXGWNeoXiHeiScreen.ttf'));
-    await loader.load();
+    await loadAppFont();
   });
 
   testWidgets('块手柄不占布局宽度：正文列 = 列宽 − 32', (WidgetTester tester) async {

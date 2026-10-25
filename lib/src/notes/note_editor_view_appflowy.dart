@@ -1882,21 +1882,20 @@ const double _kHeaderActionDisabledAlpha = 0.28;
 ///
 /// ⚠️ 2026-09-26：按钮已从标题行**分出去独占上面一条带**（标题下移），那条
 /// "略高于标题首行"的竖向校准随之**失效**——本值现在只是按钮带的上留白。
-const double _kHeaderActionTopPadding = 5;
+const double _kHeaderActionTopPadding = 4;
 
 /// 头部**按钮带**的高度（2026-09-26 定）：撤销 / 重做 + 双耳独占最上面这一条，
 /// 标题从它**下面**开始 ⇒ 头部分成两条带（理由见 build 里按钮带的注释）。
 ///
-/// = 按钮带上留白 [_kHeaderActionTopPadding](5) + 按钮热区
-/// [Tokens.headerActionSize](30) + 与标题的留白(5) = **40**。
+/// = 按钮带上留白 [_kHeaderActionTopPadding](4) + 按钮热区
+/// [Tokens.headerActionSize](28) + 与标题的留白(8) = **40**。
 ///
-/// ⚠️ 最后那档留白原为 4 ⇒ 带高 39。2026-10-15 改 5 是为了**与侧栏页头同高**：
-/// 侧栏「logo + 应用名」行取 [Tokens.brandStripHeight]（40，锚就是本带），两列
-/// 顶端的动作区于是是同一个矩形（**等高且同 y**——侧栏顶呼吸也用
-/// [Tokens.spaceXxs]，与内容卡顶环缝同值 ⇒ 两条带起点一致）。
-/// 改这里就把两列一起改（或改 [Tokens.brandStripHeight] 后同步，别只动一边）。
+/// ⚠️ **和必须仍是 40**：侧栏「logo + 应用名」行取 [Tokens.brandStripHeight]
+///（40，锚就是本带），两列顶端的动作区因此等高且同 y。2026-10-22 热区 30→28、
+/// 上留白 5→4 时，正是把**下留白 5→8** 补回来的，标题行与侧栏页头因此都没动。
+/// 改热区就得改这三档里的上 / 下留白，别只动一边。
 const double _kHeaderBandHeight =
-    _kHeaderActionTopPadding + Tokens.headerActionSize + 5;
+    _kHeaderActionTopPadding + Tokens.headerActionSize + 8;
 
 /// 标题行**左侧**的常驻历史按钮（撤销 / 重做）。
 ///
@@ -1945,7 +1944,7 @@ class _HistoryButton extends StatelessWidget {
               minimumSize: const Size.square(Tokens.headerActionSize),
               maximumSize: const Size.square(Tokens.headerActionSize),
               padding: EdgeInsets.zero,
-              iconSize: Tokens.iconMdSm,
+              iconSize: Tokens.iconSm,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(Tokens.radiusButton),
@@ -2011,7 +2010,7 @@ class _EarButton extends StatelessWidget {
             // ⚠️ 图标尺寸**只有这一条路**：`icon` 里刻意不写 height/width，
             // 由 `AppIconTheme` 把这个 `iconSize` 转发给 tabler（写死 24 会顶掉它，
             // 那正是 2026-09-23 这三个耳"偏大偏亮"的一半原因）。
-            iconSize: Tokens.iconMdSm,
+            iconSize: Tokens.iconSm,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(Tokens.radiusSm),

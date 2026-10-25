@@ -169,13 +169,10 @@ class HomeScreen extends ConsumerWidget {
       final HomeView view = ref.watch(
         navHistoryProvider.select((NavHistoryState s) => s.view),
       );
-      // 历史钮：**内容卡左缘 + 12px 呼吸**（2026-10-19 用户定：固定锚点看过不好，
-      // 回到左缘但留出呼吸；不加竖线）。有折叠钮时再减它的 32（折叠钮在 x=0）。
-      final double historyInset =
-          (view == HomeView.timeline
-              ? Tokens.railWidth
-              : Tokens.railWidth - Tokens.chromeButtonSize) +
-          Tokens.spaceMd;
+      // 历史钮：**内容卡左缘 + 12px 呼吸**（2026-10-21 用户定：所有视图同一位置，
+      // 不再随"列表列折叠钮在不在条内"而左右跳）。2026-10-19 起从固定锚点回到左缘
+      // 但留呼吸；列表列折叠钮已于同日搬进内容卡左上角（见下方 Stack 顶层）。
+      const double historyInset = Tokens.railWidth + Tokens.spaceMd;
       final Widget detail = detailPane();
       final bool isDark = brightness == Brightness.dark;
       final Widget cardChild = switch (view) {
@@ -256,11 +253,8 @@ class HomeScreen extends ConsumerWidget {
             // + 窗控按钮。
             // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
             WindowStrip(
-              // 最左缘：折叠 / 展开**列表列**（2026-10-16 起；60 轨常驻不折）。
-              // 灵感页没有列表列 ⇒ 这一视图里不出现折叠钮（否则按了什么都不动）。
-              leadingEdge: view == HomeView.timeline
-                  ? null
-                  : const SidebarCollapseButton(),
+              // 最左缘不放任何钮：列表列折叠钮 2026-10-21 搬进**内容卡左上角**
+              //（悬浮件，折叠/展开位置不变），顶条只剩历史簇与右簇。
               leading: _historyNavButtons(context, ref),
               // 内容卡左缘 + 12px 呼吸（见上方 [historyInset]）；位置稳定，
               // 不随列表折叠 / 视图切换移动。
@@ -317,6 +311,21 @@ class HomeScreen extends ConsumerWidget {
                               ),
                             ],
                           ),
+                          // **列表列折叠钮**：悬浮在内容卡左上角的固定件，2026-10-21
+                          // 用户定从标题栏搬来。它**不随列表列宽度动画移动**（列表
+                          // 240 → 0 时它仍在原坐标，只是落点从列表头变成编辑页），
+                          // 这样"记住按钮位置"。Tab 序给 15（轨 10 之后、列表 20 之前）。
+                          //
+                          // 灵感页没有列表列 ⇒ 不渲染（按了什么都不动的钮不如没有）。
+                          if (view != HomeView.timeline)
+                            const Positioned(
+                              left: _kCollapseButtonInset,
+                              top: _kCollapseButtonInset,
+                              child: FocusTraversalOrder(
+                                order: NumericFocusOrder(15),
+                                child: SidebarCollapseButton(),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -755,15 +764,26 @@ class SettingsNavButton extends ConsumerWidget {
   }
 }
 
+/// 折叠钮在内容卡左上角的**内缩**（4px）：一是卡片左上角是 [_kPanelRadius] 的
+/// 圆角、钮贴边会被切掉一角；二是**与编辑页按钮带的上留白同值**
+///（`note_editor_view_appflowy` 的 `_kHeaderActionTopPadding` = 4）⇒ 列表头这枚钮
+/// 与详情页的撤销 / 重做落在**同一条竖向位置**（2026-10-22 用户定）。
+const double _kCollapseButtonInset = 4;
+
+/// 折叠钮**边长**：与编辑页撤销 / 重做同一个热区 [Tokens.headerActionSize]（30）。
+const double _kCollapseButtonSize = Tokens.headerActionSize;
+
 /// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内列表列；60 轨
 /// 常驻不折）。点按切 [listCollapsedProvider]——本钮与 [HomeScreen] 卡内列表列
 /// 共用这一个布尔（单一真相源）。
 ///
+/// 📌 2026-10-21 用户定：从标题栏搬进**内容卡左上角的固定悬浮位**（见 [HomeScreen]
+/// 的 Stack 顶层）——列表列 240 → 0 折叠时它仍停在原坐标，只是落点从列表头变成
+/// 编辑页，"按钮位置不变，好记"。也因此它不再吃标题栏的 `IconTheme(onChrome)`，
+/// 改为显式用面板上的 [ColorScheme.onSurfaceVariant]。
+///
 /// 窄窗（< [Tokens.noteListBreakpoint]）时列表被强制收起（见 [HomeScreen]）⇒ 钮置灰、
 /// 给一句实话；宽窗才可手动折 / 展。
-///
-/// 不着色：标题栏 [WindowStrip] 已套 IconTheme(onChrome)，tabler 经 AppIconTheme
-/// 桥接继承（同 [SettingsNavButton]）。
 class SidebarCollapseButton extends ConsumerWidget {
   const SidebarCollapseButton({super.key});
 
@@ -772,11 +792,30 @@ class SidebarCollapseButton extends ConsumerWidget {
     final bool narrow =
         MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
     final bool collapsed = narrow || ref.watch(listCollapsedProvider);
+    final Color ink = Theme.of(context).colorScheme.onSurfaceVariant;
     return IconButton(
-      icon: const tabler.LayoutSidebar(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
+      // 32 固定方块（全局 iconButtonTheme 是 40×40，塞进 240 列表头会超宽）。
+      constraints: const BoxConstraints.tightFor(
+        width: _kCollapseButtonSize,
+        height: _kCollapseButtonSize,
+      ),
+      padding: EdgeInsets.zero,
+      iconSize: Tokens.iconMd,
+      style: IconButton.styleFrom(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tokens.radiusButton),
+        ),
+        // ⚠️ 必须 shrinkWrap：M3 默认把**48 tap target**塞给 IconButton，可视 30
+        // 会被居中内缩 9px ⇒ 这枚钮的图标比编辑页撤销 / 重做**低 9px、右 9px**
+        // （实测 Rect 差正好 9）。列表头那三枚是裸 30 容器，两边要对齐就得让
+        // 这边的盒子就等于可视盒。
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: tabler.LayoutSidebar(
+        height: Tokens.iconSm,
+        width: Tokens.iconSm,
         strokeWidth: 1.5,
+        colorFilter: ui.ColorFilter.mode(ink, ui.BlendMode.srcIn),
       ),
       tooltip: narrow ? '放宽窗口可展开列表' : (collapsed ? '展开列表' : '收起列表'),
       onPressed: narrow
