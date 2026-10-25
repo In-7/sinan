@@ -201,8 +201,7 @@ class _QuoteIcon extends StatelessWidget {
       padding: const EdgeInsets.only(right: 4.0),
       child: Container(
         width: 4 * textScaleFactor,
-        // 主题 primary 原色，不削弱：与正文链接色同源，明暗切换自动跟随。
-        color: Theme.of(context).colorScheme.primary,
+        color: '#00BCF0'.tryToColor(),
       ),
     );
   }

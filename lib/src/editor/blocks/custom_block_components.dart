@@ -103,6 +103,15 @@ Map<String, BlockComponentBuilder> sinanBlockComponentBuilders({
         color: markerColor,
       ),
     ),
+    // 引用块竖条：官方 `iconBuilder` 扩展点（2026-10-25，取代直接改
+    // vendored `_QuoteIcon` 的旧做法——官方钩子就是为这类"换图标不改源码"
+    // 设计的，见其 `BlockIconBuilder`）。视觉与旧补丁逐像素一致，源码归零。
+    QuoteBlockKeys.type: QuoteBlockComponentBuilder(
+      configuration: standardBlockComponentConfiguration.copyWith(
+        placeholderText: (_) => AppFlowyEditorL10n.current.quote,
+      ),
+      iconBuilder: (context, node) => const _SinanQuoteIcon(),
+    ),
     CodeBlockKeys.type: CodeBlockComponentBuilder(typography: typography),
     FormulaBlockKeys.type: FormulaBlockComponentBuilder(),
     AttachmentBlockKeys.type: AttachmentBlockComponentBuilder(),
@@ -927,6 +936,32 @@ String _toRoman(int number) {
     }
   }
   return result.toLowerCase();
+}
+
+///
+/// 引用块竖条（2026-10-25，官方 `iconBuilder` 扩展点，取代直接改
+/// vendored `_QuoteIcon`）。
+///
+/// 几何**照官方 `_QuoteIcon` 复刻**（不能用 `markerBox`）：quote 的
+/// `Row(crossAxisAlignment: stretch)` 会把图标拉到**整块高**，竖条必须
+/// 自己撑满——外层 26×22 最小约束 + 内层 4px 宽无高约束。
+/// 色取主题 primary 原色，不削弱：与正文链接色同源，明暗切换自动跟随。
+class _SinanQuoteIcon extends StatelessWidget {
+  const _SinanQuoteIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final double tsf = context.read<EditorState>().editorStyle.textScaleFactor;
+    return Container(
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(minWidth: 26, minHeight: 22) * tsf,
+      padding: const EdgeInsets.only(right: 4.0),
+      child: Container(
+        width: 4 * tsf,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
 }
 
 ///

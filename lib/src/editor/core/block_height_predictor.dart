@@ -501,6 +501,10 @@ class BlockHeightPredictor {
   /// 假象能到 **30×**。验证办法：交替给 2 行 / 6 行的文本，并断言高度确实
   /// 跟着变——不变就说明测量不成立。
   double _heightOfSpan(TextSpan span, double maxWidth) {
+    // [sinan 补丁 20/21 同步] 与渲染侧 `adjustTextSpan` 末尾同一道中文
+    // 显示层排版（同一纯函数、同一输入 ⇒ 同一输出），否则混排文本的折行会偏。
+    // 确定性变换，同一 span 复测结果不变 ⇒ 与下面的缓存兼容。
+    span = applyCjkTextSpacing(span);
     final TextPainter painter = TextPainter(
       text: span,
       textDirection: TextDirection.ltr,
@@ -608,8 +612,9 @@ class BlockHeightPredictor {
   }
 
   /// 复刻官方 `getTextSpan` 里逐条 `TextInsert` 的样式合并顺序
-  /// （只保留**影响行盒**的项：字号 / 字族 / 字重 / 斜体 / 等宽 / 下划线；
-  /// 颜色与底色不参与布局，故不合并）。
+  /// （只保留**影响行盒**的项：字号 / 字族 / 字重 / 斜体 / 等宽 / 下划线 /
+  /// fontFeatures；颜色与底色不参与布局，故不合并。⚠️ fontFeatures 影响
+  /// 字形步进——palt 把全角标点压窄，折行跟着变，必须与渲染同源）。
   TextStyle _insertStyleOf(TextInsert insert) {
     TextStyle style = textStyleConfiguration.text.copyWith(
       height: textStyleConfiguration.lineHeight,

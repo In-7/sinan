@@ -308,7 +308,7 @@ class EditorTypography {
   TextStyle body({double? size, double? height}) {
     final double effectiveSize = snap(size ?? fontSize);
     final double box = lineBox(effectiveSize, height ?? lineHeight);
-    return TextStyle(
+    return     TextStyle(
       fontSize: effectiveSize,
       height: box / effectiveSize,
       letterSpacing: 0,
@@ -317,6 +317,12 @@ class EditorTypography {
       fontWeight: FontWeight.w400,
       // 可变字体才需要（静态字体收到 null ⇒ 什么都不做，与现在逐字节相同）。
       fontVariations: AppTheme.weightVariation(400),
+      // 标点压缩（`palt`，2026-10-25）：把全角标点的 1em 框压到约半宽，
+      // 中文段落里的"洞"明显减少。引擎完整透传 OpenType 特性（实测
+      // `。「」` 100px → 50px，汉字不受影响）。⚠️ 影响字形步进 ⇒ 折行
+      // 位置跟着变，`BlockHeightPredictor` 与渲染共用本样式才对得上。
+      // 静态近似（全开/全关），不是排版引擎那种行尾临界动态挤压。
+      fontFeatures: const <FontFeature>[FontFeature.enable('palt')],
       leadingDistribution: TextLeadingDistribution.even,
     );
   }

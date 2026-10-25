@@ -1038,9 +1038,19 @@ class AppTheme {
   /// 界面 + 正文同一套字形，全平台观感一致；缺字走 [cjkFontFallback] 兜底。
   static const String editorFont = _fontSourceHanVF;
 
-  /// **可变字体的字重轴**： Flutter **不会**把 `fontWeight` 映射到 `wght` 轴
-  ///（已核对 3.47 源码：`'wght'` 只出现在显式传 `fontVariations` 的地方）⇒
-  /// **必须**显式给轴，否则"要 600"时引擎仍按合成加粗处理（换了等于白换）。
+  /// **可变字体的字重轴**（显式覆盖用，见下）。
+  ///
+  /// ## 3.47 的真实行为（2026-10-25 实测 + 引擎源码更正）
+  /// **`fontWeight` 已隐式设置 `wght` 轴**——引擎 `paragraph_builder_skia.cc`
+  /// 在显式轴未含 `wght` 时自动拿 `font_weight` 填入；裸 `w600` 与显式轴
+  /// 渲染宽度逐位相同（`test/theme/source_han_vf_test.dart` 钉着这条）。
+  /// 旧注释"Flutter 不会把 fontWeight 映射到 wght 轴"是**错误结论**（当年
+  /// 只核对了 framework 的 Dart 层，映射发生在 engine 的 txt→skia 转换层）。
+  ///
+  /// 显式给轴仍然合法且**优先于** fontWeight（engine 的 `weight_axis_set`
+  /// 短路），本方法保留用于"要轴值 ≠ 声明字重"的少数场景；常规写
+  /// `fontWeight` 即可。`FontVariation.weight` 的官方文档也已改为
+  /// "Applications should avoid using this"。
   ///
   /// 静态字体收到 `fontVariations` 会忽略它，所以将来换成非可变字体也安全。
   ///

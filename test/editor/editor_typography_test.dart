@@ -127,9 +127,10 @@ void main() {
       expect(AppTheme.cjkFontFallback, contains('Microsoft YaHei UI'));
     });
 
-    test('字重轴：正文 / 标题都显式带 wght（否则 VF 等于白换）', () {
-      // 关键口径：Flutter **不会**把 fontWeight 映射到 wght 轴 ⇒ 真字重必须显式
-      // 给 fontVariations，否则"要 600"时引擎仍是**合成加粗**。
+    test('字重轴：正文 / 标题都带 wght 显式轴（与 fontWeight 同值，冗余保险）', () {
+      // 3.47 起 fontWeight **已隐式映射** wght 轴（engine 层，见
+      // [AppTheme.weightVariation] 的更正记录）——显式轴与它同值共存，
+      // 是"要轴值 ≠ 声明字重"场景的保险，不是生效的前提。
       expect(typography.body().fontVariations, <FontVariation>[
         const FontVariation('wght', 400),
       ]);

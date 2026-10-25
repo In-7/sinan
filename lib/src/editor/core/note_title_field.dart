@@ -76,6 +76,8 @@ class NoteTitleField extends StatelessWidget {
           fontWeight: .w600,
           // 可变字体才需要（静态字体收到 null ⇒ 无副作用）。
           fontVariations: AppTheme.weightVariation(600),
+          // 与正文同口径的标点压缩（见 EditorTypography.body()）。
+          fontFeatures: const <FontFeature>[FontFeature.enable('palt')],
           height: height,
           letterSpacing: 0,
           fontFamily: AppTheme.editorFont,
@@ -103,6 +105,7 @@ class NoteTitleField extends StatelessWidget {
             letterSpacing: 0,
             fontFamily: AppTheme.editorFont,
             fontFamilyFallback: AppTheme.cjkFontFallback,
+            fontFeatures: const <FontFeature>[FontFeature.enable('palt')],
             color: AppTheme.hintColor(theme.colorScheme.onSurface),
           ),
         ),

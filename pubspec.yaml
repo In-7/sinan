@@ -89,10 +89,10 @@ flutter:
   # 上一代（霞鹜新晰黑·屏幕阅读版，11MB）是单字重， wsz600/700 只能靠引擎合成
   # 加粗（笔画糊边），层级做不细；2026-10-24 换装并移除上一代。
   fonts:
-    # ⚠️ 同一个文件登记两档 weight：Flutter 只按 `fontWeight` 选面、**不会**把它
-    # 映射到 wght 轴 ⇒ 真字重必须另由 `TextStyle.fontVariations` 给（见
-    # [AppTheme.weightVariation]）。登记两档只是为了"要 600 时能选中一个 600 的
-    # 条目"，免得引擎判定"无此字重"再叠一层合成加粗。
+    # ⚠️ 同一个文件登记两档 weight：让"要 600 时能选中一个 600 的条目"，免得
+    # 引擎判定"无此字重"再叠一层合成加粗。`fontWeight` 本身在 3.47 已隐式
+    # 设置可变字体的 `wght` 轴（engine 层 txt→skia 转换），真字重**不再**需要
+    # 显式 `fontVariations`（见 [AppTheme.weightVariation] 的更正记录）。
     #
     # 测试侧加载同一份资产的路径见 `test/support/app_font.dart`（换字体只改那一处）。
     - family: SourceHanSansSC-VF

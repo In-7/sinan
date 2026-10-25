@@ -7,6 +7,11 @@
 > 1. 不依赖 pub 的发版节奏——国内镜像（pub.flutter-io.cn）解析到的 `appflowy_editor`
 >    最新只有 **0.1.12**，与官方 6.2.0 天差地别；
 > 2. 可就地打补丁（依赖冲突、平台适配），不必等上游。
+>
+> **版本锁（2026-10-25）**：`path:` 依赖 ⇒ pub 升级碰不到本目录，"锁"天然成立；
+> 真正的风险是手动跟上游时覆盖目录/漏放补丁。`test/architecture/appflowy_baseline_test.dart`
+> 钉住基线版本号 + 关键补丁指纹（丢了立刻红）。**换基线的唯一正路**：下方
+> 「同步上游的操作指南」重放补丁 → 更新本文件 → 更新该测试的版本断言。
 
 ## 历史形态：曾是独立仓库，**2026-09-17 已并入主仓库**
 
@@ -542,6 +547,60 @@ parameter type 'Widget?'`）。改本目录后**务必跑一次仓库根的 `flu
 **何时可撤销**: 上游把 `SelectionMenuItem.icon` 也接到 `EditorSvg.iconOverride`
 （或直接把图标槽位类型放宽为 `Widget`）后，还原这四个文件即可。
 
+### [2026-10-25] 补丁 21 — 连续标点互挤（jiya 行内可判子集）
+
+**问题**：全角标点自带半宽空白，两个标点相邻时空隙成倍出现（`。」`、`』，`、
+`！？`），中文段落出现"洞"。印刷界的解法是标点挤压（jiya / CSS
+`text-spacing-trim` 的"减法规则"）：相邻可挤标点对删去之间的空。
+
+**改动**：
+- 同一纯函数文件扩展（`text_span_cjk_spacing.dart`，入口改名
+  `applyCjkTextSpacing`）：**单遍扫描**同时算中西文间距（正）与标点互挤
+  （负）。字符表按减法规则分四类：开启符號 / 結束符號 / 句終中點（可挤）、
+  連接省略（`——……～・`，不挤且打断链）。互挤量 `kPunctSqueezeEm = 0.1em`
+  负尾随 letterSpacing（实测标定：palt 后 `。」` 残余墨缝 ≈0.15–0.17em，
+  收到 ≈0.15em 起笔画相触 ⇒ 0.1em 留 25–40% 余量）。
+- 接线沿用补丁 20 的两处（`adjustTextSpan` 尾部 + `BlockHeightPredictor`
+  同源），**不改任何调用点结构**。
+- 只做"行内可判"部分；行首/行尾收紧需折行信息（两遍排版），实时编辑器
+  代价过高，不在此列——见 `docs/editor_migration_spike.md`。
+
+**为何不用 CSS `hanging-punctuation`/行尾方案**：需要折行信息，编辑器每敲
+一键重测重排；Han.css 的 web 实现靠 DOM 测量包裹 span，同理不适配。
+
+**何时可撤销**: 引擎提供行内标点挤压（如 Flutter 支持 `text-spacing-trim`
+语义）后，删本函数的互挤分支即可（间距分支是补丁 20）。
+
+### [2026-10-25] 补丁 20 — 中西文自动间距（显示层，不动文本）
+
+**问题**：中文与拉丁字母/数字直接相邻（`使用API`、`2026年`）时代排版惯例要留
+约 ¼ em 空隙（CLREQ / pangu 方向），引擎不提供；应用层又不能往文本里插空格
+——编辑器按**字符索引**映射光标/选区/IME，插字符会让全部位置映射错位、复制
+被污染。
+
+**改动**：
+- 新增 `lib/src/extensions/text_span_cjk_spacing.dart`：纯函数
+  `applyCjkLatinSpacing(TextSpan)`——在表意↔西文直接相邻的边界处，给**边界前
+  那个字符**加尾随 `letterSpacing`（`(fontSize × 0.25).roundToDouble()`）。
+  带间隙的字符独占单字 span（`letterSpacing` 作用于段内每个字形，多字段会把
+  段内字距也撑开）。文本逐字节不变；无边界时原样返回（`identical`）。
+  经 `extensions.dart` 导出。
+- `appflowy_rich_text.dart` 的 `adjustTextSpan` 末尾调用它。**必须在各块的
+  `textSpanDecorator`（`updateTextStyle` 样式合并）之后**——heading 合并会把
+  `letterSpacing: 0` 覆盖到叶子上，先加间隙就被顶掉。
+  ⚠️ 为何不用官方 `EditorStyle.textSpanDecorator`（`textSpanDecoratorForAttribute`）
+  扩展点：它在 `getTextSpan` 的**逐条合并管线内**执行，随后各块的
+  `updateTextStyle` 会经 `TextStyle.combine` **无条件覆盖** `letterSpacing`
+  （`text_style_extension.dart` 的 `combine`：`letterSpacing: other.letterSpacing`）
+  ⇒间隙必被顶掉。官方没有"合并后"的样式钩子，`adjustTextSpan` 尾部是唯一
+  能在全部合并之后改 span 的位置（2026-10-25 对照官方 main 源码确认，官方
+  至今无任何 letterSpacing/字体特性/标点处理）。
+- 应用侧 `BlockHeightPredictor._heightOfSpan` 复用**同一函数**（预测与渲染
+  同源），闸门 `test/editor/cjk_spacing_test.dart`。
+
+**何时可撤销**: 上游提供官方的中西文间距/标点处理后，还原 `adjustTextSpan`
+两行 + 删扩展文件即可（预测器侧同步删）。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`
@@ -641,7 +700,7 @@ flutter build windows --debug
 
 | 文件 | 线索 |
 |---|---|
-| `lib/src/editor/block_component/quote_block_component/quote_block_component.dart` | 引用块 |
+| `lib/src/editor/block_component/quote_block_component/quote_block_component.dart` | 引用块（**2026-10-25 已还原官方原版**——主题色迁移为官方 `iconBuilder` 扩展点，见应用侧 `custom_block_components.dart` 的 `_SinanQuoteIcon`，vendored 零改动） |
 | `lib/src/editor/find_replace_menu/find_menu_service.dart` | 查找面板（偏移 / 聚焦 / 防抖） |
 | `lib/src/editor/find_replace_menu/find_replace_widget.dart` | 同上 |
 | `lib/src/editor/toolbar/desktop/items/icon_item_widget.dart` | 工具栏激活底色 |

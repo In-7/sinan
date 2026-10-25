@@ -510,6 +510,13 @@ class _AppFlowyRichTextState extends State<AppFlowyRichText>
   // https://github.com/AppFlowy-IO/appflowy-editor/issues/819#issuecomment-2177833413
   // This is a workaround for the issue that
   //  the caret height of the text is not calculated correctly if the parent style is null.
+  //
+  // [sinan 补丁 20/21] 末尾追加中文显示层排版（`applyCjkTextSpacing` =
+  // 中西文自动间距 + 连续标点互挤，见 extensions/text_span_cjk_spacing.dart）。
+  // **必须放在最后**——本方法在
+  // 各块的 `textSpanDecorator`（含 `updateTextStyle` 样式合并）之后执行，
+  // 而那些合并会把 heading 的 `letterSpacing: 0` 覆盖到叶子上，先加间隙
+  // 就被顶掉。纯函数、不动文本内容 ⇒ 光标/选区偏移与复制均不受影响。
   TextSpan adjustTextSpan(TextSpan textSpan) {
     if (textSpan.style == null && textSpan.children != null) {
       double height = 0.0;
@@ -527,7 +534,7 @@ class _AppFlowyRichTextState extends State<AppFlowyRichText>
         return true;
       });
       if (height == 0.0 || fontSize == 0.0) {
-        return textSpan;
+        return applyCjkTextSpacing(textSpan);
       }
       textSpan = textSpan.copyWith(
         style: textStyleConfiguration.text.copyWith(
@@ -536,7 +543,7 @@ class _AppFlowyRichTextState extends State<AppFlowyRichText>
         ),
       );
     }
-    return textSpan;
+    return applyCjkTextSpacing(textSpan);
   }
 
   TextSpan getPlaceholderTextSpan() {
