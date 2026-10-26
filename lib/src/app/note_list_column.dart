@@ -10,6 +10,7 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import '../command/commands.dart';
 import '../theme/app_custom_icons.dart';
 import '../theme/app_float_surface.dart';
+import '../theme/app_icon_button.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
@@ -190,16 +191,15 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                       // 类型**，右半 `▾` 开托盘（新建笔记 / 新建画布 / 导入…）。
                       _ListNewButton(view: view),
                       const SizedBox(width: Tokens.spaceXxs),
-                      _HeadIconButton(
+                      AppIconButton(
                         tooltip: '搜索',
-                        icon: const tabler.Search(
-                          height: Tokens.iconSm,
-                          width: Tokens.iconSm,
-                          strokeWidth: 1.5,
-                        ),
+                        // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
+                        icon: CustomIcons.search(size: Tokens.iconSm),
                         onPressed: _openSearch,
                       ),
                       const SizedBox(width: Tokens.spaceXxs),
+                      // 筛选：字形与宿主已由 [FilterMenuButton] 单点（两处调用
+                      // 点同为 lucide 漏斗 + [AppIconButton]），这里不再传 icon。
                       const FilterMenuButton(),
                     ],
                   ),
@@ -350,93 +350,6 @@ class _RowHeader extends StatelessWidget {
   }
 }
 
-/// 列表头工具行的单枚图标钮（32 方块，与 [FilterMenuButton] 同规格）。
-///
-/// hover 铺 [AppTheme.hoverOverlay]、焦点环**只给键盘**（同 [_NoteRow] 口径，
-/// 2026-10-21：鼠标点过也戴环会被误读成选中态）。
-class _HeadIconButton extends StatefulWidget {
-  const _HeadIconButton({
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String tooltip;
-  final Widget icon;
-  final VoidCallback onPressed;
-
-  @override
-  State<_HeadIconButton> createState() => _HeadIconButtonState();
-}
-
-class _HeadIconButtonState extends State<_HeadIconButton> {
-  bool _hover = false;
-  final FocusNode _focus = FocusNode();
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Brightness b = theme.brightness;
-    final Color bg = _hover ? AppTheme.hoverOverlay(b) : Colors.transparent;
-    return Tooltip(
-      message: widget.tooltip,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: FocusableActionDetector(
-          focusNode: _focus,
-          mouseCursor: SystemMouseCursors.click,
-          actions: <Type, Action<Intent>>{
-            ActivateIntent: CallbackAction<Intent>(
-              onInvoke: (_) {
-                widget.onPressed();
-                return null;
-              },
-            ),
-          },
-          child: Semantics(
-            button: true,
-            label: widget.tooltip,
-            child: FocusRing(
-              focusNode: _focus,
-              keyboardOnly: true,
-              borderRadius: BorderRadius.circular(Tokens.radiusButton),
-              child: GestureDetector(
-                onTap: widget.onPressed,
-                child: Container(
-                  width: _kHeadButtonSize,
-                  height: _kHeadButtonSize,
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(Tokens.radiusButton),
-                  ),
-                  child: Center(
-                    child: IconTheme(
-                      // 图标档与编辑页撤销 / 重做同一个 [Tokens.iconSm]（18）。
-                      data: IconThemeData(
-                        color: theme.colorScheme.onSurfaceVariant,
-                        size: Tokens.iconSm,
-                      ),
-                      child: widget.icon,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 托盘宽（180：容得下最长的一条「导入 Markdown…」）。
 const double _kTrayWidth = 180;
 
@@ -467,13 +380,10 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _HeadIconButton(
+        AppIconButton(
           tooltip: canvasPage ? '新建画布' : '新建笔记',
-          icon: const tabler.Plus(
-            height: Tokens.iconSm,
-            width: Tokens.iconSm,
-            strokeWidth: 1.5,
-          ),
+          // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
+          icon: CustomIcons.plus(size: Tokens.iconSm),
           onPressed: () => unawaited(
             runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
           ),
@@ -601,55 +511,29 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
   }
 }
 
-/// 托盘箭头（`▾`）：24 宽、32 高的窄钮，hover 铺底；菜单开着时**向上翻**。
-class _TrayArrow extends StatefulWidget {
+/// 托盘箭头（`▾`）：22 宽的窄钮，菜单开着时**向上翻**。
+///
+/// 宿主统一走 [AppIconButton]（色源 / 图标档 / hover 底 / 焦点环全在那边单点
+/// 收口）——本件只负责"开合 ⇒ 箭头方向"这一件事。
+class _TrayArrow extends StatelessWidget {
   const _TrayArrow({required this.open, required this.onTap});
 
   final bool open;
   final VoidCallback onTap;
 
   @override
-  State<_TrayArrow> createState() => _TrayArrowState();
-}
-
-class _TrayArrowState extends State<_TrayArrow> {
-  bool _hover = false;
-
-  @override
   Widget build(BuildContext context) {
-    final Brightness b = Theme.of(context).brightness;
-    return Tooltip(
+    return AppIconButton(
       // 读屏与测试都靠它：一枚没有名字的箭头按钮，键盘 / 辅助技术无从下手。
-      message: '更多新建选项',
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Container(
-            width: 22,
-            height: _kHeadButtonSize,
-            decoration: BoxDecoration(
-              color: _hover ? AppTheme.hoverOverlay(b) : Colors.transparent,
-              borderRadius: BorderRadius.circular(Tokens.radiusButton),
-            ),
-            child: Center(
-              child: IconTheme(
-                // 箭头是**行内装饰记号**，比动作图标再小一档 [Tokens.iconXs]（14）
-                // ——28 的热区里放 18 的箭头会显得笨重。
-                data: IconThemeData(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  size: Tokens.iconXs,
-                ),
-                child: widget.open
-                    ? const tabler.ChevronUp(strokeWidth: 1.5)
-                    : const tabler.ChevronDown(strokeWidth: 1.5),
-              ),
-            ),
-          ),
-        ),
-      ),
+      tooltip: '更多新建选项',
+      width: 22,
+      // 箭头是**行内装饰记号**，比动作图标再小一档 [Tokens.iconXs]（14）
+      // ——28 的热区里放 18 的箭头会显得笨重。
+      iconSize: Tokens.iconXs,
+      icon: open
+          ? CustomIcons.chevronUp(size: Tokens.iconXs)
+          : CustomIcons.chevronDown(size: Tokens.iconXs),
+      onPressed: onTap,
     );
   }
 }
@@ -756,7 +640,8 @@ class _ListSearchField extends StatelessWidget {
     final Color line = Bauhaus.line(b);
     final Widget magnifier = IconTheme(
       data: IconThemeData(color: Bauhaus.inkMuted(b), size: Tokens.iconMdSm),
-      child: const tabler.Search(strokeWidth: 1.5),
+      // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
+      child: CustomIcons.search(size: Tokens.iconMdSm),
     );
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -812,7 +697,8 @@ class _ListSearchField extends StatelessWidget {
                       color: Bauhaus.inkMuted(b),
                       size: Tokens.iconMdSm,
                     ),
-                    child: const tabler.X(strokeWidth: 1.5),
+                    // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
+                    child: CustomIcons.x(size: Tokens.iconMdSm),
                   ),
                 );
               },

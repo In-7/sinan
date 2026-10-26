@@ -19,6 +19,8 @@ import 'ask_panel.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show showSettingsPanel;
 import 'stream_view.dart';
+import '../theme/app_custom_icons.dart';
+import '../theme/app_icon_button.dart';
 import '../theme/app_theme.dart';
 import '../theme/noise_texture.dart';
 import '../theme/tokens.dart';
@@ -770,9 +772,6 @@ class SettingsNavButton extends ConsumerWidget {
 /// 与详情页的撤销 / 重做落在**同一条竖向位置**（2026-10-22 用户定）。
 const double _kCollapseButtonInset = 4;
 
-/// 折叠钮**边长**：与编辑页撤销 / 重做同一个热区 [Tokens.headerActionSize]（30）。
-const double _kCollapseButtonSize = Tokens.headerActionSize;
-
 /// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内列表列；60 轨
 /// 常驻不折）。点按切 [listCollapsedProvider]——本钮与 [HomeScreen] 卡内列表列
 /// 共用这一个布尔（单一真相源）。
@@ -792,31 +791,16 @@ class SidebarCollapseButton extends ConsumerWidget {
     final bool narrow =
         MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
     final bool collapsed = narrow || ref.watch(listCollapsedProvider);
-    final Color ink = Theme.of(context).colorScheme.onSurfaceVariant;
-    return IconButton(
-      // 32 固定方块（全局 iconButtonTheme 是 40×40，塞进 240 列表头会超宽）。
-      constraints: const BoxConstraints.tightFor(
-        width: _kCollapseButtonSize,
-        height: _kCollapseButtonSize,
-      ),
-      padding: EdgeInsets.zero,
-      iconSize: Tokens.iconMd,
-      style: IconButton.styleFrom(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Tokens.radiusButton),
-        ),
-        // ⚠️ 必须 shrinkWrap：M3 默认把**48 tap target**塞给 IconButton，可视 30
-        // 会被居中内缩 9px ⇒ 这枚钮的图标比编辑页撤销 / 重做**低 9px、右 9px**
-        // （实测 Rect 差正好 9）。列表头那三枚是裸 30 容器，两边要对齐就得让
-        // 这边的盒子就等于可视盒。
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      icon: tabler.LayoutSidebar(
-        height: Tokens.iconSm,
-        width: Tokens.iconSm,
-        strokeWidth: 1.5,
-        colorFilter: ui.ColorFilter.mode(ink, ui.BlendMode.srcIn),
-      ),
+    // 宿主与列表头三枚**同为 [AppIconButton]**（2026-10-26 统一）：色源、图标
+    // 档、hover 底、焦点环全在那边单点，不再走 M3 IconButton 的组件下发链路
+    // （那正是同一行出现两档灰的根因）。
+    return AppIconButton(
+      // 热区取 [AppIconButton] 默认 [Tokens.headerActionSize]（28）——与列表头
+      // 三枚、编辑页撤销 / 重做同档。
+      // 列表顶工具行 2026-10-25 换 lucide（见 [CustomIcons]）。
+      // ⚠️ **不传 color**：色由 [AppIconButton] 单点下发；禁用态（窄窗）自动
+      // 降一档，显式传色会绕过它、图标保持全强度（AppTheme.disabledInk 坑注）。
+      icon: CustomIcons.panelLeft(size: Tokens.iconSm),
       tooltip: narrow ? '放宽窗口可展开列表' : (collapsed ? '展开列表' : '收起列表'),
       onPressed: narrow
           ? null

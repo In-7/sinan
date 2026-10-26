@@ -9,6 +9,7 @@ import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/editor/core/note_title_field.dart';
+import 'package:sinan/src/theme/app_icon_button.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
@@ -198,5 +199,48 @@ void main() {
     expect(find.text('新建笔记'), findsOneWidget, reason: '托盘要能开出来');
     expect(find.text('新建画布'), findsOneWidget);
     expect(find.text('导入 Markdown…'), findsOneWidget, reason: '导入项在托盘里');
+  });
+
+  testWidgets('工具钮：同一宿主（AppIconButton）⇒ 同一墨色', (tester) async {
+    // 2026-10-26 用户实报"同一行图标两种灰"（实测 33,34,34 与 76,76,76）：
+    // 根因是同一行混用 M3 `IconButton`（组件下发色）与手搓容器（调用点钉色）。
+    // 宿主统一到 [AppIconButton] 后色源只剩一个出口——这条钉住它不再分叉。
+    await pumpList(tester);
+
+    // 折叠 / 新建 / 托盘箭头 / 搜索 / 筛选：五枚宿主必须**全是** AppIconButton。
+    for (final String tip in <String>[
+      '收起列表',
+      '新建笔记',
+      '更多新建选项',
+      '搜索',
+      '筛选与排序',
+    ]) {
+      expect(
+        find.ancestor(
+          of: find.byTooltip(tip),
+          matching: find.byType(AppIconButton),
+        ),
+        findsOneWidget,
+        reason: '「$tip」的宿主必须是 AppIconButton（宿主要统一）',
+      );
+    }
+
+    // 每枚内部那层 IconTheme 的色：全部相等，且等于 onSurfaceVariant。
+    final List<Color> inks = tester
+        .widgetList<IconTheme>(
+          find.descendant(
+            of: find.byType(AppIconButton),
+            matching: find.byType(IconTheme),
+          ),
+        )
+        .map((IconTheme t) => t.data.color!)
+        .toList();
+    expect(inks.length, 5, reason: '列表头共五枚工具钮');
+    expect(
+      inks.toSet(),
+      hasLength(1),
+      reason: '所有工具钮必须同一墨色（$inks）——否则又会看到两档灰',
+    );
+    expect(inks.first, AppTheme.light().colorScheme.onSurfaceVariant);
   });
 }

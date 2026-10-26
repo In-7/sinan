@@ -12,6 +12,7 @@ import '../canvas/kernel/canvas_camera.dart';
 import '../canvas/kernel/canvas_painters.dart';
 import '../domain/note.dart';
 import '../theme/app_custom_icons.dart';
+import '../theme/app_icon_button.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/noise_texture.dart';
@@ -643,8 +644,13 @@ class _SearchResultBar extends StatelessWidget {
 /// 标签段在全库无标签时**整段消失**，但钮本身常驻（排序永远可用，
 /// 2026-09-30 之前排序 / 标签是两枚钮，无标签时只剩排序，用户找不到入口）。
 ///
-/// 有**任何**非默认条件生效（排序非默认 / 选中了标签）⇒ 图标披主题色，
-/// 一眼能看到"列表正被筛着"。
+/// 2026-10-26 用户定**功能钮零状态**：点击直接开菜单，图标恒定色、任何
+/// 交互态不变色——"列表正被筛着"由菜单内勾选（`tabler.Check`）表达，
+/// 不再图标转蓝（顺带回归 monochrome 定稿：唯一蓝只在焦点环）。
+///
+/// 同日：宿主改为 [AppIconButton]（与列表头三枚同一件），图标统一 lucide 漏斗
+/// ⇒ 两处调用点（列表顶 / hub 顶栏）的**字形与色源都单点**，那条"默认 tabler
+/// 不吃 Material IconTheme、要走 AppIconTheme 桥"的旁路随之消失。
 class FilterMenuButton extends ConsumerStatefulWidget {
   const FilterMenuButton({super.key});
 
@@ -790,13 +796,6 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final NoteSort sort = ref.watch(homeSortProvider);
-    final String? activeTag = ref.watch(
-      searchNotifierProvider.select((SearchState s) => s.activeTag),
-    );
-    final bool active = sort != NoteSort.revised || activeTag != null;
-
     // ⚠️ 锚点 key 挂在 **32×32 外壳**上，不能挂 IconButton：material_ui 的
     // M3 IconButton 外层包了 48×48 的点击热区（_InputPadding），元素根
     // RenderBox 是热区而非可视按钮（实测落在按钮左下方，菜单因此整体
@@ -804,27 +803,13 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
     return SizedBox(
       key: _key,
       // 与列表头另两枚（新建 / 搜索）及编辑页撤销 / 重做同一档热区
-      // [Tokens.headerActionSize]（30）——2026-10-22 统一，此前是 32，
-      // 三枚钮底边会差 2px。
+      // [Tokens.headerActionSize]（28）。
       width: Tokens.headerActionSize,
       height: Tokens.headerActionSize,
-      child: IconButton(
-        constraints: const BoxConstraints.tightFor(
-          width: Tokens.headerActionSize,
-          height: Tokens.headerActionSize,
-        ),
-        padding: EdgeInsets.zero,
-        icon: tabler.Filter(
-          height: Tokens.iconSm,
-          width: Tokens.iconSm,
-          strokeWidth: Tokens.iconStroke,
-          colorFilter: active
-              ? ui.ColorFilter.mode(
-                  Bauhaus.blue(theme.colorScheme.brightness),
-                  ui.BlendMode.srcIn,
-                )
-              : null,
-        ),
+      child: AppIconButton(
+        // 两处调用点同一枚 lucide 漏斗；色由 [AppIconButton] 单点下发
+        // ——不再有"默认 tabler 走另一条取色链路"的旁支。
+        icon: CustomIcons.filter(size: Tokens.iconSm),
         tooltip: '筛选与排序',
         onPressed: _openMenu,
       ),
