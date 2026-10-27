@@ -382,8 +382,9 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
       children: <Widget>[
         AppIconButton(
           tooltip: canvasPage ? '新建画布' : '新建笔记',
-          // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
-          icon: CustomIcons.plus(size: Tokens.iconSm),
+          // 列表顶新建钮 2026-10-27 改用 lucide `sticky-note-plus`：语义比裸
+          // `plus` 更贴"新建一条"，与导航胶囊的 [CustomIcons.circlePlus] 区分。
+          icon: CustomIcons.stickyNotePlus(size: Tokens.iconSm),
           onPressed: () => unawaited(
             runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
           ),

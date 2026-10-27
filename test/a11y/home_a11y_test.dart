@@ -13,7 +13,7 @@ import 'package:sinan/src/data/stream_store.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// **主页（侧栏 + 新建胶囊 + 内容卡片）的无障碍门禁**。
+/// **主页（侧栏 + 内容卡片）的无障碍门禁**。
 ///
 /// 这层是 2026-10-13 a11y 审计后补的——主页改了一整晚（包豪斯扁平化、左扁平导航），
 /// 但**原有的 `accessibility_test.dart` 只覆盖列表/标题栏/画布/编辑器，没覆盖主页**，
@@ -22,11 +22,9 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 ///
 /// 1. **状态缺失**：侧栏导航 `button=false / selected=false / enabled=false`
 ///    ⇒ 读屏只念"灵感"，既不知可点、也不知哪个是当前视图；
-/// 2. **状态缺失**：「新建」枢纽 `button=false / hasExpandedState=false`
-///    ⇒ 不知可点、也不知展开态；
-/// 3. **顺序重复**：`FocusableActionDetector` + `InkWell` 各自建焦点
+/// 2. **顺序重复**：`FocusableActionDetector` + `InkWell` 各自建焦点
 ///    ⇒ 笔记/画布在 Tab 链里各占两站；
-/// 4. **顺序交错**：默认 `ReadingOrder` 按几何位置排 ⇒ 侧栏与内容区交错
+/// 3. **顺序交错**：默认 `ReadingOrder` 按几何位置排 ⇒ 侧栏与内容区交错
 ///    （实测：灵感→全部→日历→卡片乙→收藏→卡片甲）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -71,7 +69,7 @@ void main() {
     });
   }
 
-  testWidgets('主页：状态语义——导航要报"按钮/选中"，新建要报"展开"', (
+  testWidgets('主页：状态语义——导航要报"按钮/选中"', (
     WidgetTester tester,
   ) async {
     await _auditHome(tester, store, settings, Brightness.light);
@@ -137,12 +135,6 @@ void main() {
         .length;
     expect(selectedCount, 1, reason: '当前视图只能有一个');
 
-    // 「新建」枢纽声明了 button + expanded（读屏要能播报展开/收起）。
-    expect(
-      declares(button: true, expanded: true),
-      isTrue,
-      reason: '「新建」枢纽要声明 button + expanded',
-    );
   });
 
   testWidgets('主页：焦点顺序——侧栏先于内容、每站不重复', (
@@ -195,43 +187,6 @@ void main() {
       expect(i, lessThan(card), reason: '焦点顺序：侧栏「$k」必须在内容卡片之前');
     }
 
-    // 胶囊是 Overlay 菜单：收起时两枚菜单项不在树上（浮层只在展开时挂载）。
-    // 可达性契约改为**键盘展开**：Tab 到「新建」→ Enter 展开（自动落焦第一项）
-    // → 方向键走两枚菜单项，各恰好一站（防焦点节点重复）。
-    final int trigger = at('新建');
-    expect(trigger, isNot(-1), reason: '「新建」枢纽不在 Tab 链里');
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
-    // 同样不设魔法步数：走到「新建」或**绕回一轮**为止（后者即失败）。
-    List<String> marks = <String>[];
-    final Set<FocusNode> walked = <FocusNode>{};
-    for (int i = 0; i < 200; i++) {
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
-      marks = _marksOfFocus(tester);
-      if (marks.contains('新建')) break;
-      final FocusNode? f = FocusManager.instance.primaryFocus;
-      if (f == null || !walked.add(f)) break;
-    }
-    expect(marks, contains('新建'), reason: 'Tab 要能到达「新建」枢纽');
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    // Enter 后自动落焦第一项；方向键走到第二项。（菜单焦点是**循环**的：
-    // 从「画布」再往下会绕回「笔记」——这是官方菜单的正常行为，所以这里
-    // 断"确定性落焦"，不做全序列去重扫描。）
-    expect(
-      _marksOfFocus(tester),
-      contains('笔记'),
-      reason: 'Enter 展开后要自动落焦第一枚菜单项「笔记」',
-    );
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(
-      _marksOfFocus(tester),
-      contains('画布'),
-      reason: '方向键要能走到「画布」',
-    );
   });
 }
 

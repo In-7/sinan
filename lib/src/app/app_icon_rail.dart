@@ -7,17 +7,16 @@ import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'home_hub.dart' show HomeViewIcon, kHomeTabs;
-import 'new_note_capsule.dart';
 import 'providers.dart';
 import 'search_palette.dart';
 import 'trash_panel.dart' show showTrash;
 
 /// 最左**图标导航轨**（2026-10-16 用户定，Option 2 第一阶段）：60px 常驻脊梁，直接贴
 /// 窗口底（同旧 256 侧栏的扁平口径，无面板 / 描边 / 投影）。它把旧侧栏的
-/// 「品牌行 + 搜索 + 新建 + 四视图」收成一列图标。
+/// 「品牌行 + 搜索 + 四视图」收成一列图标。
 ///（2026-10-21 曾试加宽到 70，同日撤回——图标 / 钮不变时纯加宽只是多出空白边距。）
 ///
-/// 上→下：**logo（装饰）· 搜索（Ctrl+K）· 新建「+」**，弹性 spacer，**四枚视图图标**
+/// 上→下：**logo（装饰）· 搜索（Ctrl+K）**，弹性 spacer，**四枚视图图标**
 /// （灵感 / 全部 / 日历 / 收藏）。选中 = hover 2× 的 selectedBg（亮 onSurface@8% /
 /// 暗 white@12%），hover = [AppTheme.hoverOverlay]，同旧侧栏口径。
 ///
@@ -54,10 +53,6 @@ class AppIconRail extends ConsumerWidget {
                 color: Bauhaus.ink(b),
               ),
             ),
-            const SizedBox(height: Tokens.spaceSm),
-            // 新建：复用胶囊图标态（36×36，向下弹「笔记 / 画布」菜单；自带焦点环 +
-            // Semantics label='新建'，故不走 [_RailButton] 以免双语义 / 双焦点）。
-            const NewNoteCapsule(iconOnly: true, size: Tokens.railButtonSize),
             const Spacer(),
             // 四枚视图导航。
             for (final HomeView v in kHomeTabs)

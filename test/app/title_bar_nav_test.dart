@@ -190,8 +190,6 @@ void main() {
         reason: 'AppIconRail 必须有视图导航：$label',
       );
     }
-    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
-        reason: '新建胶囊（图标模式）在 AppIconRail');
 
     // 顶条几何：全宽贴顶，高 44（拖拽区铺满，故仍通栏）。
     final Rect strip = tester.getRect(find.byType(WindowStrip));
@@ -219,7 +217,7 @@ void main() {
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
   });
 
-  testWidgets('AppIconRail：六枚视图导航带图标、新建胶囊两态常驻', (
+  testWidgets('AppIconRail：六枚视图导航带图标、两态常驻', (
     WidgetTester tester,
   ) async {
     final ProviderContainer container = await pump(tester);
@@ -244,15 +242,11 @@ void main() {
       findsWidgets,
       reason: '导航钮是含图标的方块',
     );
-    // 新建胶囊也在 AppIconRail 常驻。
-    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
-        reason: '新建胶囊（图标模式）在 AppIconRail');
-
     // 默认视图 = 灵感。
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
 
-    // 编辑态：CalendarPage 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航 /
-    // 新建胶囊**两态都在**（与已删的左索引面板同一条"常驻"原则）。
+    // 编辑态：CalendarPage 被编辑器替换，但 AppIconRail 在工作区级常驻 ⇒ 视图导航
+    // **两态都在**（与已删的左索引面板同一条"常驻"原则）。
     final Note note = await container.read(notesProvider.notifier).createNote();
     container.read(locateProvider.notifier).locate(noteId: note.id);
     await tester.pumpAndSettle();
@@ -262,8 +256,6 @@ void main() {
       reason: '编辑器态不渲染日历页（CalendarPage）',
     );
     expect(find.byType(AppIconRail), findsOneWidget, reason: '侧栏两态常驻');
-    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget,
-        reason: '新建胶囊（图标模式）编辑器态仍可见');
     for (final String label in kDestinations) {
       expect(
         find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
@@ -387,102 +379,6 @@ void main() {
     expect(container.read(selectedNoteIdProvider), isNull);
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
     expect(container.read(navHistoryProvider).canGoForward, isFalse, reason: '进到底了');
-  });
-
-  testWidgets('AppIconRail 新建胶囊：两半各是一个动作，走 note.new / canvas.new', (
-    WidgetTester tester,
-  ) async {
-    final ProviderContainer container = await pump(tester);
-
-    final int before = container.read(notesProvider).value?.length ?? 0;
-
-    // 胶囊默认**收起**（只显示图标），两半在悬停/键盘聚焦触发钮后才出现。
-    // 点「新建」枢纽 = 聚焦即展开，且**不创建**任何东西（用户 2026-10-12 定
-    // "主按钮不可点"）。先以此触发展开，同时验证它不创建。
-    await tester.tap(find.byKey(const Key('new-note-trigger')));
-    await tester.pumpAndSettle();
-    expect(
-      container.read(notesProvider).value?.length ?? before,
-      before,
-      reason: '点「新建」枢纽（外胶囊）不创建任何东西',
-    );
-    expect(container.read(selectedNoteIdProvider), isNull, reason: '外胶囊不可点');
-
-    // 展开后两半都在（tooltip 同时是 a11y 标签 ⇒ 用它们定位），且**不是**单选组：
-    // 没有 SegmentedButton，两半各自是一个按钮。
-    expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget);
-    expect(find.byTooltip('新建画布（Ctrl+Shift+N）'), findsOneWidget);
-    // 触发钮常驻可见（图标模式，2026-10-15 坐品牌行右端）⇒ 用其 Key 定位；
-    // 文字标签改为 Tooltip '新建'（屏幕不显示，a11y 仍可读）。
-    expect(find.byKey(const Key('new-note-trigger')), findsOneWidget);
-    expect(
-      find.byType(SegmentedButton<Object>),
-      findsNothing,
-      reason: '新建是自绘内嵌胶囊，不是 M3 SegmentedButton（那是单选语义）',
-    );
-    // 两枚内胶囊带文字（不是纯图标）⇒ 辨识度不依赖 hover。
-    expect(find.text('笔记'), findsOneWidget);
-    expect(find.text('画布'), findsOneWidget);
-    expect(find.text('＋ 笔记'), findsNothing, reason: '不带「＋」前缀（用户定）');
-
-    // 点「笔记」⇒ 真的建了一篇笔记并跳进去（走 note.new，与 Ctrl+N 同一条路）。
-    await tester.tap(find.byTooltip('新建笔记（Ctrl+N）'));
-    await tester.pumpAndSettle();
-    expect(container.read(selectedNoteIdProvider), isNotNull, reason: '新建后立刻选中');
-
-    // 用掉后胶囊**主动收起**（两枚钮卸载、焦点环残留一并清掉）⇒ 画布钮已不在
-    //（BUG 回归：以前会留在展开态 + 无障碍选中态）。
-    expect(
-      find.byTooltip('新建画布（Ctrl+Shift+N）'),
-      findsNothing,
-      reason: '用完即收：不再留在展开态、也不留焦点环',
-    );
-
-    // AppIconRail 两态常驻 ⇒ 重新点「新建」展开，再点「画布」建的是画布（不用回主页）。
-    await tester.tap(find.byKey(const Key('new-note-trigger')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('新建画布（Ctrl+Shift+N）'));
-    await tester.pumpAndSettle();
-    final String? id = container.read(selectedNoteIdProvider);
-    expect(id, isNotNull, reason: '新建后立刻选中');
-    final Note current = container
-        .read(notesProvider)
-        .value!
-        .firstWhere((Note n) => n.id == id);
-    expect(current.kind, NoteKind.canvas, reason: '走 canvas.new ⇒ 建出来是画布');
-  });
-
-  testWidgets('新建胶囊：点击钉住后，鼠标离开也必须收起（不卡住）', (
-    WidgetTester tester,
-  ) async {
-    await pump(tester);
-
-    final Offset at = tester.getCenter(find.byKey(const Key('new-note-trigger')));
-    final TestGesture gesture = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    // 鼠标按下到「新建」上（同时触发 MouseRegion onEnter ⇒ 悬停展开）。
-    await gesture.down(at);
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget, reason: '悬停即展开');
-
-    // 松开 ⇒ 「新建」onTap 切到"钉住展开"态。
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('新建笔记（Ctrl+N）'), findsOneWidget, reason: '点击后仍展开');
-
-    // 鼠标挪出胶囊 ⇒ **必须收起**（修复前：钉住态不随鼠标离开收起 ⇒ 卡住）。
-    // ⚠️ 收起走 200ms 延迟定时器：pumpAndSettle 在没有帧可跑时**不推进假时钟**，
-    // 定时器永远不响 ⇒ 必须显式 pump 推过 200ms 再 settle。
-    await gesture.moveTo(const Offset(2, 2));
-    await gesture.removePointer();
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pumpAndSettle();
-    expect(
-      find.byTooltip('新建笔记（Ctrl+N）'),
-      findsNothing,
-      reason: '鼠标离开一律收起，不卡在钉住态',
-    );
   });
 
   testWidgets('标题栏不放搜索入口（主页页内搜索态 / 编辑器 Ctrl+F / 全局 Ctrl+K）', (

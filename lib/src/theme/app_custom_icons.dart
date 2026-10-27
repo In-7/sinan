@@ -71,6 +71,11 @@ class CustomIcons {
   static Widget plus({double size = Tokens.iconMd, Color? color}) =>
       _stroke('plus', size: size, color: color);
 
+  /// **新建（便签 +）**：lucide `sticky-note-plus`（2026-10-27，列表顶新建钮）。
+  /// 比裸 [plus] 更贴"新建一条笔记"的语义；画布页同枚（用户定）。
+  static Widget stickyNotePlus({double size = Tokens.iconMd, Color? color}) =>
+      _stroke('sticky-note-plus', size: size, color: color);
+
   /// **下箭头**：lucide `chevron-down`（2026-10-25，托盘收起态）。
   static Widget chevronDown({double size = Tokens.iconMd, Color? color}) =>
       _stroke('chevron-down', size: size, color: color);
