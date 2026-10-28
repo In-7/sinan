@@ -39,6 +39,7 @@ class AppIconButton extends StatefulWidget {
     this.size = Tokens.headerActionSize,
     this.width,
     this.iconSize = Tokens.iconSm,
+    this.focusNode,
   });
 
   /// 图标。**不要传 `color`**——色由本件单点下发。
@@ -59,17 +60,25 @@ class AppIconButton extends StatefulWidget {
   /// 图标档（默认 [Tokens.iconSm]=18）。行内装饰记号可传 [Tokens.iconXs]。
   final double iconSize;
 
+  /// 外部焦点节点（可选）。列表头「⌕」用它：搜索收起后把焦点还回这枚钮。
+  /// 不传 ⇒ 内部自建并自管生命周期。
+  final FocusNode? focusNode;
+
   @override
   State<AppIconButton> createState() => _AppIconButtonState();
 }
 
 class _AppIconButtonState extends State<AppIconButton> {
   bool _hover = false;
-  final FocusNode _focus = FocusNode();
+
+  /// 未传 [AppIconButton.focusNode] 时自建；外部传了就归外部管生命周期。
+  FocusNode? _ownedFocus;
+
+  FocusNode get _focus => widget.focusNode ?? (_ownedFocus ??= FocusNode());
 
   @override
   void dispose() {
-    _focus.dispose();
+    _ownedFocus?.dispose();
     super.dispose();
   }
 

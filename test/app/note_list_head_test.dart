@@ -19,7 +19,8 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 ///
 /// ① 折叠钮在**内容卡左上角**，折叠（收到 0）/ 展开时**位置不变**；
 /// ② 工具行右端三枚：新建 / 搜索 / 筛选；
-/// ③ 点 ⌕ 展开输入框、输入即过滤、Esc 收起；
+/// ③ 点 ⌕ 展开输入框、输入即过滤；空查询时点外部可关，有词时点外部 /
+///    点结果都不打断，只有关闭钮 / Esc 退出（退出即清空）；
 /// ④ `+ ▾` 的箭头**能开托盘**（`MenuAnchor` 不会自动响应点击，必须由按钮自己
 ///    `controller.open()`——第一版漏了这步，箭头点了没反应，新建菜单 / 导入全
 ///    用不了，故这条测试是那次返工的闸门）。
@@ -86,8 +87,13 @@ void main() {
       find.descendant(of: find.byType(NoteListColumn), matching: of);
 
   /// 只认 [Text]（排除输入框的 `EditableText`——搜索框里也有同样的字）。
+  /// 兼容 `Text.rich`：搜索命中高亮时标题 / 摘要是 span，`data` 为 null。
   Finder listText(String s) => inList(
-    find.byWidgetPredicate((Widget w) => w is Text && w.data == s),
+    find.byWidgetPredicate(
+      (Widget w) =>
+          w is Text &&
+          (w.data == s || (w.textSpan?.toPlainText() ?? '') == s),
+    ),
   );
 
   testWidgets('折叠钮：折叠到 0 后仍在原坐标（位置不变）', (tester) async {
@@ -129,6 +135,177 @@ void main() {
     await tester.pumpAndSettle();
     expect(inList(find.byType(TextField)), findsNothing, reason: 'Esc 收起');
     expect(listText('甲'), findsOneWidget, reason: '清词后恢复');
+  });
+
+  testWidgets('搜索：空查询时点外部即收起（安全的"取消"）', (tester) async {
+    await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsOneWidget, reason: '出现输入框');
+
+    // 收起钮**常驻**：不输入词时也要有可见的关闭入口（之前"有词才显"，
+    // 无词时整排只剩 Esc 能关 ⇒ 用户实报"点开后关不掉"）。
+    expect(find.byTooltip('关闭搜索'), findsOneWidget, reason: '收起钮常驻');
+
+    // 点框**内**不该关。
+    await tester.tap(inList(find.byType(TextField)));
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsOneWidget, reason: '点框内不该关');
+
+    // **空查询**时点外部（列表列以外、编辑区空白）⇒ 收起（"取消"语义）。
+    await tester.tapAt(const Offset(600, 500));
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsNothing, reason: '空查询点外部收起');
+    expect(listText('甲'), findsOneWidget, reason: '列表恢复');
+  });
+
+  testWidgets('搜索：有词时点外部 / 点结果都不关，只有关闭钮才关且清空', (
+    tester,
+  ) async {
+    final ProviderContainer container = await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(inList(find.byType(TextField)), '乙');
+    await tester.pumpAndSettle();
+    expect(listText('甲'), findsNothing, reason: '过滤生效');
+    expect(listText('乙'), findsOneWidget);
+
+    // ① 有词时点外部（编辑区空白）⇒ **不关**（保护已进行的搜索态）。
+    await tester.tapAt(const Offset(600, 500));
+    await tester.pumpAndSettle();
+    expect(
+      inList(find.byType(TextField)),
+      findsOneWidget,
+      reason: '有词时点外部不关（2026-10-28 用户定）',
+    );
+
+    // ② 点结果 ⇒ 打开对应笔记，搜索框**仍在**、词仍在、列表仍过滤。
+    final String targetId = container
+        .read(notesProvider)
+        .value!
+        .firstWhere((e) => e.title == '乙')
+        .id;
+    await tester.tap(listText('乙'));
+    await tester.pumpAndSettle();
+    expect(
+      container.read(selectedNoteIdProvider),
+      targetId,
+      reason: '点结果打开对应笔记',
+    );
+    expect(
+      inList(find.byType(TextField)),
+      findsOneWidget,
+      reason: '点结果不打断搜索',
+    );
+    expect(listText('甲'), findsNothing, reason: '词保留 ⇒ 仍过滤');
+
+    // ③ 关闭钮 ⇒ 关闭并清空。
+    await tester.tap(find.byTooltip('关闭搜索'));
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsNothing, reason: '关闭钮关掉');
+    expect(listText('甲'), findsOneWidget, reason: '清空后列表恢复');
+  });
+
+  testWidgets('搜索：收起钮能关（无词时也有效）', (tester) async {
+    await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('关闭搜索'));
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsNothing, reason: '收起钮能关');
+  });
+
+  testWidgets('搜索增强：命中计数 + ↑/↓ 移动 + Enter 打开', (tester) async {
+    final ProviderContainer container = await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+
+    // 未过滤 ⇒ 计数 = 全部条数（2 条）。
+    expect(
+      inList(find.text('2 条')),
+      findsOneWidget,
+      reason: '计数要显示命中条数',
+    );
+
+    // 过滤到唯一命中 ⇒ 计数变 1。
+    await tester.enterText(inList(find.byType(TextField)), '乙');
+    await tester.pumpAndSettle();
+    expect(inList(find.text('1 条')), findsOneWidget, reason: '计数随后更新');
+
+    // ↓ 进入高亮 → Enter 打开该行。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final String targetId = container
+        .read(notesProvider)
+        .value!
+        .firstWhere((e) => e.title == '乙')
+        .id;
+    expect(
+      container.read(selectedNoteIdProvider),
+      targetId,
+      reason: 'Enter 要打开键盘高亮的那条',
+    );
+    expect(
+      inList(find.byType(TextField)),
+      findsOneWidget,
+      reason: 'Enter 打开笔记不打断搜索态',
+    );
+  });
+
+  testWidgets('搜索增强：关闭后焦点回「⌕」钮', (tester) async {
+    await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('关闭搜索'));
+    await tester.pumpAndSettle();
+
+    final Iterable<Focus> focuses = tester.widgetList<Focus>(
+      find.descendant(
+        of: find.byTooltip('搜索'),
+        matching: find.byType(Focus),
+      ),
+    );
+    expect(
+      focuses.any((Focus f) => f.focusNode?.hasFocus ?? false),
+      isTrue,
+      reason: '关闭后焦点要回到「⌕」钮（键盘用户不用再 Tab 一圈）',
+    );
+  });
+
+  testWidgets('搜索增强：命中片段高亮成主色', (tester) async {
+    await pumpList(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(inList(find.byType(TextField)), '乙');
+    await tester.pumpAndSettle();
+
+    final Color primary = AppTheme.light().colorScheme.primary;
+    final bool hasHit = tester
+        .widgetList<Text>(inList(find.byType(Text)))
+        .any((Text t) {
+          bool found = false;
+          t.textSpan?.visitChildren((InlineSpan span) {
+            if (span is TextSpan &&
+                span.text == '乙' &&
+                span.style?.color == primary) {
+              found = true;
+            }
+            return !found;
+          });
+          return found;
+        });
+    expect(hasHit, isTrue, reason: '命中片段要用主色高亮');
   });
 
   testWidgets('新建：点 + 直建当前页类型（笔记页建笔记）', (tester) async {

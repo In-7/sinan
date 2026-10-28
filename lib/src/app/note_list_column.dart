@@ -2,7 +2,8 @@ import 'dart:async' show unawaited;
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
-import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:flutter/services.dart'
+    show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -65,7 +66,9 @@ class NoteListColumn extends ConsumerStatefulWidget {
 }
 
 class _NoteListColumnState extends ConsumerState<NoteListColumn> {
-  /// 页内搜索态（2026-10-21）：点 ⌕ 展开输入框，Esc / 清空收起。
+  /// 页内搜索态（2026-10-21）：点 ⌕ 展开输入框，输入即过滤。
+  /// 空查询时点外部可收起（"取消"语义）；**有词时不自动关**，退出走
+  /// 关闭钮 / Esc（两者都清空）——点结果查看笔记不打断搜索。
   ///
   /// 只过滤**当前列表**（标题 + 摘要），刻意不碰全局检索
   /// （[searchNotifierProvider]）——全局搜索后续要撤，先不耦合。
@@ -73,35 +76,130 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
   final TextEditingController _searchInput = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
+  /// 「⌕ 钮 + 展开后的搜索框」共用的 [TapRegion] 组：点组外任意处 = 收起
+  /// 页内搜索（浮层惯例"点外部即关"）。同组是为了**排除搜索钮自己**——
+  /// 否则点「⌕」开搜索时那一下会被算成"点外部"，刚展开就自己关掉
+  /// （[AppPopover] 记的同一个坑）。
+  final Object _searchTapGroupId = Object();
+
+  /// 「⌕」钮的焦点节点：搜索收起后把焦点还回去（键盘用户不用再 Tab 一圈）。
+  final FocusNode _searchButtonFocus = FocusNode();
+
+  /// 键盘导航当前高亮的**笔记 id**（搜索态专用；`null` = 未高亮）。
+  /// 只做视觉高亮、**不动** `selectedNoteIdProvider`——↑/↓ 移动，Enter 才打开。
+  String? _activeNoteId;
+
+  /// 当前过滤结果（build 刷新；键盘导航按同一顺序走，省得再算一遍）。
+  List<Note> _shown = const <Note>[];
+
+  /// 高亮行的锚：把键盘走到视口外的行滚进来。
+  final GlobalKey _activeRowKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _searchInput.addListener(_onQueryChanged);
+    // ↑/↓/Enter 挂在 focusNode 上 ⇒ 抢在 EditableText 的方向键处理之前。
+    _searchFocus.onKeyEvent = _onSearchKey;
   }
 
   @override
   void dispose() {
+    _searchFocus.onKeyEvent = null;
+    _searchButtonFocus.dispose();
     _searchInput.removeListener(_onQueryChanged);
     _searchInput.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
-  void _onQueryChanged() => setState(() {});
+  /// 输入变了 ⇒ 高亮作废（结果集换了，旧的"当前项"没意义了）。
+  void _onQueryChanged() => setState(() => _activeNoteId = null);
 
   void _openSearch() {
-    setState(() => _searching = true);
+    setState(() {
+      _searching = true;
+      _activeNoteId = null;
+    });
     // 帧末再要焦点：AnimatedSwitcher 的新子件当帧还没挂上焦点节点。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
     });
   }
 
-  /// 收起并清词（Esc 或点收起钮）。
-  void _closeSearch() => setState(() {
-    _searching = false;
-    _searchInput.clear();
-  });
+  /// 收起并清词（Esc / 收起钮 / 空查询时点外部），焦点还给「⌕」钮。
+  void _closeSearch() {
+    setState(() {
+      _searching = false;
+      _activeNoteId = null;
+      _searchInput.clear();
+    });
+    _searchButtonFocus.requestFocus();
+  }
+
+  /// 搜索框内的键盘导航：↑/↓ 移动高亮、Enter 打开当前高亮项。
+  ///
+  /// 挂在 [_searchFocus] 的 `onKeyEvent` 上（不是 [CallbackShortcuts]）：
+  /// 焦点节点的回调**先于** EditableText 的方向键默认处理，否则 ↑/↓ 会被
+  /// 当成"光标移动"吃掉。
+  KeyEventResult _onSearchKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final LogicalKeyboardKey key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      _moveActive(1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      _moveActive(-1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      _openActive();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 在过滤结果里移动高亮（首次按下从首 / 尾进入）。
+  void _moveActive(int delta) {
+    if (_shown.isEmpty) return;
+    final int cur = _activeNoteId == null
+        ? -1
+        : _shown.indexWhere((Note n) => n.id == _activeNoteId);
+    final int next = cur < 0
+        ? (delta > 0 ? 0 : _shown.length - 1)
+        : (cur + delta).clamp(0, _shown.length - 1);
+    setState(() => _activeNoteId = _shown[next].id);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealActive());
+  }
+
+  /// 高亮行走到视口外时滚进来（帧末做：要等新布局）。
+  void _revealActive() {
+    if (!mounted) return;
+    final BuildContext? anchor = _activeRowKey.currentContext;
+    if (anchor == null) return;
+    Scrollable.ensureVisible(
+      anchor,
+      duration: Tokens.durationFast,
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// Enter：打开当前高亮项；无高亮时只有"唯一结果"才代为打开（多条不猜）。
+  void _openActive() {
+    if (_shown.isEmpty) return;
+    final String? id = _activeNoteId;
+    if (id != null) {
+      ref.read(locateProvider.notifier).locate(noteId: id);
+      return;
+    }
+    if (_shown.length == 1) {
+      ref.read(locateProvider.notifier).locate(noteId: _shown.first.id);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +230,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                     n.summary.toLowerCase().contains(query.toLowerCase()),
               )
               .toList(growable: false);
+    // 键盘导航用同一份顺序（见 [_moveActive]）。
+    _shown = shown;
 
     // **按时间分组**（2026-10-21 用户定，方案 A）：组头（今天 / 昨天 / `12 月 31 日`）
     // 替行内日期说话，行内不再显示"2 天前"——那玩意儿每行重复同一天、还把右缘
@@ -176,12 +276,23 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
           child: AnimatedSwitcher(
             duration: Tokens.durationFast,
             child: _searching
-                ? _ListSearchField(
-                    key: const ValueKey<String>('list-search'),
-                    hint: view == HomeView.canvas ? '搜索画布' : '搜索笔记',
-                    controller: _searchInput,
-                    focusNode: _searchFocus,
-                    onClose: _closeSearch,
+                ? TapRegion(
+                    // "点外部即关"**只对空查询生效**：有词时点外部（含点结果
+                    // 查看笔记）**不关**，否则刚搜到就断了；退出搜索只走
+                    // 关闭钮 / Esc（两者都清空）。
+                    // 与「⌕」钮同组 ⇒ 点搜索钮自己不算"点外部"。
+                    groupId: _searchTapGroupId,
+                    onTapOutside: (_) {
+                      if (_searchInput.text.trim().isEmpty) _closeSearch();
+                    },
+                    child: _ListSearchField(
+                      key: const ValueKey<String>('list-search'),
+                      hint: view == HomeView.canvas ? '搜索画布' : '搜索笔记',
+                      controller: _searchInput,
+                      focusNode: _searchFocus,
+                      onClose: _closeSearch,
+                      resultCount: shown.length,
+                    ),
                   )
                 : Row(
                     key: const ValueKey<String>('list-head-actions'),
@@ -191,11 +302,18 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                       // 类型**，右半 `▾` 开托盘（新建笔记 / 新建画布 / 导入…）。
                       _ListNewButton(view: view),
                       const SizedBox(width: Tokens.spaceXxs),
-                      AppIconButton(
-                        tooltip: '搜索',
-                        // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
-                        icon: CustomIcons.search(size: Tokens.iconSm),
-                        onPressed: _openSearch,
+                      // 与展开后的搜索框**同组**（[TapRegion]）：点「⌕」开搜索的那
+                      // 一下不算"点外部"，否则刚展开就自己关掉。
+                      TapRegion(
+                        groupId: _searchTapGroupId,
+                        child: AppIconButton(
+                          tooltip: '搜索',
+                          // 收起搜索后焦点回这枚钮（键盘用户不用再 Tab 一圈）。
+                          focusNode: _searchButtonFocus,
+                          // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
+                          icon: CustomIcons.search(size: Tokens.iconSm),
+                          onPressed: _openSearch,
+                        ),
                       ),
                       const SizedBox(width: Tokens.spaceXxs),
                       // 筛选：字形与宿主已由 [FilterMenuButton] 单点（两处调用
@@ -262,6 +380,9 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                       key: ValueKey<String>('note-row-${n.id}'),
                       note: n,
                       selected: n.id == selectedId,
+                      active: n.id == _activeNoteId,
+                      query: query,
+                      anchorKey: n.id == _activeNoteId ? _activeRowKey : null,
                       onOpen: () => ref
                           .read(locateProvider.notifier)
                           .locate(noteId: n.id),
@@ -301,6 +422,40 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
     if (!ok) return;
     await ref.read(notesProvider.notifier).trashNote(note.id);
   }
+}
+
+/// 把 [text] 里每一处命中 [query] 的片段切成 span：普通段用 [base]、命中段用
+/// [hit]。大小写不敏感（中文不受影响）；[query] 为空 ⇒ 单段原文。
+List<InlineSpan> _highlightSpans(
+  String text,
+  String query,
+  TextStyle base,
+  TextStyle hit,
+) {
+  final String q = query.trim();
+  if (q.isEmpty) {
+    return <InlineSpan>[TextSpan(text: text, style: base)];
+  }
+  final String lowerText = text.toLowerCase();
+  final String lowerQuery = q.toLowerCase();
+  final List<InlineSpan> spans = <InlineSpan>[];
+  int start = 0;
+  int at = lowerText.indexOf(lowerQuery);
+  while (at >= 0) {
+    if (at > start) {
+      spans.add(TextSpan(text: text.substring(start, at), style: base));
+    }
+    spans.add(TextSpan(text: text.substring(at, at + q.length), style: hit));
+    start = at + q.length;
+    at = lowerText.indexOf(lowerQuery, start);
+  }
+  if (start < text.length) {
+    spans.add(TextSpan(text: text.substring(start), style: base));
+  }
+  if (spans.isEmpty) {
+    spans.add(TextSpan(text: text, style: base));
+  }
+  return spans;
 }
 
 String _viewLabel(HomeView v) => switch (v) {
@@ -618,7 +773,7 @@ class _TrayHairline extends StatelessWidget {
 
 /// 页内搜索框（2026-10-21）：点 ⌕ 后**整行替换**工具钮（ima 同款）。
 ///
-/// 32 高、1px 发丝边、左放大镜、有词时右显出收起钮；Esc 收起并清词。
+/// 32 高、1px 发丝边、左放大镜、右**常驻**收起钮；Esc / 点外部收起并清词。
 /// 过滤逻辑在 [_NoteListColumnState]（标题 + 摘要内存过滤），本件只管输入。
 class _ListSearchField extends StatelessWidget {
   const _ListSearchField({
@@ -627,12 +782,16 @@ class _ListSearchField extends StatelessWidget {
     required this.controller,
     required this.focusNode,
     required this.onClose,
+    required this.resultCount,
   });
 
   final String hint;
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onClose;
+
+  /// 当前命中条数（显示在输入框右侧、收起钮左边）。
+  final int resultCount;
 
   @override
   Widget build(BuildContext context) {
@@ -686,23 +845,29 @@ class _ListSearchField extends StatelessWidget {
                 ),
               ),
             ),
-            // 有词时才显出收起钮（无词时 Esc 就够了，别多一枚占位的钮）。
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: controller,
-              builder: (BuildContext context, TextEditingValue v, Widget? _) {
-                if (v.text.isEmpty) return const SizedBox.shrink();
-                return GestureDetector(
-                  onTap: onClose,
-                  child: IconTheme(
-                    data: IconThemeData(
-                      color: Bauhaus.inkMuted(b),
-                      size: Tokens.iconMdSm,
-                    ),
-                    // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
-                    child: CustomIcons.x(size: Tokens.iconSm),
+            // 命中计数（2026-10-28）：恒显——0 条也是信息（配下方空态）。
+            const SizedBox(width: Tokens.spaceXs),
+            Text(
+              '$resultCount 条',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Bauhaus.inkMuted(b),
+              ),
+            ),
+            // 收起钮**常驻**（2026-10-28 用户实报"点开后关不掉"）：不输入词时
+            // 也必须留一个可见的关闭入口——"点外部即关"只是兜底，可见入口是主路。
+            Tooltip(
+              message: '关闭搜索',
+              child: GestureDetector(
+                onTap: onClose,
+                child: IconTheme(
+                  data: IconThemeData(
+                    color: Bauhaus.inkMuted(b),
+                    size: Tokens.iconMdSm,
                   ),
-                );
-              },
+                  // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
+                  child: CustomIcons.x(size: Tokens.iconSm),
+                ),
+              ),
             ),
           ],
         ),
@@ -756,13 +921,27 @@ class _NoteRow extends StatefulWidget {
     super.key,
     required this.note,
     required this.selected,
+    required this.active,
+    required this.query,
     required this.onOpen,
     required this.onNavigate,
     required this.onDelete,
+    this.anchorKey,
   });
 
   final Note note;
   final bool selected;
+
+  /// 键盘导航的高亮行（搜索态）。与 [selected]（真正打开的笔记）是两回事：
+  /// 高亮只表示"↑/↓ 移到了这行"，按 Enter 才打开。
+  final bool active;
+
+  /// 搜索词（非空 ⇒ 标题 / 摘要里高亮命中片段）。
+  final String query;
+
+  /// 高亮行的滚动锚（只有当前高亮那行为非空，用于滚进视口）。
+  final Key? anchorKey;
+
   final VoidCallback onOpen;
 
   /// ↑/↓ 由本行方向键快捷键触发，回调给父列切上/下一篇（父才知道全局顺序）。
@@ -881,12 +1060,52 @@ class _NoteRowState extends State<_NoteRow> {
     final Color selectedBg = b == Brightness.dark
         ? Colors.white.withValues(alpha: 0.12)
         : scheme.onSurface.withValues(alpha: 0.08);
+    // 键盘高亮：介于 hover 与 selected 之间 —— 与"已打开"的选中态可区分。
+    final Color activeBg = b == Brightness.dark
+        ? Colors.white.withValues(alpha: 0.07)
+        : scheme.onSurface.withValues(alpha: 0.05);
     final Color bg = selected
         ? selectedBg
-        : (_hover ? AppTheme.hoverOverlay(b) : Colors.transparent);
+        : (widget.active
+              ? activeBg
+              : (_hover ? AppTheme.hoverOverlay(b) : Colors.transparent));
 
     final String title = noteDisplayTitle(n);
     final String summary = n.summary.trim();
+
+    // 搜索命中片段：普通段沿用原样式，命中段用主色 + 加粗（只给命中的那截
+    // 上色，Apple Notes 同款）。
+    final TextStyle titleStyle =
+        theme.textTheme.bodyMedium?.copyWith(
+          color: Bauhaus.ink(b),
+          fontWeight: FontWeight.w600,
+        ) ??
+        const TextStyle();
+    final TextStyle summaryStyle =
+        theme.textTheme.bodySmall?.copyWith(color: Bauhaus.inkMuted(b)) ??
+        const TextStyle();
+    final TextStyle hitStyle = titleStyle.copyWith(
+      color: scheme.primary,
+      fontWeight: FontWeight.w700,
+    );
+
+    // 无搜索词时保持普通 [Text]（`data` 可用——现有测试与 a11y 都按 `Text.data`
+    // 认行）；只有带词才切 `Text.rich` 做命中高亮。
+    Widget rich(String text, int maxLines, TextStyle base) =>
+        widget.query.isEmpty
+        ? Text(
+            text,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            style: base,
+          )
+        : Text.rich(
+            TextSpan(
+              children: _highlightSpans(text, widget.query, base, hitStyle),
+            ),
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+          );
 
     return MouseRegion(
       onEnter: (_) {
@@ -939,6 +1158,8 @@ class _NoteRowState extends State<_NoteRow> {
               onSecondaryTapDown: (TapDownDetails d) =>
                   _openMenu(d.globalPosition),
               child: Container(
+                // 键盘高亮行挂锚（滚进视口用）；其余行为 null。
+                key: widget.anchorKey,
                 // hover / 选中都做成**内缩的圆角块**（2026-10-21 用户定"和图标栏
                 // 一致"）：60 轨的钮就是 36 圆角 pill，不是通栏色带。外缩 4 + 内距 8
                 // = 原来的 12 ⇒ 文字左缘不动。
@@ -957,25 +1178,10 @@ class _NoteRowState extends State<_NoteRow> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: Bauhaus.ink(b),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          rich(title, 1, titleStyle),
                           if (summary.isNotEmpty) ...<Widget>[
                             const SizedBox(height: Tokens.spaceXxs),
-                            Text(
-                              summary,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: Bauhaus.inkMuted(b),
-                              ),
-                            ),
+                            rich(summary, 2, summaryStyle),
                           ],
                         ],
                       ),
