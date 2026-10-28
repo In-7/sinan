@@ -648,7 +648,7 @@ class _SearchResultBar extends StatelessWidget {
 /// 交互态不变色——"列表正被筛着"由菜单内勾选（`tabler.Check`）表达，
 /// 不再图标转蓝（顺带回归 monochrome 定稿：唯一蓝只在焦点环）。
 ///
-/// 同日：宿主改为 [AppIconButton]（与列表头三枚同一件），图标统一 lucide 漏斗
+/// 同日：宿主改为 [AppIconButton]（与列表头三枚同一件），图标统一 Fluent 漏斗
 /// ⇒ 两处调用点（列表顶 / hub 顶栏）的**字形与色源都单点**，那条"默认 tabler
 /// 不吃 Material IconTheme、要走 AppIconTheme 桥"的旁路随之消失。
 class FilterMenuButton extends ConsumerStatefulWidget {
@@ -807,7 +807,7 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
       width: Tokens.headerActionSize,
       height: Tokens.headerActionSize,
       child: AppIconButton(
-        // 两处调用点同一枚 lucide 漏斗；色由 [AppIconButton] 单点下发
+        // 两处调用点同一枚 Fluent 漏斗；色由 [AppIconButton] 单点下发
         // ——不再有"默认 tabler 走另一条取色链路"的旁支。
         icon: CustomIcons.filter(size: Tokens.iconSm),
         tooltip: '筛选与排序',

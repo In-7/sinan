@@ -797,7 +797,7 @@ class SidebarCollapseButton extends ConsumerWidget {
     return AppIconButton(
       // 热区取 [AppIconButton] 默认 [Tokens.headerActionSize]（28）——与列表头
       // 三枚、编辑页撤销 / 重做同档。
-      // 列表顶工具行 2026-10-25 换 lucide（见 [CustomIcons]）。
+      // 列表顶工具行 2026-10-25 换 Fluent（见 [CustomIcons]）。
       // ⚠️ **不传 color**：色由 [AppIconButton] 单点下发；禁用态（窄窗）自动
       // 降一档，显式传色会绕过它、图标保持全强度（AppTheme.disabledInk 坑注）。
       icon: CustomIcons.panelLeft(size: Tokens.iconSm),

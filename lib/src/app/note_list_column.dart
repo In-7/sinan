@@ -193,13 +193,13 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                       const SizedBox(width: Tokens.spaceXxs),
                       AppIconButton(
                         tooltip: '搜索',
-                        // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
+                        // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
                         icon: CustomIcons.search(size: Tokens.iconSm),
                         onPressed: _openSearch,
                       ),
                       const SizedBox(width: Tokens.spaceXxs),
                       // 筛选：字形与宿主已由 [FilterMenuButton] 单点（两处调用
-                      // 点同为 lucide 漏斗 + [AppIconButton]），这里不再传 icon。
+                      // 点同为 Fluent 漏斗 + [AppIconButton]），这里不再传 icon。
                       const FilterMenuButton(),
                     ],
                   ),
@@ -382,8 +382,8 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
       children: <Widget>[
         AppIconButton(
           tooltip: canvasPage ? '新建画布' : '新建笔记',
-          // 列表顶新建钮 2026-10-27 改用 lucide `sticky-note-plus`：语义比裸
-          // `plus` 更贴"新建一条"，与导航胶囊的 [CustomIcons.circlePlus] 区分。
+          // 列表顶新建钮 2026-10-28 换 Fluent `note-add`：语义贴"新建一条笔记"
+          // （便签 + 加号），与搜索 / 筛选同属 Fluent 家族，风格统一。
           icon: CustomIcons.stickyNotePlus(size: Tokens.iconSm),
           onPressed: () => unawaited(
             runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
@@ -641,8 +641,8 @@ class _ListSearchField extends StatelessWidget {
     final Color line = Bauhaus.line(b);
     final Widget magnifier = IconTheme(
       data: IconThemeData(color: Bauhaus.inkMuted(b), size: Tokens.iconMdSm),
-      // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
-      child: CustomIcons.search(size: Tokens.iconMdSm),
+      // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
+      child: CustomIcons.search(size: Tokens.iconSm),
     );
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -698,8 +698,8 @@ class _ListSearchField extends StatelessWidget {
                       color: Bauhaus.inkMuted(b),
                       size: Tokens.iconMdSm,
                     ),
-                    // 列表顶工具行 2026-10-25 换 lucide（仅此行，见 [CustomIcons]）。
-                    child: CustomIcons.x(size: Tokens.iconMdSm),
+                    // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
+                    child: CustomIcons.x(size: Tokens.iconSm),
                   ),
                 );
               },
