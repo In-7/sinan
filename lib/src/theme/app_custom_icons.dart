@@ -73,13 +73,16 @@ class CustomIcons {
   static Widget plus({double size = Tokens.iconMd, Color? color}) =>
       _stroke('fluent-add', size: size, color: color);
 
-  /// **下箭头**：Fluent `chevron-down`（2026-10-28 自 lucide 迁入）。
-  static Widget chevronDown({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('fluent-chevron-down', size: size, color: color);
+  /// **下拉三角（实心）**：Fluent `caret-down` **Filled**（2026-10-28 新增）。
+  ///
+  /// 为什么不是 chevron：chevron 是线条 V，缩到 8px 仍占满视觉面积、读起来还是
+  /// "一枚正经图标"；实心三角的重量随尺寸线性下降，8px 就明确是"附着的小角标"。
+  static Widget caretDown({double size = Tokens.iconMd, Color? color}) =>
+      _stroke('fluent-caret-down', size: size, color: color);
 
-  /// **上箭头**：Fluent `chevron-up`（2026-10-28 自 lucide 迁入）。
-  static Widget chevronUp({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('fluent-chevron-up', size: size, color: color);
+  /// **上翻三角（实心）**：Fluent `caret-up` Filled。菜单展开时用它。
+  static Widget caretUp({double size = Tokens.iconMd, Color? color}) =>
+      _stroke('fluent-caret-up', size: size, color: color);
 
   /// **筛选（漏斗）**：Fluent `filter`（2026-10-28 自 lucide 迁入）。
   static Widget filter({double size = Tokens.iconMd, Color? color}) =>

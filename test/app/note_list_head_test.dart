@@ -10,6 +10,7 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/editor/core/note_title_field.dart';
 import 'package:sinan/src/theme/app_icon_button.dart';
+import 'package:sinan/src/theme/app_split_icon_button.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sinan/src/theme/tokens.dart';
 // 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
@@ -27,15 +28,14 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 void main() {
   void mockWindowManager(WidgetTester tester) {
     const MethodChannel channel = MethodChannel('window_manager');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      channel,
-      (MethodCall call) async {
-        return switch (call.method) {
-          'isFocused' || 'isMaximized' || 'isFullScreen' => false,
-          _ => null,
-        };
-      },
-    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      MethodCall call,
+    ) async {
+      return switch (call.method) {
+        'isFocused' || 'isMaximized' || 'isFullScreen' => false,
+        _ => null,
+      };
+    });
     addTearDown(
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
@@ -91,8 +91,7 @@ void main() {
   Finder listText(String s) => inList(
     find.byWidgetPredicate(
       (Widget w) =>
-          w is Text &&
-          (w.data == s || (w.textSpan?.toPlainText() ?? '') == s),
+          w is Text && (w.data == s || (w.textSpan?.toPlainText() ?? '') == s),
     ),
   );
 
@@ -108,11 +107,7 @@ void main() {
 
     expect(find.byTooltip('展开列表'), findsOneWidget, reason: '折叠后钮还在');
     final Rect after = tester.getRect(find.byTooltip('展开列表'));
-    expect(
-      after.topLeft,
-      before.topLeft,
-      reason: '折叠 / 展开都在同一坐标——按钮位置不变',
-    );
+    expect(after.topLeft, before.topLeft, reason: '折叠 / 展开都在同一坐标——按钮位置不变');
   });
 
   testWidgets('搜索：点 ⌕ 展开输入框，输入即过滤，Esc 收起', (tester) async {
@@ -160,9 +155,7 @@ void main() {
     expect(listText('甲'), findsOneWidget, reason: '列表恢复');
   });
 
-  testWidgets('搜索：有词时点外部 / 点结果都不关，只有关闭钮才关且清空', (
-    tester,
-  ) async {
+  testWidgets('搜索：有词时点外部 / 点结果都不关，只有关闭钮才关且清空', (tester) async {
     final ProviderContainer container = await pumpList(tester);
 
     await tester.tap(find.byTooltip('搜索'));
@@ -194,11 +187,7 @@ void main() {
       targetId,
       reason: '点结果打开对应笔记',
     );
-    expect(
-      inList(find.byType(TextField)),
-      findsOneWidget,
-      reason: '点结果不打断搜索',
-    );
+    expect(inList(find.byType(TextField)), findsOneWidget, reason: '点结果不打断搜索');
     expect(listText('甲'), findsNothing, reason: '词保留 ⇒ 仍过滤');
 
     // ③ 关闭钮 ⇒ 关闭并清空。
@@ -226,11 +215,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 未过滤 ⇒ 计数 = 全部条数（2 条）。
-    expect(
-      inList(find.text('2 条')),
-      findsOneWidget,
-      reason: '计数要显示命中条数',
-    );
+    expect(inList(find.text('2 条')), findsOneWidget, reason: '计数要显示命中条数');
 
     // 过滤到唯一命中 ⇒ 计数变 1。
     await tester.enterText(inList(find.byType(TextField)), '乙');
@@ -270,10 +255,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final Iterable<Focus> focuses = tester.widgetList<Focus>(
-      find.descendant(
-        of: find.byTooltip('搜索'),
-        matching: find.byType(Focus),
-      ),
+      find.descendant(of: find.byTooltip('搜索'), matching: find.byType(Focus)),
     );
     expect(
       focuses.any((Focus f) => f.focusNode?.hasFocus ?? false),
@@ -291,20 +273,20 @@ void main() {
     await tester.pumpAndSettle();
 
     final Color primary = AppTheme.light().colorScheme.primary;
-    final bool hasHit = tester
-        .widgetList<Text>(inList(find.byType(Text)))
-        .any((Text t) {
-          bool found = false;
-          t.textSpan?.visitChildren((InlineSpan span) {
-            if (span is TextSpan &&
-                span.text == '乙' &&
-                span.style?.color == primary) {
-              found = true;
-            }
-            return !found;
-          });
-          return found;
-        });
+    final bool hasHit = tester.widgetList<Text>(inList(find.byType(Text))).any((
+      Text t,
+    ) {
+      bool found = false;
+      t.textSpan?.visitChildren((InlineSpan span) {
+        if (span is TextSpan &&
+            span.text == '乙' &&
+            span.style?.color == primary) {
+          found = true;
+        }
+        return !found;
+      });
+      return found;
+    });
     expect(hasHit, isTrue, reason: '命中片段要用主色高亮');
   });
 
@@ -328,9 +310,9 @@ void main() {
     // （上留白 5 + 热区 30 + 图标 20）。先开一篇笔记让编辑器渲染出撤销钮，
     // 再逐个比矩形——纯肉眼对齐很难看出 2px 差。
     final ProviderContainer container = await pumpList(tester);
-    container.read(locateProvider.notifier).locate(
-      noteId: container.read(notesProvider).value!.first.id,
-    );
+    container
+        .read(locateProvider.notifier)
+        .locate(noteId: container.read(notesProvider).value!.first.id);
     await tester.pumpAndSettle();
 
     // **带高锚点**（2026-10-22 热区 30→28 时最怕断的那一根）：编辑页按钮带高
@@ -378,46 +360,52 @@ void main() {
     expect(find.text('导入 Markdown…'), findsOneWidget, reason: '导入项在托盘里');
   });
 
-  testWidgets('工具钮：同一宿主（AppIconButton）⇒ 同一墨色', (tester) async {
+  testWidgets('工具钮：色源单一（单钮 / 分半钮同一墨色）', (tester) async {
     // 2026-10-26 用户实报"同一行图标两种灰"（实测 33,34,34 与 76,76,76）：
     // 根因是同一行混用 M3 `IconButton`（组件下发色）与手搓容器（调用点钉色）。
-    // 宿主统一到 [AppIconButton] 后色源只剩一个出口——这条钉住它不再分叉。
+    // 2026-10-28 新建钮改成 [AppSplitIconButton]（一枚控件两个半区）⇒ 它不继承
+    // AppIconButton 的宿主，所以断言从"同一宿主"改为"**按色源**"：两种宿主
+    // 内部那层 IconTheme 必须同一墨色。
     await pumpList(tester);
 
-    // 折叠 / 新建 / 托盘箭头 / 搜索 / 筛选：五枚宿主必须**全是** AppIconButton。
-    for (final String tip in <String>[
-      '收起列表',
-      '新建笔记',
-      '更多新建选项',
-      '搜索',
-      '筛选与排序',
-    ]) {
+    // 单动作钮（折叠 / 搜索 / 筛选）仍必须是 AppIconButton。
+    for (final String tip in <String>['收起列表', '搜索', '筛选与排序']) {
       expect(
         find.ancestor(
           of: find.byTooltip(tip),
           matching: find.byType(AppIconButton),
         ),
         findsOneWidget,
-        reason: '「$tip」的宿主必须是 AppIconButton（宿主要统一）',
+        reason: '「$tip」的宿主必须是 AppIconButton',
+      );
+    }
+    // 新建 / 更多选项：两半同属**一枚**分半钮。
+    expect(find.byType(AppSplitIconButton), findsOneWidget);
+    for (final String tip in <String>['新建笔记', '更多新建选项']) {
+      expect(
+        find.ancestor(
+          of: find.byTooltip(tip),
+          matching: find.byType(AppSplitIconButton),
+        ),
+        findsOneWidget,
+        reason: '「$tip」是分半钮的一个半区（不是独立按钮）',
       );
     }
 
-    // 每枚内部那层 IconTheme 的色：全部相等，且等于 onSurfaceVariant。
+    // 两种宿主内部的 IconTheme 色：全部相等（3 枚单钮 + 2 个半区 = 5）。
     final List<Color> inks = tester
         .widgetList<IconTheme>(
           find.descendant(
-            of: find.byType(AppIconButton),
+            of: find.byWidgetPredicate(
+              (Widget w) => w is AppIconButton || w is AppSplitIconButton,
+            ),
             matching: find.byType(IconTheme),
           ),
         )
         .map((IconTheme t) => t.data.color!)
         .toList();
-    expect(inks.length, 5, reason: '列表头共五枚工具钮');
-    expect(
-      inks.toSet(),
-      hasLength(1),
-      reason: '所有工具钮必须同一墨色（$inks）——否则又会看到两档灰',
-    );
+    expect(inks.length, 5, reason: '列表头共五枚工具图标');
+    expect(inks.toSet(), hasLength(1), reason: '所有工具钮必须同一墨色（$inks）——否则又会看到两档灰');
     expect(inks.first, AppTheme.light().colorScheme.onSurfaceVariant);
   });
 }

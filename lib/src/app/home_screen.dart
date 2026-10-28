@@ -165,8 +165,8 @@ class HomeScreen extends ConsumerWidget {
       // 主从布局（2026-10-16 Option 2 进卡）：60 轨常驻（唯一平铺窗口底的脊梁，不折叠）；
       // 轨右边一张浮面卡，卡内两格 = [列表列 ┃ 详情]。列表列可折叠（标题栏最左折叠钮 /
       // Ctrl+B，走 [listCollapsedProvider]）——折叠时编辑器占满卡。日历视图例外：
-      // 隐藏列表、卡整屏显示日历。详情实例只取一次 ⇒ 折叠动画每帧只重排 ClipRect 宽、
-      // 不重建昂贵的编辑器子树（最简性能）。
+      // 隐藏列表、卡整屏显示日历。详情实例只取一次（避免 rebuild）；折叠是**瞬时**的
+      //（2026-10-28 方案②，无宽度补间）⇒ 编辑器只 relayout 一次，不会每帧重排全文。
       final Brightness brightness = Theme.of(context).brightness;
       final HomeView view = ref.watch(
         navHistoryProvider.select((NavHistoryState s) => s.view),
@@ -192,53 +192,51 @@ class HomeScreen extends ConsumerWidget {
         HomeView.all ||
         HomeView.notes ||
         HomeView.canvas ||
-        HomeView.favorites => TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 1.0, end: listCollapsed ? 0.0 : 1.0),
-          duration: Tokens.durationNormal,
-          curve: Curves.easeInOutCubic,
-          builder: (BuildContext context, double t, Widget? _) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                // 列表列：宽 noteListWidth×t，本体钉 noteListWidth（OverflowBox 不塌缩）、
-                // ClipRect 从右裁；收起按**布尔**移出焦点 / 读屏。**第 2 段**。
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(20),
-                  child: ExcludeFocus(
-                    excluding: listCollapsed,
-                    child: ExcludeSemantics(
-                      excluding: listCollapsed,
-                      child: ClipRect(
-                        child: SizedBox(
-                          width: Tokens.noteListWidth * t,
-                          child: const OverflowBox(
-                            alignment: Alignment.centerLeft,
-                            minWidth: Tokens.noteListWidth,
-                            maxWidth: Tokens.noteListWidth,
-                            child: NoteListColumn(),
-                          ),
-                        ),
+        HomeView.favorites => Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 列表列：**瞬时**宽度切换（2026-10-28 用户定，方案②）。
+            // 此前是 250ms 宽度补间 ⇒ 编辑器宽度约束每帧变化 ⇒ 全文重新折行，
+            // 长笔记掉帧。桌面惯例（VS Code / Finder 侧栏）本就是瞬时开合：
+            // 只付一次 layout；且列表本体由 OverflowBox 钉死 240 宽 ⇒ 展开时
+            // 不必重排，只是裁剪区变化。收起按**布尔**移出焦点 / 读屏。**第 2 段**。
+            FocusTraversalOrder(
+              order: const NumericFocusOrder(20),
+              child: ExcludeFocus(
+                excluding: listCollapsed,
+                child: ExcludeSemantics(
+                  excluding: listCollapsed,
+                  child: ClipRect(
+                    child: SizedBox(
+                      width: listCollapsed ? 0 : Tokens.noteListWidth,
+                      child: const OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        minWidth: Tokens.noteListWidth,
+                        maxWidth: Tokens.noteListWidth,
+                        child: NoteListColumn(),
                       ),
                     ),
                   ),
                 ),
-                // 列表↔详情发丝：贴列表右缘并随 t 淡出（颜色 alpha，不用 Opacity）。
-                Container(
-                  width: 1,
-                  color: Bauhaus.ink(brightness)
-                      .withValues(alpha: (isDark ? 0.16 : 0.14) * t),
-                ),
-                // 详情（编辑器 / 画布 / 空态）：**第 3 段**。编辑器内部的块、
-                // 工具条等未编号节点由 secondary 策略按几何排，语义仍是"详情之内"。
-                Expanded(
-                  child: FocusTraversalOrder(
-                    order: const NumericFocusOrder(30),
-                    child: detail,
-                  ),
-                ),
-              ],
-            );
-          },
+              ),
+            ),
+            // 列表↔详情发丝：折叠时不占宽（不再做逐帧 alpha 淡出）。
+            if (!listCollapsed)
+              Container(
+                width: 1,
+                color: Bauhaus.ink(
+                  brightness,
+                ).withValues(alpha: isDark ? 0.16 : 0.14),
+              ),
+            // 详情（编辑器 / 画布 / 空态）：**第 3 段**。编辑器内部的块、
+            // 工具条等未编号节点由 secondary 策略按几何排，语义仍是"详情之内"。
+            Expanded(
+              child: FocusTraversalOrder(
+                order: const NumericFocusOrder(30),
+                child: detail,
+              ),
+            ),
+          ],
         ),
       };
 

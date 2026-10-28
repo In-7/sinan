@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 其中 24 占 55% —— 而 24 是 Tabler 的**固有画板尺寸**，属于迁移时"照抄包内
 /// 尺寸"的遗留，不是设计选择。收敛后只剩下面这几档（见 `Tokens` 的图标段）。
 const Set<String> _allowedSizes = <String>{
+  'Tokens.iconMicro', // 8：split 钮的下拉三角（角标级，只给 secondary 用）
   'Tokens.iconXxs', // 10：行内装饰记号（下拉箭头）—— 30px 槽位的算术逼出来的
   'Tokens.iconXs', // 14：次级小图标（勾选 / 关闭 / 星标 / 外链）
   'Tokens.iconSm', // 18：**编辑器官方容器内**专用（SVGIconItemWidget / 斜杠菜单）

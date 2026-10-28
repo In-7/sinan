@@ -12,6 +12,7 @@ import '../command/commands.dart';
 import '../theme/app_custom_icons.dart';
 import '../theme/app_float_surface.dart';
 import '../theme/app_icon_button.dart';
+import '../theme/app_split_icon_button.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
@@ -41,7 +42,8 @@ const double _kHeadButtonSize = Tokens.headerActionSize;
 ///
 /// 钮本体不在列表里——它悬浮在内容卡左上角（`home_screen.dart` 的 Stack 顶层，
 /// 折叠时不随列宽移动），这里只是给它让位。
-const double _kHeadToolInset = _kHeadBandPadding + _kHeadButtonSize + _kHeadBandPadding;
+const double _kHeadToolInset =
+    _kHeadBandPadding + _kHeadButtonSize + _kHeadBandPadding;
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
 /// （编辑器 / 画布 / 空态）。服务「全部 / 笔记 / 画布 / 收藏」四个主从视图——
@@ -224,9 +226,9 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
         : items
               .where(
                 (Note n) =>
-                    noteDisplayTitle(n).toLowerCase().contains(
-                      query.toLowerCase(),
-                    ) ||
+                    noteDisplayTitle(n)
+                        .toLowerCase()
+                        .contains(query.toLowerCase()) ||
                     n.summary.toLowerCase().contains(query.toLowerCase()),
               )
               .toList(growable: false);
@@ -532,112 +534,107 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
     final Brightness b = Theme.of(context).brightness;
     final bool canvasPage = widget.view == HomeView.canvas;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        AppIconButton(
-          tooltip: canvasPage ? '新建画布' : '新建笔记',
-          // 列表顶新建钮 2026-10-28 换 Fluent `note-add`：语义贴"新建一条笔记"
-          // （便签 + 加号），与搜索 / 筛选同属 Fluent 家族，风格统一。
-          icon: CustomIcons.stickyNotePlus(size: Tokens.iconSm),
-          onPressed: () => unawaited(
-            runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
+    return MenuAnchor(
+      style: MenuStyle(
+        elevation: const WidgetStatePropertyAll<double?>(0),
+        // 面板本体不涂色：真正的面由 menuChildren 里的 [AppFloatSurface] 画
+        // （同 `NewNoteCapsule` 的口径，主题 surface 实色）。
+        backgroundColor: const WidgetStatePropertyAll<Color?>(
+          Colors.transparent,
+        ),
+        side: const WidgetStatePropertyAll<BorderSide?>(BorderSide.none),
+        shape: WidgetStatePropertyAll<OutlinedBorder?>(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Tokens.radiusLg),
           ),
         ),
-        // 箭头 = 托盘锚点。主按钮（`+`）在它**外面**，点击不开托盘、直接建。
-        MenuAnchor(
-          style: MenuStyle(
-            elevation: const WidgetStatePropertyAll<double?>(0),
-            // 面板本体不涂色：真正的面由 menuChildren 里的 [AppFloatSurface] 画
-            // （同 `NewNoteCapsule` 的口径，主题 surface 实色）。
-            backgroundColor: const WidgetStatePropertyAll<Color?>(
-              Colors.transparent,
+        padding: const WidgetStatePropertyAll<EdgeInsetsGeometry?>(
+          EdgeInsets.zero,
+        ),
+        // 从箭头**正下方**向下展开（左缘对齐、顶边贴底边）——零布局位移。
+        alignment: AlignmentDirectional.bottomStart,
+        minimumSize: const WidgetStatePropertyAll<Size?>(Size(_kTrayWidth, 0)),
+      ),
+      alignmentOffset: const Offset(0, Tokens.spaceXxs),
+      // ⚠️ `MenuAnchor` **不会**自动在点击 child 时开菜单（官方用法就是按钮的
+      // `onPressed` 里自己 `controller.open()`）。所以箭头必须拿到 builder 里的
+      // 控制器、自己 toggle——只挂个装饰性箭头会"点了没反应"。
+      onOpen: () => setState(() => _menuOpen = true),
+      onClose: () => setState(() => _menuOpen = false),
+      builder: (BuildContext context, MenuController controller, Widget? _) =>
+          AppSplitIconButton(
+            // 左半 = 直接新建（当前页类型）；右半 = 开托盘。两半同属一枚
+            // 控件外壳，hover 各自亮各自那半（2026-10-28 用户定）。
+            primaryTooltip: canvasPage ? '新建画布' : '新建笔记',
+            // 列表顶新建钮 2026-10-28 换 Fluent `note-add`：语义贴"新建一条
+            // 笔记"（便签 + 加号），与搜索 / 筛选同属 Fluent 家族。
+            primaryIcon: CustomIcons.stickyNotePlus(size: Tokens.iconSm),
+            onPrimary: () => unawaited(
+              runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
             ),
-            side: const WidgetStatePropertyAll<BorderSide?>(BorderSide.none),
-            shape: WidgetStatePropertyAll<OutlinedBorder?>(
-              RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(Tokens.radiusLg),
-              ),
-            ),
-            padding: const WidgetStatePropertyAll<EdgeInsetsGeometry?>(
-              EdgeInsets.zero,
-            ),
-            // 从箭头**正下方**向下展开（左缘对齐、顶边贴底边）——零布局位移。
-            alignment: AlignmentDirectional.bottomStart,
-            minimumSize: const WidgetStatePropertyAll<Size?>(
-              Size(_kTrayWidth, 0),
-            ),
+            // 菜单开着时三角上翻 + 整块保持激活底色（"这是个下拉"的线索）。
+            // 8px 实心三角：只当角标，不再是一枚"图标"（[Tokens.iconMicro]）。
+            secondaryTooltip: '更多新建选项',
+            secondaryIcon: _menuOpen
+                ? CustomIcons.caretUp(size: Tokens.iconMicro)
+                : CustomIcons.caretDown(size: Tokens.iconMicro),
+            secondaryActive: _menuOpen,
+            onSecondary: () {
+              if (_menuOpen) {
+                controller.close();
+              } else {
+                controller.open();
+              }
+            },
           ),
-          alignmentOffset: const Offset(0, Tokens.spaceXxs),
-          // ⚠️ `MenuAnchor` **不会**自动在点击 child 时开菜单（官方用法就是按钮的
-          // `onPressed` 里自己 `controller.open()`）。所以箭头必须拿到 builder 里的
-          // 控制器、自己 toggle——只挂个装饰性箭头会"点了没反应"。
-          onOpen: () => setState(() => _menuOpen = true),
-          onClose: () => setState(() => _menuOpen = false),
-          builder: (BuildContext context, MenuController controller, Widget? _) =>
-              _TrayArrow(
-                // 菜单开着时箭头下翻（收起时翻回），给一个"这是个下拉"的线索。
-                open: _menuOpen,
-                onTap: () {
-                  if (_menuOpen) {
-                    controller.close();
-                  } else {
-                    controller.open();
-                  }
-                },
+      menuChildren: <Widget>[
+        AppFloatSurface(
+          color: Bauhaus.surface(b),
+          borderRadius: BorderRadius.circular(Tokens.radiusLg),
+          width: _kTrayWidth,
+          padding: EdgeInsets.zero,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // ⚠️ 托盘行**不放快捷键提示**：180 宽放"图标 + 标签 +
+              // Ctrl+Shift+N" 会溢出 52px（实测）。键位由命令面板 / 设置
+              // 里的键位表负责，这里只给动作本身。
+              _TrayTile(
+                icon: CustomIcons.edit19(
+                  size: Tokens.iconMdSm,
+                  color: Bauhaus.ink(b),
+                ),
+                label: '新建笔记',
+                onTap: () => unawaited(runCommandById(ref, 'note.new')),
               ),
-          menuChildren: <Widget>[
-            AppFloatSurface(
-              color: Bauhaus.surface(b),
-              borderRadius: BorderRadius.circular(Tokens.radiusLg),
-              width: _kTrayWidth,
-              padding: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  // ⚠️ 托盘行**不放快捷键提示**：180 宽放"图标 + 标签 +
-                  // Ctrl+Shift+N" 会溢出 52px（实测）。键位由命令面板 / 设置
-                  // 里的键位表负责，这里只给动作本身。
-                  _TrayTile(
-                    icon: CustomIcons.edit19(
-                      size: Tokens.iconMdSm,
-                      color: Bauhaus.ink(b),
-                    ),
-                    label: '新建笔记',
-                    onTap: () =>
-                        unawaited(runCommandById(ref, 'note.new')),
-                  ),
-                  const _TrayHairline(),
-                  _TrayTile(
-                    icon: CustomIcons.brush(
-                      size: Tokens.iconMdSm,
-                      color: Bauhaus.ink(b),
-                    ),
-                    label: '新建画布',
-                    onTap: () =>
-                        unawaited(runCommandById(ref, 'canvas.new')),
-                  ),
-                  const _TrayHairline(),
-                  // 导入 = **新建**（不覆盖）：md 走 appflowy 的 md 解析器、
-                  // 画布走 bundle 还原，两条链路都落在 importNote 上。
-                  _TrayTile(
-                    icon: tabler.Download(
-                      height: Tokens.iconMdSm,
-                      width: Tokens.iconMdSm,
-                      strokeWidth: Tokens.iconStroke,
-                      colorFilter: ui.ColorFilter.mode(
-                        Bauhaus.ink(b),
-                        ui.BlendMode.srcIn,
-                      ),
-                    ),
-                    label: canvasPage ? '导入画布文件…' : '导入 Markdown…',
-                    onTap: () => unawaited(_runImport(ref, canvasPage)),
-                  ),
-                ],
+              const _TrayHairline(),
+              _TrayTile(
+                icon: CustomIcons.brush(
+                  size: Tokens.iconMdSm,
+                  color: Bauhaus.ink(b),
+                ),
+                label: '新建画布',
+                onTap: () => unawaited(runCommandById(ref, 'canvas.new')),
               ),
-            ),
-          ],
+              const _TrayHairline(),
+              // 导入 = **新建**（不覆盖）：md 走 appflowy 的 md 解析器、
+              // 画布走 bundle 还原，两条链路都落在 importNote 上。
+              _TrayTile(
+                icon: tabler.Download(
+                  height: Tokens.iconMdSm,
+                  width: Tokens.iconMdSm,
+                  strokeWidth: Tokens.iconStroke,
+                  colorFilter: ui.ColorFilter.mode(
+                    Bauhaus.ink(b),
+                    ui.BlendMode.srcIn,
+                  ),
+                ),
+                label: canvasPage ? '导入画布文件…' : '导入 Markdown…',
+                onTap: () => unawaited(_runImport(ref, canvasPage)),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -647,50 +644,19 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
   Future<void> _runImport(WidgetRef ref, bool canvasPage) async {
     final NotesNotifier notes = ref.read(notesProvider.notifier);
     final ImportOutcome outcome = canvasPage
-        ? await importCanvasNote(
-            notes,
-            media: ref.read(mediaResolverProvider),
-          )
+        ? await importCanvasNote(notes, media: ref.read(mediaResolverProvider))
         : await importMarkdownNote(notes);
     if (!mounted) return;
     final String? error = outcome.error;
     if (error != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     final Note? note = outcome.note;
     if (note == null) return; // 用户取消
     // 建完就打开（带焦点：导入就是为了接着看 / 改）。
     ref.read(locateProvider.notifier).locate(noteId: note.id, focus: true);
-  }
-}
-
-/// 托盘箭头（`▾`）：22 宽的窄钮，菜单开着时**向上翻**。
-///
-/// 宿主统一走 [AppIconButton]（色源 / 图标档 / hover 底 / 焦点环全在那边单点
-/// 收口）——本件只负责"开合 ⇒ 箭头方向"这一件事。
-class _TrayArrow extends StatelessWidget {
-  const _TrayArrow({required this.open, required this.onTap});
-
-  final bool open;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppIconButton(
-      // 读屏与测试都靠它：一枚没有名字的箭头按钮，键盘 / 辅助技术无从下手。
-      tooltip: '更多新建选项',
-      width: 22,
-      // 箭头是**行内装饰记号**，比动作图标再小一档 [Tokens.iconXs]（14）
-      // ——28 的热区里放 18 的箭头会显得笨重。
-      iconSize: Tokens.iconXs,
-      icon: open
-          ? CustomIcons.chevronUp(size: Tokens.iconXs)
-          : CustomIcons.chevronDown(size: Tokens.iconXs),
-      onPressed: onTap,
-    );
   }
 }
 
@@ -996,7 +962,9 @@ class _NoteRowState extends State<_NoteRow> {
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     final RenderObject? box = context.findRenderObject();
     if (scrollable == null || box is! RenderBox || !box.hasSize) return;
-    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(box);
+    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+      box,
+    );
     if (viewport == null) return;
 
     // 对齐顶端 / 底端所需的两个滚动偏移：当前像素区间能同时容下这两个 ⇒ 完全可见。
@@ -1168,7 +1136,10 @@ class _NoteRowState extends State<_NoteRow> {
                   horizontal: Tokens.spaceMd - Tokens.spaceXs,
                   vertical: Tokens.spaceMd,
                 ),
-                decoration: BoxDecoration(color: bg, borderRadius: Bauhaus.radius),
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: Bauhaus.radius,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[

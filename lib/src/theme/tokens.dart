@@ -202,6 +202,11 @@ class Tokens {
   // 留 2px 余量；取 14 会撑到 32 直接溢出 —— 收编时实测踩到，13 个用例一次变红）。
   // 这一档不是"想细一点"，是算出来的。
   static const double iconXxs = 10;
+  // Split 钮的**下拉三角**（2026-10-28 用户按 Win11 实机图定，方案 B）：8 ——
+  // 比 [iconXxs] 再小一档。目的是让它读成"附着的小角标"，而不是"第二枚按钮的
+  // 图标"；取 10 时与主图标（18）只差 8px，仍然像两个按钮并排。
+  // 只给 `AppSplitIconButton` 的 secondary 用，别拿去当常规图标。
+  static const double iconMicro = 8;
   // 空状态大图标：图片加载失败那类占位插画级别。
   static const double iconXl = 40;
 
