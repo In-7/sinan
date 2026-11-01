@@ -17,7 +17,6 @@ import '../editor/core/editor_switch.dart';
 import '../notes/note_list_view.dart';
 import 'ask_panel.dart';
 import 'providers.dart';
-import 'settings_panel.dart' show showSettingsPanel;
 import 'stream_view.dart';
 import '../theme/app_custom_icons.dart';
 import '../theme/app_icon_button.dart';
@@ -34,11 +33,11 @@ import '../domain/settings.dart';
 /// 桌面端（[WindowService.isSupported]）：
 /// - 桌面外壳（2026-10-09 用户定，opencode 风"内嵌浮面"）：由
 ///   [Tokens.titleBarHeightMain] 定高（当前 **32**）的全宽 [WindowStrip]，仅含
-///   拖拽带（可选应用名）+ 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+
-///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：灵感 / 全部 / 日历 /
-///   收藏 + 新建胶囊）落在最左 60 图标轨 [AppIconRail]（常驻脊梁、平铺窗口底）。
-///   **问笔记（AI）是标题栏 `trailing` 钮**——2026-10-16 从工作区右角搬来，落在
-///   设置右、最小化左；AI 轨由这枚钮开合（单一开合入口，其余入口走同一条
+///   拖拽带（可选应用名）+ 右端 `trailing` 问笔记钮（紧贴最小化左、与窗控成组）+
+///   窗控按钮，**标题栏内不含导航**；导航（四枚目的地图标：灵感 / 笔记 / 画布 /
+///   日历）落在最左 60 图标轨 [AppIconRail]（常驻脊梁、平铺窗口底），轨底另有
+///   回收站与设置。**问笔记（AI）是标题栏 `trailing` 钮**——2026-10-16 从工作区
+///   右角搬来；AI 轨由这枚钮开合（单一开合入口，其余入口走同一条
 ///   [aiPanelOpenProvider]）；无分割线。
 /// - 条下 4px 环缝内是一张（AI 打开时两张并排）圆角 8 的浮面卡，
 ///   `AppTheme.panelFill` 实色、**无投影**（主页 / 编辑器同色，点进笔记不"变色"）：
@@ -64,7 +63,8 @@ class HomeScreen extends ConsumerWidget {
     // 2026-09-25 统一桌面布局：右栏随 `selectedId` 在主页 / 编辑器之间切换——
     // **不进新路由**（旧的 [NoteListView] 侧栏已删）。导航（四枚目的地图标 + 新建
     // 胶囊）2026-10-12 起落左侧导航（今为 [AppIconRail] 60 图标轨），标题栏只留
-    // 拖拽带 + 设置钮 + 窗控；更早的 50 宽 `_AppIconRail`（2026-10-09 上午）、导航板
+    // 拖拽带 + 问笔记 + 窗控（设置 2026-11-01 也搬进图标轨底部）；更早的 50 宽
+    // `_AppIconRail`（2026-10-09 上午）、导航板
     // [HubNav]（2026-09-30）均已是历史。
     // 具体分支见下方 `WindowService.isSupported`。
 
@@ -119,9 +119,10 @@ class HomeScreen extends ConsumerWidget {
       //
       // 2026-10-09 用户定（opencode 风"内嵌浮面"，替代当日早上的 50 图标轨）：
       // 顶条由 [Tokens.titleBarHeightMain] 定高（当前 **32**）全宽——仅拖拽带 +
-      // 右端 `trailing` 设置钮（紧贴最小化左、与窗控成组）+ 窗控按钮，**不含导航**
-      // （四枚目的地图标 + 新建胶囊 2026-10-12 起移入左侧导航，今在最左 [AppIconRail]）；
-      // 问笔记（AI）是顶条 `trailing` 钮（设置右、最小化左；2026-10-16 从工作区右角搬来）。
+      // 右端 `trailing` 问笔记钮（紧贴最小化左、与窗控成组）+ 窗控按钮，**不含导航**
+      // （四枚目的地图标 2026-10-12 起移入左侧导航，今在最左 [AppIconRail]）；
+      // 问笔记（AI）是顶条 `trailing` 钮（2026-10-16 从工作区右角搬来）；
+      // 设置 2026-11-01 也从顶条搬去图标轨底部（与回收站同组）。
       // 条下不再画 1px 分隔线：内容是 8px 环缝内的圆角浮面卡。分层三件套 =
       // 窗口底 vs panelFill 的明度差 + 卡缘 1px panelEdge 光边 + 4px 暗缝
       //（无投影；2026-10-09 量 opencode 像素定，量值与理由见 surface_ladder）。
@@ -248,8 +249,8 @@ class HomeScreen extends ConsumerWidget {
             // 标题栏不放导航（2026-10-12 用户定：四枚目的地 + 新建胶囊在最左
             // [AppIconRail] 图标轨）；**上一步 / 下一步 在条内左簇**
             // （`leading`，内容卡左缘 + 12px 呼吸；2026-10-19 定）。
-            // 问笔记（AI）是条内 `trailing` 钮（设置右、最小化左，2026-10-16 搬入）；
-            // 条内只剩：拖拽区 + 最右 `trailing`（问笔记 + 设置，紧贴最小化左，与窗控成组）
+            // 问笔记（AI）是条内 `trailing` 钮（紧贴最小化左，2026-10-16 搬入）；
+            // 条内只剩：拖拽区 + 最右 `trailing`（问笔记，紧贴最小化左，与窗控成组）
             // + 窗控按钮。
             // 拖拽带正中不放搜索入口（Ctrl+K 统一口径）。
             WindowStrip(
@@ -259,18 +260,17 @@ class HomeScreen extends ConsumerWidget {
               // 内容卡左缘 + 12px 呼吸（见上方 [historyInset]）；位置稳定，
               // 不随列表折叠 / 视图切换移动。
               leadingInset: historyInset,
-              // 问笔记（AI）开合钮始终露出（设置右、最小化左）；未配 AI 时点按由
+              // 问笔记（AI）开合钮始终露出（紧贴最小化左）；未配 AI 时点按由
               // `ai.ask` 命令兜底报错，同原工作区右角钮口径。
-              trailing: const <Widget>[
-                SettingsNavButton(),
-                _AskTitleBarButton(),
-              ],
+              // 设置 2026-11-01 搬去最左 [AppIconRail] 底部（与回收站同组）；
+              // 顶条右簇只剩问笔记一枚，仍紧贴最小化左、与窗控成组。
+              trailing: const <Widget>[_AskTitleBarButton()],
             ),
             // 工作区：浮面卡**右 / 下各 4px 环缝**（顶与左 0——2026-10-15 用户定），
             // 四角 8px 圆角；AI 打开时主卡 + 8 缝 + AI 卡（右 dock、推开内容）。
             // 左 dock 面板 2026-10-12 取消，主卡占满全宽。
             // 问笔记（AI）开合入口 2026-10-16 从工作区右角搬进顶条 `trailing`
-            // （设置右、最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
+            // （紧贴最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
             // 单布尔，呈现形态归外壳按宽度选（宽窗常驻右轨 / 窄窗降级浮层）。
             Expanded(
               // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
@@ -745,24 +745,7 @@ class _AskTitleBarButton extends ConsumerWidget {
   }
 }
 
-/// 顶条右端的**设置**钮（2026-09-29 用户定：从第一列底部搬来，紧挨 AI 开关
-/// ——全局动作靠右、页面导航靠左）。点击弹 [showSettingsPanel] 浮层。
-class SettingsNavButton extends ConsumerWidget {
-  const SettingsNavButton({super.key});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return const IconButton(
-      icon: tabler.Settings(
-        height: Tokens.iconMdSm,
-        width: Tokens.iconMdSm,
-        strokeWidth: 1.5,
-      ),
-      tooltip: '设置',
-      onPressed: showSettingsPanel,
-    );
-  }
-}
 
 /// 折叠钮在内容卡左上角的**内缩**（4px）：一是卡片左上角是 [_kPanelRadius] 的
 /// 圆角、钮贴边会被切掉一角；二是**与编辑页按钮带的上留白同值**

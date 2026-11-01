@@ -198,22 +198,27 @@ void main() {
     expect(strip.right, closeTo(1200, 0.5));
     expect(strip.height, closeTo(32, 0.5));
 
-    // 右簇：设置、问笔记都在 `trailing`，紧贴「最小化」左侧（与窗控成组）；问笔记
-    // 2026-10-16 从工作区右角搬来，夹在设置右、最小化左之间。仍以 [aiPanelOpenProvider]
-    // 单布尔开合。
+    // 右簇：问笔记紧贴「最小化」左侧（与窗控成组）。**设置 2026-11-01 搬去最左
+    // [AppIconRail] 底部**（与回收站同组，对齐 VS Code / Obsidian 的左下角惯例），
+    // 顶条不再有它。问笔记仍以 [aiPanelOpenProvider] 单布尔开合。
     final Rect minRect = tester.getRect(find.byTooltip('最小化'));
-    final Rect settingsRect = tester.getRect(find.byTooltip('设置'));
     final Rect aiRect = tester.getRect(find.byTooltip('问笔记（Ctrl+J）'));
-    // 三钮都在 32 顶条内（贴顶、占满条高）。
-    for (final Rect r in <Rect>[settingsRect, aiRect, minRect]) {
+    // 两钮都在 32 顶条内（贴顶、占满条高）。
+    for (final Rect r in <Rect>[aiRect, minRect]) {
       expect(r.top, lessThan(32), reason: '钮在 32 顶条内');
       expect(r.bottom, lessThanOrEqualTo(32.5), reason: '钮占满顶条高');
     }
-    // 顺序：设置 → 问笔记 → 最小化，问笔记夹在中间、两侧各紧贴（与窗控成组）。
-    expect(aiRect.left - settingsRect.right, inInclusiveRange(-0.5, 4),
-        reason: '问笔记紧贴设置右侧');
+    // 顺序：问笔记 → 最小化，问笔记紧贴窗控（与窗控成组）。
     expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4),
         reason: '问笔记紧贴最小化左侧');
+    expect(
+      find.descendant(
+        of: find.byType(WindowStrip),
+        matching: find.byTooltip('设置'),
+      ),
+      findsNothing,
+      reason: '设置已搬去 [AppIconRail]，顶条不该再有',
+    );
     expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
   });
 
@@ -626,6 +631,50 @@ void main() {
 
     expect(find.text('回收站 0 条'), findsOneWidget);
     expect(find.text('回收站是空的'), findsOneWidget);
+  });
+
+  testWidgets('响应式：最小窗 720×560 下轨道不溢出、四视图可命中、底部两钮贴底', (
+    WidgetTester tester,
+  ) async {
+    // 最小窗口写死在 `window_service.dart` 的 `Size(720, 560)`。轨道高度 =
+    // 560 − 标题栏 32 = **528**，落在 spacious 档（≥500）⇒ 间距仍是 16/4。
+    //
+    // 这条钉的是**响应式兜底**（2026-11-01）：间距按 LayoutBuilder 分档、视图簇
+    // 改成 Flexible + ScrollView 之后，任何高度都不该报 RenderFlex overflow
+    // （pumpAndSettle 期间一旦溢出，测试会因 FlutterError 直接失败）。
+    setSurfaceSize(tester, 720, 560);
+    mockWindowManager(tester);
+    await tester.pumpWidget(app(buildContainer()));
+    await tester.pumpAndSettle();
+
+    final Rect rail = tester.getRect(find.byType(AppIconRail));
+    expect(
+      rail.height,
+      closeTo(560 - Tokens.titleBarHeightMain, 0.5),
+      reason: '轨道要占满标题栏以下的全部高度',
+    );
+
+    // 四枚目的地都在（视图簇没被压缩 / 裁掉）。
+    for (final String label in kDestinations) {
+      expect(
+        find.descendant(
+          of: find.byType(AppIconRail),
+          matching: find.byTooltip(label),
+        ),
+        findsOneWidget,
+        reason: '最小窗下「$label」仍要在轨上',
+      );
+    }
+
+    // 底部工具组仍贴底：设置下缘 = 轨道下缘 − 8（四边 padding）。
+    final Rect trash = tester.getRect(find.byTooltip('回收站'));
+    final Rect settings = tester.getRect(find.byTooltip('设置'));
+    expect(trash.bottom, lessThan(settings.top), reason: '回收站在设置之上');
+    expect(
+      settings.bottom,
+      closeTo(rail.bottom - Tokens.spaceMd, 1),
+      reason: '设置贴轨道底部（纵向 padding 12）',
+    );
   });
 
   testWidgets('Tab 顺序显式编号：轨 10 < 列表 20 < 详情 30 < AI 40', (

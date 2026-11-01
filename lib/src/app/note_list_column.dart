@@ -566,9 +566,9 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
             // 左半 = 直接新建（当前页类型）；右半 = 开托盘。两半同属一枚
             // 控件外壳，hover 各自亮各自那半（2026-10-28 用户定）。
             primaryTooltip: canvasPage ? '新建画布' : '新建笔记',
-            // 列表顶新建钮 2026-10-28 换 Fluent `note-add`：语义贴"新建一条
-            // 笔记"（便签 + 加号），与搜索 / 筛选同属 Fluent 家族。
-            primaryIcon: CustomIcons.stickyNotePlus(size: Tokens.iconSm),
+            // 列表顶新建钮 2026-10-28 换 Fluent `tab-add`（32 档 Light，
+            // 用户指定）：标签页 + 圆形加号，与搜索 / 筛选同属 Fluent 家族。
+            primaryIcon: CustomIcons.tabAdd(size: Tokens.iconSm),
             onPrimary: () => unawaited(
               runCommandById(ref, canvasPage ? 'canvas.new' : 'note.new'),
             ),

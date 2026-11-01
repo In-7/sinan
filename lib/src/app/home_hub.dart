@@ -54,15 +54,9 @@ extension HomeViewIcon on HomeView {
   /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
   Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
-    // 灵感 = **收件箱**（不是笔记的时间流）⇒ 收件箱图标。
-    // 2026-10-17：这一格曾用 `Clock`（当时的"灵感"是按 revisedAt 的笔记时间线）；
-    // 现在它是一页纸灵感流，语义换成"收进来、待处理"。
-    HomeView.timeline => tabler.Inbox(
-      height: size,
-      width: size,
-      strokeWidth: Tokens.iconStroke,
-      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
-    ),
+    // 灵感：「238_扩写」（2026-11-01 用户定，替掉 tabler.Inbox）。⚠️ 1024 画板，
+    // 视觉比 tabler 那批小一圈——见 [CustomIcons.expand238] 的尺寸说明。
+    HomeView.timeline => CustomIcons.expand238(size: size, color: color),
     HomeView.all => tabler.LayoutGrid(
       height: size,
       width: size,
@@ -76,13 +70,9 @@ extension HomeViewIcon on HomeView {
       strokeWidth: Tokens.iconStroke,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
-    // 画布：Shape2——本 app 画布空态水印同款（方圆叠形 = 白板/图形）。
-    HomeView.canvas => tabler.Shape2(
-      height: size,
-      width: size,
-      strokeWidth: Tokens.iconStroke,
-      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
-    ),
+    // 画布：「238_生图」（2026-11-01 用户定，替掉 tabler.Shape2）。同上：
+    // 1024 画板，视觉偏小——见 [CustomIcons.image238]。
+    HomeView.canvas => CustomIcons.image238(size: size, color: color),
     HomeView.calendar => tabler.Calendar(
       height: size,
       width: size,
