@@ -53,36 +53,51 @@ import 'search_provider.dart';
 extension HomeViewIcon on HomeView {
   /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
   /// `CustomIcons.canvas` 彩色插画）。
+  ///
+  /// 描边统一用 [Tokens.iconStrokeRail]（1.25，2026-11-07 从全局 1.5 抽出），
+  /// 与轨上的搜索 / 回收站 / 设置同粗细；本文件其余 tabler 图标仍用 1.5。
   Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
-    // 灵感：「238_扩写」（2026-11-01 用户定，替掉 tabler.Inbox）。⚠️ 1024 画板，
-    // 视觉比 tabler 那批小一圈——见 [CustomIcons.expand238] 的尺寸说明。
-    HomeView.timeline => CustomIcons.expand238(size: size, color: color),
+    // 灵感：`tabler.Bulb`（灯泡 = 点子，2026-11-06 用户定，替掉收件箱）。
+    // 中间试过 238_扩写 / Remix ai-generate，都与同排 tabler 的线宽、造型不齐，
+    // 最终仍回到 tabler 家族，只换字形。
+    HomeView.timeline => tabler.Bulb(
+      height: size,
+      width: size,
+      strokeWidth: Tokens.iconStrokeRail,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
     HomeView.all => tabler.LayoutGrid(
       height: size,
       width: size,
-      strokeWidth: Tokens.iconStroke,
+      strokeWidth: Tokens.iconStrokeRail,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
-    // 笔记：FileText——全 app 的"笔记"图形语言（搜索结果行 / 附件卡同款）。
-    HomeView.notes => tabler.FileText(
+    // 笔记：`tabler.Book2`（书本，2026-11-06 用户定，替掉 FileText）。
+    // ⚠️ 搜索结果行 / 附件卡仍用 FileText，那两处是"一篇文档"的语义，不跟着改。
+    HomeView.notes => tabler.Book2(
       height: size,
       width: size,
-      strokeWidth: Tokens.iconStroke,
+      strokeWidth: Tokens.iconStrokeRail,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
-    // 画布：「238_生图」（2026-11-01 用户定，替掉 tabler.Shape2）。同上：
-    // 1024 画板，视觉偏小——见 [CustomIcons.image238]。
-    HomeView.canvas => CustomIcons.image238(size: size, color: color),
+    // 画布：`tabler.Swipe`（手势划动 = 白板操作，2026-11-06 用户定，替掉 Shape2）。
+    // 中间试过 238_生图 / Remix image-add-line，均因线宽不齐回到 tabler 家族。
+    HomeView.canvas => tabler.Swipe(
+      height: size,
+      width: size,
+      strokeWidth: Tokens.iconStrokeRail,
+      colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
+    ),
     HomeView.calendar => tabler.Calendar(
       height: size,
       width: size,
-      strokeWidth: Tokens.iconStroke,
+      strokeWidth: Tokens.iconStrokeRail,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
     HomeView.favorites => tabler.Star(
       height: size,
       width: size,
-      strokeWidth: Tokens.iconStroke,
+      strokeWidth: Tokens.iconStrokeRail,
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
   };

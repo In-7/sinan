@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
-import '../theme/app_custom_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
@@ -108,13 +107,18 @@ class AppIconRail extends ConsumerWidget {
                           // 2026-11-01 用户定——搜索跟着四个目的地走同一个节奏，
                           // 读成"第 5 项"；与底部工具的区隔交给下方那片大留白。
                           SizedBox(height: s.withinGroup),
-                          // 搜索：图标开门，接全局搜索面板（Ctrl+K 同源）。2026-11-01
-                          // 换成 `238_搜索`（1024 画板）——它比 Fluent 的小一圈，
-                          // 所以用满 iconMd(24) 而不是原来的 iconMd−2 补偿档。
+                          // 搜索：图标开门，接全局搜索面板（Ctrl+K 同源）。
+                          // 2026-11-06 试过 238_搜索 / Remix search-line，最终回到
+                          // tabler.Search——整轨统一 stroke 型、线宽用
+                          // [Tokens.iconStrokeRail]（1.25，比全局 1.5 细一档）。
+                          // 图标 22（iconMd−2 光学补偿：放大镜闭环显大，比新建小一档）。
                           _RailButton(
                             tooltip: '搜索（Ctrl+K）',
                             onTap: showSearchPalette,
-                            child: CustomIcons.search238(
+                            child: tabler.Search(
+                              height: Tokens.iconMd - 2,
+                              width: Tokens.iconMd - 2,
+                              strokeWidth: Tokens.iconStrokeRail,
                               color: Bauhaus.ink(b),
                             ),
                           ),
@@ -132,7 +136,7 @@ class AppIconRail extends ConsumerWidget {
                   child: tabler.Trash(
                     height: Tokens.iconMd,
                     width: Tokens.iconMd,
-                    strokeWidth: Tokens.iconStroke,
+                    strokeWidth: Tokens.iconStrokeRail,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
@@ -148,7 +152,7 @@ class AppIconRail extends ConsumerWidget {
                   child: tabler.Settings(
                     height: Tokens.iconMd,
                     width: Tokens.iconMd,
-                    strokeWidth: Tokens.iconStroke,
+                    strokeWidth: Tokens.iconStrokeRail,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
