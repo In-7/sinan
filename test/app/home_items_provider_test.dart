@@ -87,23 +87,16 @@ void main() {
     db.close();
   });
 
-  List<String> ids(
-    HomeView view, {
-    String? tag,
-    NoteKindFacet kind = NoteKindFacet.all,
-  }) => container
-      .read(homeItemsProvider((view: view, tag: tag, kind: kind)))
+  List<String> ids(HomeView view, {String? tag}) => container
+      .read(homeItemsProvider((view: view, tag: tag)))
       .map((Note n) => n.id)
       .toList();
 
-  test('语义：全部按最近编辑倒序；视图、形态、标签各管各的池子', () {
+  test('语义：全部按最近编辑倒序；视图与标签各管各的池子', () {
     expect(ids(HomeView.all), <String>['n2', 'n1', 'cv1', 'fav']);
-    // 形态是 facet（2026-10-05 决策 E）⇒ 不再有 notes / canvas 两个视图。
-    expect(
-      ids(HomeView.all, kind: NoteKindFacet.docs),
-      <String>['n2', 'n1', 'fav'],
-    );
-    expect(ids(HomeView.all, kind: NoteKindFacet.canvas), <String>['cv1']);
+    // 形态分池在**视图层**（2026-11-09 撤掉冗余的形态 facet）。
+    expect(ids(HomeView.notes), <String>['n2', 'n1', 'fav']);
+    expect(ids(HomeView.canvas), <String>['cv1']);
     expect(ids(HomeView.all, tag: '工作'), <String>['n1']);
     expect(ids(HomeView.all, tag: '不存在的标签'), <String>[]);
   });
@@ -114,11 +107,7 @@ void main() {
   });
 
   test('记忆化：入参不变重复读是同一实例；排序变了才重算', () {
-    const HomeItemsArgs args = (
-      view: HomeView.all,
-      tag: null,
-      kind: NoteKindFacet.all,
-    );
+    const HomeItemsArgs args = (view: HomeView.all, tag: null);
 
     // listen 住条目（autoDispose 不会在两次读之间释放）。
     final sub = container.listen(homeItemsProvider(args), (_, _) {});

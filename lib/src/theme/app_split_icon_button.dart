@@ -6,32 +6,30 @@ import 'tokens.dart';
 
 /// **分裂图标钮**（split button）：一枚控件外壳里装**两个动作**。
 ///
-/// 形态（2026-10-28 用户定）——**整体按"一个按钮"的标准排，内部切两个功能区**：
+/// 形态（2026-11-09 用户定：**两半各自居中 + 主次靠尺寸与颜色层级**）：
 /// ```
-/// ┌──────────────────────────────┐
-/// │ ␣␣␣ ＋ ␣␣ ▾ ␣␣␣ │   ← 边距 5 / 图标 18 / 间距 4 / 三角 8 / 边距 5
-/// └──────────────────────────────┘        合计 40 × 28
+/// ┌────────────────────────────┐
+/// │  ␣4  ＋18  ␣4 │ ␣2 ▾8 ␣2 │  ← 合计 38 × 28
+/// └────────────────────────────┘
+///      主区 26       副区 12     ⇒ 2.17 : 1
 /// ```
-/// - **两侧边距与 [AppIconButton] 同一条**（`(28 − 18) / 2 = 5`）⇒ 它和搜索 / 筛选
-///   并排时，图标到控件边缘的留白**完全对齐**；
-/// - 中间 4（[Tokens.spaceXs]）把两个图标分开，**点击分界正好落在间距中点**：
-///   左 25 宽主区、右 15 宽下拉区，各走各的动作；
-/// - 底色画在**外层**：指针落在任一处（或任一半有键盘焦点、或菜单展开）
-///   ⇒ **整块**一起亮 —— 外观是"一个按钮"；
-/// - **分区反馈**（2026-11-09 用户定，方案 A）：整块亮的同时，**当前那半再叠一层底**
-///   （hover）/ 更深一档（按下），并在两半之间显 1px 发丝 ⇒ 鼠标在哪半一眼可见。
-///   之前只有一个整块 `_hover`，两半反馈完全一样，实机"没提示也没触感"；
+/// - 主区宽 = 图标 18 + 左右各 4；副区宽 = 三角 8 + 左右各 2。**两半都居中**，
+///   点击分界就是两半的几何边界（x=26），不再藏在"间距中点"里；
+/// - **主次靠尺寸 + 颜色层级**：副区只有 12 宽，且 hover 叠加底只有主区一半浓度
+///   ⇒ 「更多」读成次级动作，不需要额外画分隔线；
+/// - **不画分隔线**（2026-11-09 用户定）：线在说"这里分两段"，整块亮在说
+///   "这是一个整体"，两者打架；而且 1px 线在 DPR 1.5 下是 1.5 物理像素，
+///   必然摊成"一格满 + 一格半亮"的灰边；
+/// - 底色画在**外层**：任一 hover / 焦点 / 菜单展开 ⇒ **整块**一起亮；
+/// - **分区反馈**：整块亮的同时当前半再叠一层（hover）/ 更深一档（按下）；
 /// - 两半仍**各自**是焦点站 + 语义按钮 ⇒ 键盘用户能分别触发。
 ///
-/// ⚠️ 为什么总宽是 40 而不是与筛选相同的 28：**装不下**。
-/// `5 + 18 + 4 + 8 + 5 = 40`；要压到 28 必须把主图标缩到 10、三角缩到 4，
-/// 主图标就和同排的 18 不齐了。所以取"边距齐、图标齐、总宽多出 12"。
-///
-/// ⚠️ 为什么不给 [AppIconButton] 加 flat 模式：那会让"一个按钮一个动作"的组件
-/// 长出 hover 归属、单侧圆角、形态分支。组合形态就新开一枚组件，视觉令牌仍同源。
+/// ⚠️ **DPR 1.5 像素对齐**（2026-11-09 用户屏）：4 / 2 / 26 / 12 / 38 全是偶数
+/// ⇒ ×1.5 得整数物理像素。旧值 5 / 25 / 15 是奇数 ⇒ 7.5 / 37.5 / 22.5 半像素
+/// （尤其旧发丝线从 37.5 起、宽 1.5 物理像素，实机发虚）。
 ///
 /// ⚠️ 为什么不用现成组件：Material 3 没有 split button；`SegmentedButton` 是
-/// **单选**语义；`MenuAnchor` 只管菜单不画外观；第三方包要额外依赖且样式不可控；
+/// **单选**语义；`MenuAnchor` 只管菜单不画外观；第三方包样式不可控；
 /// `fluent_ui` 的 `SplitButton` 是整站风格包，不能只借一个控件。自绘最省。
 class AppSplitIconButton extends StatefulWidget {
   const AppSplitIconButton({
@@ -43,8 +41,8 @@ class AppSplitIconButton extends StatefulWidget {
     required this.secondaryTooltip,
     required this.onSecondary,
     this.height = Tokens.headerActionSize,
-    this.edgePadding = (Tokens.headerActionSize - Tokens.iconSm) / 2,
-    this.gap = Tokens.spaceXs,
+    this.primaryPadding = 4,
+    this.secondaryPadding = 2,
     this.iconSize = Tokens.iconSm,
     this.secondaryIconSize = Tokens.iconMicro,
     this.secondaryActive = false,
@@ -60,11 +58,11 @@ class AppSplitIconButton extends StatefulWidget {
 
   final double height;
 
-  /// 左右内边距，默认 `(28 − 18) / 2 = 5` —— 与 [AppIconButton] 的图标留白同值。
-  final double edgePadding;
+  /// 主区**左右各**内留白（默认 4）⇒ 主区宽 = [iconSize] + 2×此值 = 26。
+  final double primaryPadding;
 
-  /// 主图标与三角之间的间距（默认 [Tokens.spaceXs] = 4）。
-  final double gap;
+  /// 副区**左右各**内留白（默认 2）⇒ 副区宽 = [secondaryIconSize] + 2×此值 = 12。
+  final double secondaryPadding;
 
   final double iconSize;
   final double secondaryIconSize;
@@ -77,19 +75,16 @@ class AppSplitIconButton extends StatefulWidget {
 }
 
 class _AppSplitIconButtonState extends State<AppSplitIconButton> {
-  /// 两半**各自**的 hover（由 [_SplitHalf] 回调上来）⇒ 整块是否亮、发丝是否显。
+  /// 两半**各自**的 hover（由 [_SplitHalf] 回调上来）⇒ 整块是否亮。
   bool _hoverPrimary = false;
   bool _hoverSecondary = false;
   final FocusNode _primaryFocus = FocusNode();
   final FocusNode _secondaryFocus = FocusNode();
 
-  /// 主区宽 = 左内边距 + 图标 + 半个间距。
-  double get _primaryWidth =>
-      widget.edgePadding + widget.iconSize + widget.gap / 2;
+  double get _primaryWidth => widget.iconSize + widget.primaryPadding * 2;
 
-  /// 下拉区宽 = 半个间距 + 三角 + 右内边距。
   double get _secondaryWidth =>
-      widget.gap / 2 + widget.secondaryIconSize + widget.edgePadding;
+      widget.secondaryIconSize + widget.secondaryPadding * 2;
 
   @override
   void initState() {
@@ -115,8 +110,7 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
   @override
   Widget build(BuildContext context) {
     final Brightness b = Theme.of(context).brightness;
-    final bool enabled =
-        widget.onPrimary != null || widget.onSecondary != null;
+    final bool enabled = widget.onPrimary != null || widget.onSecondary != null;
     // **整块**一起亮：任一半 hover / 任一半有焦点 / 菜单展开。
     final bool lit =
         enabled &&
@@ -134,62 +128,35 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
         color: lit ? AppTheme.hoverOverlay(b) : Colors.transparent,
         borderRadius: BorderRadius.circular(Tokens.radiusButton),
       ),
-      child: Stack(
-        // 焦点环可能画到界外，别裁。
-        clipBehavior: Clip.none,
+      // 两半直接排一行即可：不再有发丝线覆盖层 ⇒ 不需要 Stack / Clip.none。
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _SplitHalf(
-                icon: widget.primaryIcon,
-                tooltip: widget.primaryTooltip,
-                onPressed: widget.onPrimary,
-                width: _primaryWidth,
-                height: widget.height,
-                iconSize: widget.iconSize,
-                focusNode: _primaryFocus,
-                leftRounded: true,
-                // 左边距与 [AppIconButton] 同值：图标左基线跟同排按钮对齐。
-                padding: EdgeInsets.only(left: widget.edgePadding),
-                alignment: Alignment.centerLeft,
-                focused: _primaryFocus.hasFocus,
-                onHoverChanged: (bool v) =>
-                    setState(() => _hoverPrimary = v),
-              ),
-              _SplitHalf(
-                icon: widget.secondaryIcon,
-                tooltip: widget.secondaryTooltip,
-                onPressed: widget.onSecondary,
-                width: _secondaryWidth,
-                height: widget.height,
-                iconSize: widget.secondaryIconSize,
-                focusNode: _secondaryFocus,
-                leftRounded: false,
-                // 左 2 = 半个间距；右 5 = 与主区同一右内边距。
-                padding: EdgeInsets.only(
-                  left: widget.gap / 2,
-                  right: widget.edgePadding,
-                ),
-                alignment: Alignment.centerLeft,
-                focused: _secondaryFocus.hasFocus,
-                onHoverChanged: (bool v) =>
-                    setState(() => _hoverSecondary = v),
-              ),
-            ],
+          _SplitHalf(
+            icon: widget.primaryIcon,
+            tooltip: widget.primaryTooltip,
+            onPressed: widget.onPrimary,
+            width: _primaryWidth,
+            height: widget.height,
+            iconSize: widget.iconSize,
+            focusNode: _primaryFocus,
+            leftRounded: true,
+            secondary: false,
+            focused: _primaryFocus.hasFocus,
+            onHoverChanged: (bool v) => setState(() => _hoverPrimary = v),
           ),
-          // 1px 发丝：**hover 时才显**，落在两半的间距中点。用 Positioned 叠上去
-          // 而不是 Row 的 child ⇒ 不占布局宽度，控件总宽仍是 40（测试钉着）。
-          Positioned(
-            left: _primaryWidth,
-            top: Tokens.spaceXs,
-            bottom: Tokens.spaceXs,
-            width: 1,
-            child: IgnorePointer(
-              child: ColoredBox(
-                color: lit ? Bauhaus.line(b) : Colors.transparent,
-              ),
-            ),
+          _SplitHalf(
+            icon: widget.secondaryIcon,
+            tooltip: widget.secondaryTooltip,
+            onPressed: widget.onSecondary,
+            width: _secondaryWidth,
+            height: widget.height,
+            iconSize: widget.secondaryIconSize,
+            focusNode: _secondaryFocus,
+            leftRounded: false,
+            secondary: true,
+            focused: _secondaryFocus.hasFocus,
+            onHoverChanged: (bool v) => setState(() => _hoverSecondary = v),
           ),
         ],
       ),
@@ -199,7 +166,8 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
 
 /// 半区：自己管 hover / 按下 / 焦点三种**分区反馈**，并画一层半透明底。
 ///
-/// 父级已画整块底，这里再叠一层 ⇒ 当前半自然更深；按下再换更深一档。
+/// 图标在半区里**居中**；父级已画整块底，这里再叠一层 ⇒ 当前半更深。
+/// [secondary] 为 true 时叠加浓度减半（颜色层级：更多是次级动作）。
 /// tooltip / 焦点 / 语义 / 手势也都在这里收口。
 class _SplitHalf extends StatefulWidget {
   const _SplitHalf({
@@ -211,8 +179,7 @@ class _SplitHalf extends StatefulWidget {
     required this.iconSize,
     required this.focusNode,
     required this.leftRounded,
-    required this.alignment,
-    required this.padding,
+    required this.secondary,
     required this.focused,
     required this.onHoverChanged,
   });
@@ -228,16 +195,13 @@ class _SplitHalf extends StatefulWidget {
   /// true ⇒ 外侧圆角在左（主区）；false ⇒ 在右（下拉区）。
   final bool leftRounded;
 
-  /// 图标在半区里的对齐（两半都是 `centerLeft`，边距靠 [padding] 精确控制）。
-  final Alignment alignment;
-
-  /// 图标外侧的内缩：主区只缩左，下拉区缩左（半个间距）+ 右。
-  final EdgeInsets padding;
+  /// true ⇒ 副区：hover / pressed 的叠加底淡一档。
+  final bool secondary;
 
   /// 键盘焦点是否落在本半区（由父级持有 FocusNode 后传入）。
   final bool focused;
 
-  /// 通知父级整块是否该亮 / 发丝是否该显。
+  /// 通知父级整块是否该亮。
   final ValueChanged<bool> onHoverChanged;
 
   @override
@@ -277,14 +241,17 @@ class _SplitHalfState extends State<_SplitHalf> {
           : const Radius.circular(Tokens.radiusButton),
     );
 
+    // **颜色层级**：副区叠加底取主区的一半浓度。父级整块底仍同源，
+    // 所以看起来还是"一枚按钮亮了"，只是主区更实、副区更轻。
+    final Color overlay = AppTheme.hoverOverlay(b);
     final bool active = enabled && (_hover || _pressed || widget.focused);
     final Color halfBg = !active
         ? Colors.transparent
         : _pressed
-        // 按下：比 hover 再深一档（同项目 selectedBg 的口径）。
-        ? theme.colorScheme.onSurface.withValues(alpha: 0.10)
-        // hover / 键盘焦点：与父级整块底同色，叠一层 ⇒ 本半更深。
-        : AppTheme.hoverOverlay(b);
+        ? theme.colorScheme.onSurface.withValues(
+            alpha: widget.secondary ? 0.06 : 0.10,
+          )
+        : overlay.withValues(alpha: overlay.a * (widget.secondary ? 0.5 : 1.0));
 
     return Tooltip(
       message: widget.tooltip,
@@ -331,14 +298,10 @@ class _SplitHalfState extends State<_SplitHalf> {
                     color: halfBg,
                     borderRadius: radius,
                   ),
-                  child: Padding(
-                    padding: widget.padding,
-                    child: Align(
-                      alignment: widget.alignment,
-                      child: IconTheme(
-                        data: IconThemeData(color: ink, size: widget.iconSize),
-                        child: widget.icon,
-                      ),
+                  child: Center(
+                    child: IconTheme(
+                      data: IconThemeData(color: ink, size: widget.iconSize),
+                      child: widget.icon,
                     ),
                   ),
                 ),

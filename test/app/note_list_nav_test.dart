@@ -1,11 +1,9 @@
-import 'package:flutter/gestures.dart'
-    show PointerDeviceKind, kSecondaryButton;
+import 'package:flutter/gestures.dart' show PointerDeviceKind, kSecondaryButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:sinan/src/app/home_hub.dart'
-    show homeItemsProvider, homeKindFacetProvider;
+import 'package:sinan/src/app/home_hub.dart' show homeItemsProvider;
 import 'package:sinan/src/app/home_screen.dart';
 import 'package:sinan/src/app/note_list_column.dart';
 import 'package:sinan/src/app/providers.dart';
@@ -91,11 +89,7 @@ void main() {
 
     // 列表实际渲染顺序（与列表列同一个 [homeItemsProvider] ⇒ 自洽）。
     final List<Note> ordered = container.read(
-      homeItemsProvider((
-        view: HomeView.all,
-        tag: null,
-        kind: container.read(homeKindFacetProvider),
-      )),
+      homeItemsProvider((view: HomeView.all, tag: null)),
     );
     expect(ordered.length, 3, reason: '三篇都在列表里');
     expect(find.byType(NoteListColumn), findsOneWidget, reason: '宽面列表常开');

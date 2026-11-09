@@ -15,13 +15,10 @@ import 'tokens.dart';
 ///   1.125px ⇒ 低 DPR 发虚；Fluent 是**填充型**，栅格化对亚像素不敏感 ⇒ 清晰。
 ///   2026-10-28 整族迁入（当时弃用 lucide）。图标轨 2026-11-06 起统一用
 ///   **tabler**（stroke 型、`Tokens.iconStrokeRail` 1.25），本类只服务列表头 /
-///   新建菜单 / 插画，**不参与图标轨**。
-/// - **下载图标（197_* 系列）**：`197_编辑-19` / `197_画笔`（2026-10-15 用户定，落在
-///   新建菜单「笔记 / 画布」两项）。**固定蓝黑双色**（非 currentColor）——必须随前景
-///   染 [color]，否则深色底下黑色笔画会消失。
+///   插画，**不参与图标轨**；2026-11-09 托盘只留导入后，也不再服务菜单。
 /// - **彩色插画图标**（非字形）：`canvas` / `book`，多色 SVG 原样渲染不染色。
 ///
-/// ⚠️ 着色：Fluent / 下载图标都用 `colorFilter.srcIn` 染 `currentColor` / 前景色；插画
+/// ⚠️ 着色：Fluent 用 `colorFilter.srcIn` 染 `currentColor` / 前景色；插画
 /// 原彩色不染。tabler 包图标走自己的 `colorFilter`；本类 SVG 是裸资产、`currentColor`
 /// 无主题可解析 ⇒ 需染色的调用点必须显式传 `color`。
 class CustomIcons {
@@ -50,11 +47,8 @@ class CustomIcons {
     double size = Tokens.iconMd,
     Color? color,
   }) => Builder(
-    builder: (BuildContext context) => _asset(
-      name,
-      size: size,
-      color: color ?? IconTheme.of(context).color,
-    ),
+    builder: (BuildContext context) =>
+        _asset(name, size: size, color: color ?? IconTheme.of(context).color),
   );
 
   /// **搜索**：Fluent `search` **24 档 Regular**（2026-10-28 用户定：从 20 档
@@ -120,16 +114,6 @@ class CustomIcons {
   /// **收起（×）**：Fluent `dismiss`（2026-10-28 自 lucide `x` 迁入）。
   static Widget x({double size = Tokens.iconMd, Color? color}) =>
       _stroke('fluent-dismiss', size: size, color: color);
-
-  /// **下载图标（197_* 系列，2026-10-15 用户定）**：新建菜单「笔记」项。固定蓝黑双色，
-  /// 统一染 [color]（随前景）以适配明暗主题。
-  static Widget edit19({double size = Tokens.iconMd, Color? color}) =>
-      _asset('197_编辑-19', size: size, color: color);
-
-  /// **下载图标（197_* 系列，2026-10-15 用户定）**：新建菜单「画布」项。固定蓝黑双色，
-  /// 统一染 [color]（随前景）以适配明暗主题。
-  static Widget brush({double size = Tokens.iconMd, Color? color}) =>
-      _asset('197_画笔', size: size, color: color);
 
   /// **彩色插画图标**（画布）：多色 SVG，原样渲染不染色，落地在导航列表 / 笔记卡片。
   static Widget canvas({double size = Tokens.iconMd}) =>

@@ -145,9 +145,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('灵感不再由本页渲染：宿主是外壳的 StreamView', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('灵感不再由本页渲染：宿主是外壳的 StreamView', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲', '乙'],
@@ -212,27 +210,6 @@ void main() {
     expect(find.text('周报'), findsOneWidget);
     expect(find.text('本周写完了主页'), findsOneWidget);
     expect(find.text('（空白）'), findsNothing);
-  });
-
-  testWidgets('形态 facet：筛选器里选「画布」只看画布（全部视图）', (WidgetTester tester) async {
-    final ProviderContainer container = await pumpHub(
-      tester,
-      titles: <String>['甲'],
-      canvasTitles: <String>['乙画布'],
-    );
-
-    // 形态是**筛选维度**，在跨形态视图（全部）生效；灵感只收 spark、不适用形态 facet。
-    await selectView(tester, container, HomeView.all);
-    await tester.tap(find.byTooltip('筛选与排序'));
-    await tester.pumpAndSettle();
-    await tester.tap(menuItem('画布'));
-    await tester.pumpAndSettle();
-
-    expect(container.read(homeKindFacetProvider), NoteKindFacet.canvas);
-    expect(find.text('乙画布'), findsOneWidget);
-    expect(find.text('甲'), findsNothing, reason: '文档类笔记被形态 facet 滤掉');
-    // 切形态不是"去了一个地方" ⇒ 视图停在本视图。
-    expect(container.read(navHistoryProvider).view, HomeView.all);
   });
 
   testWidgets('「全部」视图：笔记 + 画布跨形态同一池', (WidgetTester tester) async {
@@ -333,41 +310,27 @@ void main() {
     );
   });
 
-  testWidgets('搜索跨形态：笔记形态下也能搜到画布；清空撤词回形态筛选', (WidgetTester tester) async {
+  testWidgets('搜索跨形态：笔记视图下也能搜到画布；撤词回跨形态池', (WidgetTester tester) async {
     final ProviderContainer container = await pumpHub(
       tester,
       titles: <String>['甲'],
       canvasTitles: <String>['乙画布'],
     );
 
-    // 形态筛选在跨形态视图（全部）生效；灵感只收自己的收件箱、不读笔记。
-    await selectView(tester, container, HomeView.all);
-
-    // 选形态「笔记」（顶栏漏斗钮的「形态」段，2026-10-05 决策 E）。
-    await tester.tap(find.byTooltip('筛选与排序'));
-    await tester.pumpAndSettle();
-    await tester.tap(menuItem('笔记'));
-    await tester.pumpAndSettle();
+    // 笔记视图在**取数层**只收文档类（2026-11-09 起不再有形态 facet）。
+    await selectView(tester, container, HomeView.notes);
     expect(find.text('甲'), findsOneWidget);
-    expect(find.text('乙画布'), findsNothing, reason: '笔记形态下画布被滤掉');
+    expect(find.text('乙画布'), findsNothing, reason: '笔记视图只收文档类');
 
-    // 搜索是**全局**意图（2026-09-30 定）⇒ 不被形态 facet 收窄。
+    // 搜索是**全局**意图（2026-09-30 定）⇒ 不被当前视图收窄。
     await omniSearch(tester, container, '乙');
     expect(find.text('1 条结果'), findsOneWidget);
-    expect(find.text('乙画布'), findsOneWidget, reason: '搜索跨形态，画布不能被笔记 tab 挡掉');
+    expect(find.text('乙画布'), findsOneWidget, reason: '搜索跨形态，画布不能被笔记视图挡掉');
 
-    // 搜索态里切形态也不撤词——看到的仍是同一份全局结果。
-    await tester.tap(find.byTooltip('筛选与排序'));
-    await tester.pumpAndSettle();
-    await tester.tap(menuItem('画布'));
-    await tester.pumpAndSettle();
-    expect(find.text('1 条结果'), findsOneWidget);
-    expect(find.text('乙画布'), findsOneWidget);
-
-    // Esc ⇒ 撤词，落到「全部」+ 画布形态：只见画布。
+    // Esc ⇒ 撤词。交接行把视图落到「全部」（跨形态池）⇒ 两篇都在。
     await omniEsc(tester, container);
-    expect(find.text('乙画布'), findsOneWidget);
-    expect(find.text('甲'), findsNothing, reason: '撤词后回到画布形态，笔记不该出现');
+    expect(find.text('甲'), findsOneWidget);
+    expect(find.text('乙画布'), findsOneWidget, reason: '撤词后回到跨形态的「全部」池');
     expect(find.text('1 条结果'), findsNothing, reason: '结果栏随搜索态一起撤');
   });
 

@@ -36,14 +36,14 @@ import 'search_provider.dart';
 ///   的页面背景上）。
 /// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
 ///
-/// 📌 形态与视图的关系（2026-10-21 更新）：灵感 / 全部 / 日历 / 收藏仍不分
-/// 笔记与画布；**笔记 / 画布自当日起升为独立视图**（布局同「全部」，见
-/// [kHomeTabs]），顶栏漏斗钮的「形态」facet（[NoteKindFacet]）保留为视图内
-/// 再筛选。
+/// 📌 形态与视图的关系（2026-11-09 收口）：**笔记 / 画布自 2026-10-21 起就是
+/// 独立视图**（布局同「全部」，见 [kHomeTabs]），在视图层已按 [NoteKind] 收池。
+/// 漏斗钮里的「形态」facet 是在其上再筛一遍（笔记页选「画布」得空集），属重复
+/// 控件 ⇒ 已撤。灵感 / 全部 / 日历 / 收藏仍不分形态。
 ///
-/// ⚠️ **排序 / 标签 / 形态都不是页面**：它们是全局控件，合住顶栏右侧一枚
-/// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、三段——形态 / 排序 /
-/// 标签），对所有视图同时生效。
+/// ⚠️ **排序 / 标签都不是页面**：它们是全局控件，合住顶栏右侧一枚
+/// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、两段——排序 / 标签），
+/// 对所有视图同时生效。
 /// [HomeView] 的**图标**扩展。
 ///
 /// 枚举本体在 `providers.dart`：统一导航历史（[NavHistoryNotifier]）要同时
@@ -51,8 +51,7 @@ import 'search_provider.dart';
 /// （唯一获准写"当前笔记"的文件，见 architecture_test 的源码扫描）。图标要
 /// 引用 tabler / [CustomIcons]，不进 DI 层，故留在这里。
 extension HomeViewIcon on HomeView {
-  /// 最左图标导航轨上的图标（tabler 单色线形；形态 facet 里的「画布」才用
-  /// `CustomIcons.canvas` 彩色插画）。
+  /// 最左图标导航轨上的图标（全为 tabler 单色线形）。
   ///
   /// 描边统一用 [Tokens.iconStrokeRail]（1.25，2026-11-07 从全局 1.5 抽出），
   /// 与轨上的回收站 / 设置同粗细；本文件其余 tabler 图标仍用 1.5。
@@ -122,47 +121,6 @@ const List<HomeView> kHomeTabs = <HomeView>[
   HomeView.calendar,
 ];
 
-/// **形态筛选 facet**（2026-10-05 决策 E 新增）：全部 / 笔记 / 画布。
-///
-/// ## 为什么它不是 [HomeView] 的值
-/// 视图答的是"我怎么看"（投影：灵感 / 全部 / 日历 / 收藏），形态答的是
-/// "它是什么"（类型：文档类 spark+note / 画布 canvas）。两个维度塞进一排
-/// tab 就是类别错误——本项目上一次是以"空间切换器"的形式解决它的（只过滤
-/// 列表、不切主区），这里沿用同一个结论：**只做筛选，不做视图**。
-///
-/// ## 为什么它不入统一导航历史
-/// 切形态只是"换个看法"，不是"去了一个地方" ⇒ 不写 [navHistoryProvider]，
-/// 上一步 / 下一步不该被它打断（否则在列表里筛一下就毁掉前进栈）。
-enum NoteKindFacet {
-  all('全部'),
-  docs('笔记'),
-  canvas('画布');
-
-  const NoteKindFacet(this.label);
-
-  /// 菜单里显示的名字（也是测试 find 的锚点）。
-  final String label;
-
-  /// 该形态是否收下这篇（文档类 = 非画布）。
-  bool matches(NoteKind kind) => switch (this) {
-    NoteKindFacet.all => true,
-    NoteKindFacet.docs => kind != NoteKind.canvas,
-    NoteKindFacet.canvas => kind == NoteKind.canvas,
-  };
-}
-
-/// 当前形态筛选（顶栏漏斗钮的「形态」段）。默认 [NoteKindFacet.all]。
-final homeKindFacetProvider = NotifierProvider<HomeKindFacet, NoteKindFacet>(
-  HomeKindFacet.new,
-);
-
-class HomeKindFacet extends Notifier<NoteKindFacet> {
-  @override
-  NoteKindFacet build() => NoteKindFacet.all;
-
-  void select(NoteKindFacet facet) => state = facet;
-}
-
 /// 卡片网格的**排序方案**（2026-09-29 用户定，在「更多」视图里选）。
 ///
 /// 一旦选定，对**全部 / 笔记 / 画布 / 更多**四个视图同时生效（进编辑器再
@@ -209,8 +167,9 @@ class HomeSortNotifier extends Notifier<NoteSort> {
 
 /// [homeItemsProvider] 的入参（record：结构相等即命中缓存）。
 ///
-/// `kind` 是 2026-10-05 决策 E 加的**形态 facet**（笔记 / 画布不再是视图）。
-typedef HomeItemsArgs = ({HomeView view, String? tag, NoteKindFacet kind});
+/// 2026-11-09 撤掉 `kind`：形态由 [HomeView.notes] / [HomeView.canvas]
+/// 在视图层收池，再带一个恒为 all 的 facet 只是死参数。
+typedef HomeItemsArgs = ({HomeView view, String? tag});
 
 /// 主页卡片网格的取数：**视图范围 + 标签过滤 + 排序**（2026-09-30 从
 /// `_HomeBody._itemsFor` 抽出）。
@@ -234,8 +193,7 @@ final homeItemsProvider = Provider.autoDispose
         // 全部：跨形态统一池，跟随全局排序。
         HomeView.all => all.toList()..sort(order),
         // 笔记 / 画布（2026-10-21 用户定升为视图）：在**视图层**就按类型收池，
-        // 全局排序照走。facet（形态筛选）在其上仍是再筛一遍——如「笔记」视图
-        // 里选「画布」facet 得空集，两个控件叠加的正常结果。
+        // 全局排序照走。形态不再另设 facet（2026-11-09 撤）。
         HomeView.notes =>
           all.where((Note n) => n.kind != NoteKind.canvas).toList()
             ..sort(order),
@@ -248,16 +206,11 @@ final homeItemsProvider = Provider.autoDispose
         ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
         HomeView.calendar => const <Note>[],
       };
-      // 形态筛选（决策 E）：先按类型收一遍，再按标签收一遍——两者都是顶栏
-      // 全局控件 ⇒ 对当前视图生效。
-      final List<Note> byKind = args.kind == NoteKindFacet.all
-          ? scope
-          : scope.where((Note n) => args.kind.matches(n.kind)).toList();
       // 标签筛选是顶栏全局控件 ⇒ 对当前视图生效；未选标签时原样返回。
       // 有搜索词时不走这里（搜索态由 _SearchResultsView 跨形态渲染）。
       return args.tag == null
-          ? byKind
-          : byKind.where((Note n) => n.tags.contains(args.tag)).toList();
+          ? scope
+          : scope.where((Note n) => n.tags.contains(args.tag)).toList();
     });
 
 /// 超过该体积的画布 content 才把解析丢到后台 Isolate（[compute]）。
@@ -328,7 +281,7 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// 本页被**单独**挂载时的兜底形态（测试、以及将来移动端复用），桌面壳不走它们。
 ///
 /// ## 三条结构事实
-/// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（形态 / 排序 / 标签合住）。
+/// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（排序 / 标签合住）。
 ///    视图切换 + 新建胶囊在最左 **60 图标轨** [AppIconRail]；上一步 / 下一步在
 ///    标题栏左簇（与全局键 `Alt+←/→` 同走命令层）。
 /// 2. **内容区按视图 + 搜索词解析**（[homeItemsProvider]）：搜索词在**当前
@@ -367,7 +320,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 顶栏：只剩一枚靠右的「筛选与排序」漏斗钮（形态 / 排序 / 标签合住）。
+        // 顶栏：只剩一枚靠右的「筛选与排序」漏斗钮（排序 / 标签合住）。
         // 视图切换 + 新建胶囊 2026-10-12 起移出内容区（今在最左 [AppIconRail] 60
         // 图标轨）。问笔记（AI）2026-10-16 起是标题栏 `trailing` 钮（设置右、最小化
         // 左），不在工作区。
@@ -385,9 +338,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[
-              FilterMenuButton(),
-            ],
+            children: <Widget>[FilterMenuButton()],
           ),
         ),
         Expanded(
@@ -478,11 +429,7 @@ class _HomeBody extends ConsumerWidget {
     // 其余视图：卡片网格。取数走 [homeItemsProvider]（记忆化：无关 rebuild
     // 不重排；语义见 provider 文档）。
     final List<Note> items = ref.watch(
-      homeItemsProvider((
-        view: view,
-        tag: search.activeTag,
-        kind: ref.watch(homeKindFacetProvider),
-      )),
+      homeItemsProvider((view: view, tag: search.activeTag)),
     );
 
     if (items.isEmpty) {
@@ -632,7 +579,8 @@ class _SearchResultBar extends StatelessWidget {
             Text(
               '关键词检索',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: Bauhaus.inkMuted(scheme.brightness).withValues(alpha: 0.65),
+                color: Bauhaus.inkMuted(scheme.brightness)
+                    .withValues(alpha: 0.65),
               ),
             ),
         ],
@@ -643,8 +591,11 @@ class _SearchResultBar extends StatelessWidget {
 
 /// 顶栏**筛选器**控件钮（2026-09-30 用户定）：排序方案（[homeSortProvider]）
 /// 与标签筛选（[SearchState.activeTag]）同属"整理当前池子"的元操作，合住一枚
-/// 漏斗钮、一个菜单——上半段排序、下半段标签。对 [kHomeTabs] /
-/// [kHomeTabs] 所有视图全局生效（收藏的排序语义除外，见 [_CalendarPageState]）。
+/// 漏斗钮、一个菜单——上半段排序、下半段标签。对 [kHomeTabs]
+/// 所有视图全局生效（收藏的排序语义除外，见 [_CalendarPageState]）。
+///
+/// 2026-11-09 撤掉「形态」段：笔记 / 画布已是独立视图、在取数层按类型收池，
+/// 面板里再选一次是重复控件（选错还得空集）。
 ///
 /// 标签段在全库无标签时**整段消失**，但钮本身常驻（排序永远可用，
 /// 2026-09-30 之前排序 / 标签是两枚钮，无标签时只剩排序，用户找不到入口）。
@@ -670,7 +621,6 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
 
   Future<void> _openMenu() async {
     final NoteSort currentSort = ref.read(homeSortProvider);
-    final NoteKindFacet currentKind = ref.read(homeKindFacetProvider);
     final List<(String, int)> tags = ref.read(allTagsProvider);
     final String? activeTag = ref.read(searchNotifierProvider).activeTag;
 
@@ -707,29 +657,8 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
     await showMenu<void>(
       context: context,
       position: position,
+      // 2026-11-09：形态段已撤——笔记 / 画布本身已是独立视图，再筛一遍重复。
       items: <PopupMenuEntry<void>>[
-        // 形态（2026-10-05 决策 E）：笔记 / 画布从"视图"降为**筛选维度**，
-        // 与排序 / 标签同级。切它不入导航历史（见 [NoteKindFacet] 的说明）。
-        _menuHeader('形态'),
-        for (final NoteKindFacet f in NoteKindFacet.values)
-          PopupMenuItem<void>(
-            onTap: () => ref.read(homeKindFacetProvider.notifier).select(f),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(f.label),
-                if (f == currentKind) ...<Widget>[
-                  const SizedBox(width: Tokens.spaceSm),
-                  const tabler.Check(
-                    height: Tokens.iconMdSm,
-                    width: Tokens.iconMdSm,
-                    strokeWidth: Tokens.iconStroke,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        const PopupMenuDivider(),
         _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
           PopupMenuItem<void>(
@@ -794,8 +723,9 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
     height: 28,
     child: Text(
       text,
-      style: Theme.of(context).textTheme.labelSmall
-          ?.copyWith(color: Bauhaus.inkMuted(Theme.of(context).colorScheme.brightness)),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Bauhaus.inkMuted(Theme.of(context).colorScheme.brightness),
+      ),
     ),
   );
 
@@ -1052,9 +982,8 @@ class _NoteCardState extends State<_NoteCard> {
                         : Text(
                             '（空白）',
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: Bauhaus.inkMuted(scheme.brightness).withValues(
-                                alpha: 0.6,
-                              ),
+                              color: Bauhaus.inkMuted(scheme.brightness)
+                                  .withValues(alpha: 0.6),
                               fontStyle: FontStyle.italic,
                             ),
                           ),
@@ -1558,10 +1487,7 @@ class _CalendarView extends StatelessWidget {
                 const SizedBox(height: Tokens.spaceSm),
                 // 卡片底部：一条发丝分隔 + 常驻「写日记」入口（像日记本每页
                 // 底下留白的那一行）。**只写今天**，点完直接打字。
-                Container(
-                  height: 1,
-                  color: Bauhaus.line(theme.brightness),
-                ),
+                Container(height: 1, color: Bauhaus.line(theme.brightness)),
                 const SizedBox(height: Tokens.spaceXs),
                 _DiaryEntryButton(day: today, onTap: onCreateToday),
               ],
@@ -1876,7 +1802,9 @@ class _CalCellState extends State<_CalCell> {
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: Bauhaus.inkMuted(scheme.brightness)),
+                        border: Border.all(
+                          color: Bauhaus.inkMuted(scheme.brightness),
+                        ),
                       ),
                     ),
                   ),
@@ -1886,7 +1814,9 @@ class _CalCellState extends State<_CalCell> {
                     Text(
                       '${widget.date.day}',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.isSelected ? Bauhaus.ink(scheme.brightness) : textColor,
+                        color: widget.isSelected
+                            ? Bauhaus.ink(scheme.brightness)
+                            : textColor,
                         fontWeight: widget.isSelected ? FontWeight.w600 : null,
                       ),
                     ),

@@ -18,12 +18,7 @@ import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import '../domain/note.dart';
 import 'home_hub.dart'
-    show
-        FilterMenuButton,
-        NoteSort,
-        homeItemsProvider,
-        homeKindFacetProvider,
-        homeSortProvider;
+    show FilterMenuButton, NoteSort, homeItemsProvider, homeSortProvider;
 import 'note_display.dart';
 import 'note_import.dart';
 import 'providers.dart';
@@ -54,7 +49,7 @@ const double _kHeadToolInset =
 /// - 头（2026-10-21 用户定，复刻 ima）：**第一行 = 工具行**（左留位给悬浮折叠钮，
 ///   右簇 搜索 / 筛选 / **新建**〔新建最右，2026-11-09 用户定〕）；折叠钮是
 ///   独立区域、不参与这一排。**第二行 = 视图名 + 篇数**（从按钮行下移）。
-/// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按排序 + 形态 + 标签过滤），
+/// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按视图范围 + 排序 + 标签过滤），
 ///   再叠一层**页内搜索**（标题 + 摘要内存过滤，见 [_NoteListColumnState]）。
 /// - 行：点 / Enter 开（走 [locateProvider]，`focus` 默认 false ⇒ 焦点不被编辑器抢走）；
 ///   选中行（== [selectedNoteIdProvider]）铺 navSelectedTint 同款选中底（= hover 2×）。
@@ -216,7 +211,6 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
       homeItemsProvider((
         view: view,
         tag: ref.watch(searchNotifierProvider).activeTag,
-        kind: ref.watch(homeKindFacetProvider),
       )),
     );
     final String? selectedId = ref.watch(selectedNoteIdProvider);
@@ -519,7 +513,7 @@ const double _kTrayWidth = 180;
 
 /// 列表头的**新建分半钮**（2026-10-21 用户定，复刻 ima 的 `+ ▾`）：
 /// 左半 `+` 直建**当前页类型**（笔记页建笔记、画布页建画布），右半 `▾` 开托盘
-/// （新建笔记 / 新建画布 / 导入…）。
+/// （2026-11-09 起**只留导入**：新建两项与主区重复，已撤）。
 ///
 /// 刻意**不复用** [NewNoteCapsule]：那个是"整块点击即开托盘"（轨上在用，交互已
 /// 定型），这里要的是"主按钮直接建 + 箭头开托盘"两种分工。
@@ -596,6 +590,9 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
               }
             },
           ),
+      // 2026-11-09 用户定：托盘**只保留导入**。「新建笔记 / 新建画布」由主区
+      // 「＋」按当前页类型直接建（画布页建画布），菜单里再列两遍是重复入口；
+      // 两项与它们之间的发丝分隔线一并撤掉。
       menuChildren: <Widget>[
         AppFloatSurface(
           color: Bauhaus.surface(b),
@@ -606,29 +603,11 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              // 导入 = **新建**（不覆盖）：md 走 appflowy 的 md 解析器、
+              // 画布走 bundle 还原，两条链路都落在 importNote 上。
               // ⚠️ 托盘行**不放快捷键提示**：180 宽放"图标 + 标签 +
               // Ctrl+Shift+N" 会溢出 52px（实测）。键位由命令面板 / 设置
               // 里的键位表负责，这里只给动作本身。
-              _TrayTile(
-                icon: CustomIcons.edit19(
-                  size: Tokens.iconMdSm,
-                  color: Bauhaus.ink(b),
-                ),
-                label: '新建笔记',
-                onTap: () => unawaited(runCommandById(ref, 'note.new')),
-              ),
-              const _TrayHairline(),
-              _TrayTile(
-                icon: CustomIcons.brush(
-                  size: Tokens.iconMdSm,
-                  color: Bauhaus.ink(b),
-                ),
-                label: '新建画布',
-                onTap: () => unawaited(runCommandById(ref, 'canvas.new')),
-              ),
-              const _TrayHairline(),
-              // 导入 = **新建**（不覆盖）：md 走 appflowy 的 md 解析器、
-              // 画布走 bundle 还原，两条链路都落在 importNote 上。
               _TrayTile(
                 icon: tabler.Download(
                   height: Tokens.iconMdSm,
@@ -727,21 +706,6 @@ class _TrayTileState extends State<_TrayTile> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 托盘里的 1px 发丝分隔（与面板底反相，两种明度下都分得开）。
-class _TrayHairline extends StatelessWidget {
-  const _TrayHairline();
-
-  @override
-  Widget build(BuildContext context) {
-    final Brightness b = Theme.of(context).brightness;
-    return Container(
-      height: 1,
-      margin: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-      color: Bauhaus.inkMuted(b).withValues(alpha: 0.16),
     );
   }
 }

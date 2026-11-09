@@ -338,8 +338,8 @@ class StreamNotifier extends AsyncNotifier<List<StreamItem>> {
 /// 故只在"新增附件 / 删除条目"时按需 invalidate。
 final streamAttachmentsProvider =
     Provider.family<List<StreamAttachment>, String>(
-  (Ref ref, String id) => ref.watch(streamStoreProvider).attachmentsOf(id),
-);
+      (Ref ref, String id) => ref.watch(streamStoreProvider).attachmentsOf(id),
+    );
 
 final streamProvider = AsyncNotifierProvider<StreamNotifier, List<StreamItem>>(
   StreamNotifier.new,
@@ -534,8 +534,8 @@ final answerServiceProvider = Provider<AnswerService>(
 ///
 /// ⚠️ 2026-10-05 决策 E：原先的 `notes` / `canvas` 两值**已移除**。笔记 /
 /// 画布答的是"它是什么"（类型），与"我怎么看"（投影）是两个维度，混进一排
-/// tab 就是类别错误。类型现在走筛选器的「形态」facet（`home_hub.dart` 的
-/// [NoteKindFacet]），三点溢出菜单随之退役。
+/// tab 就是类别错误。2026-10-21 起二者升为独立视图、在取数层按类型收池；
+/// 2026-11-09 又撤掉漏斗钮里冗余的「形态」facet，三点溢出菜单随之退役。
 ///
 /// ⚠️ 从 `home_hub.dart` 迁来（2026-09-30）：统一导航历史要同时表达"主页
 /// 视图"与"某篇笔记页"两种目的地，而它必须与 `locateProvider` 同住本文件
@@ -548,9 +548,11 @@ enum HomeView {
   /// （2026-10-20 用户定：页面名统一为「灵感」；代码仍叫 stream。）
   timeline('灵感'),
   all('全部'),
+
   /// **笔记**（2026-10-21 用户定）：只看文档类（非画布）。布局与「全部」同——
   /// 主从（240 列表列 + 详情）；此前（决策 E）它只是形态筛选，现升为独立视图。
   notes('笔记'),
+
   /// **画布**（2026-10-21 用户定）：只看 [NoteKind.canvas]。布局与「全部」同。
   canvas('画布'),
   calendar('日历'),

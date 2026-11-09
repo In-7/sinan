@@ -382,9 +382,10 @@ void main() {
     );
   });
 
-  testWidgets('新建分半钮：tooltip 即时精简、hover 分区有反馈', (tester) async {
-    // 2026-11-09 方案 A：文案改「新建 / 更多」；全局 400ms 的 tooltip 延迟
-    // 在这两枚覆盖成 150ms；整块亮的同时当前半要再叠一层底。
+  testWidgets('新建分半钮：4/2 两半居中、无发丝线、颜色层级、hover 分区', (tester) async {
+    // 2026-11-09 方案 A + 4/2 重排：文案「新建 / 更多」；tooltip 150ms 跟手；
+    // 主区 26（4+18+4）/ 副区 12（2+8+2）⇒ 2.17:1；发丝线撤掉；
+    // 副区叠加底比主区淡一档（颜色层级）；整块亮的同时当前半再叠一层底。
     await pumpList(tester);
 
     for (final String tip in <String>['新建', '更多']) {
@@ -426,6 +427,36 @@ void main() {
     expect(halfColor('新建'), Colors.transparent, reason: '初始左半无叠加底');
     expect(halfColor('更多'), Colors.transparent, reason: '初始右半无叠加底');
 
+    // ① 两半宽 26 / 12 ⇒ 2.17:1。全是偶数 ⇒ DPR 1.5 下整数物理像素。
+    final List<double> halfWidths =
+        tester
+            .widgetList<Container>(
+              find.descendant(
+                of: find.byType(AppSplitIconButton),
+                matching: find.byWidgetPredicate(
+                  (Widget w) =>
+                      w is Container &&
+                      w.decoration is BoxDecoration &&
+                      w.constraints != null &&
+                      w.constraints!.maxWidth < Tokens.headerActionSize,
+                ),
+              ),
+            )
+            .map((Container c) => c.constraints!.maxWidth)
+            .toList()
+          ..sort();
+    expect(halfWidths, <double>[12, 26], reason: '主区 26 / 副区 12（4/2 居中）');
+
+    // ② 1px 发丝线已撤（DPR 1.5 下宽 1.5 物理像素，必糊）。
+    expect(
+      find.descendant(
+        of: find.byType(AppSplitIconButton),
+        matching: find.byType(ColoredBox),
+      ),
+      findsNothing,
+      reason: '发丝线覆盖层不该再出现',
+    );
+
     final Rect left = tester.getRect(find.byTooltip('新建'));
     final Rect right = tester.getRect(find.byTooltip('更多'));
     final TestGesture gesture = await tester.createGesture(
@@ -434,16 +465,27 @@ void main() {
     await gesture.addPointer(location: left.center);
     await tester.pump();
 
-    expect(halfColor('新建'), isNot(Colors.transparent), reason: 'hover 左半 ⇒ 左半叠底');
+    final Color? primaryHover = halfColor('新建');
+    expect(primaryHover, isNot(Colors.transparent), reason: 'hover 左半 ⇒ 左半叠底');
     expect(halfColor('更多'), Colors.transparent, reason: '右半不该跟着亮');
 
     await gesture.moveTo(right.center);
     await tester.pump();
     expect(halfColor('新建'), Colors.transparent, reason: '左半恢复');
-    expect(halfColor('更多'), isNot(Colors.transparent), reason: 'hover 右半 ⇒ 右半叠底');
+    final Color? secondaryHover = halfColor('更多');
+    expect(
+      secondaryHover,
+      isNot(Colors.transparent),
+      reason: 'hover 右半 ⇒ 右半叠底',
+    );
+
+    // ③ 颜色层级：副区叠加底比主区淡一档（更多是次级动作）。
+    expect(secondaryHover!.a, lessThan(primaryHover!.a), reason: '副区叠加浓度要低于主区');
   });
 
-  testWidgets('托盘：点箭头能开（新建笔记 / 新建画布 / 导入）', (tester) async {
+  testWidgets('托盘：只保留导入（新建两项已撤）', (tester) async {
+    // 2026-11-09 用户定：主区「＋」已按当前页类型直接建，菜单里再列
+    // 「新建笔记 / 新建画布」是重复入口 ⇒ 托盘只留导入。
     await pumpList(tester);
 
     // 先确认托盘是**收起**的（菜单项不在树上）。
@@ -452,10 +494,10 @@ void main() {
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
 
-    // ⚠️ 这条是返工闸门：`MenuAnchor` 不会自动响应点击 ⇒ 箭头必须自己 open。
-    expect(find.text('新建笔记'), findsOneWidget, reason: '托盘要能开出来');
-    expect(find.text('新建画布'), findsOneWidget);
-    expect(find.text('导入 Markdown…'), findsOneWidget, reason: '导入项在托盘里');
+    // ⚠️ 返工闸门：`MenuAnchor` 不会自动响应点击 ⇒ 箭头必须自己 open。
+    expect(find.text('导入 Markdown…'), findsOneWidget, reason: '导入项仍在');
+    expect(find.text('新建笔记'), findsNothing, reason: '新建笔记项已撤');
+    expect(find.text('新建画布'), findsNothing, reason: '新建画布项已撤');
   });
 
   testWidgets('工具钮：色源单一（单钮 / 分半钮同一墨色）', (tester) async {
