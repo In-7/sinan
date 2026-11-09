@@ -9,27 +9,30 @@ import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'home_hub.dart' show HomeViewIcon, kHomeTabs;
 import 'providers.dart';
-import 'search_palette.dart';
 import 'settings_panel.dart' show showSettingsPanel;
 import 'trash_panel.dart' show showTrash;
 
 /// 最左**图标导航轨**（2026-10-16 用户定，Option 2 第一阶段）：60px 常驻脊梁，直接贴
 /// 窗口底（同旧 256 侧栏的扁平口径，无面板 / 描边 / 投影）。它把旧侧栏的
-/// 「品牌行 + 搜索 + 四视图」收成一列图标。
+/// 「品牌行 + 四视图」收成一列图标。
 ///（2026-10-21 曾试加宽到 70，同日撤回——图标 / 钮不变时纯加宽只是多出空白边距。）
 ///
-/// 上→下：**logo（装饰）· 搜索（Ctrl+K）· 四枚视图图标**（灵感 / 笔记 / 画布 /
-/// 日历），弹性 spacer，底部**回收站 · 设置**两枚工具钮（2026-11-01 视图簇从
-/// 底部上移、设置从标题栏搬来，对齐 ima 的「品牌 → 导航簇 → 大片留白 → 底部工具」）。
+/// 上→下：**logo（装饰）· 四枚视图图标**（灵感 / 笔记 / 画布 / 日历），弹性
+/// spacer，底部**回收站 · 设置**两枚工具钮（2026-11-01 视图簇从底部上移、
+/// 设置从标题栏搬来，对齐 ima 的「品牌 → 导航簇 → 大片留白 → 底部工具」）。
 ///
-/// 间距**三级**：组内 [Tokens.spaceXs](4)、组间 [Tokens.spaceLg](16)、轨道边距
-/// [Tokens.spaceSm](8)——**组间是组内的 4 倍**，人眼才读得出"这是两簇"；1.5~2 倍
-/// 的分组会糊成一片。
+/// 2026-11-09 撤掉轨上的搜索图标：全局搜索改由 `Ctrl+K` / 命令面板唤起，
+/// 找全库用键盘；列表顶保留**页内过滤**（筛当前笔记 / 画布池子），两者分工。
+///
+/// 间距**统一 12**（2026-11-09 用户定）：全轨相邻元素与纵向边距都是
+/// [Tokens.spaceMd](12)，不再分"组内 / 组间"。分组感交给中间那片弹性留白
+/// （高窗时几百 px），比任何固定间距差都强；此前 `24:8` 的 3 倍差已取消。
 ///
 /// 选中 = hover 2× 的 selectedBg（亮 onSurface@8% / 暗 white@12%），
 /// hover = [AppTheme.hoverOverlay]，同旧侧栏口径。
 ///
-/// 第二阶段的 208 列表列接在它右边；本轨是 App 脊梁（Phase D 起常驻不折叠）。
+/// 第二阶段的 [Tokens.noteListWidth](240) 列表列接在它右边；本轨是 App 脊梁
+/// （Phase D 起常驻不折叠）。
 class AppIconRail extends ConsumerWidget {
   const AppIconRail({super.key});
 
@@ -37,7 +40,6 @@ class AppIconRail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final Brightness b = theme.brightness;
     final HomeView current =
         ref.watch(navHistoryProvider.select((NavHistoryState s) => s.view));
     final int trashCount = ref.watch(trashProvider).length;
@@ -45,9 +47,9 @@ class AppIconRail extends ConsumerWidget {
     return SizedBox(
       width: Tokens.railWidth,
       child: Padding(
-        // **纵向 12 / 横向 8**（2026-11-01 日式"外松内紧"）：
+        // **纵向 12 / 横向 8**（2026-11-09 与全轨统一间距 12 对齐）：
         // - 横向必须 8：轨 60 − 8×2 = 44 内容区，36 的钮居中后视觉边距 12；
-        // - 纵向提到 12：原来 8 比组间（24）还紧，顶部 logo / 底部设置会被"顶住"。
+        // - 纵向 12 = 全轨 gap，顶部 logo / 底部设置的呼吸与图标之间一致。
         padding: const EdgeInsets.symmetric(
           horizontal: Tokens.spaceSm,
           vertical: Tokens.spaceMd,
@@ -63,9 +65,8 @@ class AppIconRail extends ConsumerWidget {
               children: <Widget>[
                 // logo（装饰）：包豪斯三色条占位（同旧品牌行），24 方。
                 const _RailLogo(),
-                // 组间：品牌 → 目的地。**组间是组内的 4 倍**——人眼要靠 ≥3 倍的
-                // 间距差才读得出"分组"（4:16 成立；4:8 只有 2 倍，会糊成一片）。
-                SizedBox(height: s.betweenGroups),
+                // 统一间距：品牌 → 目的地（[s.gap]，spacious 档 12）。
+                SizedBox(height: s.gap),
                 // 视图簇：**Expanded + ScrollView 取代 Spacer**。
                 // - 空间富余 ⇒ viewport **强制撑满**分到的高度（Expanded = tight）、
                 //   内容顶部对齐，视觉等同 Spacer；
@@ -83,12 +84,12 @@ class AppIconRail extends ConsumerWidget {
                       physics: const ClampingScrollPhysics(),
                       child: Column(
                         children: <Widget>[
-                          // 四枚视图导航（2026-11-01 从轨道**底部**移到搜索之下，
-                          // 对齐 ima 的「品牌 → 导航簇 → 大片留白 → 底部工具」）。
-                          // 组内紧凑成列：36 + 组内间距的节奏，读成"一列"。
+                          // 四枚视图导航（2026-11-01 从轨道**底部**上移到 logo 之下）。
+                          // 对齐 ima 的「品牌 → 导航簇 → 大片留白 → 底部工具」。
+                          // 统一间距成列：36 + gap 的节奏，读成"一列"。
                           for (final HomeView v in kHomeTabs) ...<Widget>[
                             if (v != kHomeTabs.first)
-                              SizedBox(height: s.withinGroup),
+                              SizedBox(height: s.gap),
                             _RailButton(
                               tooltip: _viewLabel(v),
                               selected: v == current,
@@ -103,32 +104,13 @@ class AppIconRail extends ConsumerWidget {
                               ),
                             ),
                           ],
-                          // 目的地 → 搜索：与「笔记 ↔ 画布」**同档**（组内间距），
-                          // 2026-11-01 用户定——搜索跟着四个目的地走同一个节奏，
-                          // 读成"第 5 项"；与底部工具的区隔交给下方那片大留白。
-                          SizedBox(height: s.withinGroup),
-                          // 搜索：图标开门，接全局搜索面板（Ctrl+K 同源）。
-                          // 2026-11-06 试过 238_搜索 / Remix search-line，最终回到
-                          // tabler.Search——整轨统一 stroke 型、线宽用
-                          // [Tokens.iconStrokeRail]（1.25，比全局 1.5 细一档）。
-                          // 图标 22（iconMd−2 光学补偿：放大镜闭环显大，比新建小一档）。
-                          _RailButton(
-                            tooltip: '搜索（Ctrl+K）',
-                            onTap: showSearchPalette,
-                            child: tabler.Search(
-                              height: Tokens.iconMd - 2,
-                              width: Tokens.iconMd - 2,
-                              strokeWidth: Tokens.iconStrokeRail,
-                              color: Bauhaus.ink(b),
-                            ),
-                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
-                // 组间：导航 → 底部工具组。矮窗时也保底这么多，不会贴住回收站。
-                SizedBox(height: s.betweenGroups),
+                // 统一间距：导航 → 底部工具组。矮窗时也保底这么多，不会贴住回收站。
+                SizedBox(height: s.gap),
                 // **全局回收站**（2026-10-18）：笔记 / 画布 / 灵感一个入口。
                 _RailButton(
                   tooltip: trashCount > 0 ? '回收站（$trashCount）' : '回收站',
@@ -140,8 +122,8 @@ class AppIconRail extends ConsumerWidget {
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
-                // 组内：底部工具组，与视图簇的组内节奏一致。
-                SizedBox(height: s.withinGroup),
+                // 统一间距：底部工具组。
+                SizedBox(height: s.gap),
                 // **设置**（2026-11-01 从标题栏 `trailing` 搬来）：全局配置放轨道**最底**。
                 // 轨道自上而下是"越往下越元级"——目的地导航（去哪）→ 回收站（内容终点）
                 // → 设置（应用配置）；与 VS Code / Obsidian / Notion 的左下角惯例一致。
@@ -191,52 +173,34 @@ Offset _railTooltipPosition(TooltipPositionContext c) {
   );
 }
 
-/// 轨道的**间距档位**（2026-11-01 响应式，方案 A）。
+/// 轨道的**统一间距**（2026-11-09 用户定）。
+///
+/// 不再分"组内 / 组间"：logo↔视图、视图之间、视图簇→底部工具、回收站↔设置，
+/// 以及纵向 padding **一律同一个值**。分组感交给中间那片弹性留白（高窗时
+/// 几百 px），比任何固定间距差都强；此前 `24:8` 的 3 倍差取消。
+///
+/// 图标 24 装在 36 的钮里 ⇒ **图标间空白 = 12 + gap**：
+/// - gap **12** → **24px**（ima 水平），hover 块间缝 12
+/// - gap 8 → 20px（微信水平）
 ///
 /// 断点按轨道**自身分到的高度**分，不是窗口高：轨道 = 窗口高 − 标题栏 32，
 /// 未来若加环缝 / 多窗口，只有这个高度是准的。
 ///
-/// ## 为什么 spacious 是 24 : 8 这一对
-/// 图标 24 装在 36 的钮里 ⇒ **图标间空白 = 12 + 组内间距**。组内 4 时只有 16
-/// （比微信侧栏的 20~24 挤），且 hover 底块之间只剩 4 的缝，视觉上糊成一片。
-///
-/// token 阶梯只有 `2/4/8/12/16/24/48`，要同时满足"不挤（≥8）"和"组间 ≥3 倍
-/// 组内（否则分组糊）"，可用的组合只有 `8 : 24`：
-/// - `4 : 16`（旧值）→ 挤
-/// - `8 : 16` → 2 倍，分组糊
-/// - `8 : 24` → **3 倍** ✅ 图标间空白 20（微信水平）、块间缝 8
-///
-/// 三档的最小内容高（**含纵向 padding 12**；搜索与目的地同档 8）：
-/// - spacious `24/8` ≈ **388**：默认 800 高（轨 768）与最低窗 560（轨 528）都落这档；
-/// - regular `16/8` ≈ **372**：高度被压掉一截时的退路；
-/// - compact `12/4` ≈ **344**：极端矮窗，再往下就靠视图簇内部滚动兜底。
+/// 三档阈值（2026-11-09 撤掉轨上搜索后重算：少一枚 36 钮 + 一个 12 gap
+/// ⇒ 每档 **−48**，原 384/356/328 → 336/308/280）：
+/// - spacious `12` ≈ **336**：默认 800 高（轨 768）与最低窗 560（轨 528）都落这档；
+/// - regular `8` ≈ **308**：高度被压掉一截时的退路；
+/// - compact `4` ≈ **280**：极端矮窗，再往下就靠视图簇内部滚动兜底。
 class _RailSpacing {
-  const _RailSpacing({required this.betweenGroups, required this.withinGroup});
+  const _RailSpacing(this.gap);
 
-  /// 组间：品牌↔目的地、目的地↔搜索、搜索↔底部工具。也是 `betweenGroups :
-  /// withinGroup` 的倍数关系——**≥3 倍**才能被眼睛读成"两簇"。
-  final double betweenGroups;
-
-  /// 组内：目的地之间、回收站↔设置。
-  final double withinGroup;
+  /// 全轨唯一间距值。
+  final double gap;
 
   static _RailSpacing forHeight(double h) {
-    if (h >= 388) {
-      return const _RailSpacing(
-        betweenGroups: Tokens.spaceXl, // 24
-        withinGroup: Tokens.spaceSm, // 8
-      );
-    }
-    if (h >= 372) {
-      return const _RailSpacing(
-        betweenGroups: Tokens.spaceLg, // 16
-        withinGroup: Tokens.spaceSm, // 8
-      );
-    }
-    return const _RailSpacing(
-      betweenGroups: Tokens.spaceMd, // 12
-      withinGroup: Tokens.spaceXs, // 4
-    );
+    if (h >= 336) return const _RailSpacing(Tokens.spaceMd); // 12
+    if (h >= 308) return const _RailSpacing(Tokens.spaceSm); // 8
+    return const _RailSpacing(Tokens.spaceXs); // 4
   }
 }
 
@@ -285,7 +249,8 @@ class _RailLogo extends StatelessWidget {
   }
 }
 
-/// 轨上单枚图标钮（搜索 / 四视图共用）：32 方、圆角 10、hover 铺 [AppTheme.hoverOverlay]、
+/// 轨上单枚图标钮（四视图 / 底部工具共用）：[Tokens.railButtonSize](36) 方、
+/// 圆角 10、hover 铺 [AppTheme.hoverOverlay]、
 /// 选中铺 2× selectedBg、焦点环、读屏 button/selected。图标子件 excludeSemantics
 /// （tabler 的 isImage 会并进节点读成"…，图像"），标签靠 Tooltip（同旧侧栏导航项口径）。
 class _RailButton extends StatefulWidget {
@@ -299,7 +264,7 @@ class _RailButton extends StatefulWidget {
   final Widget child;
   final String tooltip;
   final VoidCallback onTap;
-  /// 选中态：**仅视图导航传**（true=当前视图 / false=其它视图）；搜索等非导航钮不传
+  /// 选中态：**仅视图导航传**（true=当前视图 / false=其它视图）；工具钮不传
   /// （= null ⇒ 不声明 selected，读屏不会把它念成"未选中的导航项"）。
   final bool? selected;
 

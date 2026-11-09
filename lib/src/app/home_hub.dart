@@ -55,11 +55,11 @@ extension HomeViewIcon on HomeView {
   /// `CustomIcons.canvas` 彩色插画）。
   ///
   /// 描边统一用 [Tokens.iconStrokeRail]（1.25，2026-11-07 从全局 1.5 抽出），
-  /// 与轨上的搜索 / 回收站 / 设置同粗细；本文件其余 tabler 图标仍用 1.5。
+  /// 与轨上的回收站 / 设置同粗细；本文件其余 tabler 图标仍用 1.5。
   Widget icon(Color color, {double size = Tokens.iconMdSm}) => switch (this) {
     // 灵感：`tabler.Bulb`（灯泡 = 点子，2026-11-06 用户定，替掉收件箱）。
-    // 中间试过 238_扩写 / Remix ai-generate，都与同排 tabler 的线宽、造型不齐，
-    // 最终仍回到 tabler 家族，只换字形。
+    // 中间试过其它图标族，都与同排 tabler 的线宽、造型不齐，最终仍回到
+    // tabler 家族，只换字形。
     HomeView.timeline => tabler.Bulb(
       height: size,
       width: size,
@@ -81,7 +81,7 @@ extension HomeViewIcon on HomeView {
       colorFilter: ui.ColorFilter.mode(color, ui.BlendMode.srcIn),
     ),
     // 画布：`tabler.Swipe`（手势划动 = 白板操作，2026-11-06 用户定，替掉 Shape2）。
-    // 中间试过 238_生图 / Remix image-add-line，均因线宽不齐回到 tabler 家族。
+    // 中间试过其它图标族，均因线宽不齐回到 tabler 家族。
     HomeView.canvas => tabler.Swipe(
       height: size,
       width: size,
@@ -676,11 +676,11 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
 
     // **锚点矩形**（Flutter 官方 PopupMenu 口径，别再手算零宽度点）：
     // 此前用 `RelativeRect.fromLTRB(dx, dy, dx, dy)`（锚点 = 按钮左下角的
-    // 零宽度矩形）⇒ 菜单默认从按钮左缘**向右**展开；而漏斗钮贴着搜索框
-    // 右端、离窗口右缘很近，放不下时被框架"吸"到屏幕边缘，菜单整体甩到
-    // 按钮右边很远（用户实测"面板离搜索按钮很远"）。改成按钮相对屏幕的
-    // **四边缘矩形**后，框架按 left/right 哪边空间大决定展开方向——按钮
-    // 靠右 ⇒ **右缘对齐、向左展开**。
+    // 零宽度矩形）⇒ 菜单只从按钮左缘**向右**展开；按钮靠近窗口右缘时会被
+    // 框架"吸"到屏幕边缘，菜单整体甩到按钮右边很远（用户实测"面板离搜索
+    // 按钮很远"）。改成按钮相对屏幕的**四边缘矩形**后，框架按 left/right
+    // 哪边空间大自动决定展开方向——2026-11-09 工具行重排后漏斗钮在右簇中段
+    // （新建在最右），左右余量由框架自行判断，同样成立。
     //
     // ⚠️ 坐标必须用**全局坐标**（plain localToGlobal，不传 ancestor）：
     // 本应用菜单走 material_ui 的 Navigator，其 overlay renderBox 不是这个

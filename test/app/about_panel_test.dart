@@ -12,8 +12,8 @@ import 'package:sinan/src/theme/app_theme.dart';
 /// `_DialogRoute` 内部、而 `showAboutDialog` 又没有 `builder` 参数（SDK 签名里查过）
 /// ⇒ 想给面板加任何自绘层都无处下手。
 ///
-/// 换件最容易丢的是**功能**，所以这里钉五件：信息齐、玻璃档真在、**背后不压暗**、
-/// 能关、**许可入口还在**（那是官方对话框原来最值钱的一件）。
+/// 换件最容易丢的是**功能**，所以这里钉五件：信息齐、玻璃档真在、**背后压暗且
+/// 浓度与全 app 浮层一致**、能关、**许可入口还在**（那是官方对话框原来最值钱的一件）。
 void main() {
   Future<void> open(WidgetTester tester) async {
     await tester.pumpWidget(
@@ -64,36 +64,28 @@ void main() {
     );
   });
 
-  /// 2026-09-22 用户定：两处面板**背后的处理必须一致**。
-  /// `showDialog` 默认那道 `Colors.black54` 会把整屏压暗，而设置面板那层遮罩浓度已归 0
-  /// ⇒ 不统一的话，"同款面板"在两种幕布上观感差得比材质本身还大。
+  /// 2026-11-09 用户定：全 app 四个浮层**共用一套幕布**（设置 / 关于 / 回收站 /
+  /// 台账），都要有明确前后景。`showDialog` 默认那道 `Colors.black54` 是硬编码，
+  /// 这里改用与设置同源的 [floatScrimAlpha] + M3 scrim 色角色。
   ///
-  /// ⚠️ **要钉的是"不压暗"，不是"没有屏障"**：屏障仍在（点外面关闭、挡住误点）。
   /// 判据取自 SDK 的真实分支（`ModalRoute.buildModalBarrier`，`widgets/routes.dart`）：
-  /// ```
-  /// if (barrierColor != null && barrierColor!.alpha != 0 && !offstage) {
-  ///   barrier = AnimatedModalBarrier(color: ..., ...);   // 会压暗
-  /// } else {
-  ///   barrier = ModalBarrier(dismissible: ..., ...);     // 不带 color
-  /// }
-  /// ```
-  /// ⇒ 树里**出现 `AnimatedModalBarrier` 就说明有压暗**；透明时那个 `ModalBarrier`
-  /// 的 `color` 是 **null**（不是 `Colors.transparent`）。
-  testWidgets('背后**不压暗**（屏障留着、不带颜色）', (WidgetTester tester) async {
+  /// `barrierColor.alpha != 0` ⇒ 生成 [AnimatedModalBarrier]；等于 0 ⇒ 只剩不带
+  /// 颜色的 [ModalBarrier]。现在要钉的是**前者**，且浓度必须等于公共常量。
+  testWidgets('背后压暗且浓度与全 app 浮层一致', (WidgetTester tester) async {
     await open(tester);
 
-    expect(
+    final AnimatedModalBarrier barrier = tester.widget<AnimatedModalBarrier>(
       find.byType(AnimatedModalBarrier),
-      findsNothing,
-      reason:
-          '树里有 AnimatedModalBarrier ⇒ barrierColor 的 alpha ≠ 0，又压暗了'
-          '（`showDialog` 默认 black54），与设置面板不一致',
     );
-    final ModalBarrier barrier = tester.widget<ModalBarrier>(
+    expect(
+      barrier.color.value?.a,
+      closeTo(floatScrimAlpha, 0.01),
+      reason: '屏障浓度必须取 floatScrimAlpha（与设置 / 回收站 / 台账同源）',
+    );
+    final ModalBarrier modal = tester.widget<ModalBarrier>(
       find.byType(ModalBarrier).last,
     );
-    expect(barrier.color, isNull, reason: '屏障带了颜色 ⇒ 面板背后被压暗了');
-    expect(barrier.dismissible, isTrue, reason: '屏障必须仍可点外关闭（只去颜色，不去行为）');
+    expect(modal.dismissible, isTrue, reason: '屏障必须仍可点外关闭');
   });
 
   testWidgets('「关闭」关掉面板', (WidgetTester tester) async {

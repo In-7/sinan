@@ -17,7 +17,10 @@ import 'tokens.dart';
 /// - 中间 4（[Tokens.spaceXs]）把两个图标分开，**点击分界正好落在间距中点**：
 ///   左 25 宽主区、右 15 宽下拉区，各走各的动作；
 /// - 底色画在**外层**：指针落在任一处（或任一半有键盘焦点、或菜单展开）
-///   ⇒ **整块**一起亮 —— 外观是"一个按钮"，行为是两个动作；
+///   ⇒ **整块**一起亮 —— 外观是"一个按钮"；
+/// - **分区反馈**（2026-11-09 用户定，方案 A）：整块亮的同时，**当前那半再叠一层底**
+///   （hover）/ 更深一档（按下），并在两半之间显 1px 发丝 ⇒ 鼠标在哪半一眼可见。
+///   之前只有一个整块 `_hover`，两半反馈完全一样，实机"没提示也没触感"；
 /// - 两半仍**各自**是焦点站 + 语义按钮 ⇒ 键盘用户能分别触发。
 ///
 /// ⚠️ 为什么总宽是 40 而不是与筛选相同的 28：**装不下**。
@@ -74,7 +77,9 @@ class AppSplitIconButton extends StatefulWidget {
 }
 
 class _AppSplitIconButtonState extends State<AppSplitIconButton> {
-  bool _hover = false;
+  /// 两半**各自**的 hover（由 [_SplitHalf] 回调上来）⇒ 整块是否亮、发丝是否显。
+  bool _hoverPrimary = false;
+  bool _hoverSecondary = false;
   final FocusNode _primaryFocus = FocusNode();
   final FocusNode _secondaryFocus = FocusNode();
 
@@ -89,7 +94,7 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
   @override
   void initState() {
     super.initState();
-    // 键盘焦点落在任一半 ⇒ 整块亮（外观上它是一枚控件）。
+    // 键盘焦点落在任一半 ⇒ 整块亮 + 该半分区高亮。
     _primaryFocus.addListener(_onFocusChanged);
     _secondaryFocus.addListener(_onFocusChanged);
   }
@@ -109,77 +114,94 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Brightness b = theme.brightness;
-    final bool enabled = widget.onPrimary != null || widget.onSecondary != null;
-    // **整块**一起亮：hover 任一处 / 任一半有焦点 / 菜单展开。
+    final Brightness b = Theme.of(context).brightness;
+    final bool enabled =
+        widget.onPrimary != null || widget.onSecondary != null;
+    // **整块**一起亮：任一半 hover / 任一半有焦点 / 菜单展开。
     final bool lit =
         enabled &&
-        (_hover ||
+        (_hoverPrimary ||
+            _hoverSecondary ||
             _primaryFocus.hasFocus ||
             _secondaryFocus.hasFocus ||
             widget.secondaryActive);
 
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) {
-        if (enabled && !_hover) setState(() => _hover = true);
-      },
-      onExit: (_) {
-        if (_hover) setState(() => _hover = false);
-      },
-      child: AnimatedContainer(
-        duration: Tokens.durationFast,
-        curve: Curves.easeOut,
-        height: widget.height,
-        decoration: BoxDecoration(
-          color: lit ? AppTheme.hoverOverlay(b) : Colors.transparent,
-          borderRadius: BorderRadius.circular(Tokens.radiusButton),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _SplitHalf(
-              icon: widget.primaryIcon,
-              tooltip: widget.primaryTooltip,
-              onPressed: widget.onPrimary,
-              width: _primaryWidth,
-              height: widget.height,
-              iconSize: widget.iconSize,
-              focusNode: _primaryFocus,
-              leftRounded: true,
-              // 左边距与 [AppIconButton] 同值：图标左基线跟同排按钮对齐。
-              // 右侧剩下的就是半个间距（gap/2）。
-              padding: EdgeInsets.only(left: widget.edgePadding),
-              alignment: Alignment.centerLeft,
-            ),
-            _SplitHalf(
-              icon: widget.secondaryIcon,
-              tooltip: widget.secondaryTooltip,
-              onPressed: widget.onSecondary,
-              width: _secondaryWidth,
-              height: widget.height,
-              iconSize: widget.secondaryIconSize,
-              focusNode: _secondaryFocus,
-              leftRounded: false,
-              // 左 2 = 半个间距（把"间距 4"拆到两半各一半，分界落在中点）；
-              // 右 5 = 与主区同一右内边距，三角到控件右缘的留白也对齐。
-              padding: EdgeInsets.only(
-                left: widget.gap / 2,
-                right: widget.edgePadding,
+    return AnimatedContainer(
+      duration: Tokens.durationFast,
+      curve: Curves.easeOut,
+      height: widget.height,
+      decoration: BoxDecoration(
+        color: lit ? AppTheme.hoverOverlay(b) : Colors.transparent,
+        borderRadius: BorderRadius.circular(Tokens.radiusButton),
+      ),
+      child: Stack(
+        // 焦点环可能画到界外，别裁。
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _SplitHalf(
+                icon: widget.primaryIcon,
+                tooltip: widget.primaryTooltip,
+                onPressed: widget.onPrimary,
+                width: _primaryWidth,
+                height: widget.height,
+                iconSize: widget.iconSize,
+                focusNode: _primaryFocus,
+                leftRounded: true,
+                // 左边距与 [AppIconButton] 同值：图标左基线跟同排按钮对齐。
+                padding: EdgeInsets.only(left: widget.edgePadding),
+                alignment: Alignment.centerLeft,
+                focused: _primaryFocus.hasFocus,
+                onHoverChanged: (bool v) =>
+                    setState(() => _hoverPrimary = v),
               ),
-              alignment: Alignment.centerLeft,
+              _SplitHalf(
+                icon: widget.secondaryIcon,
+                tooltip: widget.secondaryTooltip,
+                onPressed: widget.onSecondary,
+                width: _secondaryWidth,
+                height: widget.height,
+                iconSize: widget.secondaryIconSize,
+                focusNode: _secondaryFocus,
+                leftRounded: false,
+                // 左 2 = 半个间距；右 5 = 与主区同一右内边距。
+                padding: EdgeInsets.only(
+                  left: widget.gap / 2,
+                  right: widget.edgePadding,
+                ),
+                alignment: Alignment.centerLeft,
+                focused: _secondaryFocus.hasFocus,
+                onHoverChanged: (bool v) =>
+                    setState(() => _hoverSecondary = v),
+              ),
+            ],
+          ),
+          // 1px 发丝：**hover 时才显**，落在两半的间距中点。用 Positioned 叠上去
+          // 而不是 Row 的 child ⇒ 不占布局宽度，控件总宽仍是 40（测试钉着）。
+          Positioned(
+            left: _primaryWidth,
+            top: Tokens.spaceXs,
+            bottom: Tokens.spaceXs,
+            width: 1,
+            child: IgnorePointer(
+              child: ColoredBox(
+                color: lit ? Bauhaus.line(b) : Colors.transparent,
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// 半区：只管**动作**（tooltip / 焦点 / 语义 / 手势 / 图标），
-/// **不画底色**——底色归外层统一（所以 hover 是整块亮，不是半块亮）。
-class _SplitHalf extends StatelessWidget {
+/// 半区：自己管 hover / 按下 / 焦点三种**分区反馈**，并画一层半透明底。
+///
+/// 父级已画整块底，这里再叠一层 ⇒ 当前半自然更深；按下再换更深一档。
+/// tooltip / 焦点 / 语义 / 手势也都在这里收口。
+class _SplitHalf extends StatefulWidget {
   const _SplitHalf({
     required this.icon,
     required this.tooltip,
@@ -191,6 +213,8 @@ class _SplitHalf extends StatelessWidget {
     required this.leftRounded,
     required this.alignment,
     required this.padding,
+    required this.focused,
+    required this.onHoverChanged,
   });
 
   final Widget icon;
@@ -202,68 +226,119 @@ class _SplitHalf extends StatelessWidget {
   final FocusNode focusNode;
 
   /// true ⇒ 外侧圆角在左（主区）；false ⇒ 在右（下拉区）。
-  /// 焦点环跟着外壳形状走，视觉上仍是"整块"的轮廓。
   final bool leftRounded;
 
   /// 图标在半区里的对齐（两半都是 `centerLeft`，边距靠 [padding] 精确控制）。
   final Alignment alignment;
 
-  /// 图标外侧的内缩：主区只缩左（[AppSplitIconButton.edgePadding]），
-  /// 下拉区缩左（半个间距）+ 右（[AppSplitIconButton.edgePadding]）。
+  /// 图标外侧的内缩：主区只缩左，下拉区缩左（半个间距）+ 右。
   final EdgeInsets padding;
+
+  /// 键盘焦点是否落在本半区（由父级持有 FocusNode 后传入）。
+  final bool focused;
+
+  /// 通知父级整块是否该亮 / 发丝是否该显。
+  final ValueChanged<bool> onHoverChanged;
+
+  @override
+  State<_SplitHalf> createState() => _SplitHalfState();
+}
+
+class _SplitHalfState extends State<_SplitHalf> {
+  bool _hover = false;
+  bool _pressed = false;
+
+  void _setHover(bool v) {
+    if (_hover == v) return;
+    setState(() => _hover = v);
+    widget.onHoverChanged(v);
+  }
+
+  void _setPressed(bool v) {
+    if (_pressed == v) return;
+    setState(() => _pressed = v);
+  }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool enabled = onPressed != null;
+    final Brightness b = theme.brightness;
+    final bool enabled = widget.onPressed != null;
     // 色源单点：与 [AppIconButton] 同一条（常驻 onSurfaceVariant，禁用降一档）。
     final Color ink = enabled
         ? theme.colorScheme.onSurfaceVariant
         : AppTheme.disabledInk(theme.colorScheme.onSurfaceVariant);
     final BorderRadius radius = BorderRadius.horizontal(
-      left: leftRounded
+      left: widget.leftRounded
           ? const Radius.circular(Tokens.radiusButton)
           : Radius.zero,
-      right: leftRounded
+      right: widget.leftRounded
           ? Radius.zero
           : const Radius.circular(Tokens.radiusButton),
     );
 
+    final bool active = enabled && (_hover || _pressed || widget.focused);
+    final Color halfBg = !active
+        ? Colors.transparent
+        : _pressed
+        // 按下：比 hover 再深一档（同项目 selectedBg 的口径）。
+        ? theme.colorScheme.onSurface.withValues(alpha: 0.10)
+        // hover / 键盘焦点：与父级整块底同色，叠一层 ⇒ 本半更深。
+        : AppTheme.hoverOverlay(b);
+
     return Tooltip(
-      message: tooltip,
-      child: FocusableActionDetector(
-        focusNode: focusNode,
-        enabled: enabled,
-        mouseCursor: SystemMouseCursors.click,
-        actions: <Type, Action<Intent>>{
-          ActivateIntent: CallbackAction<Intent>(
-            onInvoke: (_) {
-              onPressed?.call();
-              return null;
-            },
-          ),
-        },
-        child: Semantics(
-          button: true,
+      message: widget.tooltip,
+      // 全局 `TooltipTheme.waitDuration` 是 400ms（防误触），但这枚钮靠 hover
+      // 分区表达"两个动作" ⇒ 提示必须跟手。**只覆盖这一项、只覆盖这两枚**。
+      //
+      // ⚠️ `verticalOffset` / `preferBelow` **一律不传**：和 [AppIconButton]
+      // 一样吃主题默认（24 / true）。曾传 `verticalOffset: 8` ⇒ 两枚 tooltip
+      // 贴到按钮上、与同排搜索 / 筛选错开 16px（2026-11-09 实报）。
+      waitDuration: const Duration(milliseconds: 150),
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (_) => _setHover(true),
+        onExit: (_) => _setHover(false),
+        child: FocusableActionDetector(
+          focusNode: widget.focusNode,
           enabled: enabled,
-          label: tooltip,
-          child: FocusRing(
-            focusNode: focusNode,
-            // 焦点环只给键盘（同 [AppIconButton] 口径）。
-            keyboardOnly: true,
-            borderRadius: radius,
-            child: GestureDetector(
-              onTap: onPressed,
-              child: SizedBox(
-                width: width,
-                height: height,
-                child: Padding(
-                  padding: padding,
-                  child: Align(
-                    alignment: alignment,
-                    child: IconTheme(
-                      data: IconThemeData(color: ink, size: iconSize),
-                      child: icon,
+          mouseCursor: SystemMouseCursors.click,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<Intent>(
+              onInvoke: (_) {
+                widget.onPressed?.call();
+                return null;
+              },
+            ),
+          },
+          child: Semantics(
+            button: true,
+            enabled: enabled,
+            label: widget.tooltip,
+            child: FocusRing(
+              focusNode: widget.focusNode,
+              keyboardOnly: true,
+              borderRadius: radius,
+              child: GestureDetector(
+                onTap: widget.onPressed,
+                onTapDown: enabled ? (_) => _setPressed(true) : null,
+                onTapUp: enabled ? (_) => _setPressed(false) : null,
+                onTapCancel: enabled ? () => _setPressed(false) : null,
+                child: Container(
+                  width: widget.width,
+                  height: widget.height,
+                  decoration: BoxDecoration(
+                    color: halfBg,
+                    borderRadius: radius,
+                  ),
+                  child: Padding(
+                    padding: widget.padding,
+                    child: Align(
+                      alignment: widget.alignment,
+                      child: IconTheme(
+                        data: IconThemeData(color: ink, size: widget.iconSize),
+                        child: widget.icon,
+                      ),
                     ),
                   ),
                 ),

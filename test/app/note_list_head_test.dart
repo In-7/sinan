@@ -1,3 +1,5 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +21,8 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// **列表头**的四个交互（2026-10-21 用户定，复刻 ima 的头部）：
 ///
 /// ① 折叠钮在**内容卡左上角**，折叠（收到 0）/ 展开时**位置不变**；
-/// ② 工具行右端三枚：新建 / 搜索 / 筛选；
+/// ② 工具行右簇：搜索 / 筛选 / **新建**（新建最右，2026-11-09 用户定）；
+///    折叠钮是独立左侧区域，不参与这一排；
 /// ③ 点 ⌕ 展开输入框、输入即过滤；空查询时点外部可关，有词时点外部 /
 ///    点结果都不打断，只有关闭钮 / Esc 退出（退出即清空）；
 /// ④ `+ ▾` 的箭头**能开托盘**（`MenuAnchor` 不会自动响应点击，必须由按钮自己
@@ -294,7 +297,7 @@ void main() {
     final ProviderContainer container = await pumpList(tester);
     final int before = container.read(notesProvider).value!.length;
 
-    await tester.tap(find.byTooltip('新建笔记'));
+    await tester.tap(find.byTooltip('新建'));
     await tester.pumpAndSettle();
 
     expect(
@@ -330,7 +333,7 @@ void main() {
     // 所以按**中心**比（中心相同 = 视觉同一行），另外单独钉列表侧是 30 的可视盒。
     final Rect undo = tester.getRect(find.byTooltip('撤销（Ctrl+Z）'));
     final double undoCenter = undo.center.dy;
-    for (final String tip in <String>['新建笔记', '搜索', '更多新建选项', '收起列表']) {
+    for (final String tip in <String>['新建', '搜索', '更多', '收起列表']) {
       final Rect r = tester.getRect(find.byTooltip(tip));
       expect(
         r.height,
@@ -345,13 +348,108 @@ void main() {
     }
   });
 
+  testWidgets('工具行布局：折叠独立 | 右侧 搜索 → 筛选 → 新建', (tester) async {
+    // 2026-11-09 用户定：折叠钮是独立左侧区域；右簇整体靠右，顺序
+    // 搜索 / 筛选 / 新建（新建最右）。
+    await pumpList(tester);
+
+    final Rect collapse = tester.getRect(find.byTooltip('收起列表'));
+    final Rect search = tester.getRect(find.byTooltip('搜索'));
+    final Rect filter = tester.getRect(find.byTooltip('筛选与排序'));
+    final Rect create = tester.getRect(find.byTooltip('新建'));
+    final Rect createArrow = tester.getRect(find.byTooltip('更多'));
+    final Rect column = tester.getRect(find.byType(NoteListColumn));
+
+    expect(
+      search.left - collapse.right,
+      greaterThan(60),
+      reason: '折叠钮单独在左侧，右簇不贴着它',
+    );
+    expect(
+      filter.left - search.right,
+      closeTo(Tokens.spaceXxs, 1),
+      reason: '搜索与筛选相邻（同一右簇）',
+    );
+    expect(
+      create.left - filter.right,
+      closeTo(Tokens.spaceXxs, 1),
+      reason: '筛选与新建相邻（同一右簇）',
+    );
+    expect(
+      createArrow.right,
+      closeTo(column.right - Tokens.spaceSm, 1),
+      reason: '新建在最右端、贴右侧 spaceSm(8) 留白',
+    );
+  });
+
+  testWidgets('新建分半钮：tooltip 即时精简、hover 分区有反馈', (tester) async {
+    // 2026-11-09 方案 A：文案改「新建 / 更多」；全局 400ms 的 tooltip 延迟
+    // 在这两枚覆盖成 150ms；整块亮的同时当前半要再叠一层底。
+    await pumpList(tester);
+
+    for (final String tip in <String>['新建', '更多']) {
+      // ⚠️ `find.byTooltip` 命中的是 material_ui 的 `RawTooltip`（不是
+      // `Tooltip`），所以这里直接按类型谓词找 `Tooltip` 本身读 waitDuration。
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is Tooltip &&
+              w.message == tip &&
+              w.waitDuration == const Duration(milliseconds: 150) &&
+              // 位置参数不覆盖 ⇒ 与搜索 / 筛选同吃主题默认（曾传 8 贴到按钮上）。
+              w.verticalOffset == null &&
+              w.preferBelow == null,
+        ),
+        findsOneWidget,
+        reason: '「$tip」只覆盖等待时长，位置必须与搜索 / 筛选一致',
+      );
+    }
+    expect(find.byTooltip('新建笔记'), findsNothing, reason: '旧文案已撤');
+    expect(find.byTooltip('更多新建选项'), findsNothing, reason: '旧文案已撤');
+
+    // 半区自己的那层底：按 tooltip 子树找，并用宽度排除 FocusRing 的装饰盒。
+    Color? halfColor(String tip) {
+      final Finder f = find.descendant(
+        of: find.byTooltip(tip),
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              w.constraints != null &&
+              w.constraints!.maxWidth < Tokens.headerActionSize,
+        ),
+      );
+      expect(f, findsOneWidget, reason: '「$tip」半区只有一个带底的 Container');
+      return (tester.widget<Container>(f).decoration! as BoxDecoration).color;
+    }
+
+    expect(halfColor('新建'), Colors.transparent, reason: '初始左半无叠加底');
+    expect(halfColor('更多'), Colors.transparent, reason: '初始右半无叠加底');
+
+    final Rect left = tester.getRect(find.byTooltip('新建'));
+    final Rect right = tester.getRect(find.byTooltip('更多'));
+    final TestGesture gesture = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.addPointer(location: left.center);
+    await tester.pump();
+
+    expect(halfColor('新建'), isNot(Colors.transparent), reason: 'hover 左半 ⇒ 左半叠底');
+    expect(halfColor('更多'), Colors.transparent, reason: '右半不该跟着亮');
+
+    await gesture.moveTo(right.center);
+    await tester.pump();
+    expect(halfColor('新建'), Colors.transparent, reason: '左半恢复');
+    expect(halfColor('更多'), isNot(Colors.transparent), reason: 'hover 右半 ⇒ 右半叠底');
+  });
+
   testWidgets('托盘：点箭头能开（新建笔记 / 新建画布 / 导入）', (tester) async {
     await pumpList(tester);
 
     // 先确认托盘是**收起**的（菜单项不在树上）。
     expect(find.text('导入 Markdown…'), findsNothing);
 
-    await tester.tap(find.byTooltip('更多新建选项'));
+    await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
 
     // ⚠️ 这条是返工闸门：`MenuAnchor` 不会自动响应点击 ⇒ 箭头必须自己 open。
@@ -381,7 +479,7 @@ void main() {
     }
     // 新建 / 更多选项：两半同属**一枚**分半钮。
     expect(find.byType(AppSplitIconButton), findsOneWidget);
-    for (final String tip in <String>['新建笔记', '更多新建选项']) {
+    for (final String tip in <String>['新建', '更多']) {
       expect(
         find.ancestor(
           of: find.byTooltip(tip),

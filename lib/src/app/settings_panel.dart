@@ -106,24 +106,24 @@ extension _SettingsSectionSpec on _SettingsSection {
   };
 }
 
-/// 遮罩**颜色**的浓度。现值 **0 = 不压暗**（2026-09-22 用户定）。
+/// 全 app **浮层遮罩**浓度（2026-11-09 用户定）：**0.32**。
+///
+/// 四个浮层**共用一套**：设置 / 关于 / 回收站 / 处理台账。曾按"设置要看见背后
+/// 实时变化"分过档、也试过全 0（不压暗）；最终定为统一压暗到 M3 对话框同档
+/// （`Colors.black54` 的 alpha ≈ 0.33）⇒ 所有浮层都有**明确前后景**，而背后的
+/// 明度变化（改主题 / 字号 / 宽度）仍看得清。
 ///
 /// ## 这里有两件事，别混
-/// 1. **手势层**（`_SettingsOverlay` 里那层 `Positioned.fill` + `GestureDetector`）：
-///    **必须有**——它负责"点面板外面关闭"，还挡住误点到背后控件。去掉它，
-///    桌面端用户点外面**毫无反应**，像卡死。
-/// 2. **压暗的颜色**：**可以不要**——本常量就是它，现在为 `0`（那层只剩行为、没有像素）。
-///    压暗原本承担"聚焦 + 帮面板浮起"；取消后**面板浮起要由自己承担**（三件套，
-///    或轻拟态的底差 / 光影 / 内边）。
+/// 1. **手势层**（`_SettingsOverlay` 里 `Positioned.fill` + `GestureDetector`）：
+///    **必须有**——负责"点面板外关闭"+ 挡住误点到背后控件。去掉它，桌面端
+///    点外面毫无反应，像卡死。
+/// 2. **压暗的颜色**：本常量给。现在 0.32 ⇒ 这一层既有行为、也有像素。
 ///
-/// ⚠️ **公开**（不是私有 `_`）：早期体检表拿"遮罩压在最坏内容上"当面板的合成底算过
-/// 对比度，那个值必须与这里同源。
-/// 📌 **现在体检表不再用它**（2026-09-22 面板改成**实色** ⇒ 背后那层影响不到面板，
-/// 闸门按"面板色 + 光泽顶端"算就够）。保留公开、并在手势层里取它，是因为浓度随时
-/// 可能被调回去——**调回去时体检表要跟着改回带遮罩的算式**。
-/// 📌 **它曾经是承重的**：面板底还是半透（α 0.88）时，暗色下副标题靠这 0.4 遮罩才从
-/// "不遮罩的 −55.2"回到 −61.7（过 60 档）。
-const double settingsScrimAlpha = 0;
+/// ⚠️ **公开**（不是私有 `_`）：四处浮层与体检表都从这里取值，保证浓度同源。
+/// 📌 面板底是**实色** [AppTheme.floatSurface] ⇒ 背后压暗影响不到面板上的文字
+/// 对比度，`apca_audit_test` 仍按"面板色 + 光泽顶端"算，不用改算式。
+/// 早先面板半透（α 0.88）时这层遮罩曾经承重（暗色副标题靠 0.4 才过 60 档）。
+const double floatScrimAlpha = 0.32;
 
 /// 弹出设置面板：悬浮卡片 + 背后半透明遮罩，**非模态路由**。
 ///
@@ -230,21 +230,22 @@ class _SettingsOverlayState extends State<_SettingsOverlay>
     final Size screen = MediaQuery.sizeOf(context);
     return Stack(
       children: <Widget>[
-        // 手势层：点击关闭（点卡片内不触发——卡片在其上层且吸收事件）。
-        // ⚠️ 它是**行为**，不是视觉：颜色浓度由 [settingsScrimAlpha] 给，现在是 **0**
-        // （2026-09-22 用户定"不要压暗"）⇒ 这一层只剩"点外关闭 + 挡住误点"。
-        // 别因为"看不见"就把它删了——删掉就是"点外面没反应"。
+        // 手势层：**行为**（点外关闭 + 挡误点）与**视觉**（scrim 0.32）都在这层，
+        // 别因为它是"透明层"就删——删掉就是点外面没反应。
+        // [ExcludeSemantics]：这层是全屏手势靶，不该在读屏里产生任何节点。
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onClose,
-            child: FadeTransition(
-              opacity: _fade,
-              child: ColoredBox(
-                // 用 M3 的 scrim **色角色**而不是 `Colors.black`：默认值就是黑，
-                // 观感不变，但不再是硬编码色（换主题时 scrim 若被定制会跟着走）。
-                color: Theme.of(context).colorScheme.scrim
-                    .withValues(alpha: settingsScrimAlpha),
+          child: ExcludeSemantics(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onClose,
+              child: FadeTransition(
+                opacity: _fade,
+                child: ColoredBox(
+                  // 用 M3 的 scrim **色角色**而不是 `Colors.black`：默认值就是黑，
+                  // 观感不变，但不再是硬编码色（换主题时 scrim 若被定制会跟着走）。
+                  color: Theme.of(context).colorScheme.scrim
+                      .withValues(alpha: floatScrimAlpha),
+                ),
               ),
             ),
           ),
@@ -366,8 +367,8 @@ class _SettingsCardState extends ConsumerState<_SettingsCard> {
     //    🔧 要开回来先按 [AppTheme.floatBlurSigma] 实测（profile + `F9` 看 p90）。
     // ④ 描边 + 双层投影由容器自带（浮层三件套），别另加。
     //
-    // ⚠️ 合成色：**底是实色 ⇒ 背后是什么都影响不到面板**（遮罩浓度 `settingsScrimAlpha`
-    //   也已归 0，见其说明）⇒ 面板上的对比度只由"面板色 + 光泽"决定。
+    // ⚠️ 合成色：**底是实色 ⇒ 背后是什么都影响不到面板**（遮罩 [floatScrimAlpha]
+    //   只压暗背后、不参与面板合成）⇒ 面板上的对比度只由"面板色 + 光泽"决定。
     //   实测：底 `#FFFFFF` / `#2F2F2F`，**光泽顶端**（白 5%）`#FFFFFF` / `#464646`
     //   ⇒ 面板上 `onSurface` Lc **104.3 / −80.8**、`onSurfaceVariant` **93.4 / −62.1**
     //   （体检表"玻璃面板 光泽顶端"两行钉着）。
@@ -915,11 +916,13 @@ void showAboutPanel(BuildContext context) {
   unawaited(
     showDialog<void>(
       context: context,
-      // ⚠️ **不压暗**（2026-09-22 用户定）：默认的 `Colors.black54` 会把整屏压暗，
-      // 而设置面板那层遮罩浓度已归 0 ⇒ 两处面板**背后的处理也必须一致**，
-      // 否则"同款面板"在两种幕布上观感差得比材质本身还大。
-      // 📌 屏障**仍在**（只是不带颜色）：点外面关闭、挡住误点，行为与默认完全一样。
-      barrierColor: Colors.transparent,
+      // ⚠️ **与全 app 浮层同一套幕布**（2026-11-09）：不用 `showDialog` 默认的
+      // `Colors.black54` 硬编码，而是取与设置 / 回收站 / 台账同源的
+      // [floatScrimAlpha] + M3 scrim 色角色 ⇒ 四种浮层前后景一致。
+      // 📌 屏障的**行为**（点外关闭、挡误点）由框架保证，颜色只管视觉。
+      barrierColor: Theme.of(
+        context,
+      ).colorScheme.scrim.withValues(alpha: floatScrimAlpha),
       builder: (BuildContext _) => const Dialog(
         backgroundColor: Colors.transparent,
         // elevation 归零有两层含义：不叠 M3 的 surface tint（会把底染偏），

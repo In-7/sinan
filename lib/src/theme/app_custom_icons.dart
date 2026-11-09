@@ -6,16 +6,16 @@ import 'tokens.dart';
 /// **外引图标**（单枚引进，不走 `tabler_icons_next` 包）。
 ///
 /// 三类资产都放 `assets/icons/custom/`（pubspec `flutter.assets` 已注册）：
-/// - **Fluent UI System Icons**（2026-10-28 引入，Regular 24 档）：`search` /
-///   `panel-left` / `note-add` / `filter` / `chevron-down` / `chevron-up` /
-///   `dismiss` 七枚。**填充型**路径（源文件写死 `fill="#212121"`），靠
-///   [ColorFilter.srcIn] 整体染色 ⇒ 与 tabler 一样跟随前景色。
-///   图形占满 24 画板（视觉 ≈ 框的 83%），比 tabler 的 ~75% 更饱满。
-///   ⚠️ 2026-10-15 起的 lucide 线形版（描边制、1.5 描边）在 18px 小框下实得仅
-///   1.125px ⇒ 低 DPR 屏幕发虚；Fluent 是**填充型**，栅格化时对亚像素不敏感
-///   ⇒ 清晰。2026-10-28 整族迁入（当时弃用 lucide）。图标轨 2026-11-06
-///   试过 238 / Remix 后回到 **tabler 统一**（stroke 型、线宽 1.5px）；文件末尾
-///   的 238 / Remix 方法**留存未用**，供以后对比 / 回退，调用点不要动它们。
+/// - **Fluent UI System Icons**（2026-10-28 引入，混用 24 / 28 / 32 档 Regular
+///   与 Filled）：`search` / `panel-left-default` / `tab-add` / `add` /
+///   `caret-down` / `caret-up` / `filter` / `dismiss` 八枚。**填充型**路径
+///   （源文件写死 `fill="#212121"`），靠 [ColorFilter.srcIn] 整体染色 ⇒ 与
+///   tabler 一样跟随前景色；不同档位的线宽换算见各方法注释。
+///   ⚠️ 2026-10-15 起的 lucide 线形版（1.5 描边）在 18px 小框下实得仅
+///   1.125px ⇒ 低 DPR 发虚；Fluent 是**填充型**，栅格化对亚像素不敏感 ⇒ 清晰。
+///   2026-10-28 整族迁入（当时弃用 lucide）。图标轨 2026-11-06 起统一用
+///   **tabler**（stroke 型、`Tokens.iconStrokeRail` 1.25），本类只服务列表头 /
+///   新建菜单 / 插画，**不参与图标轨**。
 /// - **下载图标（197_* 系列）**：`197_编辑-19` / `197_画笔`（2026-10-15 用户定，落在
 ///   新建菜单「笔记 / 画布」两项）。**固定蓝黑双色**（非 currentColor）——必须随前景
 ///   染 [color]，否则深色底下黑色笔画会消失。
@@ -137,47 +137,4 @@ class CustomIcons {
 
   /// **笔记**：`书籍.svg`（2026-09-25 用户定）。彩色插画，原样渲染。
   static Widget book({double size = Tokens.iconMd}) => _asset('书籍', size: size);
-
-  // ── 238_* 系列（单色填充，**1024 画板**，2026-11-01）— **留存未用 / 可回退** ──
-  //
-  // ⚠️ 这组的坐标系和 Fluent/tabler 完全不同：**1024 画板**、图形只占 ~58%
-  // （Fluent 24 档占 ~80%）。同样渲染到 24 框时，视觉只有 **≈14px**，比 tabler
-  // 那批（≈18px）小一圈；要视觉齐平得给到 ~30。改 size 前先看这条。
-  //
-  // 三枚都是纯 path（无 `fill` 属性 ⇒ 默认黑），`srcIn` 染色正常。
-
-  /// **导航搜索**：`238_搜索`（1024 画板）。
-  /// ⚠️ **只换最左图标轨那一枚**；页内搜索框的放大镜、左侧轨搜索仍用 Fluent
-  /// [search]，别一起改。
-  static Widget search238({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('238_搜索', size: size, color: color);
-
-  /// **灵感（扩写）**：`238_扩写`（1024 画板）。图标轨「灵感」目的地。
-  static Widget expand238({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('238_扩写', size: size, color: color);
-
-  /// **画布（生图）**：`238_生图`（1024 画板）。图标轨「画布」目的地。
-  static Widget image238({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('238_生图', size: size, color: color);
-
-  // ── Remix Icon（line 版，2026-11-06）— **留存未用 / 可回退** ────────────
-  //
-  // 三枚都是 **24 画板 + fill 型**（line 版也是 `fill` 路径，不是 stroke），
-  // ⚠️ 所以**粗细仍不可调**；但线宽 **2 单位 / 24 画板** ⇒ 24 框下实得
-  // **2.0px**，DPR 1.0 也是 2 个物理像素，比 238 的 0.94px 清楚得多。
-  // 图形占板 ~83%（2 → 22），24 框下视觉 ≈20px，比 tabler 略大。
-  //
-  // 238 三枚方法**保留供回退**：想换回只需把调用点的方法名改回去。
-
-  /// **导航搜索**：Remix `search-line`。只换最左图标轨那一枚。
-  static Widget remixSearch({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('remix-search', size: size, color: color);
-
-  /// **灵感**：Remix `ai-generate`（Editor）。星星 + 生成语义。
-  static Widget remixInspire({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('remix-inspire', size: size, color: color);
-
-  /// **画布**：Remix `image-add-line`（Media）。图片 + 加号 = 生图。
-  static Widget remixImage({double size = Tokens.iconMd, Color? color}) =>
-      _stroke('remix-image', size: size, color: color);
 }

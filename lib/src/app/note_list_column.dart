@@ -38,7 +38,8 @@ const double _kHeadBandPadding = 4;
 /// 动作钮热区：与编辑页撤销 / 重做 / 双耳同一个 [Tokens.headerActionSize]（30）。
 const double _kHeadButtonSize = Tokens.headerActionSize;
 
-/// 列表头**工具行**左内缩：悬浮折叠钮（5 内缩 + 30 钮）+ 5 呼吸 = 40。
+/// 列表头**工具行**左内缩：悬浮折叠钮（4 内缩 + 28 钮）+ 4 呼吸 = 36。
+/// ⚠️ 这块只给折叠钮让位；右簇（搜索 / 筛选 / 新建）靠右对齐，不占左侧。
 ///
 /// 钮本体不在列表里——它悬浮在内容卡左上角（`home_screen.dart` 的 Stack 顶层，
 /// 折叠时不随列宽移动），这里只是给它让位。
@@ -51,7 +52,8 @@ const double _kHeadToolInset =
 /// 日历整卡显示，也不经过这里。
 ///
 /// - 头（2026-10-21 用户定，复刻 ima）：**第一行 = 工具行**（左留位给悬浮折叠钮，
-///   右端 新建 / 搜索 / 筛选 三枚）；**第二行 = 视图名 + 篇数**（从按钮行下移）。
+///   右簇 搜索 / 筛选 / **新建**〔新建最右，2026-11-09 用户定〕）；折叠钮是
+///   独立区域、不参与这一排。**第二行 = 视图名 + 篇数**（从按钮行下移）。
 /// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按排序 + 形态 + 标签过滤），
 ///   再叠一层**页内搜索**（标题 + 摘要内存过滤，见 [_NoteListColumnState]）。
 /// - 行：点 / Enter 开（走 [locateProvider]，`focus` 默认 false ⇒ 焦点不被编辑器抢走）；
@@ -265,14 +267,18 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // 第一行 = **工具行**（2026-10-21 用户定）：右端三枚动作钮（新建 / 搜索 /
-        // 筛选）；点「搜索」整行换成输入框。左留位给悬浮折叠钮（见 [_kHeadToolInset]）。
+        // 第一行 = **工具行**：折叠钮悬浮在卡左上角（独立区域、位置不动，
+        // 本行只给它让位）；**右簇整体靠右** = 搜索 / 筛选 / 新建（新建最右，
+        // 2026-11-09 用户定）。点「搜索」整行换成输入框，右簇一起让位。
         Padding(
-          // 上/下留白 = 编辑页按钮带同值；右侧取 spaceMd（与编辑页右留白一致）。
+          // 上/下留白 = 编辑页按钮带同值；右侧取 spaceSm(8)——2026-11-09 用户定：
+          // 比编辑页右留白（spaceMd 12）再收 4，新建钮更贴右缘。
+          // ⚠️ 这是**有意偏差**，别按"与编辑页一致"改回去；同时与下方第二行
+          // 「视图名 + 篇数」的右留白（也是 8）对齐。
           padding: const EdgeInsets.fromLTRB(
             _kHeadToolInset,
             _kHeadBandPadding,
-            Tokens.spaceMd,
+            Tokens.spaceSm,
             _kHeadBandPadding,
           ),
           child: AnimatedSwitcher(
@@ -298,12 +304,10 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                   )
                 : Row(
                     key: const ValueKey<String>('list-head-actions'),
+                    // **右簇整体靠右**；折叠钮悬浮在卡左上角、是独立区域，不参与
+                    // 这一排（2026-11-09 用户定：搜索 / 筛选在右、新建挪到最右）。
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
-                      // 新建（2026-10-21 复刻 ima 的 `+ ▾`）：左半 `+` 直建**当前页
-                      // 类型**，右半 `▾` 开托盘（新建笔记 / 新建画布 / 导入…）。
-                      _ListNewButton(view: view),
-                      const SizedBox(width: Tokens.spaceXxs),
                       // 与展开后的搜索框**同组**（[TapRegion]）：点「⌕」开搜索的那
                       // 一下不算"点外部"，否则刚展开就自己关掉。
                       TapRegion(
@@ -312,15 +316,18 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                           tooltip: '搜索',
                           // 收起搜索后焦点回这枚钮（键盘用户不用再 Tab 一圈）。
                           focusNode: _searchButtonFocus,
-                          // 列表顶工具行 2026-10-25 换 Fluent（仅此行，见 [CustomIcons]）。
+                          // 列表顶工具行 2026-10-25 换 Fluent（见 [CustomIcons]）。
                           icon: CustomIcons.search(size: Tokens.iconSm),
                           onPressed: _openSearch,
                         ),
                       ),
                       const SizedBox(width: Tokens.spaceXxs),
-                      // 筛选：字形与宿主已由 [FilterMenuButton] 单点（两处调用
-                      // 点同为 Fluent 漏斗 + [AppIconButton]），这里不再传 icon。
+                      // 筛选 / 排序：字形与宿主已由 [FilterMenuButton] 单点（两处
+                      // 调用点同为 Fluent 漏斗 + [AppIconButton]），这里不再传 icon。
                       const FilterMenuButton(),
+                      const SizedBox(width: Tokens.spaceXxs),
+                      // 新建（`+ ▾`）：左半直建当前页类型，右半开托盘；**最右端**。
+                      _ListNewButton(view: view),
                     ],
                   ),
           ),
@@ -564,8 +571,10 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
       builder: (BuildContext context, MenuController controller, Widget? _) =>
           AppSplitIconButton(
             // 左半 = 直接新建（当前页类型）；右半 = 开托盘。两半同属一枚
-            // 控件外壳，hover 各自亮各自那半（2026-10-28 用户定）。
-            primaryTooltip: canvasPage ? '新建画布' : '新建笔记',
+            // 控件外壳，整块亮 + 当前半再加深（2026-11-09 方案 A）。
+            // 2026-11-09 用户定：tooltip 统一「新建」，两页不再写死类型——
+            // 按钮本来就是"建当前页类型"，画布页也不必重复提示。
+            primaryTooltip: '新建',
             // 列表顶新建钮 2026-10-28 换 Fluent `tab-add`（32 档 Light，
             // 用户指定）：标签页 + 圆形加号，与搜索 / 筛选同属 Fluent 家族。
             primaryIcon: CustomIcons.tabAdd(size: Tokens.iconSm),
@@ -574,7 +583,7 @@ class _ListNewButtonState extends ConsumerState<_ListNewButton> {
             ),
             // 菜单开着时三角上翻 + 整块保持激活底色（"这是个下拉"的线索）。
             // 8px 实心三角：只当角标，不再是一枚"图标"（[Tokens.iconMicro]）。
-            secondaryTooltip: '更多新建选项',
+            secondaryTooltip: '更多',
             secondaryIcon: _menuOpen
                 ? CustomIcons.caretUp(size: Tokens.iconMicro)
                 : CustomIcons.caretDown(size: Tokens.iconMicro),

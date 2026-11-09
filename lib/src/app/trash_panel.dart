@@ -10,7 +10,7 @@ import '../domain/trash.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'providers.dart';
-import 'settings_panel.dart' show appNavigatorKey, settingsScrimAlpha;
+import 'settings_panel.dart' show appNavigatorKey, floatScrimAlpha;
 import 'stream_delete.dart' show showStreamConfirm;
 
 /// **全局回收站浮层**（2026-10-18）：笔记 / 画布 / 灵感 统一一个入口。
@@ -93,15 +93,19 @@ class _TrashOverlayState extends State<_TrashOverlay>
     final Size screen = MediaQuery.sizeOf(context);
     return Stack(
       children: <Widget>[
+        // 与全 app 浮层同一套幕布（[floatScrimAlpha] 0.32）。[ExcludeSemantics]：
+        // 这层是全屏手势靶，不该在读屏里产生节点；行为（点外关闭）不能删。
         Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onClose,
-            child: FadeTransition(
-              opacity: _fade,
-              child: ColoredBox(
-                color: Theme.of(context).colorScheme.scrim.withValues(
-                  alpha: settingsScrimAlpha,
+          child: ExcludeSemantics(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onClose,
+              child: FadeTransition(
+                opacity: _fade,
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.scrim.withValues(
+                    alpha: floatScrimAlpha,
+                  ),
                 ),
               ),
             ),
