@@ -319,8 +319,8 @@ class HomeScreen extends ConsumerWidget {
                           // 灵感页没有列表列 ⇒ 不渲染（按了什么都不动的钮不如没有）。
                           if (view != HomeView.timeline)
                             const Positioned(
-                              left: _kCollapseButtonInset,
-                              top: _kCollapseButtonInset,
+                              left: _kCollapseButtonLeft,
+                              top: _kCollapseButtonTop,
                               child: FocusTraversalOrder(
                                 order: NumericFocusOrder(15),
                                 child: SidebarCollapseButton(),
@@ -747,11 +747,22 @@ class _AskTitleBarButton extends ConsumerWidget {
 
 
 
-/// 折叠钮在内容卡左上角的**内缩**（4px）：一是卡片左上角是 [_kPanelRadius] 的
+/// 折叠钮在内容卡左上角的**纵向内缩**（4px）：一是卡片左上角是 [_kPanelRadius] 的
 /// 圆角、钮贴边会被切掉一角；二是**与编辑页按钮带的上留白同值**
 ///（`note_editor_view_appflowy` 的 `_kHeaderActionTopPadding` = 4）⇒ 列表头这枚钮
 /// 与详情页的撤销 / 重做落在**同一条竖向位置**（2026-10-22 用户定）。
-const double _kCollapseButtonInset = 4;
+const double _kCollapseButtonTop = 4;
+
+/// 折叠钮**热区**的横向内缩：**7** = 标题左留白 12 − 图标在 28 热区里居中的 5。
+///
+/// 2026-11-10 用户按截图实报"没对齐"：要对齐的是**图标的左缘**，不是热区左缘。
+/// 热区 28、图标 18 ⇒ 居中后左右各 5，所以热区要从 7 起算才对得上标题的 12。
+///
+/// ⚠️ 与纵向**拆开**：纵向必须留在 4（对齐按钮带的中心线），不能跟着变。
+/// 📌 `note_list_column.dart` 的 `_kHeadToolInset` 依赖同一算式（7 + 28 + 4 = 39），
+/// 改这里要同步那边，否则工具行 / 搜索框会压到钮上。
+const double _kCollapseButtonLeft =
+    Tokens.spaceMd - (Tokens.headerActionSize - Tokens.iconSm) / 2;
 
 /// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内列表列；60 轨
 /// 常驻不折）。点按切 [listCollapsedProvider]——本钮与 [HomeScreen] 卡内列表列

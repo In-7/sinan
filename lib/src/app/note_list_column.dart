@@ -33,13 +33,31 @@ const double _kHeadBandPadding = 4;
 /// 动作钮热区：与编辑页撤销 / 重做 / 双耳同一个 [Tokens.headerActionSize]（30）。
 const double _kHeadButtonSize = Tokens.headerActionSize;
 
-/// 列表头**工具行**左内缩：悬浮折叠钮（4 内缩 + 28 钮）+ 4 呼吸 = 36。
-/// ⚠️ 这块只给折叠钮让位；右簇（搜索 / 筛选 / 新建）靠右对齐，不占左侧。
+/// 列表头**工具行**左内缩：悬浮折叠钮（**热区**左 7〔= 标题左留白 12 − 图标
+/// 居中偏移 5〕+ 28 钮）+ 4 呼吸 = **39**。
+/// ⚠️ 这块只给折叠钮让位；右簇（搜索 / 新建）靠右对齐，不占左侧。
+/// 📌 搜索框展开时也从这里起算 ⇒ 必须 ≥ 折叠钮热区右缘（7 + 28 = 35），
+/// 否则输入框会压住折叠钮。
 ///
 /// 钮本体不在列表里——它悬浮在内容卡左上角（`home_screen.dart` 的 Stack 顶层，
 /// 折叠时不随列宽移动），这里只是给它让位。
 const double _kHeadToolInset =
-    _kHeadBandPadding + _kHeadButtonSize + _kHeadBandPadding;
+    Tokens.spaceMd -
+    (Tokens.headerActionSize - Tokens.iconSm) / 2 +
+    _kHeadButtonSize +
+    _kHeadBandPadding;
+
+/// 列表头**第二行右侧内缩**（2026-11-10 用户定）：把漏斗图标中心对齐到
+/// 第一行新建 split 的「＋」中心。
+///
+/// 账（都从行右缘往左量）：
+/// - 「＋」中心 = 8（第一行右留白）+ 38（split 总宽）− 13（＋中心距控件左缘）
+///   = **33**；
+/// - 漏斗中心 = R + 10（热区 20 的半宽）；
+/// - 两者相等 ⇒ **R = 23**。
+///
+/// ⚠️ 改 split 的宽度 / 主图标留白，或改漏斗热区时，这个数要跟着重算。
+const double _kHeadSecondRowInset = 23;
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
 /// （编辑器 / 画布 / 空态）。服务「全部 / 笔记 / 画布 / 收藏」四个主从视图——
@@ -47,8 +65,8 @@ const double _kHeadToolInset =
 /// 日历整卡显示，也不经过这里。
 ///
 /// - 头（2026-10-21 用户定，复刻 ima）：**第一行 = 工具行**（左留位给悬浮折叠钮，
-///   右簇 搜索 / 筛选 / **新建**〔新建最右，2026-11-09 用户定〕）；折叠钮是
-///   独立区域、不参与这一排。**第二行 = 视图名 + 篇数**（从按钮行下移）。
+///   右簇 搜索 / **新建**〔新建最右〕）；**第二行 = 视图名 + 篇数 + 筛选**
+///   （2026-11-09 筛选从工具行搬来本行右端）。折叠钮是独立左侧区域。
 /// - 体 = 当前视图的笔记行（[homeItemsProvider]，已按视图范围 + 排序 + 标签过滤），
 ///   再叠一层**页内搜索**（标题 + 摘要内存过滤，见 [_NoteListColumnState]）。
 /// - 行：点 / Enter 开（走 [locateProvider]，`focus` 默认 false ⇒ 焦点不被编辑器抢走）；
@@ -262,13 +280,15 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // 第一行 = **工具行**：折叠钮悬浮在卡左上角（独立区域、位置不动，
-        // 本行只给它让位）；**右簇整体靠右** = 搜索 / 筛选 / 新建（新建最右，
-        // 2026-11-09 用户定）。点「搜索」整行换成输入框，右簇一起让位。
+        // 本行只给它让位）；**右簇整体靠右** = 搜索 / 新建（新建最右，
+        // 2026-11-09 用户定；筛选已下移到第二行）。点「搜索」整行换成输入框，
+        // 右簇一起让位。
         Padding(
           // 上/下留白 = 编辑页按钮带同值；右侧取 spaceSm(8)——2026-11-09 用户定：
           // 比编辑页右留白（spaceMd 12）再收 4，新建钮更贴右缘。
-          // ⚠️ 这是**有意偏差**，别按"与编辑页一致"改回去；同时与下方第二行
-          // 「视图名 + 篇数」的右留白（也是 8）对齐。
+          // ⚠️ 这是**有意偏差**，别按"与编辑页一致"改回去。
+          // 📌 第二行右留白**不是** 8，而是 [_kHeadSecondRowInset](23)——为了把
+          // 漏斗图标中心对齐到这里的「＋」中心，两行右缘本来就不齐。
           padding: const EdgeInsets.fromLTRB(
             _kHeadToolInset,
             _kHeadBandPadding,
@@ -299,7 +319,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                 : Row(
                     key: const ValueKey<String>('list-head-actions'),
                     // **右簇整体靠右**；折叠钮悬浮在卡左上角、是独立区域，不参与
-                    // 这一排（2026-11-09 用户定：搜索 / 筛选在右、新建挪到最右）。
+                    // 这一排（2026-11-09 用户定：搜索在右、新建最右；筛选已移到
+                    // 下方「视图名 + 篇数」行的右端，见下一段）。
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: <Widget>[
                       // 与展开后的搜索框**同组**（[TapRegion]）：点「⌕」开搜索的那
@@ -316,23 +337,25 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                         ),
                       ),
                       const SizedBox(width: Tokens.spaceXxs),
-                      // 筛选 / 排序：字形与宿主已由 [FilterMenuButton] 单点（两处
-                      // 调用点同为 Fluent 漏斗 + [AppIconButton]），这里不再传 icon。
-                      const FilterMenuButton(),
-                      const SizedBox(width: Tokens.spaceXxs),
                       // 新建（`+ ▾`）：左半直建当前页类型，右半开托盘；**最右端**。
                       _ListNewButton(view: view),
                     ],
                   ),
           ),
         ),
-        // 第二行 = **视图名 + 篇数**（同日定：从按钮行下移，独占一行）。
+        // 第二行 = **视图名 + 篇数 + 筛选**（2026-11-09 用户定：筛选从工具行
+        // 搬来本行右端）。它整理的是"当前这个列表"，语义该挨着列表标题；也避开
+        // 与工具行 18 档图标并排时显小的光学问题。
+        //
+        // ⚠️ 行高由 [FilterMenuButton] 的热区 20 决定（不是 28）：文字 18 居中
+        // 只下沉 1px，标题行不会被撑高。右留白用 [_kHeadSecondRowInset](23)
+        // —— 让漏斗中心对齐第一行的「＋」中心（见该常量注释）。
         Padding(
           padding: const EdgeInsets.fromLTRB(
             Tokens.spaceMd,
             0,
-            Tokens.spaceSm,
-            Tokens.spaceSm,
+            _kHeadSecondRowInset,
+            0,
           ),
           child: Row(
             children: <Widget>[
@@ -350,6 +373,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                 ),
               ),
               const Spacer(),
+              // 热区 20：本行行高由它决定，28 会把标题行撑高（见组件注释）。
+              const FilterMenuButton(size: 20),
             ],
           ),
         ),

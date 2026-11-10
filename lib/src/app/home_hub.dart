@@ -608,7 +608,14 @@ class _SearchResultBar extends StatelessWidget {
 /// ⇒ 两处调用点（列表顶 / hub 顶栏）的**字形与色源都单点**，那条"默认 tabler
 /// 不吃 Material IconTheme、要走 AppIconTheme 桥"的旁路随之消失。
 class FilterMenuButton extends ConsumerStatefulWidget {
-  const FilterMenuButton({super.key});
+  const FilterMenuButton({super.key, this.size = Tokens.headerActionSize});
+
+  /// 热区边长。默认 28（hub 顶栏那处：与顶栏中心线 `headerBandCenter=20` 对齐，
+  /// 32 高的钮取 top=4 ⇒ 中心 20）。
+  ///
+  /// 列表栏「视图名 + 篇数」行传 **20**：那行的行高由本钮决定，28 会把标题行
+  /// 撑高、文字垂直居中下沉 5px（2026-11-09 用户实报"折叠钮与笔记的间距变大"）。
+  final double size;
 
   @override
   ConsumerState<FilterMenuButton> createState() => _FilterMenuButtonState();
@@ -737,14 +744,25 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
     // 错位 8~40px）。外壳尺寸与位置就是可视按钮的真实矩形。
     return SizedBox(
       key: _key,
-      // 与列表头另两枚（新建 / 搜索）及编辑页撤销 / 重做同一档热区
-      // [Tokens.headerActionSize]（28）。
-      width: Tokens.headerActionSize,
-      height: Tokens.headerActionSize,
+      // 尺寸由调用点给（见 [FilterMenuButton.size]）：列表栏 20、hub 顶栏 28。
+      //
+      // ⚠️ 20 是热区下限：`AppIconButton` 的圆角是 `radiusButton`(10)，宽 20 时
+      // 半径 = 半宽 ⇒ hover 底由"圆角方块"变**正圆**。漏斗图形实测只占 12.4px，
+      // 不会被圆角切到；但若实机觉得圆底与第一行钮形态不一致，改 24（沉 3px）
+      // 即可，圆角方块会回来。
+      width: widget.size,
+      height: widget.size,
       child: AppIconButton(
+        size: widget.size,
         // 两处调用点同一枚 Fluent 漏斗；色由 [AppIconButton] 单点下发
         // ——不再有"默认 tabler 走另一条取色链路"的旁支。
-        icon: CustomIcons.filter(size: Tokens.iconSm),
+        //
+        // 2026-11-09 **光学补偿**：漏斗是宽扁形，bbox 只占 24 画板的 68.75%，
+        // 18 框下视觉仅 ≈12.4px（搜索 ≈14.1 / 新建 ≈15.5），实机显小。提到
+        // [Tokens.iconMdSm](20) ⇒ 视觉 ≈13.8px，与同排基本齐；代价是线宽
+        // 1.125→1.25px（+11%，肉眼几乎无感）。⚠️ 别改用 Transform / FittedBox
+        // 缩放：那是缩放已栅格化层，会糊。
+        icon: CustomIcons.filter(size: Tokens.iconMdSm),
         tooltip: '筛选与排序',
         onPressed: _openMenu,
       ),

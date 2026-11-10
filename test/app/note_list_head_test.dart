@@ -348,37 +348,71 @@ void main() {
     }
   });
 
-  testWidgets('工具行布局：折叠独立 | 右侧 搜索 → 筛选 → 新建', (tester) async {
-    // 2026-11-09 用户定：折叠钮是独立左侧区域；右簇整体靠右，顺序
-    // 搜索 / 筛选 / 新建（新建最右）。
+  testWidgets('列表头布局：第一行 搜索 → 新建；筛选在视图名行右端', (tester) async {
+    // 2026-11-09 用户定：筛选从工具行搬到「视图名 + 篇数」行右端——
+    // 它整理的是当前列表，且不再与工具行 18 档图标并排显小。
     await pumpList(tester);
 
     final Rect collapse = tester.getRect(find.byTooltip('收起列表'));
     final Rect search = tester.getRect(find.byTooltip('搜索'));
-    final Rect filter = tester.getRect(find.byTooltip('筛选与排序'));
     final Rect create = tester.getRect(find.byTooltip('新建'));
     final Rect createArrow = tester.getRect(find.byTooltip('更多'));
+    final Rect filter = tester.getRect(find.byTooltip('筛选与排序'));
     final Rect column = tester.getRect(find.byType(NoteListColumn));
+    final Rect label = tester.getRect(
+      find.descendant(
+        of: find.byType(NoteListColumn),
+        matching: find.text('笔记'),
+      ),
+    );
 
+    // 第一行：折叠独立，右簇只剩 搜索 → 新建。
     expect(
       search.left - collapse.right,
       greaterThan(60),
       reason: '折叠钮单独在左侧，右簇不贴着它',
     );
     expect(
-      filter.left - search.right,
-      closeTo(Tokens.spaceXxs, 1),
-      reason: '搜索与筛选相邻（同一右簇）',
+      collapse.left + (Tokens.headerActionSize - Tokens.iconSm) / 2,
+      closeTo(label.left, 1),
+      reason: '折叠钮**图标**左缘与「笔记」标题左缘对齐（热区左 7 + 居中偏移 5 = 12）',
     );
     expect(
-      create.left - filter.right,
+      create.left - search.right,
       closeTo(Tokens.spaceXxs, 1),
-      reason: '筛选与新建相邻（同一右簇）',
+      reason: '搜索与新建相邻（同一右簇）',
     );
     expect(
       createArrow.right,
       closeTo(column.right - Tokens.spaceSm, 1),
       reason: '新建在最右端、贴右侧 spaceSm(8) 留白',
+    );
+
+    // 第二行：筛选在工具行下方、与视图名同一行、贴该行右端。
+    expect(
+      filter.top,
+      greaterThanOrEqualTo(search.bottom),
+      reason: '筛选不该还在工具行',
+    );
+    expect(
+      (filter.center.dy - label.center.dy).abs(),
+      lessThan(2),
+      reason: '筛选与「笔记」标题同一行',
+    );
+    expect(
+      label.center.dy - search.center.dy,
+      inInclusiveRange(25, 30),
+      reason: '标题行不该被 28 高的筛选热区推下去（搬过来之前是 27）',
+    );
+    expect(
+      (filter.center.dx - create.center.dx).abs(),
+      lessThan(1),
+      reason: '漏斗图标中心要与第一行「＋」中心对齐',
+    );
+    expect(
+      filter.right,
+      closeTo(column.right - 23, 1),
+      reason: '第二行右侧内缩 23（对齐＋中心的推导值）',
     );
   });
 
