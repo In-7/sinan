@@ -145,8 +145,8 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
 /// 右侧常驻 **AI 问答轨**的开关态（桌面布局的第三列，见 [AskRail]）。
 ///
 /// 它只表达"用户此刻想不想看到 AI 轨"，
-/// 不关心 AI 以什么形态出现——宽窗（≥ `Tokens.askRailBreakpoint`）时 [HomeScreen]
-/// 把它画成右侧常驻栏；窄窗放不下 ⇒ 降级为既有居中浮层（`showAskPanel`）。
+/// 不关心呈现形态——宽窗（≥ `Tokens.askRailBreakpoint`）时 [HomeScreen] 把它
+/// 画成右侧常驻栏；窄窗入口置灰，误开的开关由外壳立刻复位（2026-11-14）。
 /// 呈现选择归外壳，状态保持**单一真相源**，于是「命令 / 图标 / 自己的关闭钮 /
 /// Esc」四条入口写的都是同一个布尔。
 ///

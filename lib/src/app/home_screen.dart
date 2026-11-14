@@ -128,8 +128,10 @@ class HomeScreen extends ConsumerWidget {
       //（无投影；2026-10-09 量 opencode 像素定，量值与理由见 surface_ladder）。
       //
       // 2026-09-28 加 **AI 问答轨**（[AskRail]）：宽窗常驻右缘，呈现为第二张
-      // 浮面卡；窄窗（< [Tokens.askRailBreakpoint]）降级回 [showAskPanel]
-      // 浮层——状态只有 [aiPanelOpenProvider] 一个布尔，呈现形态归外壳按宽度选。
+      // 浮面卡。2026-11-14 用户定：窄窗（< [Tokens.askRailBreakpoint]）**禁用**
+      // 入口、不再降级成居中浮层（浮层会挡住正文且点引用得先关自己）。
+      // 状态只有 [aiPanelOpenProvider] 一个布尔，右栏只在这个布尔为 true
+      // 且宽度够时出现。
       //
       // 窗口底**不在这里铺**，而且现在也**不是** `MaterialApp.builder` 铺的
       // ——`WindowBase` 早在 2026-09-23 就删掉了那层自绘底（省掉每帧全屏 fill）。
@@ -150,16 +152,15 @@ class HomeScreen extends ConsumerWidget {
           MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
       final bool listCollapsed = narrow || ref.watch(listCollapsedProvider);
 
-      // 窄窗降级路径：轨放不下时，把"打开"翻译成"弹浮层"并立刻复位开关
-      //（浮层的显隐不归这个布尔管，否则 Esc 关浮层时会反向点亮图标）。
-      // 放在 post-frame 里、且进入时再读一次当前值——一道机制同时覆盖两种
-      // 触发：① 窄窗里按 Ctrl+J / 点图标"打开"；② 开着轨把窗口拖过断点。
-      // 首个回调复位后同帧的其余回调读到的已是 false ⇒ 浮层不会弹两层。
+      // 窄窗**禁用** AI（2026-11-14 用户定）：居中浮层已撤，右栏只在宽度够时
+      // 出现。这里只把误开的开关复位——否则在窄窗按过 Ctrl+J、再把窗口拖宽时，
+      // 残留的 true 会让右栏突然弹出。
+      // 放在 post-frame 里、且进入时再读一次当前值：一道机制同时覆盖
+      // ① 窄窗里按 Ctrl+J（命令层只翻布尔，不判宽度）；② 开着轨把窗口拖过断点。
       if (aiWanted && !railFits) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!ref.read(aiPanelOpenProvider)) return;
           ref.read(aiPanelOpenProvider.notifier).close();
-          unawaited(showAskPanel());
         });
       }
 
@@ -225,9 +226,8 @@ class HomeScreen extends ConsumerWidget {
             if (!listCollapsed)
               Container(
                 width: 1,
-                color: Bauhaus.ink(
-                  brightness,
-                ).withValues(alpha: isDark ? 0.16 : 0.14),
+                color: Bauhaus.ink(brightness)
+                    .withValues(alpha: isDark ? 0.16 : 0.14),
               ),
             // 详情（编辑器 / 画布 / 空态）：**第 3 段**。编辑器内部的块、
             // 工具条等未编号节点由 secondary 策略按几何排，语义仍是"详情之内"。
@@ -267,11 +267,11 @@ class HomeScreen extends ConsumerWidget {
               trailing: const <Widget>[_AskTitleBarButton()],
             ),
             // 工作区：浮面卡**右 / 下各 4px 环缝**（顶与左 0——2026-10-15 用户定），
-            // 四角 8px 圆角；AI 打开时主卡 + 8 缝 + AI 卡（右 dock、推开内容）。
+            // 四角 8px 圆角；AI 打开时主卡 + 4 缝 + AI 卡（右 dock、推开内容）。
             // 左 dock 面板 2026-10-12 取消，主卡占满全宽。
             // 问笔记（AI）开合入口 2026-10-16 从工作区右角搬进顶条 `trailing`
             // （紧贴最小化左）；工作区不再浮角钮。开合仍走 [aiPanelOpenProvider]
-            // 单布尔，呈现形态归外壳按宽度选（宽窗常驻右轨 / 窄窗降级浮层）。
+            // 单布尔：宽窗常驻右轨，窄窗按钮置灰 + 开关复位（2026-11-14）。
             Expanded(
               // 左：扁平导航（无面板，贴窗口底）；右：内容浮面卡（4px 环缝内）。
               //
@@ -640,8 +640,8 @@ class _FloatingPanel extends StatelessWidget {
 }
 
 /// 右侧 **AI 问答轨**的动画槽：关闭收为 0；打开时是第二张浮面卡——
-/// 宽 [Tokens.askRailWidth]，左缘自带 [Tokens.appPanelInset] 卡缝（槽宽合计
-/// askRailWidth + 8），故总宽在 0 ↔ 348 之间插值。
+/// 宽 [Tokens.askRailWidth]，左缘自带 [Tokens.appPanelInset](4) 卡缝（槽宽合计
+/// askRailWidth + 4），故总宽在 0 ↔ 344 之间插值。
 ///
 /// 做法与旧槽一致（[AnimatedContainer] 布局插值 + [ClipRect] 裁切 +
 /// [OverflowBox] 固定满宽布局）：纯 layout 动画、不触发 saveLayer；
@@ -672,7 +672,7 @@ class _AiRailSlot extends StatelessWidget {
             alignment: Alignment.topLeft,
             maxWidth: fullWidth,
             child: Padding(
-              // 左 8 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
+              // 左 4 = 两张浮面卡之间的缝（露窗口底），与外环缝同档。
               padding: const EdgeInsets.only(left: seam),
               child: Container(
                 // 与主卡同底同边（panelFill 实面 + 1px 发丝边、无柔影），
@@ -689,9 +689,7 @@ class _AiRailSlot extends StatelessWidget {
                   // 与主卡同一口径：**只画顶一条**（接标题栏）。
                   // 左 = 拼缝（缝露出的窗口底就是分界）；右 / 下 = 贴窗沿
                   //（窗沿本身即边界）⇒ 都不画。
-                  border: Border(
-                    top: BorderSide(color: line),
-                  ),
+                  border: Border(top: BorderSide(color: line)),
                 ),
                 // 直角卡不需要 `ClipRRect`（它默认就是 zero 圆角）⇒ 少一层裁剪。
                 child: const SizedBox(
@@ -717,13 +715,20 @@ class _AskTitleBarButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool open = ref.watch(aiPanelOpenProvider);
+    // 窄窗禁用（2026-11-14 用户定）：右栏会挤掉本就紧张的正文宽度，且窄窗
+    // 以阅读为主、极少用 AI。置灰 + tooltip 说实话，与 [SidebarCollapseButton]
+    // 的窄窗口径一致；命令层（Ctrl+J）的误开由 [HomeScreen] 复位开关兜住。
+    final bool railFits =
+        MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
     return IconButton(
       icon: const tabler.Sparkles(
         height: Tokens.iconMd,
         width: Tokens.iconMd,
         strokeWidth: 1.5,
       ),
-      tooltip: '问笔记（Ctrl+J）',
+      tooltip: railFits
+          ? '问笔记（Ctrl+J）'
+          : '问笔记（窗口宽度需 ≥ ${Tokens.askRailBreakpoint.toInt()}）',
       style: IconButton.styleFrom(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Tokens.radiusButton),
@@ -740,12 +745,12 @@ class _AskTitleBarButton extends ConsumerWidget {
             ? AppTheme.navSelectedTint(scheme.onSurface)
             : Colors.transparent,
       ),
-      onPressed: () => unawaited(runCommandById(ref, 'ai.ask')),
+      onPressed: railFits
+          ? () => unawaited(runCommandById(ref, 'ai.ask'))
+          : null,
     );
   }
 }
-
-
 
 /// 折叠钮在内容卡左上角的**纵向内缩**（4px）：一是卡片左上角是 [_kPanelRadius] 的
 /// 圆角、钮贴边会被切掉一角；二是**与编辑页按钮带的上留白同值**

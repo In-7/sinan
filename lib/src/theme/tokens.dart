@@ -126,8 +126,10 @@ class Tokens {
   /// 图标 [iconMd]=24。
   static const double chromeButtonSize = 32;
 
-  /// AI 问答轨常驻右缘的最小窗宽，低于它降级为居中浮层。
-  /// （账：外壳 ≈615 ⇒ 1000 以下主区不足 385，编辑器失去意义。）
+  /// AI 问答轨常驻右缘的最小窗宽，低于它**禁用入口**（2026-11-14 起不再有
+  /// 居中浮层）。
+  /// （账：外壳 ≈615 ⇒ 1000 以下主区不足 385，编辑器失去意义；窄窗以阅读
+  /// 为主，不为低频 AI 再切走 340 宽度。）
   static const double askRailBreakpoint = 1000;
 
   /// AI 问答轨宽（320–360 是右聊天栏的行业档：Notion AI / Heptabase Ask）。
@@ -145,28 +147,35 @@ class Tokens {
   /// 参照 Linear 侧栏 ≈200 但不缩占位文字）。硬约束是顶行：搜索框 + 8 缝 +
   /// 新建胶囊（≥80）⇒ 256 时搜索框 152，够放完整占位「搜索笔记与画布」。
   static const double sidebarWidth = 256;
+
   /// 最左**图标导航轨**宽：**60**（2026-10-16 Option 2 第一阶段；2026-10-21 曾试
   /// 加宽到 70，同日撤回——图标 / 钮不变时纯加宽只多出空白边距）。常驻脊梁
   /// （Phase D 起不折叠，只折 240 列表列）。旧 [sidebarWidth](256) 的未来 = 本轨 + 列表列。
   static const double railWidth = 60;
+
   /// 图标轨内**交互钮**边长（2026-10-16 用户定：36）：四视图 / 回收站 / 设置共用；
   /// 图标仍 [Tokens.iconMd](24)。轨 60 − 左右各 8 呼吸 = 44 内容区，36 钮两侧各余 4。
   static const double railButtonSize = 36;
+
   /// 主从布局的**列表列**宽（2026-10-16 Option 2 进卡；2026-10-17 用户定 208→240）：
   /// 坐在浮面卡左格、右格是详情；可折叠（Ctrl+B / 标题栏折叠钮），折叠时编辑器占满卡。
   /// 240 下编辑器（默认正文列 800）在窗口 ≥~1116px 时满列、不受影响。
   static const double noteListWidth = 240;
+
   /// 窄窗**自动折列表列**断点（2026-10-17 用户定）：窗宽 < 此值时自动收起 240 列表列、
   /// 把宽度让给编辑器（切笔记走 Ctrl+K 搜索面板）。取 1040 = 60 轨 + 240 列表 +
   /// 728 编辑器窄档正文列 + ~12 边距——低于它、开着列表编辑器正文列会跌破最窄档，
   /// 不如收列表让编辑器满列。（2026-10-21 轨宽曾试加宽到 70、断点随顺延到 1050，
-  /// 同日撤回 ⇒ 回到 1040。）与 [askRailBreakpoint]（AI 轨降级）是两道独立断点。
+  /// 同日撤回 ⇒ 回到 1040。）与 [askRailBreakpoint]（AI 轨禁用）是两道独立断点。
   static const double noteListBreakpoint = 1040;
+
   /// 主菜单面板宽 = 原 `app_menu._panelWidth`（180；8pt 收编时曾收敛到 176，
   /// 2026-10-14 用户要求撤回到 180）。
   static const double menuPanelWidth = 180;
+
   /// 设置面板宽 = 90×8（原 `settings_panel._panelWidth = 720`，= [contentMaxWidth]）。
   static const double settingsPanelWidth = 720;
+
   /// 搜索面板宽 = 75×8（原 `search_palette._paletteWidth = 600`）。
   static const double paletteWidth = 600;
   // ── 图标 ────────────────────────────────────────────────────────

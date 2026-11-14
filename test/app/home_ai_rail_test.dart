@@ -23,8 +23,9 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 /// 断点重排，不是等比缩小）：
 /// - 宽窗（≥ [Tokens.askRailBreakpoint]）：第二张浮面卡常驻，关闭时槽收宽 0
 ///   （裁切掉、点不着；打开 = 340 卡 + 4 左缝）；
-/// - 窄窗：不渲染可见轨，「打开」降级为居中浮层，开关立刻复位；
-/// - 开着轨把窗口拖过断点：同样降级，且不弹两层浮层。
+/// - 窄窗（< 1000，2026-11-14 用户定）：入口置灰 + 开关立刻复位，**不再有
+///   居中浮层**（浮层挡正文、点引用角标还得先关自己）；
+/// - 开着轨把窗口拖过断点：右栏收起、开关复位，不留浮层。
 void main() {
   /// `WindowStrip` / 窗控按钮在 initState 里问 window_manager（isFocused /
   /// isMaximized）。测试环境没有插件，补一个返回假值的通道 mock，其余调用
@@ -108,8 +109,11 @@ void main() {
     expect(aiRect.bottom, lessThanOrEqualTo(32.5), reason: '占满顶条高');
 
     final Rect minRect = tester.getRect(find.byTooltip('最小化'));
-    expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4),
-        reason: '问笔记紧贴最小化左侧');
+    expect(
+      minRect.left - aiRect.right,
+      inInclusiveRange(-0.5, 4),
+      reason: '问笔记紧贴最小化左侧',
+    );
 
     // 默认未开。
     expect(container.read(aiPanelOpenProvider), isFalse);
@@ -182,46 +186,45 @@ void main() {
     expect(tester.getSize(slot).width, 0);
   });
 
-  testWidgets('窄窗：打开开关降级为居中浮层，开关立即复位', (WidgetTester tester) async {
+  testWidgets('窄窗：问笔记入口置灰、开关复位、不弹浮层', (WidgetTester tester) async {
+    // 2026-11-14 用户定：撤掉居中浮层（挡正文、点引用得先关自己）。窄窗以
+    // 阅读为主，直接禁用入口；右栏只在 ≥ [Tokens.askRailBreakpoint] 出现。
     setSurfaceSize(tester, 900, 700); // < Tokens.askRailBreakpoint
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
     await tester.pumpWidget(app(container));
     await tester.pumpAndSettle();
 
-    container.read(aiPanelOpenProvider.notifier).open();
-    await tester.pump(); // post-frame 降级：复位 + 插浮层
-    await tester.pumpAndSettle();
-
-    expect(
-      container.read(aiPanelOpenProvider),
-      isFalse,
-      reason: '浮层显隐不归这个布尔管，降级后必须立刻复位',
-    );
-    // 只数「AI 轨自己的浮层」：用 Key 精确命中，避开工作区里那根常驻的 灵感
-    // Composer（它也是 AppFloatSurface，会污染全量计数）。
-    final Finder railSurface = find.byKey(const Key('askRailFloatSurface'));
-    expect(
-      railSurface,
-      findsOneWidget,
-      reason: '窄窗应弹出居中浮层，而不是把右轨压进窄窗',
-    );
-    // 浮层问答体同样打开即聚焦。常驻轨此时仍挂在树里（保活），要落在浮层子树内。
+    // 入口置灰：tooltip 说实话，IconButton.onPressed 为 null。
+    final Finder ai = find.byTooltip('问笔记（窗口宽度需 ≥ 1000）');
+    expect(ai, findsOneWidget, reason: '窄窗应给出可解释的禁用提示');
     expect(
       tester
-          .widget<TextField>(
-            find.descendant(
-              of: railSurface,
-              matching: find.byType(TextField),
-            ),
+          .widget<IconButton>(
+            find.ancestor(of: ai, matching: find.byType(IconButton)).first,
           )
-          .focusNode
-          ?.hasFocus,
-      isTrue,
+          .onPressed,
+      isNull,
+      reason: '窄窗禁用问笔记',
     );
+
+    // 命令层仍只翻布尔（不判宽度）⇒ 外壳负责立刻复位，避免拖宽后突然弹出。
+    container.read(aiPanelOpenProvider.notifier).open();
+    await tester.pumpAndSettle();
+    expect(container.read(aiPanelOpenProvider), isFalse, reason: '误开的开关必须立刻复位');
+
+    // 不再有任何居中浮层；右栏槽保持收起。
+    expect(find.byKey(const Key('askRailFloatSurface')), findsNothing);
+    final Finder slot = find
+        .ancestor(
+          of: find.byType(AskRail),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    expect(tester.getSize(slot).width, 0, reason: '窄窗右栏槽保持收起');
   });
 
-  testWidgets('宽窗开着轨拖过断点 ⇒ 已有的打开态也降级成浮层（不弹两层）', (WidgetTester tester) async {
+  testWidgets('宽窗开着轨拖窄 ⇒ 右栏收起、开关复位、不留浮层', (WidgetTester tester) async {
     setSurfaceSize(tester, 1200, 900);
     mockWindowManager(tester);
     final ProviderContainer container = buildContainer();
@@ -230,22 +233,30 @@ void main() {
 
     container.read(aiPanelOpenProvider.notifier).open();
     await tester.pumpAndSettle();
-    // 宽窗常驻轨不进浮层；用 Key 精确命中 AI 轨浮层，避开常驻的 灵感 Composer。
-    expect(
-      find.byKey(const Key('askRailFloatSurface')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('askRailFloatSurface')), findsNothing);
+    final Finder slot = find
+        .ancestor(
+          of: find.byType(AskRail),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    expect(tester.getSize(slot).width, greaterThan(0), reason: '宽窗右栏已展开');
 
     // 模拟用户把窗口拖窄到断点以下。
     setSurfaceSize(tester, 900, 700);
-    await tester.pump(); // post-frame 降级
+    await tester.pump(); // post-frame 复位开关
     await tester.pumpAndSettle();
 
-    expect(container.read(aiPanelOpenProvider), isFalse);
+    expect(
+      container.read(aiPanelOpenProvider),
+      isFalse,
+      reason: '跨断点要复位，否则拖回宽窗会突然弹出右栏',
+    );
     expect(
       find.byKey(const Key('askRailFloatSurface')),
-      findsOneWidget,
-      reason: '跨断点要降级；同帧多个 post-frame 回调也不得叠两层浮层',
+      findsNothing,
+      reason: '不再降级浮层',
     );
+    expect(tester.getSize(slot).width, 0, reason: '右栏收起');
   });
 }

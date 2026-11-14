@@ -8,162 +8,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../ai/llm_client.dart';
-import '../theme/app_float_surface.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../window/window_service.dart';
 import 'providers.dart';
-import 'settings_panel.dart' show appNavigatorKey;
 
-// 右侧常驻 **AI 问答轨**的宽度（逻辑 px）已收编进 [Tokens.askRailWidth]。
-// 320–360 是右聊天栏的行业档（Notion AI / Heptabase Ask）：放得下一条
-// 答案 + 引用角标，又不过度挤占编辑区（1280 窗宽下主区仍有 ~600）。
-
-// 右轨布局的**断点**（2026-10-08 收编进 [Tokens.askRailBreakpoint]）：
-// 窗口宽度低于它时 AI 不以常驻栏出现，降级为 [showAskPanel] 的居中浮层。
-
-/// **问笔记 · 浮层态**（窄窗 / 移动端）：遮罩 + 居中卡片 + Esc 关闭。
+/// **问笔记 · 常驻右栏**（[AskRail]）是本 app AI 问答的**唯一形态**。
 ///
-/// 宽窗桌面端默认不走这里——问答是常驻右栏（[AskRail]），答案能与正文
-/// 同屏对照、引用角标点了不关面板。窗口窄到放不下右轨时（见
-/// [Tokens.askRailBreakpoint]），`HomeScreen` 再把同一份问答体降级回本浮层。
+/// 2026-11-14 用户定：撤掉窄窗的居中浮层。理由——宽 [Tokens.askRailWidth](340)
+/// 的右栏只占窗口 47%，答案与正文同屏、引用角标点了不关面板；而 560 宽的居中
+/// 浮层在 720 最低窗下盖掉 78% 且带遮罩，点引用还得先关掉自己 ⇒ 把问答最核心
+/// 的"跳回原文对照"废掉了。窄窗本就是阅读优先（编辑器正文列最窄档 728，
+/// 720 窗下主区已只有 660），不该再为低频 AI 切走宽度。
 ///
-/// ## 引用角标是这层的灵魂
-/// 答案里每个 `[n]` 都能跳回原文块——所以问答体是一个**导航动作**，
-/// 浮层态跳转后必须关闭自己（否则遮罩压在刚跳过去的笔记上）。
-Future<void> showAskPanel() {
-  final OverlayState overlay = appNavigatorKey.currentState!.overlay!;
-  final Completer<void> closed = Completer<void>();
-  OverlayEntry? entry;
-  late final bool Function(KeyEvent event) handleEscKey;
+/// 现在窗口宽度 < [Tokens.askRailBreakpoint](1000) 时 [HomeScreen] 直接**禁用**
+/// 问笔记入口（按钮灰掉、开关立刻复位），不弹任何浮层；拉宽后自然可用。
 
-  void close() {
-    if (!closed.isCompleted) closed.complete();
-    if (entry != null && entry!.mounted) entry!.remove();
-    entry = null;
-    HardwareKeyboard.instance.removeHandler(handleEscKey);
-  }
-
-  handleEscKey = (KeyEvent event) {
-    if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.escape) {
-      close();
-    }
-    return false;
-  };
-  HardwareKeyboard.instance.addHandler(handleEscKey);
-
-  entry = OverlayEntry(
-    builder: (BuildContext overlayContext) => _AskOverlay(onClose: close),
-  );
-  overlay.insert(entry!);
-  return closed.future;
-}
-
-class _AskOverlay extends StatelessWidget {
-  const _AskOverlay({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Stack(
-      children: <Widget>[
-        // 点遮罩即关：浮层是短暂停留，不该有"必须找到关闭钮"的路。
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onClose,
-            child: ColoredBox(color: scheme.scrim.withValues(alpha: 0.32)),
-          ),
-        ),
-        Positioned.fill(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 560,
-                maxHeight: MediaQuery.sizeOf(context).height * 0.8,
-              ),
-              child: AppFloatSurface(
-                key: const Key('askRailFloatSurface'),
-                width: 560,
-                // 与主内容面板 / 宽窗问笔记右栏同款：panelFill + radiusMd +
-                // surfaceRing 光环，而不是浮层档的 floatSurface + menuBorder +
-                // 柔影（2026-10-20 用户：浮层边框不如内容面板）。
-                panel: true,
-                child: FocusScope(child: _AskModalCard(onClose: onClose)),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// 浮层态的卡片：自有头部（Sparkles + 标题 + 关闭钮）+ 内边距，
-/// 下面挂与右栏完全相同的 [AskPanelBody]。
-class _AskModalCard extends StatelessWidget {
-  const _AskModalCard({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(Tokens.spaceLg),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _AskHeader(onClose: onClose),
-          const SizedBox(height: Tokens.spaceSm),
-          AskPanelBody(autofocus: true, onCitationOpened: onClose),
-        ],
-      ),
-    );
-  }
-}
-
-/// 浮层态（窄窗 / 移动端）头部：Sparkles +「问笔记」+ 关闭钮。
-/// 右栏 [AskRail] 不再自带关闭钮（2026-10-11 起其开合归工作区右角折叠钮）。
-class _AskHeader extends StatelessWidget {
-  const _AskHeader({required this.onClose});
-
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Row(
-      children: <Widget>[
-        const tabler.Sparkles(
-          height: Tokens.iconMd,
-          width: Tokens.iconMd,
-          strokeWidth: 1.5,
-        ),
-        Text('问笔记', style: theme.textTheme.titleSmall),
-        const Spacer(),
-        IconButton(
-          icon: const tabler.X(
-            height: Tokens.iconMd,
-            width: Tokens.iconMd,
-            strokeWidth: 1.5,
-          ),
-          tooltip: '关闭（Esc）',
-          onPressed: onClose,
-        ),
-      ],
-    );
-  }
-}
-
-/// **问笔记 · 常驻右栏**（宽窗桌面的主形态）。
+/// **问笔记 · 常驻右栏**（唯一形态，宽窗 ≥ [Tokens.askRailBreakpoint]）。
 ///
 /// 与左导航同色平铺（[AppTheme.windowBackground]），只靠左侧 1px 分隔线
 /// 与主区分界——它是与编辑区**并排工作**的一列，不是浮在窗口上的卡片：
-/// - 头部固定（Sparkles + 标题 + 关闭），下面是与浮层**同一个** [AskPanelBody]；
+/// - 头部固定（Sparkles + 标题），下面挂 [AskPanelBody]；
 /// - 打开（`aiPanelOpenProvider` 变 true）即把焦点送进提问框，
 ///   命令 / 图标 / 快捷键三条入口都能直接打字；
 /// - 焦点在栏内按 **Esc** 收起整栏（先 unfocus，避免键盘落进宽 0 的隐藏控件）；
@@ -206,7 +71,8 @@ class _AskRailState extends ConsumerState<AskRail> {
       width: Tokens.askRailWidth,
       // 底色 / 圆角 / 裁切由外壳的**浮面卡**统一给（home_screen.dart 的
       // _AiRailSlot，2026-10-09 opencode 风）：本体透明、不再画左边线——
-      // 主卡与 AI 卡之间的 8px 缝隙（露窗口底）就是分界，不用分割线。
+      // 主卡与 AI 卡之间的 4px 缝隙（[Tokens.appPanelInset]，露窗口底）
+      // 就是分界，不用分割线。
       child: Focus(
         // Esc 只在焦点位于本栏子树时触发（事件沿焦点祖先链冒泡到这里），
         // 不会与画布 / 编辑器的 Esc 语义相撞。
@@ -265,25 +131,15 @@ class _AskRailState extends ConsumerState<AskRail> {
 
 /// 问答体本身：答案（含引用角标）+ 错误 + 钉底的提问区。
 ///
-/// 无头部、无遮罩、无 Esc——**宿主无关**，浮层（[_AskModalCard]）与右栏
-/// （[AskRail]）复用同一实现，保证两种形态永不漂移。
-///
-/// - [autofocus]：浮层打开即聚焦；右栏靠 [focusInput] 在开关翻转时聚焦。
-/// - [fillExpanded]：右栏要占满剩余高度（答案区 `Expanded`）；浮层随内容
-///   收缩（`Flexible` + 弹窗自身的高度上限）。
-/// - [onCitationOpened]：点引用角标跳原文后的收尾。浮层传关闭；右栏传
-///   null（不关栏，答案留着对照）。
+/// 无头部、无遮罩、无 Esc——**宿主无关**，由 [AskRail] 挂进右栏；也可被
+/// 测试独立挂载（[fillExpanded] 因此保留，独立挂载时传 true）。
+/// 点引用角标只跳转、**不关栏**，答案要留在屏上和原文对照——这也是
+/// 2026-11-14 撤掉居中浮层的直接原因。
 class AskPanelBody extends ConsumerStatefulWidget {
-  const AskPanelBody({
-    super.key,
-    this.autofocus = false,
-    this.fillExpanded = false,
-    this.onCitationOpened,
-  });
+  const AskPanelBody({super.key, this.fillExpanded = false});
 
-  final bool autofocus;
+  /// true ⇒ 答案区用 `Expanded` 占满剩余高度（右栏形态）。
   final bool fillExpanded;
-  final VoidCallback? onCitationOpened;
 
   @override
   AskPanelBodyState createState() => AskPanelBodyState();
@@ -301,11 +157,6 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
   void initState() {
     super.initState();
     _question.addListener(_onQuestionChanged);
-    if (widget.autofocus) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _focus.requestFocus();
-      });
-    }
   }
 
   @override
@@ -377,8 +228,8 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
     }
   }
 
-  /// 点引用角标：经唯一跳转通道 `locateProvider` 定位到原文块，
-  /// 再交宿主收尾（浮层关闭自己；右栏保持打开）。
+  /// 点引用角标：经唯一跳转通道 `locateProvider` 定位到原文块。
+  /// **不关右栏**——答案要留在屏上和原文对照。
   void _jumpTo(Citation citation) {
     ref
         .read(locateProvider.notifier)
@@ -387,7 +238,6 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
           blockId: citation.blockId,
           focus: true,
         );
-    widget.onCitationOpened?.call();
   }
 
   @override
@@ -451,8 +301,8 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // 答案在上、提问区钉底（2026-09-29 用户定，聊天面板惯例）：右栏里
-        // 答案占输入框以上的全部高度——空态就是一整块留白，有答案从顶往下读；
-        // 浮层随内容长高，仍是"先问后答"的阅读顺序。
+        // 答案占输入框以上的全部高度——空态就是一整块留白，有答案从顶往下读。
+        // `fillExpanded: false` 只用于问答体被独立挂载（测试）时随内容收缩。
         if (widget.fillExpanded)
           Expanded(child: answerArea)
         else if (answer != null) ...<Widget>[

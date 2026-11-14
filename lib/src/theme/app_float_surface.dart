@@ -152,8 +152,9 @@ class AppFloatSurface extends StatelessWidget {
   /// [AppTheme.panelFill] 实底 + [Tokens.radiusMd] 圆角 + [AppTheme.surfaceRing]
   /// 外扩光环，**不要** [AppTheme.menuBorder] 描边 / [AppTheme.floatShadows] 柔影。
   ///
-  /// 用途：同一功能在宽窗是右栏、窄窗降级成浮层时，两边不该换皮
-  /// （问笔记浮层态 2026-10-20 对齐主内容面板与右栏）。
+  /// 📌 2026-11-14 问笔记居中浮层已撤 ⇒ 本档**目前没有生产调用点**，只剩
+  /// `app_theme_test` 的一条外观契约在用；保留是为了「面板档」这个视觉令牌不丢，
+  /// 将来若有需要贴齐工作区浮面卡的浮层可直接复用。
   final bool panel;
 
   @override
@@ -161,7 +162,8 @@ class AppFloatSurface extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     // 默认圆角 radiusLg（2026-09-19 起，Apple 菜单口径的柔和感）；
     // 工具条胶囊等刻意指定自己曲率的仍从 [borderRadius] 传入。
-    final BorderRadius radius = borderRadius ??
+    final BorderRadius radius =
+        borderRadius ??
         BorderRadius.circular(panel ? Tokens.radiusMd : Tokens.radiusLg);
     // 默认浮层档：投影走**双层软阴影**（[AppTheme.floatShadows]：贴地影 + 环境
     // 影，Apple 菜单口径），由外层 [DecoratedBox] 承担——Material 的 elevation
@@ -175,7 +177,8 @@ class AppFloatSurface extends StatelessWidget {
       content = AppGlass(child: content);
     }
     Widget surface = Material(
-      color: color ??
+      color:
+          color ??
           (panel
               ? AppTheme.panelFill(theme.brightness)
               : AppTheme.floatSurface(theme.brightness)),
