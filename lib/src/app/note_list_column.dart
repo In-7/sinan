@@ -351,12 +351,15 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
         // ⚠️ 行高由 [FilterMenuButton] 的热区 20 决定（不是 28）：文字 18 居中
         // 只下沉 1px，标题行不会被撑高。右留白用 [_kHeadSecondRowInset](23)
         // —— 让漏斗中心对齐第一行的「＋」中心（见该常量注释）。
+        // 📌 bottom = [Tokens.spaceSm](8)：2026-11-15 加回。它原本就是 8，
+        // 2026-11-09 为容纳热区 28 的筛选钮临时减到 0，热区降到 20 后没跟回来。
+        // 加在行**外** ⇒ 标题文字的 y 不动，只是发丝下移 8。
         Padding(
           padding: const EdgeInsets.fromLTRB(
             Tokens.spaceMd,
             0,
             _kHeadSecondRowInset,
-            0,
+            Tokens.spaceSm,
           ),
           child: Row(
             children: <Widget>[

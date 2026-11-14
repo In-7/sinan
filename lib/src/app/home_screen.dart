@@ -167,8 +167,8 @@ class HomeScreen extends ConsumerWidget {
       // 主从布局（2026-10-16 Option 2 进卡）：60 轨常驻（唯一平铺窗口底的脊梁，不折叠）；
       // 轨右边一张浮面卡，卡内两格 = [列表列 ┃ 详情]。列表列可折叠（标题栏最左折叠钮 /
       // Ctrl+B，走 [listCollapsedProvider]）——折叠时右格占满卡。**2026-11-14 起
-      // 日历不再例外**：同一骨架，左列换 [CalendarListColumn]、右格换
-      // [CalendarDayContent]，折叠 / 发丝 / 焦点语义全部复用。
+      // 日历不再例外**：同一骨架，左列换 [CalendarListColumn]（月份网格 +
+      // 选中日篇目列表），右格恒为详情；折叠 / 发丝 / 焦点语义全部复用。
       // 详情实例只取一次（避免 rebuild）；折叠是**瞬时**的
       //（2026-10-28 方案②，无宽度补间）⇒ 编辑器只 relayout 一次，不会每帧重排全文。
       final Brightness brightness = Theme.of(context).brightness;
@@ -242,11 +242,10 @@ class HomeScreen extends ConsumerWidget {
             Expanded(
               child: FocusTraversalOrder(
                 order: const NumericFocusOrder(30),
-                // 日历未选中笔记时，右格是「选中日篇目」而不是详情；
-                // 点开某篇后 selectedId 非空 ⇒ 自然切回详情。
-                child: view == HomeView.calendar && selectedId == null
-                    ? const CalendarDayContent()
-                    : detail,
+                // 2026-11-14 用户定「右格恒为详情」：选中日篇目已搬进左列
+                // 日历列，未选中笔记时显示 [_EmptyDetail]，点左列任一行才出
+                // 编辑器 / 画布 —— 与笔记、画布页完全一致。
+                child: detail,
               ),
             ),
           ],

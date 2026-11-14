@@ -660,7 +660,7 @@ void main() {
 /// 的形态，只为保住本文件里卡片 / 筛选器 / 搜索结果这些**通用组件**的覆盖。
 ///
 /// ⚠️ 产品日历页已不走这里：桌面壳现在是 [CalendarListColumn]（左 240 列）
-/// + [CalendarDayContent]（右内容），且**不带筛选与搜索**。本壳不代表产品形态。
+/// + 右格恒为详情，且**不带筛选与搜索**。本壳不代表产品形态。
 class _LegacyCalendarHost extends ConsumerWidget {
   const _LegacyCalendarHost();
 

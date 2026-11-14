@@ -422,6 +422,17 @@ class AppTheme {
       ? const Color(0xFF4ADE80).withValues(alpha: 0.18)
       : const Color(0xFF16A34A).withValues(alpha: 0.13);
 
+  /// 日历「今天」的**纯绿前景**（日期数字 + 描边，2026-11-14 用户定）。
+  ///
+  /// 与 [calendarEntryFill] 同色相但 100% 饱和：一个是「有内容」的淡背景、
+  /// 一个是「今天」的前景，靠饱和度分层，不会读成同一件事。
+  /// 在此之前今天只剩 `w600` 字重，而默认态（选中 = 今天）连描边都被
+  /// `!isSelected` 排除掉了 ⇒ 实机认不出今天。
+  static Color calendarTodayInk(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const Color(0xFF4ADE80)
+      : const Color(0xFF16A34A);
+
   /// **常驻面的发丝环**（2026-10-15 新增）：给面板/卡片收一条极淡的边。
   ///
   /// ## 为什么是 `boxShadow` 而不是 [Border]
