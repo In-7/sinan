@@ -116,9 +116,9 @@ class AppTheme {
   /// （不能复用 `onPrimary`：它在 `_build` 里写死成深青，只适配青色种子。）
   static Color onChrome(Color? seed, Brightness brightness) =>
       ThemeData.estimateBrightnessForColor(chromeColor(seed, brightness)) ==
-              Brightness.light
-          ? const Color(0xFF1A1A18)
-          : const Color(0xFFF2F2EE);
+          Brightness.light
+      ? const Color(0xFF1A1A18)
+      : const Color(0xFFF2F2EE);
 
   /// 内容画布色：浮在窗口底色之上的编辑区实底面板。
   ///
@@ -412,6 +412,16 @@ class AppTheme {
       ? Colors.white.withValues(alpha: 0.06)
       : Colors.black.withValues(alpha: 0.04);
 
+  /// 日历「这天有新建」的**浅绿底**（2026-11-14 用户定）。
+  ///
+  /// 二元标记：只回答"这天写没写"，**不编码篇数**（点开右内容区才看确数）。
+  /// 沿用原绿点的同一色相（亮色深绿 / 暗色亮绿），压到极淡；和 [hoverOverlay]
+  /// 一样是「叠层量」⇒ 选中、今天描边、hover 仍能叠在它上面读出来。
+  static Color calendarEntryFill(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const Color(0xFF4ADE80).withValues(alpha: 0.18)
+      : const Color(0xFF16A34A).withValues(alpha: 0.13);
+
   /// **常驻面的发丝环**（2026-10-15 新增）：给面板/卡片收一条极淡的边。
   ///
   /// ## 为什么是 `boxShadow` 而不是 [Border]
@@ -445,13 +455,14 @@ class AppTheme {
   /// 5% ≈ +1.2（Linear 原味，极淡）→ **8%（当前，2026-10-20 定）** ≈ +5.2。
   /// 亮色：**黑 8%**（2026-10-20 从 10% 降到 8%）；暗色：白 8%。
   /// [surfaceRing] 的**裸色**：1px 发丝线共用（外扩光环 / 面板内描边同色）。
-  static Color surfaceRingColor(Brightness brightness) => brightness == Brightness.dark
+  static Color surfaceRingColor(Brightness brightness) =>
+      brightness == Brightness.dark
       ? Colors.white.withValues(alpha: 0.08)
       : Colors.black.withValues(alpha: 0.08);
 
   static List<BoxShadow> surfaceRing(Brightness brightness) => <BoxShadow>[
-        BoxShadow(color: surfaceRingColor(brightness), spreadRadius: 1),
-      ];
+    BoxShadow(color: surfaceRingColor(brightness), spreadRadius: 1),
+  ];
 
   /// **（已退役）外扩收边线曾经需要的顶部退让**——2026-10-20 收边由外扩光环改为
   /// 1px **内描边**（见 [surfaceRingColor]）：线落在卡片**自己的第一行**，
@@ -790,7 +801,10 @@ class AppTheme {
     required BorderRadius borderRadius,
     Color? color,
   }) => BoxDecoration(
-    border: Border.all(color: color ?? scheme.primary, width: Tokens.focusRingWidth),
+    border: Border.all(
+      color: color ?? scheme.primary,
+      width: Tokens.focusRingWidth,
+    ),
     borderRadius: borderRadius,
   );
 
@@ -1057,8 +1071,9 @@ class AppTheme {
   /// ⚠️ 字重档位要**收敛**（现在只用 400 / 600 / 700 三档）：每个不同的 wght 值
   /// 都会实例化出一份独立 typeface，Impeller 的字形图集按实例缓存 ⇒ 连续值会让
   /// 图集内存无谓增长（中文字形尤其贵）。
-  static List<FontVariation>? weightVariation(double weight) =>
-      <FontVariation>[FontVariation.weight(weight)];
+  static List<FontVariation>? weightVariation(double weight) => <FontVariation>[
+    FontVariation.weight(weight),
+  ];
 
   /// 等宽字体链（代码块/行内代码）：Windows Consolas → Cascadia。
   /// 用途不同（代码等宽是功能性要求），与正文有意分离。
@@ -1110,9 +1125,11 @@ class AppTheme {
     const Color lightInk = Color(0xFFF2F2EE);
     const Color darkInk = Color(0xFF1A1A18);
     final double l = _relativeLuminance(accent);
-    final double cDark = (math.max(l, _relativeLuminance(darkInk)) + 0.05) /
+    final double cDark =
+        (math.max(l, _relativeLuminance(darkInk)) + 0.05) /
         (math.min(l, _relativeLuminance(darkInk)) + 0.05);
-    final double cLight = (math.max(l, _relativeLuminance(lightInk)) + 0.05) /
+    final double cLight =
+        (math.max(l, _relativeLuminance(lightInk)) + 0.05) /
         (math.min(l, _relativeLuminance(lightInk)) + 0.05);
     return cDark >= cLight ? darkInk : lightInk;
   }
@@ -1124,6 +1141,7 @@ class AppTheme {
           ? s / 12.92
           : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
     }
+
     return 0.2126 * channel(c.r.round()) +
         0.7152 * channel(c.g.round()) +
         0.0722 * channel(c.b.round());
@@ -1589,7 +1607,6 @@ class AppTheme {
   }
 }
 
-
 /// **包豪斯扁平令牌**（2026-10-12 用户定：温暖的数字极简包豪斯 = 趋势 #1 方法论
 /// + #2 暖纸底 + #4 几何/原色词汇，但保持克制、不撞色、不解构；排除 #3 渐变霓虹、
 /// #5 算法生成）。
@@ -1622,20 +1639,27 @@ class Bauhaus {
   // ── 固定调色板（亮）──────────────────────────────────────────
   /// 窗口 / 页面底（2026-10-14 起中性偏微冷，原暖纸 #F3F0EA）。
   static const Color _paperLight = Color(0xFFF1F2F3);
+
   /// 浮面 / 卡片面（比纸底更亮的"纸"）。
   static const Color _surfaceLight = Color(0xFFFFFFFF);
+
   /// 墨色（正文 + 硬边）。
   static const Color _inkLight = Color(0xFF17191B);
+
   /// 主色：蓝（主动作 / 选中）。
   static const Color _blueLight = Color(0xFF1B4FD8);
+
   /// 蓝·深一档（hover / pressed）。
   static const Color _blueDeepLight = Color(0xFF123AA8);
+
   /// 强调：黄（hover 高亮 / 点睛；笔记钮 hover 整块转黄 + 墨字）。
   static const Color _yellow = Color(0xFFF4C300);
+
   /// 次强调：绿（hover 点睛；画布钮 hover 描边转绿 + 淡绿底）。
   /// 与 [_yellow] **同色值档**（2026-10-13 用户定）：同为高饱和原色、亮度接近，
   /// 保证配墨字都过 WCAG AA（≈6:1）；且不与红撞"破坏"语义。
   static const Color _greenLight = Color(0xFF00A651);
+
   /// 破坏：红（仅删除 / 错误；不做 hover 强调，免与"悬停=可创建"混淆）。
   static const Color _redLight = Color(0xFFE23A2E);
 
@@ -1651,28 +1675,32 @@ class Bauhaus {
   static const Color _redDark = Color(0xFFE85A4E);
 
   // ── 取色（按明暗）──────────────────────────────────────────
-  static Color paper(Brightness b) => b == Brightness.light ? _paperLight : _paperDark;
+  static Color paper(Brightness b) =>
+      b == Brightness.light ? _paperLight : _paperDark;
   static Color surface(Brightness b) =>
       b == Brightness.light ? _surfaceLight : _surfaceDark;
-  static Color ink(Brightness b) => b == Brightness.light ? _inkLight : _inkDark;
-  static Color blue(Brightness b) => b == Brightness.light ? _blueLight : _blueDark;
+  static Color ink(Brightness b) =>
+      b == Brightness.light ? _inkLight : _inkDark;
+  static Color blue(Brightness b) =>
+      b == Brightness.light ? _blueLight : _blueDark;
   static Color blueDeep(Brightness b) =>
       b == Brightness.light ? _blueDeepLight : _blueDeepDark;
   static Color yellow(Brightness b) => _yellow;
+
   /// 次强调：绿（hover 点睛；画布钮 hover 整块转绿 + 深墨字）。
   /// 与 [_yellow] **同色值档**（2026-10-13 用户定）：同为高饱和原色、亮度接近，
   /// 保证配深墨字都过 WCAG AA（≈6:1）；且不与红撞"破坏"语义。
   static Color green(Brightness b) =>
       b == Brightness.light ? _greenLight : _greenDark;
-  static Color red(Brightness b) => b == Brightness.light ? _redLight : _redDark;
+  static Color red(Brightness b) =>
+      b == Brightness.light ? _redLight : _redDark;
 
   /// Tooltip（悬浮提示）底色：与官方 Tooltip 默认一致，使「新建」面板"看起来像
   /// Tooltip"。值取自 Flutter `_defaultTooltipDecoration`（亮色 grey[700]@0.9 =
   /// 0xE6616161、暗色 0xEBFCFCFC）。故意不染包豪斯色——Tooltip 本就是中性提示
   /// 气泡，新建面板要和它同色才不突兀。定义在主题层（令牌本营），业务代码只引用。
-  static Color tooltipSurface(Brightness b) => b == Brightness.light
-      ? const Color(0xE6616161)
-      : const Color(0xEBFCFCFC);
+  static Color tooltipSurface(Brightness b) =>
+      b == Brightness.light ? const Color(0xE6616161) : const Color(0xEBFCFCFC);
 
   /// Tooltip 面板内的 **1px 发丝分隔线**：与 [tooltipSurface] **反相**的半透明线
   /// ——亮色深灰底用浅线、暗色近白底用深线，两种底色下都"分得开"。不能用
@@ -1706,4 +1734,3 @@ class Bauhaus {
   /// 容器**发丝边**（1px line）：给大面板一个"轻"界定，不与卡片硬边抢。
   static Border hairline(Brightness b) => Border.all(color: line(b));
 }
-

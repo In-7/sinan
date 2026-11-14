@@ -31,9 +31,9 @@ import 'search_provider.dart';
 /// - [HomeView.all]：**全部**——笔记 + 画布跨形态统一池，全局排序
 ///   （[homeSortProvider]）生效。默认排序就是"最近编辑在前"，看最近改过
 ///   什么直接看前几张卡即可（2026-09-29 用户定：不单设「最近」视图）。
-/// - [HomeView.calendar]：按新建日期回看（日历网格成一张卡片，卡片底部
-///   「写日记」**只写今天**——点选日只管回看；选中日的篇目列在卡片**之外**
-///   的页面背景上）。
+/// - [HomeView.calendar]：**日记**——按 `createdAt` 回看当天新建的笔记 / 画布
+///   （2026-11-14 用户定）。桌面壳是左 [CalendarListColumn]（240 月份网格）
+///   + 右 [CalendarDayContent]（选中日篇目）；「写日记」只写今天、只建笔记。
 /// - [HomeView.favorites]：收藏（[Note.promotedAt] 非空），跨形态统一。
 ///
 /// 📌 形态与视图的关系（2026-11-09 收口）：**笔记 / 画布自 2026-10-21 起就是
@@ -165,6 +165,71 @@ class HomeSortNotifier extends Notifier<NoteSort> {
   void select(NoteSort sort) => state = sort;
 }
 
+// ── 日历「日记」视图的选择与数据口径（2026-11-14 布局改造） ──────────────
+
+/// 日历浏览态：显示哪一月、选中哪一天。
+///
+/// 2026-11-14 从 [_CalendarPageState] 的私有 State 提为 provider：日期面板
+/// 移到左侧列表列后，「左列点日期」与「右内容显示篇目」成了两棵独立子树，
+/// 必须共享同一份选择，否则点左边右边不动。
+///
+/// **不落盘**（沿用原「纯浏览节奏」语义）：重启回今天、切走再回来也回今天。
+final calendarSelectionProvider =
+    NotifierProvider<CalendarSelectionNotifier, CalendarSelection>(
+      CalendarSelectionNotifier.new,
+    );
+
+typedef CalendarSelection = ({DateTime month, DateTime selected});
+
+class CalendarSelectionNotifier extends Notifier<CalendarSelection> {
+  @override
+  CalendarSelection build() {
+    final DateTime now = DateTime.now();
+    return (
+      month: DateTime(now.year, now.month),
+      selected: DateTime(now.year, now.month, now.day),
+    );
+  }
+
+  void pickMonth(DateTime m) =>
+      state = (month: DateTime(m.year, m.month), selected: state.selected);
+
+  void pickDay(DateTime d) =>
+      state = (month: DateTime(d.year, d.month), selected: _calDayKey(d));
+
+  /// 月份头「回到今天」：月份与选中日一起回今天。
+  void goToday() {
+    final DateTime now = DateTime.now();
+    state = (
+      month: DateTime(now.year, now.month),
+      selected: DateTime(now.year, now.month, now.day),
+    );
+  }
+}
+
+/// 日历的**唯一数据口径**：按 `createdAt`（新建日期）归组，组内新建倒序。
+///
+/// 笔记与画布**混排、不过滤 kind** —— 日历是「日记」，只问"这天新建了什么"，
+/// 不问"后来改没改"（2026-11-14 用户定）。左列的篇数小圆点与右内容的篇目卡
+/// 都从这里取，口径单点，不会左右漂移。
+///
+/// ⚠️ 不要改成 `revisedAt`，也不要接 [homeSortProvider] / `activeTag`：
+/// 那会把日记变成"最近编辑"，用户明确否掉了。
+final calendarDaysProvider = Provider<Map<DateTime, List<Note>>>((Ref ref) {
+  final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
+  final Map<DateTime, List<Note>> byDay = <DateTime, List<Note>>{};
+  for (final Note n in all) {
+    byDay.putIfAbsent(_calDayKey(n.createdAt), () => <Note>[]).add(n);
+  }
+  for (final List<Note> list in byDay.values) {
+    list.sort((Note a, Note b) => b.createdAt.compareTo(a.createdAt));
+  }
+  return byDay;
+});
+
+/// 日期归一化键（去时间，本地时区）。日历列与归组都用它。
+DateTime _calDayKey(DateTime d) => DateTime(d.year, d.month, d.day);
+
 /// [homeItemsProvider] 的入参（record：结构相等即命中缓存）。
 ///
 /// 2026-11-09 撤掉 `kind`：形态由 [HomeView.notes] / [HomeView.canvas]
@@ -272,13 +337,12 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 
 /// **日历页**（原名 `HomeHub`，2026-10-17 改名）。
 ///
-/// ## 现在的职责（2026-10-17 收口）
-/// 桌面外壳只在「日历」视图、且**未选中笔记**时挂载本页：
-/// - 「全部 / 收藏」→ 主从布局（240 列表列 + 详情），不经过这里；
-/// - 「灵感」→ 独立的一页纸流 `StreamView`，同样不经过这里。
+/// ## 现在的职责（2026-11-14 收口）
+/// **桌面外壳不再挂载本页**：日历已并入主从布局（左 [CalendarListColumn] +
+/// 右 [CalendarDayContent]），由 [HomeScreen] 直接分发。
 ///
-/// 内容区仍按 `view` 分发（日历 / 卡片网格 / 搜索结果）——网格与搜索分支是
-/// 本页被**单独**挂载时的兜底形态（测试、以及将来移动端复用），桌面壳不走它们。
+/// 本页保留为**独立挂载 / 测试用**的整卡形态（月份卡在上、选中日篇目在下），
+/// 不带筛选与搜索。内容区按 `view` 分发的网格兜底同理，桌面壳不走它们。
 ///
 /// ## 三条结构事实
 /// 1. **顶栏**：只剩一枚靠右的漏斗钮 [FilterMenuButton]（排序 / 标签合住）。
@@ -289,6 +353,340 @@ final canvasThumbnailProvider = FutureProvider.autoDispose
 /// 3. **卡片** [_NoteCard] 用现成卡片三件套（[AppTheme.cardFill] / [cardStroke] /
 ///    [cardFillHover]）——静止态**有底色**（与列表行的"显式透明"相反：卡片本就
 ///    该是一块浮起的板子）。每张接 [FocusRing]（§5.2 键盘可达）。
+/// 日历「写日记」**只落今天、只新建笔记**（2026-11-14 用户定）。
+/// 画布不走这个入口，但日记页会照常显示当天新建的画布结果。
+void _createDiaryToday(WidgetRef ref) {
+  unawaited(() async {
+    final Note n = await ref.read(notesProvider.notifier).createNote();
+    ref.read(locateProvider.notifier).locate(noteId: n.id, focus: true);
+  }());
+}
+
+/// **日历左列**（240 宽，2026-11-14 用户定）：日期面板搬到笔记列表列的位置，
+/// 同样尺寸、同样可折叠，但内容是月份网格而不是笔记行。
+///
+/// 不复用 [NoteListColumn]——它写死了搜索 / 筛选 / 新建分半钮与笔记行数据源，
+/// 而日历页「筛选和搜索都不需要」。这里只复用日历自己的单元格与写日记入口。
+///
+/// **骨架与 [NoteListColumn] 同构**（2026-11-14 用户定）：① 工具行留 36 高
+/// 给悬浮折叠钮让位 ② 标题行（月份 + 本月篇数 + 切月）与「笔记 12」同位
+/// ③ 发丝 ④ 内容区。头部用外壳浮面卡底，内容区通栏铺 [Bauhaus.surface]
+/// ⇒ 两块**区分得开**，又不额外加卡片内边距（避免「卡中卡」挤窄 7 列）。
+/// padding 12 ⇒ 216 可用宽，每格 ≈30.9。
+class CalendarListColumn extends ConsumerWidget {
+  const CalendarListColumn({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final CalendarSelection sel = ref.watch(calendarSelectionProvider);
+    final Map<DateTime, List<Note>> byDay = ref.watch(calendarDaysProvider);
+    final DateTime today = _calDayKey(DateTime.now());
+
+    final DateTime first = DateTime(sel.month.year, sel.month.month);
+    final int daysInMonth = DateTime(
+      sel.month.year,
+      sel.month.month + 1,
+      0,
+    ).day;
+    final int leading = (first.weekday + 6) % 7; // 周一起始
+    final int rowCount = ((leading + daysInMonth) / 7).ceil();
+
+    final List<Widget> grid = <Widget>[];
+    int day = 1 - leading;
+    for (int r = 0; r < rowCount; r++) {
+      final List<Widget> cells = <Widget>[];
+      for (int c = 0; c < 7; c++, day++) {
+        final DateTime d = DateTime(sel.month.year, sel.month.month, day);
+        final bool inMonth = d.month == sel.month.month;
+        cells.add(
+          Expanded(
+            child: _CalCell(
+              date: d,
+              inMonth: inMonth,
+              isToday: d == today,
+              isSelected: d == _calDayKey(sel.selected),
+              hasEntry: inMonth && (byDay[_calDayKey(d)]?.isNotEmpty ?? false),
+              onTap: inMonth
+                  ? () =>
+                        ref.read(calendarSelectionProvider.notifier).pickDay(d)
+                  : null,
+            ),
+          ),
+        );
+      }
+      grid.add(SizedBox(height: 36, child: Row(children: cells)));
+    }
+
+    // ⚠️ 标题行**不放篇数**（2026-11-14 用户实报「10 月 54」被读成日期）。
+    // 本月新建数在网格绿点 + 右内容区「新建 N 篇」里已经表达，标题只写月份。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // ① 工具行：日历没有工具钮，但**必须把悬浮折叠钮的位置空出来**
+        //   （[NoteListColumn] 同高 36 = 上 4 + 热区 28 + 下 4）。
+        const SizedBox(height: 36),
+        // ② 标题行：与 [NoteListColumn] 第二行**同位**（左 12、行高 20）
+        //   ⇒ 月份文字和「笔记 12」落在同一条基线上。
+        SizedBox(
+          height: 20,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Tokens.spaceMd,
+              0,
+              Tokens.spaceSm,
+              0,
+            ),
+            child: _CompactMonthHeader(month: sel.month, today: today),
+          ),
+        ),
+        // ③ 头部 ↔ 内容区发丝：与笔记列同款结构线。
+        Container(height: 1, color: Bauhaus.line(theme.brightness)),
+        // ④ 内容区**与头部区分**（2026-11-14 用户定）：通栏铺 [Bauhaus.surface]
+        //   底色，不另加卡片内边距 ⇒ 网格仍占 216 可用宽，不会「卡中卡」挤窄
+        //   7 列（每格 ≈30.9）。
+        Expanded(
+          child: ColoredBox(
+            color: Bauhaus.surface(theme.brightness),
+            child: Padding(
+              padding: const EdgeInsets.all(Tokens.spaceMd),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      for (final String s in const <String>[
+                        '一',
+                        '二',
+                        '三',
+                        '四',
+                        '五',
+                        '六',
+                        '日',
+                      ])
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              s,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Bauhaus.inkMuted(scheme.brightness),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: Tokens.spaceXs),
+                  AnimatedSwitcher(
+                    duration: Tokens.durationFast,
+                    child: KeyedSubtree(
+                      key: ValueKey<DateTime>(first),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 36 * 6,
+                        child: Column(children: grid),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(height: 1, color: Bauhaus.line(theme.brightness)),
+                  const SizedBox(height: Tokens.spaceXs),
+                  _DiaryEntryButton(
+                    day: today,
+                    onTap: () => _createDiaryToday(ref),
+                    compact: true,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 日历列**标题行**专用的紧凑月份头（高 20，与 [NoteListColumn] 第二行同位）。
+/// 左：月份；右：「今天」+ 切月两枚 20 方钮。
+///
+/// 复用不了 28 圆的 [_CalNavButton]——标题行只有 20 高，会把行撑高、把标题
+/// 从「笔记 12」那条基线上挤下去。
+class _CompactMonthHeader extends ConsumerWidget {
+  const _CompactMonthHeader({required this.month, required this.today});
+
+  final DateTime month;
+  final DateTime today;
+
+  Widget _tinyIcon(Widget icon, String tip, VoidCallback onTap, Brightness b) =>
+      Tooltip(
+        message: tip,
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: AppTheme.hoverOverlay(b),
+            borderRadius: BorderRadius.circular(Tokens.radiusSm),
+            child: Center(child: icon),
+          ),
+        ),
+      );
+
+  Widget _tinyText(String text, VoidCallback onTap, ThemeData theme) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(Tokens.radiusSm),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
+      child: Text(
+        text,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: Bauhaus.inkMuted(theme.brightness),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness b = theme.colorScheme.brightness;
+    final bool atCurrentMonth =
+        month.year == today.year && month.month == today.month;
+    final CalendarSelectionNotifier notifier = ref.read(
+      calendarSelectionProvider.notifier,
+    );
+
+    Widget chevron(Widget icon, String tip, int delta) => _tinyIcon(
+      icon,
+      tip,
+      () => notifier.pickMonth(DateTime(month.year, month.month + delta)),
+      b,
+    );
+    ui.ColorFilter inkFilter() =>
+        ui.ColorFilter.mode(Bauhaus.inkMuted(b), ui.BlendMode.srcIn);
+
+    return Row(
+      children: <Widget>[
+        Text(
+          '${month.month} 月',
+          style: theme.textTheme.titleSmall?.copyWith(color: Bauhaus.ink(b)),
+        ),
+        const Spacer(),
+        if (!atCurrentMonth) ...<Widget>[
+          _tinyText('今天', notifier.goToday, theme),
+          const SizedBox(width: Tokens.spaceXs),
+        ],
+        chevron(
+          tabler.ChevronLeft(
+            height: Tokens.iconXs + 4,
+            width: Tokens.iconXs + 4,
+            strokeWidth: Tokens.iconStroke,
+            colorFilter: inkFilter(),
+          ),
+          '上个月',
+          -1,
+        ),
+        const SizedBox(width: Tokens.spaceXs),
+        chevron(
+          tabler.ChevronRight(
+            height: Tokens.iconXs + 4,
+            width: Tokens.iconXs + 4,
+            strokeWidth: Tokens.iconStroke,
+            colorFilter: inkFilter(),
+          ),
+          '下个月',
+          1,
+        ),
+      ],
+    );
+  }
+}
+
+/// **日历右内容**：选中日新建的笔记 / 画布混排（2026-11-14 用户定「日记」口径）。
+///
+/// 数据只读 [calendarDaysProvider]（按 `createdAt` 归组），不接全局排序 /
+/// 标签筛选 —— 这也是日历页不需要筛选与搜索的原因。
+class CalendarDayContent extends ConsumerWidget {
+  const CalendarDayContent({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final CalendarSelection sel = ref.watch(calendarSelectionProvider);
+    final List<Note> dayNotes =
+        ref.watch(calendarDaysProvider)[_calDayKey(sel.selected)] ??
+        const <Note>[];
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(Tokens.spaceLg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              SizedBox(
+                width: 30,
+                height: 30,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppTheme.selectedPill(scheme),
+                    borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${sel.selected.day}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Bauhaus.ink(scheme.brightness),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Tokens.spaceSm),
+              Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: '${sel.selected.month} 月',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Bauhaus.ink(scheme.brightness),
+                      ),
+                    ),
+                    TextSpan(
+                      text: '  ·  新建 ${dayNotes.length} 篇',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Bauhaus.inkMuted(scheme.brightness),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Tokens.spaceXs),
+          if (dayNotes.isEmpty)
+            Text(
+              '这天没有新建内容',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Bauhaus.inkMuted(scheme.brightness),
+              ),
+            )
+          else
+            _CardsGrid(
+              items: dayNotes,
+              onOpen: (Note n) =>
+                  ref.read(locateProvider.notifier).locate(noteId: n.id),
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXs),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class CalendarPage extends ConsumerStatefulWidget {
   const CalendarPage({super.key});
 
@@ -296,65 +694,26 @@ class CalendarPage extends ConsumerStatefulWidget {
   ConsumerState<CalendarPage> createState() => _CalendarPageState();
 }
 
+/// 2026-11-14 起桌面壳不再走本页：日历已并入主从布局（左 [CalendarListColumn]
+/// + 右 [CalendarDayContent]）。本页保留为**独立挂载 / 测试用**的整卡形态
+/// （月份卡在上、选中日篇目在下），不再带顶栏漏斗、也不吃全局搜索态——
+/// 日历页「筛选和搜索都不需要」（用户定），且漏斗管的排序 / 标签对按
+/// `createdAt` 归组的日记本来就不生效，是个假控件。
 class _CalendarPageState extends ConsumerState<CalendarPage> {
-  /// 日历视图的浏览态：显示月份与选中日。只放本地 State（纯浏览节奏，
-  /// 不进 provider 不落盘，重启回今天）。
-  DateTime _calMonth = _todayMonth();
-  DateTime _calSelected = _today();
-
-  static DateTime _today() {
-    final DateTime n = DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
-
-  static DateTime _todayMonth() {
-    final DateTime n = DateTime.now();
-    return DateTime(n.year, n.month);
-  }
-
   @override
   Widget build(BuildContext context) {
     final HomeView view = ref.watch(navHistoryProvider).view;
-    final SearchState s = ref.watch(searchNotifierProvider);
+    final CalendarSelection sel = ref.watch(calendarSelectionProvider);
+    final CalendarSelectionNotifier notifier = ref.read(
+      calendarSelectionProvider.notifier,
+    );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // 顶栏：只剩一枚靠右的「筛选与排序」漏斗钮（排序 / 标签合住）。
-        // 视图切换 + 新建胶囊 2026-10-12 起移出内容区（今在最左 [AppIconRail] 60
-        // 图标轨）。问笔记（AI）2026-10-16 起是标题栏 `trailing` 钮（设置右、最小化
-        // 左），不在工作区。
-        const Padding(
-          padding: EdgeInsets.fromLTRB(
-            Tokens.spaceLg,
-            // 顶部带中心线（Tokens.headerBandCenter = 20）：32 高的钮取
-            // top = 20 − 16 = 4，与编辑器耳朵（top 5、高 30）同中心线。
-            Tokens.headerBandCenter - Tokens.toolbarButtonSize / 2,
-            // 右内缩与左对称（spaceLg）。2026-10-16 前这里是
-            // spaceXs + toolbarButtonSize + spaceSm（44）——让开工作区右角的旧 AI
-            // 折叠钮（已随"问笔记"搬进标题栏 trailing）；无需再让。
-            Tokens.spaceLg,
-            Tokens.spaceSm,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: <Widget>[FilterMenuButton()],
-          ),
-        ),
-        Expanded(
-          child: _HomeBody(
-            view: view,
-            search: s,
-            calMonth: _calMonth,
-            calSelected: _calSelected,
-            onPickMonth: (DateTime m) => setState(() => _calMonth = m),
-            onPickDay: (DateTime d) => setState(() {
-              _calSelected = d;
-              _calMonth = DateTime(d.year, d.month);
-            }),
-          ),
-        ),
-      ],
+    return _HomeBody(
+      view: view,
+      calMonth: sel.month,
+      calSelected: sel.selected,
+      onPickMonth: notifier.pickMonth,
+      onPickDay: notifier.pickDay,
     );
   }
 }
@@ -367,7 +726,6 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 class _HomeBody extends ConsumerWidget {
   const _HomeBody({
     required this.view,
-    required this.search,
     required this.calMonth,
     required this.calSelected,
     required this.onPickMonth,
@@ -375,7 +733,6 @@ class _HomeBody extends ConsumerWidget {
   });
 
   final HomeView view;
-  final SearchState search;
   final DateTime calMonth;
   final DateTime calSelected;
   final ValueChanged<DateTime> onPickMonth;
@@ -383,15 +740,10 @@ class _HomeBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
-
-    // 有查询词 ⇒ **全局搜索结果态**（2026-09-30 用户定"搜索跨形态"）：
-    // 浏览与搜索是两种意图——tab 只管"逛哪个池子"，搜索永远是"去全库找
-    // 东西"。所以搜索态跨笔记/画布、**覆盖任何 tab（含日历）**；撤词后
-    // 回到原视图（查询词在 provider 里，视图状态从没被动过）。
-    if (search.query.trim().isNotEmpty) {
-      return _SearchResultsView(search: search);
-    }
+    // 2026-11-14 撤掉「全局搜索态覆盖日历」：日历是日记界面，不需要搜索；
+    // Ctrl+K 全局搜索浮层是独立 Overlay，不走这里。这里只留 activeTag 给
+    // 独立挂载时的「全部 / 收藏」兜底空态用。
+    final SearchState search = ref.watch(searchNotifierProvider);
 
     // ⚠️ 灵感**不由本页渲染**：它是独立的一页纸时间流，由外壳
     // `HomeScreen` 直接挂 `StreamView`（2026-10-17 修：此前挂在这里，而桌面壳
@@ -412,7 +764,6 @@ class _HomeBody extends ConsumerWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: _CalendarView(
-              notes: all,
               month: calMonth,
               selected: calSelected,
               onPickMonth: onPickMonth,
@@ -438,8 +789,8 @@ class _HomeBody extends ConsumerWidget {
           Expanded(
             child: _EmptyView(
               view: view,
-              hasQuery: search.query.trim().isNotEmpty,
-              query: search.query.trim(),
+              hasQuery: false,
+              query: '',
               activeTag: search.activeTag,
             ),
           ),
@@ -462,15 +813,6 @@ class _HomeBody extends ConsumerWidget {
       ],
     );
   }
-
-  /// 日历的「写日记」**只落今天**（2026-09-29 用户定：点选哪天只管回看，
-  /// 不改变落笔日期）：新建一篇，建好即定位聚焦——点完直接打字。
-  void _createDiaryToday(WidgetRef ref) {
-    unawaited(() async {
-      final Note n = await ref.read(notesProvider.notifier).createNote();
-      ref.read(locateProvider.notifier).locate(noteId: n.id, focus: true);
-    }());
-  }
 }
 
 /// **全局搜索结果态**（2026-09-30 用户定）：顶栏一输入，内容区统一切到这里——
@@ -479,8 +821,10 @@ class _HomeBody extends ConsumerWidget {
 ///
 /// 卡片拿到了检索产出的 **snippet**（命中块文本）：摘要位显示它并高亮查询
 /// 词，而不是默认的正文前三行——全局检索最贵的产出不再被渲染层丢掉。
-class _SearchResultsView extends ConsumerWidget {
-  const _SearchResultsView({required this.search});
+/// 📌 2026-11-14 桌面壳不再内联渲染搜索结果（日历不要搜索、`Ctrl+K` 走独立
+/// Overlay 浮层）。保留此 public 组件给将来的独立挂载 / 兜底复用。
+class SearchResultsView extends ConsumerWidget {
+  const SearchResultsView({super.key, required this.search});
 
   final SearchState search;
 
@@ -605,13 +949,15 @@ class _SearchResultBar extends StatelessWidget {
 /// 不再图标转蓝（顺带回归 monochrome 定稿：唯一蓝只在焦点环）。
 ///
 /// 同日：宿主改为 [AppIconButton]（与列表头三枚同一件），图标统一 Fluent 漏斗
-/// ⇒ 两处调用点（列表顶 / hub 顶栏）的**字形与色源都单点**，那条"默认 tabler
-/// 不吃 Material IconTheme、要走 AppIconTheme 桥"的旁路随之消失。
+/// ⇒ **字形与色源单点**，那条"默认 tabler 不吃 Material IconTheme、要走
+/// AppIconTheme 桥"的旁路随之消失。
+///
+/// 📌 2026-11-14 日历页不再带漏斗 ⇒ 生产调用点只剩列表栏第二行（`size: 20`）；
+/// 默认 28 供独立挂载 / 测试壳使用。
 class FilterMenuButton extends ConsumerStatefulWidget {
   const FilterMenuButton({super.key, this.size = Tokens.headerActionSize});
 
-  /// 热区边长。默认 28（hub 顶栏那处：与顶栏中心线 `headerBandCenter=20` 对齐，
-  /// 32 高的钮取 top=4 ⇒ 中心 20）。
+  /// 热区边长。默认 28（独立挂载 / 测试壳）；日历页顶栏漏斗 2026-11-14 已撤。
   ///
   /// 列表栏「视图名 + 篇数」行传 **20**：那行的行高由本钮决定，28 会把标题行
   /// 撑高、文字垂直居中下沉 5px（2026-11-09 用户实报"折叠钮与笔记的间距变大"）。
@@ -1346,9 +1692,8 @@ String _escapeRegExp(String s) => s.replaceAllMapped(
 /// 点选日只管回看，不改变落笔日期）；选中日的篇目列表挪到**卡片之外、下方
 /// 的页面背景上**——卡片与结果背景分开——且篇目本身也用**卡片网格**呈现
 /// （同日再定：列表行不直观，与其余视图统一成 [_NoteCard]）。
-class _CalendarView extends StatelessWidget {
+class _CalendarView extends ConsumerWidget {
   const _CalendarView({
-    required this.notes,
     required this.month,
     required this.selected,
     required this.onPickMonth,
@@ -1356,8 +1701,6 @@ class _CalendarView extends StatelessWidget {
     required this.onOpenNote,
     required this.onCreateToday,
   });
-
-  final List<Note> notes;
 
   /// 当前显示月份（传任意一天即可，内部只看年月）。
   final DateTime month;
@@ -1380,18 +1723,13 @@ class _CalendarView extends StatelessWidget {
   static const double _calRowHeight = 36;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
 
-    // 按新建日期归组（每次 build 重算：桌面量级小，不值得缓存）。
-    final Map<DateTime, List<Note>> byDay = <DateTime, List<Note>>{};
-    for (final Note n in notes) {
-      byDay.putIfAbsent(_dayKey(n.createdAt), () => <Note>[]).add(n);
-    }
-    for (final List<Note> list in byDay.values) {
-      list.sort((Note a, Note b) => b.createdAt.compareTo(a.createdAt));
-    }
+    // 日记口径单点：左列与右内容同读 [calendarDaysProvider]（按 createdAt
+    // 归组、笔记与画布混排）。这里不再本地重算，避免左右口径漂移。
+    final Map<DateTime, List<Note>> byDay = ref.watch(calendarDaysProvider);
 
     final DateTime first = DateTime(month.year, month.month);
     final int daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -1416,7 +1754,7 @@ class _CalendarView extends StatelessWidget {
               inMonth: inMonth,
               isToday: d == today,
               isSelected: d == _dayKey(selected),
-              count: inMonth ? (byDay[_dayKey(d)]?.length ?? 0) : 0,
+              hasEntry: inMonth && (byDay[_dayKey(d)]?.isNotEmpty ?? false),
               onTap: inMonth ? () => onPickDay(d) : null,
             ),
           ),
@@ -1532,8 +1870,9 @@ class _CalendarView extends StatelessWidget {
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     // 「当前项」统一读法：强调色药丸（2026-10-08 全局换装）。
+                    // 2026-11-14 与日历格同改圆角方形，圆形语言从日历退场。
                     color: AppTheme.selectedPill(scheme),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(Tokens.radiusSm),
                   ),
                   child: Center(
                     child: Text(
@@ -1571,7 +1910,7 @@ class _CalendarView extends StatelessWidget {
           const SizedBox(height: Tokens.spaceXs),
           if (dayNotes.isEmpty)
             Text(
-              '这天没有新建笔记',
+              '这天没有新建内容',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: Bauhaus.inkMuted(scheme.brightness),
               ),
@@ -1656,11 +1995,19 @@ class _CalendarView extends StatelessWidget {
 /// 点选日只管回看，落笔日期永远是今天。全宽一条（发丝分隔之下），静止透明、
 /// hover 叠一档；左侧 PencilPlus +「写日记」，右侧灰字给出今天的日期（含周几）。
 class _DiaryEntryButton extends StatefulWidget {
-  const _DiaryEntryButton({required this.day, required this.onTap});
+  const _DiaryEntryButton({
+    required this.day,
+    required this.onTap,
+    this.compact = false,
+  });
 
-  /// 恒为今天（由 [_CalendarView] 传入，本地时区零点）。
+  /// 恒为今天（由日历宿主传入，本地时区零点）。
   final DateTime day;
   final VoidCallback onTap;
+
+  /// 240 宽左列专用：藏掉右侧的「11 月 14 日 · 周六」，否则 216 可用宽里
+  /// 一行放不下（实测溢出 27px）。整卡形态仍显示完整日期。
+  final bool compact;
 
   @override
   State<_DiaryEntryButton> createState() => _DiaryEntryButtonState();
@@ -1724,12 +2071,13 @@ class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
                       ),
                     ),
                     const Spacer(),
-                    Text(
-                      '${widget.day.month} 月 ${widget.day.day} 日 · 周${weekdays[widget.day.weekday - 1]}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Bauhaus.inkMuted(scheme.brightness),
+                    if (!widget.compact)
+                      Text(
+                        '${widget.day.month} 月 ${widget.day.day} 日 · 周${weekdays[widget.day.weekday - 1]}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Bauhaus.inkMuted(scheme.brightness),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -1741,14 +2089,16 @@ class _DiaryEntryButtonState extends State<_DiaryEntryButton> {
   }
 }
 
-/// 日历单元格：36 高、数字居中、圆形状态底。无格线无底色——文字网格。
+/// 日历单元格：36 高、数字居中、**圆角方形**状态底（2026-11-14 由圆形改方形）。
+/// 有新建的那天铺 [AppTheme.calendarEntryFill] 浅绿底（二元标记，不编码篇数），
+/// 选中 / 今天描边 / hover 都叠在它上面。无格线——文字网格。
 class _CalCell extends StatefulWidget {
   const _CalCell({
     required this.date,
     required this.inMonth,
     required this.isToday,
     required this.isSelected,
-    required this.count,
+    required this.hasEntry,
     this.onTap,
   });
 
@@ -1757,8 +2107,8 @@ class _CalCell extends StatefulWidget {
   final bool isToday;
   final bool isSelected;
 
-  /// 当天新建篇数（0 = 无标记）。
-  final int count;
+  /// 当天**有没有新建**（二元，不编码篇数；2026-11-14 用户定）。
+  final bool hasEntry;
 
   /// `null` = 非本月补位，不可点。
   final VoidCallback? onTap;
@@ -1805,54 +2155,49 @@ class _CalCellState extends State<_CalCell> {
             child: Stack(
               alignment: Alignment.center,
               children: <Widget>[
+                // ① 有新建 ⇒ **浅绿圆角方底**（2026-11-14 用户定）。
+                // 二元标记：只回答"这天写没写"，不编码篇数；点开右内容区看确数。
+                // 放在最底层，选中 / 今天描边 / hover 都能叠在它上面读出来。
+                if (widget.hasEntry)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.calendarEntryFill(theme.brightness),
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                      ),
+                    ),
+                  ),
+                // ② 选中 / hover 底：**圆角方形**（2026-11-14 由圆形改方形）。
                 if (fill != null)
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: fill,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
                       ),
                     ),
                   ),
-                // 今天（未选中）：细描边圈，不填充（2026-09-26 用户定）。
+                // ③ 今天（未选中）：圆角方形细描边，不填充。
                 if (widget.isToday && !widget.isSelected)
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
                         border: Border.all(
                           color: Bauhaus.inkMuted(scheme.brightness),
                         ),
                       ),
                     ),
                   ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      '${widget.date.day}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: widget.isSelected
-                            ? Bauhaus.ink(scheme.brightness)
-                            : textColor,
-                        fontWeight: widget.isSelected ? FontWeight.w600 : null,
-                      ),
-                    ),
-                    // 新建标记：日期下一枚小圆点；≥3 篇两枚（不显数字）。
-                    if (widget.count > 0) ...<Widget>[
-                      const SizedBox(height: 2),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          _calDot(theme.brightness),
-                          if (widget.count >= 3) ...<Widget>[
-                            const SizedBox(width: 3),
-                            _calDot(theme.brightness),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ],
+                // ④ 日期数字：始终居中，不被任何标记顶上去。
+                Text(
+                  '${widget.date.day}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: widget.isSelected
+                        ? Bauhaus.ink(scheme.brightness)
+                        : textColor,
+                    fontWeight: widget.isSelected ? FontWeight.w600 : null,
+                  ),
                 ),
               ],
             ),
@@ -1861,20 +2206,6 @@ class _CalCellState extends State<_CalCell> {
       ),
     );
   }
-
-  /// 新建标记点：绿色系（2026-09-26 用户定），明暗各一档保证两种主题都清晰
-  /// ——亮色窗用深绿、暗色窗用亮绿（同一色相，只调明度）。
-  Widget _calDot(Brightness brightness) => Container(
-    width: 4,
-    height: 4,
-    decoration: BoxDecoration(
-      color: switch (brightness) {
-        Brightness.dark => const Color(0xFF4ADE80),
-        Brightness.light => const Color(0xFF16A34A),
-      },
-      shape: BoxShape.circle,
-    ),
-  );
 }
 
 /// 切月 ghost 圆钮：28 圆，静止透明，hover 叠一档（"再叠一档"同语言）。

@@ -5,7 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/home_hub.dart';
 import 'package:sinan/src/app/providers.dart';
-import 'package:sinan/src/app/search_provider.dart' show searchNotifierProvider;
+import 'package:sinan/src/app/search_provider.dart'
+    show SearchState, searchNotifierProvider;
 import 'package:sinan/src/canvas/kernel/canvas_controller.dart';
 import 'package:sinan/src/canvas/kernel/canvas_item.dart';
 import 'package:sinan/src/canvas/kernel/canvas_painters.dart';
@@ -14,7 +15,8 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
-import 'package:sqlite3/sqlite3.dart';
+// 只取 Database / sqlite3：sqlite3 还导出一个 `Row`，与 Flutter 的 Row 撞名。
+import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
 /// 日历页（原名 `HomeHub`，2026-10-17 改名 `CalendarPage`）的回归。
 ///
@@ -25,13 +27,11 @@ import 'package:sqlite3/sqlite3.dart';
 /// ② 内容 = 小卡片网格，卡片**静止态有底色**（cardFill——与列表行的
 ///   "显式透明"相反，卡片就该是一块浮起的板子）；
 /// ③ 点卡片走 `locateProvider`（§4 唯一跳转通道）；
-/// ④ 页内搜索态：**一有搜索词就切到全局搜索结果态**——
-///    跨笔记/画布、覆盖任何视图（含日历），撤词回到原视图（2026-09-30 定）；
-///    捕获输入框 OmniBar 2026-10-09 已撤（新建走 Ctrl+N），本文件直接灌
-///    [searchNotifierProvider] 验搜索态本身；
-/// ⑤ 收藏视图可就地取消收藏；**排序方案与标签筛选不是页面**——它们合住顶栏
-///    右侧一枚「筛选与排序」漏斗钮（一个菜单：上半排序、下半标签），对所有
-///    视图全局生效（2026-09-30 合并）；
+/// ④ 搜索结果卡片的摘要 / 高亮、以及筛选器菜单的排序与标签行为——
+///    **2026-11-14 起产品日历页已不带这两个入口**，本文件改挂
+///    [_LegacyCalendarHost] 测试专用壳来保住这些**通用组件**的覆盖；
+///    日历页真实形态的契约见 `calendar_layout_test.dart`；
+/// ⑤ 收藏视图可就地取消收藏；
 /// ⑥「全部」跨形态统一池（默认按最近编辑排序，不单设「最近」视图）；
 /// ⑦ 视图历史（上一步 / 下一步）在**右栏顶条**（title_bar_nav_test.dart 钉），
 ///    provider 语义在本文件钉。
@@ -98,7 +98,11 @@ void main() {
         container: container,
         child: MaterialApp(
           theme: AppTheme.light(),
-          home: const Scaffold(body: CalendarPage()),
+          // 2026-11-14 产品日历页已改成「左列 + 右内容」且**不带筛选/搜索**
+          //（见 [_CalendarLayoutHost] 之外的布局契约测试）。本文件其余用例钉的是
+          // 卡片 / 筛选器 / 搜索结果这些**通用组件**，故挂一个测试专用壳把它们
+          // 复现出来，不代表产品日历页的形态。
+          home: const Scaffold(body: _LegacyCalendarHost()),
         ),
       ),
     );
@@ -650,4 +654,37 @@ void main() {
     nav.selectHome(HomeView.favorites);
     expect(container.read(navHistoryProvider).canGoForward, isFalse);
   });
+}
+
+/// 测试专用宿主：复现 2026-11-14 之前「日历整卡 + 顶栏漏斗 + 内联搜索结果」
+/// 的形态，只为保住本文件里卡片 / 筛选器 / 搜索结果这些**通用组件**的覆盖。
+///
+/// ⚠️ 产品日历页已不走这里：桌面壳现在是 [CalendarListColumn]（左 240 列）
+/// + [CalendarDayContent]（右内容），且**不带筛选与搜索**。本壳不代表产品形态。
+class _LegacyCalendarHost extends ConsumerWidget {
+  const _LegacyCalendarHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final SearchState s = ref.watch(searchNotifierProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 右内缩 8 = 旧日历页顶栏漏斗的落位；showMenu 的锚点要按它算，
+        // 少这一圈菜单右缘会偏 8px（本文件有落位断言）。
+        const Padding(
+          padding: EdgeInsets.only(right: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[FilterMenuButton()],
+          ),
+        ),
+        Expanded(
+          child: s.query.trim().isNotEmpty
+              ? SearchResultsView(search: s)
+              : const CalendarPage(),
+        ),
+      ],
+    );
+  }
 }

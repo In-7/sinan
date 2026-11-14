@@ -166,8 +166,10 @@ class HomeScreen extends ConsumerWidget {
 
       // 主从布局（2026-10-16 Option 2 进卡）：60 轨常驻（唯一平铺窗口底的脊梁，不折叠）；
       // 轨右边一张浮面卡，卡内两格 = [列表列 ┃ 详情]。列表列可折叠（标题栏最左折叠钮 /
-      // Ctrl+B，走 [listCollapsedProvider]）——折叠时编辑器占满卡。日历视图例外：
-      // 隐藏列表、卡整屏显示日历。详情实例只取一次（避免 rebuild）；折叠是**瞬时**的
+      // Ctrl+B，走 [listCollapsedProvider]）——折叠时右格占满卡。**2026-11-14 起
+      // 日历不再例外**：同一骨架，左列换 [CalendarListColumn]、右格换
+      // [CalendarDayContent]，折叠 / 发丝 / 焦点语义全部复用。
+      // 详情实例只取一次（避免 rebuild）；折叠是**瞬时**的
       //（2026-10-28 方案②，无宽度补间）⇒ 编辑器只 relayout 一次，不会每帧重排全文。
       final Brightness brightness = Theme.of(context).brightness;
       final HomeView view = ref.watch(
@@ -186,11 +188,13 @@ class HomeScreen extends ConsumerWidget {
         // 灵感页当年挂在日历页（原名 HomeHub）的 timeline 分支里，而新外壳
         // 早已改走 NoteListColumn ⇒ 那份实现成了孤儿。现在由外壳直接挂载）。
         HomeView.timeline => const StreamView(),
-        // 日历：列表列无意义，整卡显示日历（选中某篇后仍出详情）。
-        HomeView.calendar => selectedId == null ? const CalendarPage() : detail,
+        // 日历（2026-11-14 用户定）：与笔记 / 画布**同一骨架**——左 240 列放
+        // 月份网格（同样可折叠），右内容放选中日新建的笔记 / 画布。布局一致、
+        // 内容不同；日历页不要筛选与搜索。选中某篇后右格仍出详情。
         // 全部 / 笔记 / 画布 / 收藏：主从（240 列表列 + 详情）。笔记 / 画布
         // 2026-10-21 用户定升为视图，布局与「全部」同，只是池子按类型收
         //（见 [homeItemsProvider]）。
+        HomeView.calendar ||
         HomeView.all ||
         HomeView.notes ||
         HomeView.canvas ||
@@ -211,11 +215,15 @@ class HomeScreen extends ConsumerWidget {
                   child: ClipRect(
                     child: SizedBox(
                       width: listCollapsed ? 0 : Tokens.noteListWidth,
-                      child: const OverflowBox(
+                      child: OverflowBox(
                         alignment: Alignment.centerLeft,
                         minWidth: Tokens.noteListWidth,
                         maxWidth: Tokens.noteListWidth,
-                        child: NoteListColumn(),
+                        // 列槽按视图换内容：日历放月份网格，其余放笔记行。
+                        // 宽度 / 折叠 / 裁剪 / 焦点语义全部复用同一套几何。
+                        child: view == HomeView.calendar
+                            ? const CalendarListColumn()
+                            : const NoteListColumn(),
                       ),
                     ),
                   ),
@@ -234,7 +242,11 @@ class HomeScreen extends ConsumerWidget {
             Expanded(
               child: FocusTraversalOrder(
                 order: const NumericFocusOrder(30),
-                child: detail,
+                // 日历未选中笔记时，右格是「选中日篇目」而不是详情；
+                // 点开某篇后 selectedId 非空 ⇒ 自然切回详情。
+                child: view == HomeView.calendar && selectedId == null
+                    ? const CalendarDayContent()
+                    : detail,
               ),
             ),
           ],
@@ -788,6 +800,11 @@ class SidebarCollapseButton extends ConsumerWidget {
     final bool narrow =
         MediaQuery.sizeOf(context).width < Tokens.noteListBreakpoint;
     final bool collapsed = narrow || ref.watch(listCollapsedProvider);
+    // 2026-11-14 日历列与笔记列共用同一枚折叠钮 ⇒ 文案跟着视图变，别在
+    // 日历页说"收起列表"。
+    final String noun = ref.watch(navHistoryProvider).view == HomeView.calendar
+        ? '日历'
+        : '列表';
     // 宿主与列表头三枚**同为 [AppIconButton]**（2026-10-26 统一）：色源、图标
     // 档、hover 底、焦点环全在那边单点，不再走 M3 IconButton 的组件下发链路
     // （那正是同一行出现两档灰的根因）。
@@ -798,7 +815,7 @@ class SidebarCollapseButton extends ConsumerWidget {
       // ⚠️ **不传 color**：色由 [AppIconButton] 单点下发；禁用态（窄窗）自动
       // 降一档，显式传色会绕过它、图标保持全强度（AppTheme.disabledInk 坑注）。
       icon: CustomIcons.panelLeft(size: Tokens.iconSm),
-      tooltip: narrow ? '放宽窗口可展开列表' : (collapsed ? '展开列表' : '收起列表'),
+      tooltip: narrow ? '放宽窗口可展开$noun' : (collapsed ? '展开$noun' : '收起$noun'),
       onPressed: narrow
           ? null
           : () => ref.read(listCollapsedProvider.notifier).toggle(),
