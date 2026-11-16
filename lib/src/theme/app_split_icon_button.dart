@@ -124,41 +124,55 @@ class _AppSplitIconButtonState extends State<AppSplitIconButton> {
       duration: Tokens.durationFast,
       curve: Curves.easeOut,
       height: widget.height,
+      // **常驻浅底**（2026-11-16 用户定：主操作要有视觉权重），**不加描边**。
+      // ⚠️ 用 [Bauhaus.controlFill]（墨打折的叠层）而不是 [Bauhaus.surface]：
+      // surface 是固定纯白，亮色下与卡底只差 1 L*、实机看不出来（2026-11-16
+      // 用户实报）。controlFill 相对卡底叠层，两主题都稳定有明度差。
       decoration: BoxDecoration(
-        color: lit ? AppTheme.hoverOverlay(b) : Colors.transparent,
+        color: Bauhaus.controlFill(b),
         borderRadius: BorderRadius.circular(Tokens.radiusButton),
       ),
-      // 两半直接排一行即可：不再有发丝线覆盖层 ⇒ 不需要 Stack / Clip.none。
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          _SplitHalf(
-            icon: widget.primaryIcon,
-            tooltip: widget.primaryTooltip,
-            onPressed: widget.onPrimary,
-            width: _primaryWidth,
-            height: widget.height,
-            iconSize: widget.iconSize,
-            focusNode: _primaryFocus,
-            leftRounded: true,
-            secondary: false,
-            focused: _primaryFocus.hasFocus,
-            onHoverChanged: (bool v) => setState(() => _hoverPrimary = v),
-          ),
-          _SplitHalf(
-            icon: widget.secondaryIcon,
-            tooltip: widget.secondaryTooltip,
-            onPressed: widget.onSecondary,
-            width: _secondaryWidth,
-            height: widget.height,
-            iconSize: widget.secondaryIconSize,
-            focusNode: _secondaryFocus,
-            leftRounded: false,
-            secondary: true,
-            focused: _secondaryFocus.hasFocus,
-            onHoverChanged: (bool v) => setState(() => _hoverSecondary = v),
-          ),
-        ],
+      // hover / 菜单展开的「整块亮」叠在常驻底**之上** ⇒ 静止有权重、
+      // 悬浮仍有反馈；下面两半的分区色阶（副区取主区一半浓度）不变。
+      child: AnimatedContainer(
+        duration: Tokens.durationFast,
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: lit ? AppTheme.hoverOverlay(b) : Colors.transparent,
+          borderRadius: BorderRadius.circular(Tokens.radiusButton),
+        ),
+        // 两半直接排一行即可：不再有发丝线覆盖层 ⇒ 不需要 Stack / Clip.none。
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _SplitHalf(
+              icon: widget.primaryIcon,
+              tooltip: widget.primaryTooltip,
+              onPressed: widget.onPrimary,
+              width: _primaryWidth,
+              height: widget.height,
+              iconSize: widget.iconSize,
+              focusNode: _primaryFocus,
+              leftRounded: true,
+              secondary: false,
+              focused: _primaryFocus.hasFocus,
+              onHoverChanged: (bool v) => setState(() => _hoverPrimary = v),
+            ),
+            _SplitHalf(
+              icon: widget.secondaryIcon,
+              tooltip: widget.secondaryTooltip,
+              onPressed: widget.onSecondary,
+              width: _secondaryWidth,
+              height: widget.height,
+              iconSize: widget.secondaryIconSize,
+              focusNode: _secondaryFocus,
+              leftRounded: false,
+              secondary: true,
+              focused: _secondaryFocus.hasFocus,
+              onHoverChanged: (bool v) => setState(() => _hoverSecondary = v),
+            ),
+          ],
+        ),
       ),
     );
   }

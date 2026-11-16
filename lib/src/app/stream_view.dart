@@ -77,7 +77,10 @@ class _StreamViewState extends ConsumerState<StreamView> {
     super.dispose();
   }
 
-  Future<StreamItem?> _capture(String text, List<StreamAttachmentInput> media) async {
+  Future<StreamItem?> _capture(
+    String text,
+    List<StreamAttachmentInput> media,
+  ) async {
     if (media.isEmpty) {
       await ref.read(streamProvider.notifier).add(text);
       return null;
@@ -85,9 +88,69 @@ class _StreamViewState extends ConsumerState<StreamView> {
     return ref.read(streamProvider.notifier).addMedia(text, media);
   }
 
-  bool _matches(StreamItem item) {
+  // ── 派生结果缓存（2026-11-16）────────────────────────────────────
+  // build 里对全表要跑好几遍 O(n)：scoped / open / archived / 归档总数 /
+  // visibleIds / 拍平 entries ——**每敲一个搜索字符**都从头来一遍，万条以上
+  // 打字会卡（`_matches` 还对每条做 trim/toLowerCase）。
+  //
+  // 这里按「数据引用 + 搜索词 + 聚焦」缓存一整份派生结果，命中就整份复用；
+  // query 在算之前只小写化一次。`identical` 吃 provider 的 List 引用：
+  // `StreamNotifier` 的增删改都换新 List ⇒ 引用一变自然失效，不会读到旧结果。
+  List<StreamItem>? _sliceSource;
+  String? _sliceQuery;
+  String? _sliceFocusId;
+  _FlowSlice? _sliceCache;
+
+  _FlowSlice _flowSlice(List<StreamItem> items, {required String? focusId}) {
+    if (identical(_sliceSource, items) &&
+        _sliceQuery == _query &&
+        _sliceFocusId == focusId) {
+      return _sliceCache!;
+    }
+
+    // 从笔记里的灵感引用跳过来：只显示那一条（`null` = 正常时间流）。
+    final List<StreamItem> scoped = focusId == null
+        ? items
+        : <StreamItem>[
+            for (final StreamItem i in items)
+              if (i.id == focusId) i,
+          ];
     final String q = _query.trim().toLowerCase();
-    return q.isEmpty || item.text.toLowerCase().contains(q);
+    bool match(StreamItem i) => q.isEmpty || i.text.toLowerCase().contains(q);
+    final List<StreamItem> open = <StreamItem>[
+      for (final StreamItem i in scoped)
+        if (!i.archived && match(i)) i,
+    ];
+    // 已处理**不在这里**：它是一整页（`StreamLedgerView`，2026-10-18 P1）。
+    // 工具栏的「归档 N」入口要报**归档总数**，不能参与搜索过滤：否则一搜
+    // 不到归档条目，按钮就消失、右侧操作簇跟着跳（2026-10-20 实报）。
+    final List<StreamItem> archived = <StreamItem>[
+      for (final StreamItem i in scoped)
+        if (i.archived && match(i)) i,
+    ];
+    final int archivedTotal = scoped.where((StreamItem i) => i.archived).length;
+    // 时间流永远只有"当下"；聚焦（从引用跳来）时只给那一条。
+    final List<StreamItem> shown = focusId != null ? scoped : open;
+    final bool empty = shown.isEmpty;
+
+    final _FlowSlice out = (
+      scoped: scoped,
+      open: open,
+      archived: archived,
+      archivedTotal: archivedTotal,
+      // 选择模式全选的候选：**当前可见**的待处理条目（含搜索过滤）。
+      visibleIds: <String>[for (final StreamItem i in open) i.id],
+      empty: empty,
+      // 聚焦视图是一条条的清单，不需要日期分组。
+      entries: empty
+          ? const <_Entry>[]
+          : _entries(shown, withDates: focusId == null),
+    );
+    _sliceSource = items;
+    _sliceQuery = _query;
+    _sliceFocusId = focusId;
+    _sliceCache = out;
+    return out;
   }
 
   void _toggleSelectMode() {
@@ -143,9 +206,8 @@ class _StreamViewState extends ConsumerState<StreamView> {
     if (text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(
-      context,
-    )?.showSnackBar(SnackBar(content: Text('已复制 ${_selected.length} 条')));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text('已复制 ${_selected.length} 条')));
   }
 
   /// 删除选中条目：确认后移入回收站。
@@ -160,9 +222,8 @@ class _StreamViewState extends ConsumerState<StreamView> {
       _selected.clear();
       _selectMode = false;
     });
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text('已移入回收站（${ids.length} 条）')),
-    );
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text('已移入回收站（${ids.length} 条）')));
   }
 
   @override
@@ -171,41 +232,15 @@ class _StreamViewState extends ConsumerState<StreamView> {
     final List<StreamItem> all = streamAsync.value ?? const <StreamItem>[];
     // 从笔记里的灵感引用跳过来：只显示那一条（`null` = 正常时间流）。
     final String? focusId = ref.watch(streamFocusProvider);
-    final List<StreamItem> scoped = focusId == null
-        ? all
-        : <StreamItem>[
-            for (final StreamItem i in all)
-              if (i.id == focusId) i,
-          ];
+    final _FlowSlice flow = _flowSlice(all, focusId: focusId);
     // 目标已删（引用断链）：清掉聚焦，回到正常流。
     // ⚠️ 必须等数据**装载完成**再判：首帧 `value` 还是 null，直接判会把刚设的
     // 聚焦当成"目标不存在"清掉（一开始就是这么写错的）。
-    if (focusId != null && streamAsync.hasValue && scoped.isEmpty) {
+    if (focusId != null && streamAsync.hasValue && flow.scoped.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) ref.read(streamFocusProvider.notifier).clear();
       });
     }
-    final List<StreamItem> open = <StreamItem>[
-      for (final StreamItem i in scoped)
-        if (!i.archived && _matches(i)) i,
-    ];
-    // 已处理**不在这里**：它是一整页（`StreamLedgerView`，2026-10-18 P1）。
-    // 工具栏的「归档 N」入口要报**归档总数**，不能参与搜索过滤：否则一搜
-    // 不到归档条目，按钮就消失、右侧操作簇跟着跳（2026-10-20 实报）。
-    final List<StreamItem> archived = <StreamItem>[
-      for (final StreamItem i in scoped)
-        if (i.archived && _matches(i)) i,
-    ];
-    final int archivedTotal = scoped
-        .where((StreamItem i) => i.archived)
-        .length;
-    // 时间流永远只有"当下"；聚焦（从引用跳来）时只给那一条。
-    final List<StreamItem> shown = focusId != null ? scoped : open;
-    // 选择模式全选的候选：**当前可见**的待处理条目（含搜索过滤）。
-    final List<String> visibleIds = <String>[
-      for (final StreamItem i in open) i.id,
-    ];
-    final bool empty = shown.isEmpty;
     // 聚焦：清掉搜索词，否则"引用的那条"可能被上次的搜索过滤掉，页面变成"什么都没有"。
     ref.listen<String?>(streamFocusProvider, (String? _, String? next) {
       if (next != null && _query.isNotEmpty) {
@@ -213,10 +248,6 @@ class _StreamViewState extends ConsumerState<StreamView> {
         setState(() => _query = '');
       }
     });
-    final List<_Entry> entries = empty
-        ? const <_Entry>[]
-        // 聚焦视图是一条条的清单，不需要日期分组。
-        : _entries(shown, withDates: focusId == null);
 
     return Padding(
       // 上留白 **12**（2026-10-20 用户改；原来 24）：页眉 + 搜索框上移，
@@ -231,16 +262,16 @@ class _StreamViewState extends ConsumerState<StreamView> {
           if (focusId != null)
             _pageColumn(_focusHeader())
           else if (_selectMode)
-            _pageColumn(_selectionToolbar(visibleIds))
+            _pageColumn(_selectionToolbar(flow.visibleIds))
           else if (_query.isNotEmpty ||
-              open.isNotEmpty ||
-              archived.isNotEmpty)
-            _pageColumn(_listHeader(open.length, archivedTotal)),
+              flow.open.isNotEmpty ||
+              flow.archived.isNotEmpty)
+            _pageColumn(_listHeader(flow.open.length, flow.archivedTotal)),
           if (focusId != null ||
               _selectMode ||
               _query.isNotEmpty ||
-              open.isNotEmpty ||
-              archived.isNotEmpty)
+              flow.open.isNotEmpty ||
+              flow.archived.isNotEmpty)
             const SizedBox(height: Tokens.spaceSm),
           // 书写区**永远在**：即便正在看归档面板，这一页的主任务还是"记"。
           _pageColumn(_CaptureBar(onSubmit: _capture)),
@@ -249,11 +280,11 @@ class _StreamViewState extends ConsumerState<StreamView> {
           Expanded(
             child: Stack(
               children: <Widget>[
-                if (empty)
+                if (flow.empty)
                   _pageColumn(
                     _StreamEmpty(
                       searching: _query.trim().isNotEmpty,
-                      archivedCount: archived.length,
+                      archivedCount: flow.archived.length,
                     ),
                   )
                 else
@@ -267,19 +298,18 @@ class _StreamViewState extends ConsumerState<StreamView> {
                   //    不再只有中间那条（用户实报"以为不能滚"）。
                   ListView.builder(
                     padding: const EdgeInsets.only(bottom: 72),
-                    itemCount: entries.length,
+                    itemCount: flow.entries.length,
                     itemBuilder: (BuildContext context, int i) =>
-                        _pageColumn(
-                          switch (entries[i]) {
-                            _DateEntry(:final String label) => _DayHeader(
-                              label: label,
-                            ),
-                            _ItemEntry(
-                              :final StreamItem item,
-                              archived: final bool a,
-                            ) => _row(item, archived: a),
-                          },
-                        ),
+                        _pageColumn(switch (flow.entries[i]) {
+                          _DateEntry(:final String label) => _DayHeader(
+                            label: label,
+                          ),
+                          _ItemEntry(
+                            :final StreamItem item,
+                            archived: final bool a,
+                          ) =>
+                            _row(item, archived: a),
+                        }),
                   ),
                 // 批量动作已挪到顶部「全选」左边（2026-10-18 用户定）：
                 // 不再有底部浮条，选择控件与动作在同一处。
@@ -598,7 +628,13 @@ class _StreamViewState extends ConsumerState<StreamView> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Row(children: <Widget>[Expanded(child: count), selectAll, cancel]),
+            Row(
+              children: <Widget>[
+                Expanded(child: count),
+                selectAll,
+                cancel,
+              ],
+            ),
             const SizedBox(height: Tokens.spaceXs),
             Align(alignment: Alignment.centerRight, child: actions),
           ],
@@ -695,6 +731,20 @@ class _StreamViewState extends ConsumerState<StreamView> {
   }
 }
 
+/// 一次 build 需要的全部派生结果（见 `_StreamViewState._flowSlice`）。
+///
+/// 2026-11-16 收口：过滤 / 计数 / 拍平原先在 build 里各跑一遍 O(n)，且每敲一个
+/// 搜索字符都重来。整份缓存之后，只有「数据引用 / 搜索词 / 聚焦」变了才重算。
+typedef _FlowSlice = ({
+  List<StreamItem> scoped,
+  List<StreamItem> open,
+  List<StreamItem> archived,
+  int archivedTotal,
+  List<String> visibleIds,
+  bool empty,
+  List<_Entry> entries,
+});
+
 /// 列表里的一项：日期标题 / 一条灵感 / 「已处理」折叠行。
 ///
 /// 拍平成一维再交给 `ListView.builder`——不为列表性能保留 widget 树。
@@ -712,7 +762,6 @@ class _ItemEntry extends _Entry {
   final StreamItem item;
   final bool archived;
 }
-
 
 /// 日期组标题（今天 / 昨天 / `12 月 31 日`）：单独一行、左对齐内容左缘，
 /// 条目在它下面**铺满整列**。
@@ -806,7 +855,8 @@ class _CaptureBar extends ConsumerStatefulWidget {
   final Future<StreamItem?> Function(
     String text,
     List<StreamAttachmentInput> attachments,
-  ) onSubmit;
+  )
+  onSubmit;
 
   @override
   ConsumerState<_CaptureBar> createState() => _CaptureBarState();
@@ -974,9 +1024,8 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
       await widget.onSubmit(text, attachments);
     } on Object {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(const SnackBar(content: Text('没记下来，请重试')));
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(const SnackBar(content: Text('没记下来，请重试')));
       return;
     }
     if (!mounted) return;
@@ -1002,7 +1051,12 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
         : focused
         ? 'Enter 记下 · Shift+Enter 换行'
         : 'Ctrl+Shift+M 随时记 · Enter 记下';
-    return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
   }
 
   /// 文件选择器里挑图（桌面端原生对话框，`file_picker` 支持一次多选）。
@@ -1087,11 +1141,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
                         borderRadius: BorderRadius.circular(Tokens.radiusSm),
                       ),
                       padding: const EdgeInsets.all(2),
-                      child: Icon(
-                        Icons.close,
-                        size: 14,
-                        color: scheme.onError,
-                      ),
+                      child: Icon(Icons.close, size: 14, color: scheme.onError),
                     ),
                   ),
                 ),
@@ -1322,17 +1372,15 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     final String text = widget.item.text.trim();
     if (text.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.maybeOf(
-          context,
-        )?.showSnackBar(const SnackBar(content: Text('没有可复制的文字')));
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(const SnackBar(content: Text('没有可复制的文字')));
       }
       return;
     }
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(
-      context,
-    )?.showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
   }
 
   Future<void> _onMenu(String value) async {
@@ -1369,8 +1417,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
     // 这条灵感贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
-    final List<StreamAttachment> attachments =
-        ref.watch(streamAttachmentsProvider(widget.item.id));
+    final List<StreamAttachment> attachments = ref.watch(
+      streamAttachmentsProvider(widget.item.id),
+    );
     final bool marked = widget.selected;
     // 菜单打开也算"悬浮中"：否则弹窗一开、按钮就滑走了。
     final bool active = _hover || _menuOpen;
@@ -1406,6 +1455,10 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
         onTap: widget.selectMode
             ? (widget.archived ? null : widget.onToggleSelect)
             : (widget.archived ? null : _expand),
+        // 右键 = 行级动作菜单（与 hover「更多」同款，锚在光标处）。
+        // 归档行、多选模式都照常弹（2026-11-16 用户定）。
+        onSecondaryTapDown: (details) =>
+            unawaited(_showRowMenu(details.globalPosition)),
         child: FocusRing(
           focusNode: _rowFocus,
           borderRadius: BorderRadius.circular(Tokens.radiusSm),
@@ -1455,115 +1508,119 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                   // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
                   border: Border.all(color: edge),
                 ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  if (widget.selectMode && !widget.archived) ...<Widget>[
-                    _SelectBox(selected: marked),
-                    const SizedBox(width: Tokens.spaceSm),
-                  ],
-                  Expanded(
-                    // 正文由外层 [Semantics.label] 朗读（整条一起念），这里排除，
-                    // 免得"标签 + 正文"念两遍；行内按钮的语义**保留**（可单独聚焦）。
-                    child: ExcludeSemantics(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          // 空卡（flomo 式，清空后保留）：显示淡灰占位，保证卡片
-                          // 仍可见、可点、能重新展开编辑，而不是一行纯空白。
-                          Text(
-                            widget.item.text.trim().isNotEmpty
-                                ? widget.item.text
-                                : '（空）',
-                            maxLines: 8,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: widget.item.text.trim().isEmpty
-                                  ? Bauhaus.inkMuted(brightness)
-                                  : (widget.archived
-                                      ? Bauhaus.inkMuted(brightness)
-                                      : Bauhaus.ink(brightness)),
-                              height: 1.6,
-                            ),
-                          ),
-                          // 贴的图：缩略图条（视频在第二步接入）。
-                          if (attachments.isNotEmpty)
-                            _attachmentStrip(theme, attachments),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // **时间挪到右上角**（2026-10-17 用户定），与 hover 操作簇共用
-                  // 同一个 92 的固定槽：平时显示 `17:52`，悬浮/菜单打开时换成三枚
-                  // 图标——位置不变、宽度不变，正文永远不重排。
-                  if (widget.archived) ...<Widget>[
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        top: Tokens.spaceXxs,
-                        left: Tokens.spaceSm,
-                      ),
-                      // 时间是装饰性 meta：不参与朗读（行标签已含正文）。
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (widget.selectMode && !widget.archived) ...<Widget>[
+                      _SelectBox(selected: marked),
+                      const SizedBox(width: Tokens.spaceSm),
+                    ],
+                    Expanded(
+                      // 正文由外层 [Semantics.label] 朗读（整条一起念），这里排除，
+                      // 免得"标签 + 正文"念两遍；行内按钮的语义**保留**（可单独聚焦）。
                       child: ExcludeSemantics(
-                        child: Text(
-                          '归档于 ${_clock(widget.item.archivedAt ?? widget.item.createdAt)}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Bauhaus.inkMuted(brightness),
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            // 空卡（flomo 式，清空后保留）：显示淡灰占位，保证卡片
+                            // 仍可见、可点、能重新展开编辑，而不是一行纯空白。
+                            Text(
+                              widget.item.text.trim().isNotEmpty
+                                  ? widget.item.text
+                                  : '（空）',
+                              maxLines: 8,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: widget.item.text.trim().isEmpty
+                                    ? Bauhaus.inkMuted(brightness)
+                                    : (widget.archived
+                                          ? Bauhaus.inkMuted(brightness)
+                                          : Bauhaus.ink(brightness)),
+                                height: 1.6,
+                              ),
+                            ),
+                            // 贴的图：缩略图条（视频在第二步接入）。
+                            if (attachments.isNotEmpty)
+                              _attachmentStrip(theme, attachments),
+                          ],
                         ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: () async {
-                        final bool ok = await confirmTrashStream(context, 1);
-                        if (!ok || !mounted) return;
-                        await ref
-                            .read(streamProvider.notifier)
-                            .trash(widget.item.id);
-                      },
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        foregroundColor: scheme.error,
-                        textStyle: theme.textTheme.labelSmall,
-                      ),
-                      child: const Text('删除'),
-                    ),
-                  ] else
-                    SizedBox(
-                      width: _actionsWidth,
-                      height: _actionSlot,
-                      // **从右侧滑出来**（而不是凭空出现）：与时间标签交叉淡入
-                      // 淡出，动势指向"手是从右边过来取操作的"。槽位尺寸恒定，
-                      // 所以正文依旧不重排（与 hover 不挤动文字同一条规矩）。
-                      child: AnimatedSwitcher(
-                        duration: Tokens.durationHover,
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeOut,
-                        transitionBuilder: (Widget child, Animation<double> a) =>
-                            SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0.25, 0),
-                                end: Offset.zero,
-                              ).animate(a),
-                              child: FadeTransition(opacity: a, child: child),
+                    // **时间挪到右上角**（2026-10-17 用户定），与 hover 操作簇共用
+                    // 同一个 92 的固定槽：平时显示 `17:52`，悬浮/菜单打开时换成三枚
+                    // 图标——位置不变、宽度不变，正文永远不重排。
+                    if (widget.archived) ...<Widget>[
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: Tokens.spaceXxs,
+                          left: Tokens.spaceSm,
+                        ),
+                        // 时间是装饰性 meta：不参与朗读（行标签已含正文）。
+                        child: ExcludeSemantics(
+                          child: Text(
+                            '归档于 ${_clock(widget.item.archivedAt ?? widget.item.createdAt)}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Bauhaus.inkMuted(brightness),
                             ),
-                        child: (_hover || _menuOpen) && !widget.selectMode
-                            ? _actions(
-                                theme,
-                                key: const ValueKey<String>('actions'),
-                              )
-                            : _timeLabel(
-                                theme,
-                                brightness,
-                                key: const ValueKey<String>('time'),
-                              ),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
+                      TextButton(
+                        onPressed: () async {
+                          final bool ok = await confirmTrashStream(context, 1);
+                          if (!ok || !mounted) return;
+                          await ref
+                              .read(streamProvider.notifier)
+                              .trash(widget.item.id);
+                        },
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          foregroundColor: scheme.error,
+                          textStyle: theme.textTheme.labelSmall,
+                        ),
+                        child: const Text('删除'),
+                      ),
+                    ] else
+                      SizedBox(
+                        width: _actionsWidth,
+                        height: _actionSlot,
+                        // **从右侧滑出来**（而不是凭空出现）：与时间标签交叉淡入
+                        // 淡出，动势指向"手是从右边过来取操作的"。槽位尺寸恒定，
+                        // 所以正文依旧不重排（与 hover 不挤动文字同一条规矩）。
+                        child: AnimatedSwitcher(
+                          duration: Tokens.durationHover,
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeOut,
+                          transitionBuilder:
+                              (Widget child, Animation<double> a) =>
+                                  SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0.25, 0),
+                                      end: Offset.zero,
+                                    ).animate(a),
+                                    child: FadeTransition(
+                                      opacity: a,
+                                      child: child,
+                                    ),
+                                  ),
+                          child: (_hover || _menuOpen) && !widget.selectMode
+                              ? _actions(
+                                  theme,
+                                  key: const ValueKey<String>('actions'),
+                                )
+                              : _timeLabel(
+                                  theme,
+                                  brightness,
+                                  key: const ValueKey<String>('time'),
+                                ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -1596,28 +1653,31 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   }
 
   /// 右上角的时间标签（与操作簇共用同一个槽位，右对齐、贴首行基线）。
-  Widget _timeLabel(ThemeData theme, Brightness brightness, {Key? key}) => Align(
-    key: key,
-    heightFactor: 1,
-    child: Padding(
-      padding: const EdgeInsets.only(
-        top: Tokens.spaceXxs,
-        right: Tokens.spaceXs,
-      ),
-      // 装饰性 meta：读屏只念行标签里的正文，不念时间。
-      child: ExcludeSemantics(
-        child: Text(
-          _clock(widget.item.createdAt),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: Bauhaus.inkMuted(brightness),
+  Widget _timeLabel(ThemeData theme, Brightness brightness, {Key? key}) =>
+      Align(
+        key: key,
+        heightFactor: 1,
+        child: Padding(
+          padding: const EdgeInsets.only(
+            top: Tokens.spaceXxs,
+            right: Tokens.spaceXs,
+          ),
+          // 装饰性 meta：读屏只念行标签里的正文，不念时间。
+          child: ExcludeSemantics(
+            child: Text(
+              _clock(widget.item.createdAt),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Bauhaus.inkMuted(brightness),
+              ),
+            ),
           ),
         ),
-      ),
-    ),
-  );
+      );
 
   /// hover 操作入口：只有「更多」一枚（复制已收进它的菜单，2026-10-20 用户定；
   /// 归档自动，不在这里）。
+  ///
+  /// 同一份菜单也由行上**右键**唤出（2026-11-16 用户定，见 [_showRowMenu]）。
   ///
   /// 2026-10-17 调整：
   /// - **去掉「引用到笔记」**——引用应从笔记 / 画布那一端发起（在正文里挑一条
@@ -1635,16 +1695,51 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
           height: Tokens.iconMdSm,
           width: Tokens.iconMdSm,
         ),
-        items: const <PopupMenuEntry<String>>[
-          PopupMenuItem(value: 'copy', child: Text('复制')),
-          PopupMenuDivider(),
-          PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
-          PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
-          PopupMenuDivider(),
-          PopupMenuItem(value: 'delete', child: Text('删除')),
-        ],
+        items: _menuItems(theme.colorScheme),
       ),
     );
+  }
+
+  /// 「更多」菜单的条目：hover 图标与**右键**共用这一份（2026-11-16）。
+  ///
+  /// 「删除」给 [ColorScheme.error] 红字——三处删除入口（本菜单 / 批量工具条 /
+  /// 归档行尾钮）视觉统一，破坏性动作一眼可辨。确认框与软删语义在 [_onMenu]
+  /// 的 `delete` 分支（`confirmTrashStream` ⇒ 进回收站，可恢复）。
+  List<PopupMenuEntry<String>> _menuItems(ColorScheme scheme) =>
+      <PopupMenuEntry<String>>[
+        const PopupMenuItem(value: 'copy', child: Text('复制')),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
+        const PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'delete',
+          child: Text('删除', style: TextStyle(color: scheme.error)),
+        ),
+      ];
+
+  /// 右键弹同一份「更多」菜单，锚在**光标处**（不是图标下方）。
+  ///
+  /// 归档行、多选模式照常弹（2026-11-16 用户定）：右键是行级动作的快捷入口，
+  /// 与左键（展开编辑 / 勾选）不冲突。`_menuOpen` 全程为 true ⇒ 弹窗期行
+  /// 保持悬浮态（与 [_popupSlot] 的 onOpened / onCanceled 同一口径）。
+  Future<void> _showRowMenu(Offset globalPos) async {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset local = overlay.globalToLocal(globalPos);
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromLTWH(local.dx, local.dy, 0, 0),
+      Offset.zero & overlay.size,
+    );
+    setState(() => _menuOpen = true);
+    final String? value = await showMenu<String>(
+      context: context,
+      position: position,
+      items: _menuItems(Theme.of(context).colorScheme),
+    );
+    if (!mounted) return;
+    setState(() => _menuOpen = false);
+    if (value != null) unawaited(_onMenu(value));
   }
 
   /// 动作槽边长（热区）：24（= a11y 触达下限）。图标 20 框居中，留 2。
@@ -1689,8 +1784,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     return Focus(
       onKeyEvent: (FocusNode _, KeyEvent event) {
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
-        final bool escape =
-            event.logicalKey == LogicalKeyboardKey.escape;
+        final bool escape = event.logicalKey == LogicalKeyboardKey.escape;
         final bool save =
             event.logicalKey == LogicalKeyboardKey.enter &&
             HardwareKeyboard.instance.isControlPressed;
@@ -1808,5 +1902,3 @@ class _SelectBox extends StatelessWidget {
     );
   }
 }
-
-

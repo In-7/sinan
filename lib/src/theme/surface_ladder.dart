@@ -42,11 +42,11 @@ enum SurfaceShape {
   /// 该形状下 R 通道为 [r] 时的色值（B 按 [warmRatio] 下沉后取整）。
   Color of(int r) => switch (this) {
     warm => Color.fromARGB(
-        255,
-        r,
-        r,
-        (r * (1 - warmRatio)).round().clamp(0, 255),
-      ),
+      255,
+      r,
+      r,
+      (r * (1 - warmRatio)).round().clamp(0, 255),
+    ),
     neutral => Color.fromARGB(255, r, r, r),
     cool => Color.fromARGB(255, r, math.min(255, r + 1), math.min(255, r + 5)),
     // 中性偏微冷（2026-10-14 用户定）：B = R+3——比 [cool]（+5）收敛、比纯
@@ -85,6 +85,7 @@ class SurfaceLadder {
     required this.boardDelta,
     required this.panelDelta,
     this.boardOverride,
+    this.controlDelta = 0,
   });
 
   /// **亮色**一套（2026-10-09 晚定案第三版：chrome 沉到 L\* 88.1 `#DDDDDB` →
@@ -114,6 +115,8 @@ class SurfaceLadder {
     panelDelta: 3, // 96 → 99
     // 板底仍是"下沉的一列"；改走 [boardDelta] 推导（不再写死 hex）。
     boardDelta: -3,
+    // 控件常驻底比卡底**沉 6**（99 → 93）：亮端斜率高，压暗才显眼。
+    controlDelta: -6,
   );
 
   /// **暗色**一套：底 #080808（CIE 分段尺 L\* 2.2）→ 内嵌浮面 #161616
@@ -177,6 +180,8 @@ class SurfaceLadder {
     // （面板 4.67 ⇒ CIE Δ≈3.1，rgb ≈ (17,18,20) ≈ Linear 的 #121213）。
     panelDelta: 5, // −0.33 → 4.67（浮面闸门 ≥2.5；仍低于卡片 14.1）
     boardDelta: 4.5, // 6.7 → 11.2（跟随底自动下降）
+    // 控件常驻底比卡底**抬 10**（4.67 → 14.67）：暗端感知压缩，要多给。
+    controlDelta: 10,
   );
 
   /// 底的 L\*（**唯一的手定数字**）。
@@ -187,6 +192,17 @@ class SurfaceLadder {
 
   /// 板底比底高多少 L\*。
   final double boardDelta;
+
+  /// **控件常驻底**（按钮 / 小按钮的静止底）相对 [panel] 的 ΔL\*。
+  ///
+  /// ⚠️ 不对称是**感知**的，不是拍脑袋：亮色比卡底沉 6、暗色抬 10 —— 人眼
+  /// 亮度响应是幂曲线（γ≈0.45），亮端斜率高、暗端低，同样 ΔL\* 在近黑上
+  /// 远不如亮端明显（2026-11-16 用户实测「亮色明显、暗色不明显」，当时两套
+  /// 只差 4 vs 6.8 L\*，暗端反而更大却更弱）。暗端要多给。
+  ///
+  /// 📌 它**不排进明度序**（不是"面"的一档，允许比卡底沉），但值仍由
+  /// [panelLstar] + 此 Δ 派生 ⇒ 抬底档自动跟随。
+  final double controlDelta;
 
   /// **内嵌浮面**比底高多少 L\*（2026-10-09 新增；opencode 风外壳的工作区卡片）。
   final double panelDelta;
@@ -209,8 +225,6 @@ class SurfaceLadder {
   /// 直接把 `WindowBase` 那层掺进来 ⇒ 颜色不确定。
   final Color? boardOverride;
 
-
-
   double get floatingLstar => baseLstar + floatingDelta;
   double get boardLstar => baseLstar + boardDelta;
   double get panelLstar => baseLstar + panelDelta;
@@ -231,6 +245,12 @@ class SurfaceLadder {
   /// （[SurfaceShape.cold]），层次**只**由明度承担。与窗口底之间靠
   /// `Tokens.appPanelInset` 的环缝 + 明度差分层，不画分割线。
   late final Color panel = _derive(panelLstar, SurfaceShape.cold);
+
+  /// **控件常驻底**：见 [controlDelta]（亮 −6 / 暗 +10 相对 [panel]）。
+  late final Color control = _derive(
+    panelLstar + controlDelta,
+    SurfaceShape.cold,
+  );
 
   /// 板底（导航板那种"浮在底上的 sheet"）。
   late final Color board =

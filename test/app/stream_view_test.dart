@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -118,9 +119,7 @@ void main() {
     expect(find.text('灵感 1 条'), findsOneWidget);
   });
 
-  testWidgets('多选合并：勾一条 → 合并为新笔记，条目仍留在灵感（不归档）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('多选合并：勾一条 → 合并为新笔记，条目仍留在灵感（不归档）', (WidgetTester tester) async {
     final DateTime now = DateTime.now();
     seed('a', '要合并的想法', now);
     await pumpView(tester);
@@ -194,9 +193,7 @@ void main() {
     expect(find.text('归档 1'), findsOneWidget);
   });
 
-  testWidgets('编辑清空：空卡保留（flomo 式），不弹错、落库空', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('编辑清空：空卡保留（flomo 式），不弹错、落库空', (WidgetTester tester) async {
     seed('a', '原文', DateTime.now());
     await pumpView(tester);
 
@@ -207,21 +204,9 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('灵感不能为空'),
-      findsNothing,
-      reason: '清空不再弹"不能为空"',
-    );
-    expect(
-      stream.byId('a')!.text,
-      '',
-      reason: '空文本应落库、卡片保留',
-    );
-    expect(
-      find.text('（空）'),
-      findsOneWidget,
-      reason: '空卡收起态显示占位',
-    );
+    expect(find.text('灵感不能为空'), findsNothing, reason: '清空不再弹"不能为空"');
+    expect(stream.byId('a')!.text, '', reason: '空文本应落库、卡片保留');
+    expect(find.text('（空）'), findsOneWidget, reason: '空卡收起态显示占位');
   });
 
   testWidgets('多选只看待处理：勾选框不落在已处理上', (WidgetTester tester) async {
@@ -289,7 +274,11 @@ void main() {
     final String src = File('lib/src/app/stream_view.dart').readAsStringSync();
     expect(src.contains('BoxShadow'), isFalse, reason: '全站零投影：浮起靠边线与留白');
     expect(src.contains('BackdropFilter'), isFalse);
-    expect(RegExp(r'\bOpacity\(').hasMatch(src), isFalse, reason: 'Opacity 会触发 saveLayer');
+    expect(
+      RegExp(r'\bOpacity\(').hasMatch(src),
+      isFalse,
+      reason: 'Opacity 会触发 saveLayer',
+    );
   });
 
   testWidgets('输入条：Enter 即落库（不跳页）', (WidgetTester tester) async {
@@ -330,9 +319,7 @@ void main() {
     expect(find.text('取消全选'), findsOneWidget);
   });
 
-  testWidgets('页头：搜索框/占位符/归档/选择 中心线一致（28 高）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('页头：搜索框/占位符/归档/选择 中心线一致（28 高）', (WidgetTester tester) async {
     seed('a', '一条', DateTime.now());
     seed('b', '归档的', DateTime.now(), archived: true);
     await pumpView(tester);
@@ -369,15 +356,11 @@ void main() {
 
     final Rect count = tester.getRect(find.text('灵感 1 条'));
     expect(arch.center.dx, lessThan(search.center.dx), reason: '归档在最左');
-    expect(search.center.dx, lessThan(count.center.dx),
-        reason: '搜索框在归档右侧');
-    expect(count.center.dx, lessThan(sel.center.dx),
-        reason: '灵感计数在最右、「选择」更右');
+    expect(search.center.dx, lessThan(count.center.dx), reason: '搜索框在归档右侧');
+    expect(count.center.dx, lessThan(sel.center.dx), reason: '灵感计数在最右、「选择」更右');
   });
 
-  testWidgets('搜索时归档入口不消失（计数用归档总数）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('搜索时归档入口不消失（计数用归档总数）', (WidgetTester tester) async {
     seed('a', '一条', DateTime.now());
     seed('b', '归档的', DateTime.now(), archived: true);
     await pumpView(tester);
@@ -449,5 +432,127 @@ void main() {
     final String onCanvas = stream.add('要复制到画布的')!.id;
     expect(store.copyStreamOntoCanvas(onCanvas, canvas.id), isTrue);
     expect(stream.byId(onCanvas)!.archived, isTrue, reason: '复制到画布=使用，应自动归档');
+  });
+
+  testWidgets('列表行带稳定 ValueKey：state 跟条目走，不跟索引走', (WidgetTester tester) async {
+    // `_StreamRow` 有展开态 / 编辑 controller：没有 key 时 Sliver 按**索引**
+    // 匹配，搜索过滤、新增、重排都会让这些 state 落到别的条目上（同
+    // `note_list_view.dart` 修过的那个数据正确性问题）。
+    seed('a', '甲', DateTime.now());
+    seed('b', '乙', DateTime.now().subtract(const Duration(seconds: 1)));
+    await pumpView(tester);
+
+    final Set<String> keys = tester
+        .widgetList(
+          find.byWidgetPredicate((Widget w) => w.key is ValueKey<String>),
+        )
+        .map((Widget w) => (w.key! as ValueKey<String>).value)
+        .toSet();
+    expect(keys, containsAll(<String>['a', 'b']));
+  });
+
+  testWidgets('派生结果缓存：搜索 / 增删后都读到新结果，不读旧缓存', (WidgetTester tester) async {
+    // 2026-11-16 把过滤 / 计数 / 拍平整份缓存（`_flowSlice`）后，必须钉住
+    // "缓存会正确失效"：数据或搜索词一变就要重算。
+    seed('a', '苹果', DateTime.now());
+    seed('b', '香蕉', DateTime.now().subtract(const Duration(seconds: 1)));
+    await pumpView(tester);
+
+    await tester.enterText(find.byType(TextField).at(0), '苹果');
+    await tester.pump();
+    // 不用 `find.text('苹果')`：搜索框里的输入也叫「苹果」，会撞成两个。
+    expect(find.text('香蕉'), findsNothing, reason: '搜索过滤掉非命中');
+
+    // 新增：provider 换新 List ⇒ 缓存必须失效、新条目要出来。
+    await container.read(streamProvider.notifier).add('苹果汁');
+    await tester.pumpAndSettle();
+    expect(find.text('苹果汁'), findsOneWidget);
+
+    // 清空搜索词：缓存跟着回到全量。
+    await tester.enterText(find.byType(TextField).at(0), '');
+    await tester.pump();
+    expect(find.text('香蕉'), findsOneWidget);
+  });
+
+  testWidgets('更多菜单：删除是红字（与批量 / 归档行两处删除同色）', (WidgetTester tester) async {
+    // 2026-11-16 用户定：破坏性动作要有视觉警示。三处删除入口里唯独菜单这处
+    // 曾是黑字，现在统一 `scheme.error`。
+    seed('a', '一条', DateTime.now());
+    await pumpView(tester);
+
+    final TestGesture hover = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await hover.addPointer(location: tester.getCenter(find.text('一条')));
+    await tester.pump();
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+
+    final Text deleteItem = tester.widget<Text>(find.text('删除'));
+    expect(
+      deleteItem.style?.color,
+      AppTheme.light().colorScheme.error,
+      reason: '菜单里的删除要用错误色红字',
+    );
+    await hover.removePointer();
+  });
+
+  testWidgets('右键弹同款菜单：点删除走确认框，确认后进回收站', (WidgetTester tester) async {
+    seed('a', '右键的', DateTime.now());
+    await pumpView(tester);
+
+    await tester.tapAt(
+      tester.getCenter(find.text('右键的')),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('转为新笔记'), findsOneWidget, reason: '右键弹出同款菜单');
+    expect(find.text('转为新画布'), findsOneWidget);
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('将 1 条灵感移入回收站？可在回收站恢复或彻底删除。'),
+      findsOneWidget,
+      reason: '点删除先过确认框（软删进回收站，不是立即销毁）',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, '移入回收站'));
+    await tester.pumpAndSettle();
+
+    expect(stream.list(), isEmpty, reason: '确认后软删');
+    expect(stream.listTrash(), hasLength(1), reason: '进回收站而不是硬删');
+  });
+
+  testWidgets('右键对归档行与多选模式照常弹', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    seed('a', '普通的', now);
+    seed('b', '已归档的', now.subtract(const Duration(days: 1)), archived: true);
+
+    // 归档行只在**聚焦态**渲染（主列表只收待处理；台账页是另一套卡片）。
+    // 右键照样弹同款菜单——它行尾另有删除钮，右键是统一入口。
+    container.read(streamFocusProvider.notifier).focusOn('b');
+    await pumpView(tester);
+    await tester.tapAt(
+      tester.getCenter(find.text('已归档的')),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('转为新笔记'), findsOneWidget, reason: '归档行右键也弹');
+    await tester.tapAt(const Offset(1, 1)); // 点空白关菜单
+    await tester.pumpAndSettle();
+
+    // 多选模式：左键是勾选，右键照常弹菜单。
+    await tester.tap(find.text('显示全部'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择'));
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      tester.getCenter(find.text('普通的')),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('转为新笔记'), findsOneWidget, reason: '多选模式右键照常弹');
   });
 }

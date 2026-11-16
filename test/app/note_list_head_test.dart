@@ -458,6 +458,22 @@ void main() {
       return (tester.widget<Container>(f).decoration! as BoxDecoration).color;
     }
 
+    // 「＋▾」常驻 surface 底（2026-11-16 用户定：主操作要有视觉权重），不加描边。
+    expect(
+      find.descendant(
+        of: find.byType(AppSplitIconButton),
+        matching: find.byWidgetPredicate((Widget w) {
+          if (w is! AnimatedContainer || w.decoration is! BoxDecoration) {
+            return false;
+          }
+          final BoxDecoration d = w.decoration as BoxDecoration;
+          return d.color == Bauhaus.controlFill(Brightness.light) &&
+              d.border == null;
+        }),
+      ),
+      findsOneWidget,
+      reason: '「＋▾」常驻 surface 底、无描边',
+    );
     expect(halfColor('新建'), Colors.transparent, reason: '初始左半无叠加底');
     expect(halfColor('更多'), Colors.transparent, reason: '初始右半无叠加底');
 

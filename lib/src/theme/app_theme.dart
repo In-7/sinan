@@ -1733,9 +1733,32 @@ class Bauhaus {
   static Color line(Brightness b) =>
       ink(b).withValues(alpha: b == Brightness.light ? 0.14 : 0.16);
 
+  /// 侧栏**分割线**（墨 7% / 暗 8%，2026-11-16 用户定"再淡一些"）。
+  ///
+  /// 只给侧栏的分区暗示用：列内结构线（标题下 / 日历网格下）与列表↔详情竖线。
+  /// 刻意比 [line] 弱一档——它们不是容器边界，不该和卡片 / 菜单 / 按钮的
+  /// [hairline] 抢强度。浓度对齐 [hover] 那档（6%/8%）。
+  /// 📌 不能再细：DPR 1.5 下 1px = 1.5 物理像素，0.5px 会糊成模糊带。
+  static Color dividerSoft(Brightness b) =>
+      ink(b).withValues(alpha: b == Brightness.light ? 0.07 : 0.08);
+
   /// hover 浅覆（墨 6% / 暗 8%）——不引入 saveLayer（当不透明底色用需 alphaBlend）。
   static Color hover(Brightness b) =>
       ink(b).withValues(alpha: b == Brightness.light ? 0.06 : 0.08);
+
+  /// 控件**常驻底**（2026-11-16 用户定：主操作要有视觉权重）。
+  ///
+  /// 值来自 [ladder] 的 `control` 档：**相对卡底给定 ΔL\***（亮沉 6 / 暗抬 10），
+  /// 由 [SurfaceLadder] 按 L\* 反解 hex ⇒ 抬底档自动跟随，且两主题的明度差
+  /// 显式写在表里。
+  ///
+  /// ⚠️ Δ 不对称是**感知**的（详见 `surface_ladder.dart` 的 `controlDelta`）：
+  /// 第一版两套只差 4 / 6.8 L\*，暗端反而更大却更弱——人眼亮端斜率高，暗端
+  /// 同样 ΔL\* 远不如亮端明显。别把它改成对称值。
+  ///
+  /// 也不用 [surface]：固定纯白，亮色撞卡底（Δ1）；更早的 alpha 版（墨 5%/6%）
+  /// 是半透明叠层，暗端明度差同样被压。现在是**不透明固定色**，只是值随 ladder 走。
+  static Color controlFill(Brightness b) => AppTheme.ladder(b).control;
 
   // ── 边框 ───────────────────────────────────────────────────
   /// 卡片**硬边**（墨 1.5px）：包豪斯的"响"——边界是明确的线，不是软投影。

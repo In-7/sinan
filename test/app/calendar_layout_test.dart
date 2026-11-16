@@ -139,7 +139,7 @@ void main() {
     expect(find.byTooltip('展开日历'), findsOneWidget);
   });
 
-  testWidgets('日历列头部与笔记列同构：折叠位留空、标题同位、内容区底色区分', (WidgetTester tester) async {
+  testWidgets('日历列头部与笔记列同构：折叠位留空、标题同位、列内同底', (WidgetTester tester) async {
     final ProviderContainer container = await pumpCalendar(tester);
     final DateTime now = DateTime.now();
     final String title = '${now.month}月${now.day}日';
@@ -162,14 +162,15 @@ void main() {
       reason: '标题行不该再有篇数文字',
     );
 
-    // ③ 内容区与头部区分：通栏 surface 底色（不是又套一张卡）。
+    // ③ 内容区与标题头**同底**（2026-11-16 用户定，回退 11-14 的底色区分）：
+    //    不再另铺 surface，左列整列读作一张卡。
     expect(
       find.byWidgetPredicate(
         (Widget w) =>
             w is ColoredBox && w.color == Bauhaus.surface(Brightness.light),
       ),
-      findsOneWidget,
-      reason: '内容区要有自己的底色，与头部区分',
+      findsNothing,
+      reason: '日历列整列同底，颜色和标题头统一',
     );
 
     // ④ 切到笔记视图，标题基线一致。
@@ -310,6 +311,22 @@ void main() {
     final DateTime today = DateTime(now.year, now.month, now.day);
     final notifier = container.read(calendarSelectionProvider.notifier);
 
+    // 静止态**常驻浅底**（2026-11-15 拟态背景）：本月只显示两枚切月钮。
+    // 形态契约（2026-11-16 用户定）：4px 圆角的**方件** + 1px hairline 边框、
+    // **常态透明**（背景色只在悬浮时叠）。20×20 里用 radiusSm(10) 是半宽 =
+    // 正圆，读不出方形。
+    Finder tinyButtons() => find.descendant(
+      of: find.byType(CalendarListColumn),
+      matching: find.byWidgetPredicate((Widget w) {
+        if (w is! DecoratedBox || w.decoration is! BoxDecoration) return false;
+        final BoxDecoration d = w.decoration as BoxDecoration;
+        return d.color == Colors.transparent &&
+            d.border != null &&
+            d.borderRadius == BorderRadius.circular(Tokens.radiusXxs);
+      }),
+    );
+    expect(tinyButtons(), findsNWidgets(2), reason: '两枚切月钮各一层常驻底');
+
     // 默认就在今天 ⇒ 不需要返回入口。
     expect(find.text('回到今天'), findsNothing);
 
@@ -319,6 +336,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('回到今天'), findsOneWidget, reason: '只要不在今天就该有返回入口');
+    expect(tinyButtons(), findsNWidgets(3), reason: '「回到今天」与切月钮同款常驻底');
 
     await tester.tap(find.text('回到今天'));
     await tester.pumpAndSettle();

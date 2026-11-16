@@ -383,7 +383,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
           ),
         ),
         // 头下发丝（通栏，结构线：固定头 ↔ 滚动体；非行间装饰线）。
-        Container(height: 1, color: Bauhaus.line(b)),
+        // 2026-11-16 改 [Bauhaus.dividerSoft]：侧栏分区线比全局发丝淡一档。
+        Container(height: 1, color: Bauhaus.dividerSoft(b)),
         // 体：滚动条目 / 空态。
         Expanded(
           child: shown.isEmpty

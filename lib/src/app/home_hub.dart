@@ -381,9 +381,10 @@ void _createDiaryToday(WidgetRef ref) {
 /// 而日历页「筛选和搜索都不需要」。这里只复用日历自己的单元格与写日记入口。
 ///
 /// **骨架与 [NoteListColumn] 同构**（2026-11-14 用户定）：① 工具行留 36 高
-/// 给悬浮折叠钮让位 ② 标题行（月份 + 本月篇数 + 切月）与「笔记 12」同位
-/// ③ 发丝 ④ 内容区。头部用外壳浮面卡底，内容区通栏铺 [Bauhaus.surface]
-/// ⇒ 两块**区分得开**，又不额外加卡片内边距（避免「卡中卡」挤窄 7 列）。
+/// 给悬浮折叠钮让位 ② 标题行（「M月D日」+ 回到今天 + 切月）与「笔记 12」同位
+/// ③ 发丝 ④ 内容区（月份网格 + 12 留白 + 选中日篇目）。
+/// 📌 **整列同底**（2026-11-16 用户定，回退 11-14 的「内容区另铺 surface」）：
+/// 颜色与标题头统一，左列读作一张卡；不再卡中卡挤窄 7 列。
 /// padding 12 ⇒ 216 可用宽，每格 ≈30.9。
 class CalendarListColumn extends ConsumerWidget {
   const CalendarListColumn({super.key});
@@ -463,93 +464,93 @@ class CalendarListColumn extends ConsumerWidget {
             ),
           ),
         ),
-        // ③ 头部 ↔ 内容区发丝：与笔记列同款结构线。
-        Container(height: 1, color: Bauhaus.line(theme.brightness)),
-        // ④ 内容区**与头部区分**（2026-11-14 用户定）：通栏铺 [Bauhaus.surface]
-        //   底色，不另加卡片内边距 ⇒ 网格仍占 216 可用宽，不会「卡中卡」挤窄
-        //   7 列（每格 ≈30.9）。
+        // ③ 头部 ↔ 内容区发丝：与笔记列同款结构线（2026-11-16 起淡一档）。
+        Container(height: 1, color: Bauhaus.dividerSoft(theme.brightness)),
+        // ④ 内容区**与标题头同底**（2026-11-16 用户定，回退 11-14 的底色区分）：
+        //   不再铺 [Bauhaus.surface]，左列整列读作一张卡，颜色和标题头统一。
+        //   通栏 padding 12 ⇒ 网格仍占 216 可用宽（每格 ≈30.9）。
         Expanded(
-          child: ColoredBox(
-            color: Bauhaus.surface(theme.brightness),
-            child: Padding(
-              padding: const EdgeInsets.all(Tokens.spaceMd),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      for (final String s in const <String>[
-                        '一',
-                        '二',
-                        '三',
-                        '四',
-                        '五',
-                        '六',
-                        '日',
-                      ])
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              s,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: Bauhaus.inkMuted(scheme.brightness),
-                              ),
+          child: Padding(
+            padding: const EdgeInsets.all(Tokens.spaceMd),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    for (final String s in const <String>[
+                      '一',
+                      '二',
+                      '三',
+                      '四',
+                      '五',
+                      '六',
+                      '日',
+                    ])
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            s,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Bauhaus.inkMuted(scheme.brightness),
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: Tokens.spaceXs),
-                  AnimatedSwitcher(
-                    duration: Tokens.durationFast,
-                    child: KeyedSubtree(
-                      key: ValueKey<DateTime>(first),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 36 * 6,
-                        child: Column(children: grid),
                       ),
+                  ],
+                ),
+                const SizedBox(height: Tokens.spaceXs),
+                AnimatedSwitcher(
+                  duration: Tokens.durationFast,
+                  child: KeyedSubtree(
+                    key: ValueKey<DateTime>(first),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 36 * 6,
+                      child: Column(children: grid),
                     ),
                   ),
-                  Container(height: 1, color: Bauhaus.line(theme.brightness)),
-                  const SizedBox(height: Tokens.spaceXs),
-                  _DiaryEntryButton(
-                    day: today,
-                    onTap: () => _createDiaryToday(ref),
-                    compact: true,
-                  ),
-                  // ⑤ 日期 ↔ 篇目**留白 12**（2026-11-14 用户定）：不加发丝、
-                  //    也不放「新建 N 篇」小标题——列表本身就是确数，用户不需要
-                  //    再读一遍数字。只用空白把两段分开。
-                  const SizedBox(height: Tokens.spaceMd),
-                  // ⑥ 选中日篇目：从右格搬进左列，外观与笔记列表行一致。
-                  //    笔记 / 画布混排，点开走唯一跳转通道。
-                  Expanded(
-                    child: dayNotes.isEmpty
-                        ? Align(
-                            alignment: Alignment.topLeft,
-                            child: Text(
-                              '这天没有新建内容',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: Bauhaus.inkMuted(theme.brightness),
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            itemCount: dayNotes.length,
-                            itemBuilder: (BuildContext _, int i) => Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: CalendarDayRow(
-                                note: dayNotes[i],
-                                onTap: () => ref
-                                    .read(locateProvider.notifier)
-                                    .locate(noteId: dayNotes[i].id),
-                              ),
+                ),
+                Container(
+                  height: 1,
+                  color: Bauhaus.dividerSoft(theme.brightness),
+                ),
+                const SizedBox(height: Tokens.spaceXs),
+                _DiaryEntryButton(
+                  day: today,
+                  onTap: () => _createDiaryToday(ref),
+                  compact: true,
+                ),
+                // ⑤ 日期 ↔ 篇目**留白 12**（2026-11-14 用户定）：不加发丝、
+                //    也不放「新建 N 篇」小标题——列表本身就是确数，用户不需要
+                //    再读一遍数字。只用空白把两段分开。
+                const SizedBox(height: Tokens.spaceMd),
+                // ⑥ 选中日篇目：从右格搬进左列，外观与笔记列表行一致。
+                //    笔记 / 画布混排，点开走唯一跳转通道。
+                Expanded(
+                  child: dayNotes.isEmpty
+                      ? Align(
+                          alignment: Alignment.topLeft,
+                          child: Text(
+                            '这天没有新建内容',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Bauhaus.inkMuted(theme.brightness),
                             ),
                           ),
-                  ),
-                ],
-              ),
+                        )
+                      : ListView.builder(
+                          itemCount: dayNotes.length,
+                          itemBuilder: (BuildContext _, int i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: CalendarDayRow(
+                              note: dayNotes[i],
+                              onTap: () => ref
+                                  .read(locateProvider.notifier)
+                                  .locate(noteId: dayNotes[i].id),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
             ),
           ),
         ),
@@ -575,35 +576,6 @@ class _CompactMonthHeader extends ConsumerWidget {
   final DateTime today;
   final DateTime selected;
 
-  Widget _tinyIcon(Widget icon, String tip, VoidCallback onTap, Brightness b) =>
-      Tooltip(
-        message: tip,
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: InkWell(
-            onTap: onTap,
-            hoverColor: AppTheme.hoverOverlay(b),
-            borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            child: Center(child: icon),
-          ),
-        ),
-      );
-
-  Widget _tinyText(String text, VoidCallback onTap, ThemeData theme) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(Tokens.radiusSm),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-      child: Text(
-        text,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: Bauhaus.inkMuted(theme.brightness),
-        ),
-      ),
-    ),
-  );
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ThemeData theme = Theme.of(context);
@@ -618,11 +590,11 @@ class _CompactMonthHeader extends ConsumerWidget {
       calendarSelectionProvider.notifier,
     );
 
-    Widget chevron(Widget icon, String tip, int delta) => _tinyIcon(
-      icon,
-      tip,
-      () => notifier.pickMonth(DateTime(month.year, month.month + delta)),
-      b,
+    Widget chevron(Widget icon, String tip, int delta) => _CalTinyButton(
+      icon: icon,
+      tooltip: tip,
+      onTap: () =>
+          notifier.pickMonth(DateTime(month.year, month.month + delta)),
     );
     ui.ColorFilter inkFilter() =>
         ui.ColorFilter.mode(Bauhaus.inkMuted(b), ui.BlendMode.srcIn);
@@ -635,7 +607,7 @@ class _CompactMonthHeader extends ConsumerWidget {
         ),
         const Spacer(),
         if (showGoToday) ...<Widget>[
-          _tinyText('回到今天', notifier.goToday, theme),
+          _CalTinyButton(label: '回到今天', onTap: notifier.goToday),
           const SizedBox(width: Tokens.spaceXs),
         ],
         chevron(
@@ -661,6 +633,106 @@ class _CompactMonthHeader extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+/// 日历标题行的小按钮（切月 ‹ › / 回到今天）：圆角方形，**静止透明**。
+///
+/// 2026-11-16 用户定（两步走完）：先加常驻底求"一眼可点"，实机又觉得重，
+/// 最终收敛为**边框常显 + 背景色只在悬浮时出现**——1px [Bauhaus.hairline]
+/// 边框给可点提示，hover 叠 [AppTheme.hoverOverlay]、按下再深一档；无投影。
+///
+/// 📌 圆角 [Tokens.radiusXxs](4)：20×20 里用 10（[radiusSm]）是**半宽 = 正圆**，
+/// 读不出"方形"。项目 tokens 分了档——4px 是「<24px 的方件」，10px 属 ≥24 控件。
+class _CalTinyButton extends StatefulWidget {
+  const _CalTinyButton({
+    this.icon,
+    this.label,
+    this.tooltip,
+    required this.onTap,
+  });
+
+  /// 图标钮（20×20）与文字钮（自适应宽）二选一。
+  final Widget? icon;
+  final String? label;
+  final String? tooltip;
+  final VoidCallback onTap;
+
+  @override
+  State<_CalTinyButton> createState() => _CalTinyButtonState();
+}
+
+class _CalTinyButtonState extends State<_CalTinyButton> {
+  bool _hover = false;
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness b = theme.brightness;
+    final bool isIcon = widget.icon != null;
+
+    Widget button = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        if (mounted) setState(() => _hover = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hover = false);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) {
+          if (mounted) setState(() => _pressed = true);
+        },
+        onTapUp: (_) {
+          if (mounted) setState(() => _pressed = false);
+        },
+        onTapCancel: () {
+          if (mounted) setState(() => _pressed = false);
+        },
+        onTap: widget.onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            // 2026-11-16 用户定：**常态底色去掉**，只留悬浮触发。
+            // hairline 边框保留作可点提示（它是边框不是背景色）。
+            color: Colors.transparent,
+            border: Bauhaus.hairline(b),
+            borderRadius: BorderRadius.circular(Tokens.radiusXxs),
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _pressed
+                  ? theme.colorScheme.onSurface.withValues(alpha: 0.10)
+                  : _hover
+                  ? AppTheme.hoverOverlay(b)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(Tokens.radiusXxs),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isIcon ? 0 : Tokens.spaceXs,
+              ),
+              child: Center(
+                child: isIcon
+                    ? widget.icon
+                    : Text(
+                        widget.label!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Bauhaus.inkMuted(b),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (widget.tooltip != null) {
+      button = Tooltip(message: widget.tooltip!, child: button);
+    }
+    return button;
   }
 }
 

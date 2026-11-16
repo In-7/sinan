@@ -180,7 +180,6 @@ class HomeScreen extends ConsumerWidget {
       // 但留呼吸；列表列折叠钮已于同日搬进内容卡左上角（见下方 Stack 顶层）。
       const double historyInset = Tokens.railWidth + Tokens.spaceMd;
       final Widget detail = detailPane();
-      final bool isDark = brightness == Brightness.dark;
       final Widget cardChild = switch (view) {
         // **灵感**：一页纸流，**不走主从布局**。
         // 灵感没有"详情页"——右侧没有可展示的东西，240 列表列在这里只会与
@@ -231,12 +230,9 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             // 列表↔详情发丝：折叠时不占宽（不再做逐帧 alpha 淡出）。
+            // 2026-11-16 用 [Bauhaus.dividerSoft]——侧栏分区线比全局发丝淡一档。
             if (!listCollapsed)
-              Container(
-                width: 1,
-                color: Bauhaus.ink(brightness)
-                    .withValues(alpha: isDark ? 0.16 : 0.14),
-              ),
+              Container(width: 1, color: Bauhaus.dividerSoft(brightness)),
             // 详情（编辑器 / 画布 / 空态）：**第 3 段**。编辑器内部的块、
             // 工具条等未编号节点由 secondary 策略按几何排，语义仍是"详情之内"。
             Expanded(
