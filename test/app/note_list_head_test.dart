@@ -348,9 +348,10 @@ void main() {
     }
   });
 
-  testWidgets('列表头布局：第一行 搜索 → 新建；筛选在视图名行右端', (tester) async {
-    // 2026-11-09 用户定：筛选从工具行搬到「视图名 + 篇数」行右端——
-    // 它整理的是当前列表，且不再与工具行 18 档图标并排显小。
+  testWidgets('列表头布局：第一行 搜索 → 新建；筛选在篇数右边', (tester) async {
+    // 2026-11-09 筛选从工具行搬进「视图名 + 篇数」行；2026-11-17 挪到
+    // **篇数右边紧挨着**（语义挨着列表名与篇数），不再贴行右端——
+    // 旧的"漏斗中心对齐＋中心"光学约定随位置一并撤。
     await pumpList(tester);
 
     final Rect collapse = tester.getRect(find.byTooltip('收起列表'));
@@ -404,15 +405,22 @@ void main() {
       inInclusiveRange(25, 30),
       reason: '标题行不该被 28 高的筛选热区推下去（搬过来之前是 27）',
     );
+    // 2026-11-17：筛选紧贴**篇数**右边（间隔 spaceSm），不贴行右端。
+    final Rect count = tester.getRect(inList(find.text('2')));
     expect(
-      (filter.center.dx - create.center.dx).abs(),
-      lessThan(1),
-      reason: '漏斗图标中心要与第一行「＋」中心对齐',
+      (filter.center.dy - count.center.dy).abs(),
+      lessThan(2),
+      reason: '筛选与篇数同高、垂直居中',
+    );
+    expect(
+      filter.left - count.right,
+      closeTo(Tokens.spaceSm, 1),
+      reason: '筛选紧贴篇数右边（间隔 spaceSm）',
     );
     expect(
       filter.right,
-      closeTo(column.right - 23, 1),
-      reason: '第二行右侧内缩 23（对齐＋中心的推导值）',
+      lessThan(column.right - 60),
+      reason: '筛选不再贴行右端（旧的「对齐＋中心」约定已撤）',
     );
   });
 
@@ -558,8 +566,8 @@ void main() {
     // 内部那层 IconTheme 必须同一墨色。
     await pumpList(tester);
 
-    // 单动作钮（折叠 / 搜索 / 筛选）仍必须是 AppIconButton。
-    for (final String tip in <String>['收起列表', '搜索', '筛选与排序']) {
+    // 单动作钮（折叠 / 搜索）仍必须是 AppIconButton。
+    for (final String tip in <String>['收起列表', '搜索']) {
       expect(
         find.ancestor(
           of: find.byTooltip(tip),
@@ -569,6 +577,25 @@ void main() {
         reason: '「$tip」的宿主必须是 AppIconButton',
       );
     }
+    // 筛选 2026-11-17 换**小方件皮肤**（日历切月同款）：透明底 + hairline
+    // + 4px 圆角方件。按皮肤断言（宿主是 home_hub 的私有 _TinyButton）。
+    expect(
+      find.descendant(
+        of: find.byTooltip('筛选与排序'),
+        matching: find.byWidgetPredicate((Widget w) {
+          if (w is! DecoratedBox || w.decoration is! BoxDecoration) {
+            return false;
+          }
+          final BoxDecoration d = w.decoration as BoxDecoration;
+          // 外层皮肤盒才有边框（内层是 hover/pressed 叠加层，无边框）。
+          return d.color == Colors.transparent &&
+              d.border != null &&
+              d.borderRadius == BorderRadius.circular(Tokens.radiusXxs);
+        }),
+      ),
+      findsOneWidget,
+      reason: '筛选 = 小方件皮肤（透明底 + hairline + 4px 圆角，日历同款）',
+    );
     // 新建 / 更多选项：两半同属**一枚**分半钮。
     expect(find.byType(AppSplitIconButton), findsOneWidget);
     for (final String tip in <String>['新建', '更多']) {
@@ -582,19 +609,20 @@ void main() {
       );
     }
 
-    // 两种宿主内部的 IconTheme 色：全部相等（3 枚单钮 + 2 个半区 = 5）。
-    final List<Color> inks = tester
-        .widgetList<IconTheme>(
-          find.descendant(
-            of: find.byWidgetPredicate(
-              (Widget w) => w is AppIconButton || w is AppSplitIconButton,
-            ),
-            matching: find.byType(IconTheme),
-          ),
-        )
-        .map((IconTheme t) => t.data.color!)
-        .toList();
-    expect(inks.length, 5, reason: '列表头共五枚工具图标');
+    // 五枚工具图标（折叠 / 搜索 / 筛选 / 新建半 / 更多半）的 IconTheme 色
+    // 全部相等——按 tooltip 子树逐枚收（宿主有三种，色源只有一条）。
+    final List<Color> inks = <Color>[];
+    for (final String tip in <String>['收起列表', '搜索', '筛选与排序', '新建', '更多']) {
+      final IconTheme t = tester.widget<IconTheme>(
+        find
+            .descendant(
+              of: find.byTooltip(tip),
+              matching: find.byType(IconTheme),
+            )
+            .first,
+      );
+      inks.add(t.data.color!);
+    }
     expect(inks.toSet(), hasLength(1), reason: '所有工具钮必须同一墨色（$inks）——否则又会看到两档灰');
     expect(inks.first, AppTheme.light().colorScheme.onSurfaceVariant);
   });

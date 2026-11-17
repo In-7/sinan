@@ -15,9 +15,11 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
-import 'package:uuid/uuid.dart';
 
 import '../domain/note.dart';
+import '../media/attachment_file_chip.dart';
+import '../media/media_kind.dart';
+import '../media/pending_media.dart';
 import '../notes/services/note_media_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
@@ -823,8 +825,9 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   final TextEditingController _controller = TextEditingController();
   late final FocusNode _focus = FocusNode(onKeyEvent: _onKey);
 
-  /// 待发送附件：选图后先暂存，提交时才拷进私有目录（不发就不落盘，零孤儿）。
-  final List<_PendingMedia> _pendingMedia = <_PendingMedia>[];
+  /// 待发送附件：选图/视频后先暂存，提交时才拷进私有目录（不发就不落盘，零孤儿）。
+  /// 视频条目只留源路径、**不整读内存**（见 [PendingMedia]）。
+  final List<PendingMedia> _pendingMedia = <PendingMedia>[];
 
   /// 提交后的**一次性**反馈：按钮变绿勾 600ms，然后回纸飞机。
   ///
@@ -896,7 +899,7 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
         if (!mounted) return;
         setState(
           () => _pendingMedia.add(
-            _PendingMedia(bytes: img, ext: '.png', kind: 'image'),
+            PendingMedia(bytes: img, ext: '.png', kind: 'image'),
           ),
         );
         return;
@@ -1016,24 +1019,31 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
     );
   }
 
-  /// 文件选择器里挑图（桌面端原生对话框，`file_picker` 支持一次多选）。
+  /// 文件选择器里挑图片/视频（桌面端原生对话框，`file_picker` 支持一次多选）。
   /// 默认打开**桌面**目录，贴近"截图刚存桌面"的随手导入场景。
-  /// 视频在第二步接入，这里先只开图片（用户确认先做图片附件）。
+  ///
+  /// 2026-11-17 视频 Tier 0：放行视频扩展名（[kVideoExtensions]），按扩展名
+  /// 判 kind。⚠️ 选中**不读文件**——只留源路径，提交时才拷贝（见
+  /// [materializePendingMedia]）：大视频整读内存会爆，"不发不落盘"语义也靠它。
   Future<void> _pickFiles() async {
     // 12.x：`pickFiles` 返回非空列表（取消则为空列表）；`allowMultiple` 已废弃
     // （本身就是多选取）。取消时循环直接不进，无需判空。
     final List<PlatformFile> files = await FilePicker.pickFiles(
-      type: FileType.image,
+      type: FileType.custom,
+      allowedExtensions: <String>[...kImageExtensions, ...kVideoExtensions],
       initialDirectory: _desktopDir,
     );
     if (!mounted) return;
     for (final PlatformFile f in files) {
       final String? path = f.path;
       if (path == null) continue;
-      final Uint8List bytes = await File(path).readAsBytes();
       setState(
         () => _pendingMedia.add(
-          _PendingMedia(bytes: bytes, ext: p.extension(path), kind: 'image'),
+          PendingMedia(
+            sourcePath: path,
+            ext: p.extension(path),
+            kind: kindForPath(path),
+          ),
         ),
       );
     }
@@ -1051,24 +1061,20 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   /// 把待发送附件逐张**拷进 app 私有目录**（`stream_media/`），返回落库用的入参。
   ///
   /// 这里才真正落盘：用户选了又不发，磁盘上不会留下任何副本（零孤儿）。
-  Future<List<StreamAttachmentInput>> _materializeMedia() async {
-    if (_pendingMedia.isEmpty) return const <StreamAttachmentInput>[];
-    final String base = p.join(ref.read(appDataDirProvider), 'stream_media');
-    await Directory(base).create(recursive: true);
-    final List<StreamAttachmentInput> result = <StreamAttachmentInput>[];
-    const Uuid uuid = Uuid();
-    for (final _PendingMedia m in _pendingMedia) {
-      final String ext = m.ext.isEmpty ? '.img' : m.ext;
-      final String dest = p.join(base, '${uuid.v4()}$ext');
-      await File(dest).writeAsBytes(m.bytes);
-      result.add(StreamAttachmentInput(kind: m.kind, path: dest));
-    }
-    return result;
-  }
+  /// 拷贝语义见 [materializePendingMedia]（共享给笔记/画布的那份）。
+  Future<List<StreamAttachmentInput>> _materializeMedia() =>
+      materializePendingMedia(
+        p.join(ref.read(appDataDirProvider), 'stream_media'),
+        _pendingMedia,
+      );
 
   /// 待发送附件的预览条（提交前看一眼贴了什么）。
+  ///
+  /// 图片给缩略图（剪贴板位图走字节、文件走源路径）；视频给 56 视频片
+  /// （Tier 0 不生成缩略图）。右上角 × 随时可撤。
   Widget _pendingStrip(ThemeData theme) {
     final ColorScheme scheme = theme.colorScheme;
+    final Brightness b = theme.brightness;
     return Padding(
       padding: const EdgeInsets.only(bottom: Tokens.spaceXs),
       child: Wrap(
@@ -1080,12 +1086,39 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
               children: <Widget>[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                  child: Image.memory(
+                  child: switch ((
                     _pendingMedia[i].bytes,
-                    width: 56,
-                    height: 56,
-                    fit: BoxFit.cover,
-                  ),
+                    _pendingMedia[i].sourcePath,
+                  )) {
+                    (final Uint8List bytes, _) => Image.memory(
+                      bytes,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                    ),
+                    (null, final String path) =>
+                      _pendingMedia[i].isVideo
+                          ? Container(
+                              width: 56,
+                              height: 56,
+                              color: Bauhaus.surface(b),
+                              child: Center(
+                                child: tabler.Video(
+                                  height: Tokens.iconMd,
+                                  width: Tokens.iconMd,
+                                  color: Bauhaus.inkMuted(b),
+                                ),
+                              ),
+                            )
+                          : Image.file(
+                              File(path),
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                            ),
+                    // 不可达：[PendingMedia] 构造断言保证两者至少给一个。
+                    _ => const SizedBox.shrink(),
+                  },
                 ),
                 Positioned(
                   top: 0,
@@ -1177,11 +1210,12 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
               final int length = value.text.trim().length;
               return Row(
                 children: <Widget>[
-                  // **贴图入口**：左下图钉，点一下直接打开图片文件框（默认桌面，可多选）。
-                  // 截图走 Ctrl+V（输入框里直接贴上剪贴板的图）；右键菜单粘贴文本即可。
+                  // **贴图/视频入口**：左下图钉，点一下打开文件框（默认桌面，
+                  // 可多选）。截图走 Ctrl+V（输入框里直接贴上剪贴板的图）；
+                  // 右键菜单粘贴文本即可。
                   IconButton(
                     onPressed: _pickFiles,
-                    tooltip: '贴图片',
+                    tooltip: '贴图片/视频',
                     iconSize: Tokens.iconMd,
                     style: IconButton.styleFrom(
                       minimumSize: const Size(36, 36),
@@ -1230,27 +1264,16 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
   }
 }
 
-/// 待发送附件的暂存：选图后先留在这里，提交时才拷进私有目录。
-///
-/// 只存**解码后的字节 + 扩展名**（不存源文件句柄）——文件选择器 / 剪贴板两条
-/// 来源都最终汇成字节，提交时统一落盘到 `stream_media/`。源截图被删也不影响。
-class _PendingMedia {
-  const _PendingMedia({
-    required this.bytes,
-    required this.ext,
-    required this.kind,
-  });
-  final Uint8List bytes;
-  final String ext; // 含点的扩展名，如 '.png'
-  final String kind; // 'image' | 'video'
-}
+// （待发附件暂存 2026-11-17 挪去 `media/pending_media.dart`：视频要"文件
+//   条目不整读内存"，共享给笔记/画布的那份落盘逻辑也在那里。）
 
 // ───────────────────────────── 灵感卡 ─────────────────────────────
 
 /// 卡片墙里的一张灵感卡（2026-11-17 由时间流的「行」改版，同日三次收口）。
 ///
 /// - **自适应高 + 全文零截断**：内容就是全部版面（2026-11-17 用户定"看全部"）。
-///   右上角一枚「N 图」角标（有图才有：这是内容信号）；
+///   右上角「N 图」「N 视频」角标（有附件才有：这是内容信号；视频 Tier 0 起
+///   分开计数）；
 /// - **双击**就地编辑（同列宽、随内容长高，不跨列），`Esc` / `Ctrl+Enter`
 ///   保存收起——单击不编辑（2026-11-17 用户定，防误触），右键菜单「编辑」、
 ///   键盘 Enter 同一入口。**时间与「更多」只在编辑态**的底部条里出现；
@@ -1451,6 +1474,14 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
     final bool marked = widget.selected;
+    // 图/视频**分开计数**（视频 Tier 0 起）：角标是内容信号，混成一个数会
+    // 把"这条有视频"这个信号抹掉。
+    final int imageCount = attachments
+        .where((StreamAttachment a) => !a.isVideo)
+        .length;
+    final int videoCount = attachments
+        .where((StreamAttachment a) => a.isVideo)
+        .length;
     // 菜单打开也算"悬浮中"：否则弹窗一开、按钮就滑走了。
     final bool active = _hover || _menuOpen;
     // hover 的回答是"卡片迎上来"（放大 1.025，见下方 `TweenAnimationBuilder`）
@@ -1600,31 +1631,34 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                               ),
                             ),
                           ),
-                          // 附件计数角标（右上角常显）：「这条有图」是**内容信号**
-                          // 不是元数据——长文里图往往是这条的重点（2026-11-17
-                          // 用户定脚注撤、角标留）。
+                          // 附件计数角标（右上角常显）：「这条有图/视频」是
+                          // **内容信号**不是元数据——长文里附件往往是这条的重点
+                          // （2026-11-17 用户定脚注撤、角标留；视频 Tier 0 起
+                          // 图/视频分开计数）。
                           if (attachments.isNotEmpty)
                             Positioned(
                               top: 0,
                               right: 0,
                               child: ExcludeSemantics(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: Tokens.spaceXs,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Bauhaus.surface(brightness),
-                                    borderRadius: BorderRadius.circular(
-                                      Tokens.radiusXxs,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${attachments.length} 图',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: Bauhaus.inkMuted(brightness),
-                                    ),
-                                  ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    if (imageCount > 0)
+                                      _countChip(
+                                        theme,
+                                        brightness,
+                                        '$imageCount 图',
+                                      ),
+                                    if (videoCount > 0) ...<Widget>[
+                                      if (imageCount > 0)
+                                        const SizedBox(width: Tokens.spaceXxs),
+                                      _countChip(
+                                        theme,
+                                        brightness,
+                                        '$videoCount 视频',
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
                             ),
@@ -1657,7 +1691,26 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
     );
   }
 
-  /// 灵感贴图的缩略图条：左对齐、可横向滚动（图多时不挤正文）。
+  /// 角标芯片（右上角常显）：图 / 视频计数各一枚。
+  Widget _countChip(ThemeData theme, Brightness b, String label) => Container(
+    padding: const EdgeInsets.symmetric(
+      horizontal: Tokens.spaceXs,
+      vertical: 1,
+    ),
+    decoration: BoxDecoration(
+      color: Bauhaus.surface(b),
+      borderRadius: BorderRadius.circular(Tokens.radiusXxs),
+    ),
+    child: Text(
+      label,
+      style: theme.textTheme.labelSmall?.copyWith(color: Bauhaus.inkMuted(b)),
+    ),
+  );
+
+  /// 灵感附件条：图片缩略图、视频文件片（双击系统播放器），左对齐、可横向滚动。
+  ///
+  /// 视频 Tier 0（2026-11-17）：不内联播放、不生成缩略图——文件片双击交给
+  /// 系统播放器（编解码覆盖反而更好），升级应用内播放时只换文件片的双击行为。
   Widget _attachmentStrip(ThemeData theme, List<StreamAttachment> items) {
     return Padding(
       padding: const EdgeInsets.only(top: Tokens.spaceXs),
@@ -1668,15 +1721,23 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
             for (final StreamAttachment a in items)
               Padding(
                 padding: const EdgeInsets.only(right: Tokens.spaceXs),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
-                  child: Image.file(
-                    File(a.path),
-                    width: 96,
-                    height: 96,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                child: a.isVideo
+                    ? AttachmentFileChip(
+                        path: a.path,
+                        label: p
+                            .extension(a.path)
+                            .replaceFirst('.', '')
+                            .toUpperCase(),
+                      )
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                        child: Image.file(
+                          File(a.path),
+                          width: 96,
+                          height: 96,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
               ),
           ],
         ),

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/app/stream_view.dart';
+import 'package:sinan/src/media/attachment_file_chip.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
@@ -370,9 +371,47 @@ void main() {
     await pumpView(tester);
     // 用户要最简：图钉就是直接开系统文件框（默认桌面），不再弹
     // 「选文件 / 粘贴剪贴板」的来源选择器；截图走输入框里的 Ctrl+V。
-    expect(find.byTooltip('贴图片'), findsOneWidget);
+    // 2026-11-17 视频 Tier 0：文件框同时放行视频（tooltip 同步更名）。
+    expect(find.byTooltip('贴图片/视频'), findsOneWidget);
     expect(find.text('选择图片文件…'), findsNothing);
     expect(find.text('粘贴剪贴板图片'), findsNothing);
+  });
+
+  testWidgets('附件角标：图与视频分开计数', (WidgetTester tester) async {
+    // 视频是**内容信号**，混成一个数会把"这条有视频"抹掉（2026-11-17 Tier 0）。
+    seed('a', '带附件的', DateTime.now());
+    stream.addAttachment(
+      streamId: 'a',
+      kind: 'image',
+      path: r'C:\test\sinan\x.png',
+    );
+    stream.addAttachment(
+      streamId: 'a',
+      kind: 'video',
+      path: r'C:\test\sinan\y.mp4',
+    );
+    await pumpView(tester);
+
+    expect(find.text('1 图'), findsOneWidget);
+    expect(find.text('1 视频'), findsOneWidget);
+    // 停在读态：图片缩略图是 Image.file，测试环境没有真文件会抛图解码错。
+  });
+
+  testWidgets('编辑态：视频出文件片（双击系统播放器），不出缩略图', (WidgetTester tester) async {
+    // Tier 0（2026-11-17）：视频不内联播放、不生成缩略图——文件片双击交给
+    // 系统播放器。这里只钉"渲染的是文件片"；真拉起播放器进手点清单。
+    seed('b', '只有视频', DateTime.now());
+    stream.addAttachment(
+      streamId: 'b',
+      kind: 'video',
+      path: r'C:\test\sinan\y.mp4',
+    );
+    await pumpView(tester);
+
+    await doubleTap(tester, find.text('只有视频'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AttachmentFileChip), findsOneWidget);
+    expect(find.byType(Image), findsNothing, reason: '视频不生成缩略图');
   });
 
   testWidgets('全选：只选当前可见（搜索过滤后的）条目', (WidgetTester tester) async {

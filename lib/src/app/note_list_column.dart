@@ -47,17 +47,8 @@ const double _kHeadToolInset =
     _kHeadButtonSize +
     _kHeadBandPadding;
 
-/// 列表头**第二行右侧内缩**（2026-11-10 用户定）：把漏斗图标中心对齐到
-/// 第一行新建 split 的「＋」中心。
-///
-/// 账（都从行右缘往左量）：
-/// - 「＋」中心 = 8（第一行右留白）+ 38（split 总宽）− 13（＋中心距控件左缘）
-///   = **33**；
-/// - 漏斗中心 = R + 10（热区 20 的半宽）；
-/// - 两者相等 ⇒ **R = 23**。
-///
-/// ⚠️ 改 split 的宽度 / 主图标留白，或改漏斗热区时，这个数要跟着重算。
-const double _kHeadSecondRowInset = 23;
+// （第二行右侧内缩 `_kHeadSecondRowInset`(23) 2026-11-17 撤：它只为"漏斗中心
+//   对齐第一行＋中心"存在；同日筛选钮挪到篇数右边，右留白回到 spaceMd。）
 
 /// 240px **笔记列表列**（主从布局的"主"，Option 2 进卡）：坐在浮面卡左格，右格是详情
 /// （编辑器 / 画布 / 空态）。服务「全部 / 笔记 / 画布 / 收藏」四个主从视图——
@@ -288,8 +279,6 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
           // 上/下留白 = 编辑页按钮带同值；右侧取 spaceSm(8)——2026-11-09 用户定：
           // 比编辑页右留白（spaceMd 12）再收 4，新建钮更贴右缘。
           // ⚠️ 这是**有意偏差**，别按"与编辑页一致"改回去。
-          // 📌 第二行右留白**不是** 8，而是 [_kHeadSecondRowInset](23)——为了把
-          // 漏斗图标中心对齐到这里的「＋」中心，两行右缘本来就不齐。
           padding: const EdgeInsets.fromLTRB(
             _kHeadToolInset,
             _kHeadBandPadding,
@@ -344,13 +333,14 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                   ),
           ),
         ),
-        // 第二行 = **视图名 + 篇数 + 筛选**（2026-11-09 用户定：筛选从工具行
-        // 搬来本行右端）。它整理的是"当前这个列表"，语义该挨着列表标题；也避开
-        // 与工具行 18 档图标并排时显小的光学问题。
+        // 第二行 = **视图名 + 篇数 + 筛选**（筛选 2026-11-09 从工具行搬来，
+        // 2026-11-17 挪到**篇数右边**紧挨着——它整理的是"当前这个列表"，语义
+        // 挨着列表名与篇数；此前的行右端位置撤掉，"漏斗对齐＋中心"的光学约定
+        // 随之作废）。皮肤与日历小按钮同款（4px 圆角方件 + hairline、透明底、
+        // hover 才亮，见 [FilterMenuButton]）。
         //
         // ⚠️ 行高由 [FilterMenuButton] 的热区 20 决定（不是 28）：文字 18 居中
-        // 只下沉 1px，标题行不会被撑高。右留白用 [_kHeadSecondRowInset](23)
-        // —— 让漏斗中心对齐第一行的「＋」中心（见该常量注释）。
+        // 只下沉 1px，标题行不会被撑高（2026-11-17 用户定热区维持 20）。
         // 📌 bottom = [Tokens.spaceSm](8)：2026-11-15 加回。它原本就是 8，
         // 2026-11-09 为容纳热区 28 的筛选钮临时减到 0，热区降到 20 后没跟回来。
         // 加在行**外** ⇒ 标题文字的 y 不动，只是发丝下移 8。
@@ -358,7 +348,7 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
           padding: const EdgeInsets.fromLTRB(
             Tokens.spaceMd,
             0,
-            _kHeadSecondRowInset,
+            Tokens.spaceMd,
             Tokens.spaceSm,
           ),
           child: Row(
@@ -376,7 +366,7 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                   color: Bauhaus.inkMuted(b),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: Tokens.spaceSm),
               // 热区 20：本行行高由它决定，28 会把标题行撑高（见组件注释）。
               const FilterMenuButton(size: 20),
             ],

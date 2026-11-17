@@ -12,7 +12,8 @@ import '../canvas/kernel/canvas_camera.dart';
 import '../canvas/kernel/canvas_painters.dart';
 import '../domain/note.dart';
 import '../theme/app_custom_icons.dart';
-import '../theme/app_icon_button.dart';
+// （app_icon_button import 2026-11-17 随筛选钮换 _TinyButton 皮肤撤；文中
+//   提到 [AppIconButton] 的都是历史对照，不是引用。）
 import '../theme/app_theme.dart';
 import '../theme/focus_ring.dart';
 import '../theme/noise_texture.dart';
@@ -591,7 +592,7 @@ class _CompactMonthHeader extends ConsumerWidget {
       calendarSelectionProvider.notifier,
     );
 
-    Widget chevron(Widget icon, String tip, int delta) => _CalTinyButton(
+    Widget chevron(Widget icon, String tip, int delta) => _TinyButton(
       icon: icon,
       tooltip: tip,
       onTap: () =>
@@ -608,7 +609,7 @@ class _CompactMonthHeader extends ConsumerWidget {
         ),
         const Spacer(),
         if (showGoToday) ...<Widget>[
-          _CalTinyButton(label: '回到今天', onTap: notifier.goToday),
+          _TinyButton(label: '回到今天', onTap: notifier.goToday),
           const SizedBox(width: Tokens.spaceXs),
         ],
         chevron(
@@ -637,7 +638,11 @@ class _CompactMonthHeader extends ConsumerWidget {
   }
 }
 
-/// 日历标题行的小按钮（切月 ‹ › / 回到今天）：圆角方形，**静止透明**。
+/// **小方件按钮**（<24px 控件档）：圆角方形，**静止透明**。
+///
+/// 两个用户：日历标题行（切月 ‹ › / 回到今天）与列表头筛选钮（2026-11-17 换
+/// 同款皮肤——旧的 AppIconButton 在 20×20 里 10px 圆角 = 半宽 = 正圆怪相，
+/// 顺带消灭）。
 ///
 /// 2026-11-16 用户定（两步走完）：先加常驻底求"一眼可点"，实机又觉得重，
 /// 最终收敛为**边框常显 + 背景色只在悬浮时出现**——1px [Bauhaus.hairline]
@@ -645,13 +650,8 @@ class _CompactMonthHeader extends ConsumerWidget {
 ///
 /// 📌 圆角 [Tokens.radiusXxs](4)：20×20 里用 10（[radiusSm]）是**半宽 = 正圆**，
 /// 读不出"方形"。项目 tokens 分了档——4px 是「<24px 的方件」，10px 属 ≥24 控件。
-class _CalTinyButton extends StatefulWidget {
-  const _CalTinyButton({
-    this.icon,
-    this.label,
-    this.tooltip,
-    required this.onTap,
-  });
+class _TinyButton extends StatefulWidget {
+  const _TinyButton({this.icon, this.label, this.tooltip, required this.onTap});
 
   /// 图标钮（20×20）与文字钮（自适应宽）二选一。
   final Widget? icon;
@@ -660,10 +660,10 @@ class _CalTinyButton extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_CalTinyButton> createState() => _CalTinyButtonState();
+  State<_TinyButton> createState() => _TinyButtonState();
 }
 
-class _CalTinyButtonState extends State<_CalTinyButton> {
+class _TinyButtonState extends State<_TinyButton> {
   bool _hover = false;
   bool _pressed = false;
 
@@ -1101,12 +1101,14 @@ class _SearchResultBar extends StatelessWidget {
 /// 交互态不变色——"列表正被筛着"由菜单内勾选（`tabler.Check`）表达，
 /// 不再图标转蓝（顺带回归 monochrome 定稿：唯一蓝只在焦点环）。
 ///
-/// 同日：宿主改为 [AppIconButton]（与列表头三枚同一件），图标统一 Fluent 漏斗
-/// ⇒ **字形与色源单点**，那条"默认 tabler 不吃 Material IconTheme、要走
+/// 图标统一 Fluent 漏斗 ⇒ **字形与色源单点**（色仍走 onSurfaceVariant，与
+/// AppIconButton 同一条），那条"默认 tabler 不吃 Material IconTheme、要走
 /// AppIconTheme 桥"的旁路随之消失。
 ///
 /// 📌 2026-11-14 日历页不再带漏斗 ⇒ 生产调用点只剩列表栏第二行（`size: 20`）；
 /// 默认 28 供独立挂载 / 测试壳使用。
+/// 📌 2026-11-17 挪到「视图名 + 篇数」行**篇数右边**（不再贴行右端），皮肤
+/// 换 [_TinyButton]（日历小按钮同款）。
 class FilterMenuButton extends ConsumerStatefulWidget {
   const FilterMenuButton({super.key, this.size = Tokens.headerActionSize});
 
@@ -1237,33 +1239,38 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
 
   @override
   Widget build(BuildContext context) {
-    // ⚠️ 锚点 key 挂在 **32×32 外壳**上，不能挂 IconButton：material_ui 的
-    // M3 IconButton 外层包了 48×48 的点击热区（_InputPadding），元素根
-    // RenderBox 是热区而非可视按钮（实测落在按钮左下方，菜单因此整体
-    // 错位 8~40px）。外壳尺寸与位置就是可视按钮的真实矩形。
+    final ThemeData theme = Theme.of(context);
+    // ⚠️ 锚点 key 挂在**外壳**（SizedBox）上：外壳尺寸与位置就是可视按钮的
+    // 真实矩形。曾挂在 material_ui 的 M3 IconButton 上——它外层包 48×48 点击
+    // 热区（_InputPadding），RenderBox 是热区而非可视按钮，菜单整体错位 8~40px。
     return SizedBox(
       key: _key,
-      // 尺寸由调用点给（见 [FilterMenuButton.size]）：列表栏 20、hub 顶栏 28。
+      // 尺寸由调用点给（见 [FilterMenuButton.size]）：列表栏 20、测试壳 28。
       //
-      // ⚠️ 20 是热区下限：`AppIconButton` 的圆角是 `radiusButton`(10)，宽 20 时
-      // 半径 = 半宽 ⇒ hover 底由"圆角方块"变**正圆**。漏斗图形实测只占 12.4px，
-      // 不会被圆角切到；但若实机觉得圆底与第一行钮形态不一致，改 24（沉 3px）
-      // 即可，圆角方块会回来。
+      // 皮肤 = [_TinyButton]（与日历切月/回到今天同款，2026-11-17 用户定）：
+      // 4px 圆角方件 + hairline、透明底、hover 才亮。顺带消灭旧皮肤
+      // 「20px + radiusButton(10) = 半宽 = 正圆」的怪相。热区维持 20（同日
+      // 用户定：不为 24 触达下限把标题行撑高）。
       width: widget.size,
       height: widget.size,
-      child: AppIconButton(
-        size: widget.size,
-        // 两处调用点同一枚 Fluent 漏斗；色由 [AppIconButton] 单点下发
-        // ——不再有"默认 tabler 走另一条取色链路"的旁支。
-        //
-        // 2026-11-09 **光学补偿**：漏斗是宽扁形，bbox 只占 24 画板的 68.75%，
-        // 18 框下视觉仅 ≈12.4px（搜索 ≈14.1 / 新建 ≈15.5），实机显小。提到
-        // [Tokens.iconMdSm](20) ⇒ 视觉 ≈13.8px，与同排基本齐；代价是线宽
-        // 1.125→1.25px（+11%，肉眼几乎无感）。⚠️ 别改用 Transform / FittedBox
-        // 缩放：那是缩放已栅格化层，会糊。
-        icon: CustomIcons.filter(size: Tokens.iconMdSm),
+      child: _TinyButton(
         tooltip: '筛选与排序',
-        onPressed: _openMenu,
+        onTap: _openMenu,
+        // 色源单点：与 [AppIconButton] 同一条（onSurfaceVariant）。[_TinyButton]
+        // 不下发 IconTheme（日历图标自带 colorFilter）⇒ 这里显式包一层，
+        // 别让漏斗走默认 onSurface——那就又是"同一行两种灰"。
+        icon: IconTheme(
+          data: IconThemeData(
+            color: theme.colorScheme.onSurfaceVariant,
+            size: Tokens.iconSm,
+          ),
+          // 画板 **18**（[Tokens.iconSm]）：2026-11-17 用户定**调回 18**——
+          // 与日历切月 chevron 同画板，接受它比搜索(≈14.1)/新建(≈15.5) 的
+          // 视觉略小（漏斗 bbox 只占画板 68.75%，18 框下 ≈12.4px）。
+          // 📌 历史：2026-11-09 曾提到 20 做光学补偿，2026-11-17 撤回。
+          // ⚠️ 别改用 Transform / FittedBox 缩放：那是缩放已栅格化层，会糊。
+          child: CustomIcons.filter(size: Tokens.iconSm),
+        ),
       ),
     );
   }
