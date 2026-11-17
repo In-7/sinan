@@ -1746,6 +1746,14 @@ class Bauhaus {
   static Color hover(Brightness b) =>
       ink(b).withValues(alpha: b == Brightness.light ? 0.06 : 0.08);
 
+  /// 引用块淡底（2026-11-18 用户定："竖条不够明显，加背景"）。
+  ///
+  /// 竖条同源 primary 的低透明度**面化**：亮 8% / 暗 12%——暗端多给是感知
+  /// （同 `SurfaceLadder.controlDelta` 的教训：近黑上同样的 α 明显更弱）。
+  /// 比高亮块（Callout）的主题底轻一档：引用 vs 强调各归各。
+  static Color quoteTint(Brightness b, Color primary) =>
+      primary.withValues(alpha: b == Brightness.light ? 0.08 : 0.12);
+
   /// 控件**常驻底**（2026-11-16 用户定：主操作要有视觉权重）。
   ///
   /// 值来自 [ladder] 的 `control` 档：**相对卡底给定 ΔL\***（亮沉 6 / 暗抬 10），

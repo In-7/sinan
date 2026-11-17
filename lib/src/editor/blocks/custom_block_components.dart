@@ -11,6 +11,7 @@ import 'block_markers.dart';
 import 'callout_block_component.dart';
 import 'code_block_component.dart';
 import 'formula_block_component.dart';
+import 'quote_block_component.dart';
 import 'ref_block_component.dart';
 import 'toggle_block_component.dart';
 import '../../theme/app_theme.dart';
@@ -103,14 +104,12 @@ Map<String, BlockComponentBuilder> sinanBlockComponentBuilders({
         color: markerColor,
       ),
     ),
-    // 引用块竖条：官方 `iconBuilder` 扩展点（2026-10-25，取代直接改
-    // vendored `_QuoteIcon` 的旧做法——官方钩子就是为这类"换图标不改源码"
-    // 设计的，见其 `BlockIconBuilder`）。视觉与旧补丁逐像素一致，源码归零。
-    QuoteBlockKeys.type: QuoteBlockComponentBuilder(
+    // 引用块：官方原版 + primary 淡底外衣（2026-11-18），竖条走官方
+    // `iconBuilder` 扩展点——细节见 blocks/quote_block_component.dart。
+    QuoteBlockKeys.type: SinanQuoteBlockBuilder(
       configuration: standardBlockComponentConfiguration.copyWith(
         placeholderText: (_) => AppFlowyEditorL10n.current.quote,
       ),
-      iconBuilder: (context, node) => const _SinanQuoteIcon(),
     ),
     CodeBlockKeys.type: CodeBlockComponentBuilder(typography: typography),
     FormulaBlockKeys.type: FormulaBlockComponentBuilder(),
@@ -815,6 +814,8 @@ class _SinanBulletedIcon extends StatelessWidget {
         style: baseStyle.copyWith(color: color),
         textScaler: TextScaler.linear(0.5 * tsf),
       ),
+      // 圆点是缩放文本，自身有墨迹偏移（0.5×）⇒ 抵掉（见 [bulletInkOffset]）。
+      childInk: bulletInkOffset,
     );
   }
 }
@@ -849,14 +850,12 @@ class _SinanNumberedIcon extends StatelessWidget {
           fontSize: (baseStyle.fontSize ?? 16) * tsf,
         ),
         textScaler: const TextScaler.linear(1),
-        // 与官方 numbered 一致：不把行高余量算进首行升部之上/末行降部之下，
-        // 让 marker 的高度约定与正文相同，Center 才会真正落到文字中心。
-        textHeightBehavior: const TextHeightBehavior(
-          applyHeightToFirstAscent: false,
-          applyHeightToLastDescent: false,
-        ),
+        // 文字几何与正文**同款**（applyHeight:true/even 由 baseStyle 带入，
+        // 不再显式覆写 false/false——那是排版优化前的旧几何，2026-11-18 撤）。
         textDirection: direction,
       ),
+      // 序号（数字 + 句点）自身墨迹偏移 ⇒ 抵掉（见 [numberedInkOffset]）。
+      childInk: numberedInkOffset,
     );
   }
 }
@@ -938,32 +937,8 @@ String _toRoman(int number) {
   return result.toLowerCase();
 }
 
-///
-/// 引用块竖条（2026-10-25，官方 `iconBuilder` 扩展点，取代直接改
-/// vendored `_QuoteIcon`）。
-///
-/// 几何**照官方 `_QuoteIcon` 复刻**（不能用 `markerBox`）：quote 的
-/// `Row(crossAxisAlignment: stretch)` 会把图标拉到**整块高**，竖条必须
-/// 自己撑满——外层 26×22 最小约束 + 内层 4px 宽无高约束。
-/// 色取主题 primary 原色，不削弱：与正文链接色同源，明暗切换自动跟随。
-class _SinanQuoteIcon extends StatelessWidget {
-  const _SinanQuoteIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    final double tsf = context.read<EditorState>().editorStyle.textScaleFactor;
-    return Container(
-      alignment: Alignment.center,
-      constraints: const BoxConstraints(minWidth: 26, minHeight: 22) * tsf,
-      padding: const EdgeInsets.only(right: 4.0),
-      child: Container(
-        width: 4 * tsf,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-    );
-  }
-}
-
+///（引用块竖条 `_SinanQuoteIcon` 2026-11-18 挪去
+///  `blocks/quote_block_component.dart`——淡底外衣与它同居一文件。）
 ///
 ///
 ///

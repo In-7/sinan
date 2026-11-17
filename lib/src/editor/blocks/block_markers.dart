@@ -26,15 +26,27 @@ import 'package:provider/provider.dart';
 ///    求**墨迹带**（不是 `getBoxesForRange`，那是文本框不是墨迹）；
 /// 3. `偏移 = (墨迹带中心 − 行盒中心) / 字号`，多组取平均；本常量 = **−偏移**。
 ///
-/// ⚠️ 第 2 步的 `toImage` 在 **flutter test 里会挂住**（实测 Timeout，与是否
-/// dispose 无关）⇒ 标定只能**离线跑一次**，不能做成常驻断言。常驻的替代是
-/// `test/editor/cjk_ink_calibration_test.dart`：它断言**字体度量指纹**
-/// （ascent/descent），换字体就红 ⇒ 强制回来重标这个数。
+/// 📌 2026-11-18 复查：`toImage` **在 flutter test 里可用**（旧注释"会挂"已过时）
+/// ⇒ 标定已固化为**常驻断言**（`test/editor/cjk_ink_calibration_test.dart`
+/// 直接光栅化扫墨迹核对本常量与 [numberedInkOffset] / [bulletInkOffset]）。
 ///
-/// 系数由字体度量推出、随字号线性缩放（换字号不用再调，**换字体才需要改这一个
+/// 系数由字体度量推出、随字号线性缩放（换字号不用再调，**换字体才需要改这个
 /// 数**）。本项目两处消费它：本文件的 [markerBox]（列表圆点/序号/勾选框/折叠
 /// 箭头）与 `custom_block_components.dart` 的块手柄——**单一来源**，两者永远对齐。
 const double cjkInkCompensation = -0.06;
+
+/// **序号**（`1.`/`10.`）自身的墨迹偏移（em，正 = 墨迹低于自身字盒中心）。
+///
+/// 2026-11-18 实测（生产同款样式）：`1.` +0.075、`10.` +0.0675、`100.`
+/// +0.0675 ⇒ 取 **0.07**。文本标记有自己的墨迹带——[markerBox] 的平移要把它
+/// **抵掉**（`childInk`），只平移汉字补偿会双重下移（修正前序号比汉字墨迹线
+/// 高约 1.3px）。
+const double numberedInkOffset = 0.07;
+
+/// **圆点**（`•`/`◦`/`▪`，0.5× 正文）自身的墨迹偏移（em，按**基文字号**归一）。
+///
+/// 2026-11-18 实测三枚同为 +0.055em（有效字号）⇒ ×0.5 = **0.0275**。
+const double bulletInkOffset = 0.0275;
 
 /// 块**标记**（列表圆点 / 序号 / 勾选框 / 折叠箭头）共用的对齐容器。
 ///
@@ -49,7 +61,12 @@ const double cjkInkCompensation = -0.06;
 /// 霞鹜度量盒只有 1.0em，点/数字/勾选框全部"浮"在首行上部（2026-09-11 实测
 /// 截图），故改为动态取值。折叠标题这类**首行更高**的块传 [lineBox] 覆盖。
 /// （标记自身字形盒若高于容器，`Center` 照样居中，不裁切。）
-Widget markerBox(BuildContext context, Widget child, {double? lineBox}) {
+Widget markerBox(
+  BuildContext context,
+  Widget child, {
+  double? lineBox,
+  double childInk = 0,
+}) {
   final EditorState editorState = context.read<EditorState>();
   final double tsf = editorState.editorStyle.textScaleFactor;
   final TextStyle base = editorState.editorStyle.textStyleConfiguration.text;
@@ -59,11 +76,20 @@ Widget markerBox(BuildContext context, Widget child, {double? lineBox}) {
     constraints: BoxConstraints(minWidth: 26, minHeight: firstLineBox) * tsf,
     padding: const EdgeInsets.only(right: 4.0),
     child: Center(
-      // 光学补偿：按 [cjkInkCompensation] × 字号移向墨迹中心
-      // （常量说明见其文档；负值 = Transform 向下平移）。
+      // 光学补偿：把**子件的墨迹中心**对到正文墨迹中心。
+      //
+      // 平移 = (汉字墨迹偏移 − 子件自身墨迹偏移) × 基文字号：
+      // - 几何图标（勾选框 / 折叠箭头）：[childInk] 0 ⇒ 只移汉字补偿；
+      // - 文本标记（序号 / 圆点）：自身有墨迹带（见 [numberedInkOffset] /
+      //   [bulletInkOffset]），必须抵掉——只平移汉字补偿会**双重补偿**
+      //   （2026-11-18 实测修：序号偏高 ~1.3px、圆点偏低 ~0.5px）。
+      //
       // Transform.translate 是绘制期偏移，不参与布局、无 saveLayer。
       child: Transform.translate(
-        offset: Offset(0, -cjkInkCompensation * (base.fontSize ?? 16)),
+        offset: Offset(
+          0,
+          (-cjkInkCompensation - childInk) * (base.fontSize ?? 16),
+        ),
         child: child,
       ),
     ),

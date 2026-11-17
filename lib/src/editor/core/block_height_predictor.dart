@@ -7,6 +7,7 @@ import '../blocks/attachment_block_component.dart';
 import '../blocks/callout_block_component.dart';
 import '../blocks/code_block_component.dart';
 import '../blocks/formula_block_component.dart';
+import '../blocks/quote_block_component.dart';
 import '../blocks/ref_block_component.dart';
 import '../blocks/toggle_block_component.dart';
 import 'editor_typography.dart';
@@ -178,7 +179,10 @@ class BlockHeightPredictor {
     }
     if (!textBlockTypes.contains(node.type)) return null;
     if (node.delta == null) return null;
-    return _textHeightOf(node, availableWidth) + _paddingOf(node).vertical;
+    return _textHeightOf(node, availableWidth) +
+        _paddingOf(node).vertical +
+        // 引用块的淡底外衣内距（2026-11-18，见 quote_block_component.dart）。
+        (node.type == QuoteBlockKeys.type ? quoteBgPadding.vertical : 0);
   }
 
   /// 图片块：三级取值——
@@ -317,7 +321,14 @@ class BlockHeightPredictor {
     // ③ 列表/待办/引用的标记（仅这些类型）。
     final double inner =
         column - blockPadding.horizontal - EditorTypography.blockHandleWidth;
-    return _markerBlockTypes.contains(node.type) ? inner - markerWidth : inner;
+    final double withMarker = _markerBlockTypes.contains(node.type)
+        ? inner - markerWidth
+        : inner;
+    // 引用块的淡底外衣内距（2026-11-18）也要从文字可用宽里扣——
+    // 不扣则少折行，预测比真值矮（callout 的同款坑，见 _calloutHeightOf）。
+    return node.type == QuoteBlockKeys.type
+        ? withMarker - quoteBgPadding.horizontal
+        : withMarker;
   }
 
   // ───────────────────────────── 内部 ─────────────────────────────

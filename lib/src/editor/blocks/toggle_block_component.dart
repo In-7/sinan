@@ -94,13 +94,14 @@ const EdgeInsets togglePlaceholderPadding = EdgeInsets.only(
   top: Tokens.spaceXs,
 );
 
-/// 箭头图标直径：走"容器声明"档 [Tokens.iconMd]（20）。
+/// 箭头图标直径：**20**（[Tokens.iconMdSm]）。
 ///
-/// ⚠️ 它**不是** [Tokens.iconSm]（18，编辑器官方容器那档）—— 这条注释原写"与工具栏/双耳同档"，
-/// 但取值一直是 20（2026-09-23 全项目图标尺寸盘点时才发现注释与实现不符）。
-/// 本值被块高预算器消费（见 `BlockHeightPredictor._toggleHeightOf`），
-/// 要动它得连着预测器一起验。
-const double toggleArrowIconSize = Tokens.iconMd;
+/// 📌 两次"注释与实现不符"都在这儿（2026-09-23 / 2026-11-18）：本常量曾引
+/// [Tokens.iconMd]——那**是 24 不是 20**，图标被撑到 24、标记列顶到 28
+/// （契约 26）⇒ 箭头比圆点轴线偏 2px、正文右移 2px（2026-11-18 实测修）。
+/// 文档口径 20 由 `toggle_arrow_layout_test` 的常量断言钉住，改值两处一起动。
+/// （旧注释称"被块高预算器消费"——2026-11-18 复核：预测器已不引用本值。）
+const double toggleArrowIconSize = Tokens.iconMdSm;
 
 /// 折叠块的**回车**：与官方 `main` 的 `insertChildNodeInsideToggleList`
 /// （`editor_plugins/toggle/toggle_block_shortcuts.dart`）对齐，**也即是 Notion
@@ -433,33 +434,34 @@ class _ToggleBlockComponentWidgetState extends State<ToggleBlockComponentWidget>
   ///
   /// 占位宽度走 [markerBox] ⇒ 与列表圆点/序号**同一口径**，也就是与
   /// `BlockHeightPredictor.markerWidth` 同一式子（预测不偏的前提）。
+  ///
+  /// 📌 2026-11-18 实测修：旧实现把 `SizedBox(26×26)` 热区塞进标记列——紧
+  /// 约束把**图标撑到 26**（声明是 20）、列宽顶到 30（契约 26）⇒ 箭头比圆点/
+  /// 竖条轴线右偏 2px、正文右移 4px。改为**热区 = 整个标记列**（26×首行行盒，
+  /// ≥24 触达下限且比旧热区大），图标只管自己 [toggleArrowIconSize]（松约束
+  /// 下声明尺寸生效），轴线回到与圆点同轴。
   Widget _buildArrow(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return markerBox(
-      context,
-      // 图标热区给足（26×26）：箭头是本块唯一的高频点击目标。
-      SizedBox(
-        width: 26,
-        height: 26,
-        child: InkWell(
-          onTap: editorState.editable ? _toggleCollapsed : null,
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          child: AnimatedRotation(
-            turns: _collapsed ? 0 : 0.25,
-            duration: const Duration(milliseconds: 200),
-            child: tabler.ChevronRight(
-              height: toggleArrowIconSize,
-              width: toggleArrowIconSize,
-              strokeWidth: 1.5,
-              colorFilter: ui.ColorFilter.mode(
-                scheme.onSurfaceVariant,
-                ui.BlendMode.srcIn,
-              ),
+    return InkWell(
+      onTap: editorState.editable ? _toggleCollapsed : null,
+      borderRadius: BorderRadius.circular(Tokens.radiusSm),
+      child: markerBox(
+        context,
+        AnimatedRotation(
+          turns: _collapsed ? 0 : 0.25,
+          duration: const Duration(milliseconds: 200),
+          child: tabler.ChevronRight(
+            height: toggleArrowIconSize,
+            width: toggleArrowIconSize,
+            strokeWidth: 1.5,
+            colorFilter: ui.ColorFilter.mode(
+              scheme.onSurfaceVariant,
+              ui.BlendMode.srcIn,
             ),
           ),
         ),
+        lineBox: _lineBox,
       ),
-      lineBox: _lineBox,
     );
   }
 
