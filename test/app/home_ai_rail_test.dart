@@ -115,8 +115,9 @@ void main() {
       reason: '问笔记紧贴最小化左侧',
     );
 
-    // 默认未开。
-    expect(container.read(aiPanelOpenProvider), isFalse);
+    // 2026-11-17 用户定：宽窗启动**默认展开**（灵感页与问笔记同屏对照是常态；
+    // 窄窗仍由外壳立刻复位，见下面那条窄窗测试）。
+    expect(container.read(aiPanelOpenProvider), isTrue);
   });
 
   testWidgets('宽窗：顶条「问笔记」开合右轨；关闭收 0 宽、开态披 tint', (WidgetTester tester) async {
@@ -134,7 +135,13 @@ void main() {
           matching: find.byType(AnimatedContainer),
         )
         .first;
-    expect(tester.getSize(slot).width, 0, reason: '默认收起 ⇒ 槽宽 0（内容被裁掉、点不着）');
+    // 2026-11-17 用户定：宽窗启动**默认展开**。
+    expect(container.read(aiPanelOpenProvider), isTrue);
+    expect(
+      tester.getSize(slot).width,
+      Tokens.askRailWidth + Tokens.appPanelInset,
+      reason: '默认展开 ⇒ 340 卡 + 4 左缝',
+    );
 
     final Finder ai = find.byTooltip('问笔记（Ctrl+J）');
     final Finder button = find
@@ -147,6 +154,12 @@ void main() {
         .style
         ?.backgroundColor
         ?.resolve(<WidgetState>{});
+    // 先收起（默认是开的）——下面走一遍完整的「关 → 开 → 关」。
+    await tester.tap(ai);
+    await tester.pumpAndSettle(); // 200ms 宽度动画走完
+    expect(container.read(aiPanelOpenProvider), isFalse);
+    expect(tester.getSize(slot).width, 0, reason: '关闭收 0 宽（内容被裁掉、点不着）');
+
     // 关闭态透明（不能落到 surface 的近黑 ⇒ 黑方块）。
     expect(bg(), Colors.transparent);
 

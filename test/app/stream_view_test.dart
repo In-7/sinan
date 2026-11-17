@@ -16,8 +16,9 @@ import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 
-/// 灵感界面 2026-10-17 P1：
-/// 按日分组的时间流、灵感内搜索、已处理折叠区、多选合并、Enter 即录。
+/// 灵感界面：卡片墙（2026-11-17 由按日分组的时间流改版）、灵感内搜索、
+/// 多选合并、Enter 即录。时间顺序不重要，一眼概览优先——等高卡 + 卡内
+/// 日期脚注 + 点击就地展开看全部。
 void main() {
   late Database db;
   late NoteStore store;
@@ -60,6 +61,16 @@ void main() {
     );
   }
 
+  /// 双击进编辑。⚠️ 两次 tap 之间必须 `pump` 越过 `kDoubleTapMinTime`(40ms)：
+  /// 时间戳完全相同的两次 tap 会被 `DoubleTapGestureRecognizer` 当"抖动误触"
+  /// 重置（`hasElapsedMinTime()` 判定），onDoubleTap 永远不触发（2026-11-17 实测）。
+  Future<void> doubleTap(WidgetTester tester, Finder finder) async {
+    await tester.tap(finder);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pumpView(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
@@ -76,16 +87,70 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('按日分组：今天 / 昨天各一个组标', (WidgetTester tester) async {
+  testWidgets('读态纯内容：无日期组标、无时间，时间在编辑态', (WidgetTester tester) async {
+    // 2026-11-17 二次定稿：内容是主要的 ⇒ 读态卡连脚注都不带（时间 / 更多
+    // 挪进编辑态底部条）；排序仍按 createdAt 倒序（时间管"排"不管"显"）。
     final DateTime now = DateTime.now();
     seed('a', '今天的想法', now);
     seed('b', '昨天的想法', now.subtract(const Duration(days: 1)));
     await pumpView(tester);
 
-    expect(find.text('今天'), findsOneWidget);
-    expect(find.text('昨天'), findsOneWidget);
+    expect(find.text('今天'), findsNothing, reason: '不再有日期组标');
+    expect(find.text('昨天'), findsNothing, reason: '不再有日期组标');
     expect(find.text('今天的想法'), findsOneWidget);
     expect(find.text('昨天的想法'), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'\d{1,2}-\d{1,2} \d{2}:\d{2}')),
+      findsNothing,
+      reason: '读态卡不带时间',
+    );
+
+    // 双击就地编辑 ⇒ 时间出现在底部条（`11-14 17:52`）。
+    await doubleTap(tester, find.text('今天的想法'));
+    expect(
+      find.textContaining(RegExp(r'\d{1,2}-\d{1,2} \d{2}:\d{2}')),
+      findsOneWidget,
+      reason: '时间在编辑态的底部条',
+    );
+  });
+
+  testWidgets('真瀑布卡片墙：自适应高、全文零截断、点击就地编辑', (WidgetTester tester) async {
+    final DateTime now = DateTime.now();
+    // 短卡 + 多行长卡：验证"两边各自自适应高度，不要等高"（2026-11-17 用户定
+    // ——行对齐会在矮卡旁留大片白）。
+    const String longText = '长的一条\n第二行\n第三行\n第四行\n第五行';
+    seed('a', '短', now);
+    seed('b', longText, now.subtract(const Duration(seconds: 5)));
+    await pumpView(tester); // 1400 宽 ⇒ 可用 1352 ⇒ 3 列（列数按可用宽自适应）
+
+    // 全文零截断（"看全部"是原始目标）：预览 Text 不带 maxLines。
+    expect(
+      tester.widget<Text>(find.text(longText)).maxLines,
+      isNull,
+      reason: '全文上墙，不截断',
+    );
+
+    // 自适应高：长卡远高于短卡（高度由内容决定，不拉齐）。
+    Finder cardOf(String text) => find
+        .ancestor(of: find.text(text), matching: find.byType(AnimatedContainer))
+        .first;
+    final Size shortCard = tester.getSize(cardOf('短'));
+    final Size longCard = tester.getSize(cardOf(longText));
+    expect(
+      longCard.height,
+      greaterThan(shortCard.height * 2),
+      reason: '真瀑布：短卡不被高卡拉齐（留白问题的根治点）',
+    );
+
+    // 双击就地编辑：同列宽、不跨列（单列 ~440 @3 列 / 1400 宽）。
+    await doubleTap(tester, find.text('短'));
+    // 页面上还有灵感内搜索框 / 捕获输入框两个 TextField ⇒ 按 controller 文本锁定。
+    final Rect field = tester.getRect(
+      find.byWidgetPredicate(
+        (Widget w) => w is TextField && w.controller?.text == '短',
+      ),
+    );
+    expect(field.width, inInclusiveRange(300, 600), reason: '就地编辑：同列宽、不跨列');
   });
 
   testWidgets('灵感内搜索：即时过滤，不命中给"没有匹配"', (WidgetTester tester) async {
@@ -162,7 +227,9 @@ void main() {
     expect(find.text('别的灵感'), findsOneWidget);
   });
 
-  testWidgets('聚焦到已归档条目：仍然看得见、可删除（进回收站）', (WidgetTester tester) async {
+  testWidgets('聚焦到已归档条目：仍然看得见、只读且不设删除', (WidgetTester tester) async {
+    // 2026-11-17 用户定：归档 = 已转为笔记/画布，内容有落地 ⇒ 归档条目是
+    // 历史记录，不设删除入口（旧行尾红字「删除」撤）。
     seed(
       'b',
       '已归档的被引用条目',
@@ -173,7 +240,7 @@ void main() {
     await pumpView(tester);
 
     expect(find.text('已归档的被引用条目'), findsOneWidget);
-    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('删除'), findsNothing, reason: '归档条目不设删除');
     expect(find.text('正在查看被引用的灵感'), findsOneWidget);
   });
 
@@ -197,8 +264,7 @@ void main() {
     seed('a', '原文', DateTime.now());
     await pumpView(tester);
 
-    await tester.tap(find.text('原文'));
-    await tester.pumpAndSettle();
+    await doubleTap(tester, find.text('原文'));
     // 搜索框(0，工具栏在输入框之上) / 捕获条(1) / 行内编辑框(2)
     await tester.enterText(find.byType(TextField).at(2), '');
     await tester.tap(find.text('完成'));
@@ -224,7 +290,10 @@ void main() {
     expect(find.text('待处理'), findsOneWidget);
   });
 
-  testWidgets('hover 操作簇不挤动正文（占位固定）', (WidgetTester tester) async {
+  testWidgets('hover 不再浮出操作簇：正文几何完全不变', (WidgetTester tester) async {
+    // 2026-11-17 二次定稿：内容是主要的 ⇒ hover 不在卡上浮出任何按钮（时间 /
+    // 更多都挪进展开态底部条）。连"占位换内容"都不需要了——正文几何按构造
+    // 就不会变；卡上最快的快捷操作是**右键菜单**（零版面成本，保留）。
     const String text = '这一行足够长，用来量宽度是否会被悬浮出现的图标挤动';
     seed('a', text, DateTime.now());
     await pumpView(tester);
@@ -238,17 +307,22 @@ void main() {
     await mouse.moveTo(tester.getCenter(find.text(text)));
     await tester.pumpAndSettle();
 
-    // 操作簇现在只剩「更多」一枚（复制已收进菜单；归档自动，不再有手动钮）……
     expect(find.byTooltip('复制'), findsNothing);
-    expect(find.byTooltip('更多'), findsOneWidget);
+    expect(find.byTooltip('更多'), findsNothing, reason: '更多只在展开态');
     expect(find.byTooltip('归档（已处理）'), findsNothing);
-    // ……但正文宽度一点没变（40 的占位是常驻的，只是"填不填内容"）。
     expect(tester.getSize(find.text(text)).width, before.width);
+    expect(tester.getSize(find.text(text)).height, before.height);
 
-    // 复制确实收在「更多」菜单里。
-    await tester.tap(find.byTooltip('更多'));
-    await tester.pumpAndSettle();
-    expect(find.text('复制'), findsOneWidget);
+    // hover 效果是**放大 1.025**（2026-11-17 用户定，替换旧的轻推左移）——
+    // 变换是 paint 层的（getSize 读数不变），这里直接量变换矩阵。
+    final Iterable<Transform> transforms = tester.widgetList<Transform>(
+      find.ancestor(of: find.text(text), matching: find.byType(Transform)),
+    );
+    expect(
+      transforms.any((Transform w) => w.transform.getMaxScaleOnAxis() > 1.001),
+      isTrue,
+      reason: 'hover 该有 1.025 档的放大变换',
+    );
   });
 
   testWidgets('空库：邀请文案 + 输入条常驻', (WidgetTester tester) async {
@@ -474,27 +548,80 @@ void main() {
     expect(find.text('香蕉'), findsOneWidget);
   });
 
-  testWidgets('更多菜单：删除是红字（与批量 / 归档行两处删除同色）', (WidgetTester tester) async {
-    // 2026-11-16 用户定：破坏性动作要有视觉警示。三处删除入口里唯独菜单这处
-    // 曾是黑字，现在统一 `scheme.error`。
+  testWidgets('更多菜单：删除是红字（与批量工具条同色）', (WidgetTester tester) async {
+    // 2026-11-16 用户定：破坏性动作要有视觉警示。删除入口统一 `scheme.error`。
+    // （2026-11-17 起归档条目不设删除 ⇒ 剩本菜单 / 批量工具条两处。）
+    // 2026-11-17 起「更多」只在**编辑态**（读态纯内容）⇒ 先双击进编辑再进菜单。
     seed('a', '一条', DateTime.now());
     await pumpView(tester);
 
-    final TestGesture hover = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    await hover.addPointer(location: tester.getCenter(find.text('一条')));
-    await tester.pump();
+    await doubleTap(tester, find.text('一条'));
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
 
+    // 复制确实收在同一个「更多」菜单里。
+    expect(find.text('复制'), findsOneWidget);
     final Text deleteItem = tester.widget<Text>(find.text('删除'));
     expect(
       deleteItem.style?.color,
       AppTheme.light().colorScheme.error,
       reason: '菜单里的删除要用错误色红字',
     );
-    await hover.removePointer();
+  });
+
+  testWidgets('双击才编辑、单击不进编辑；右键菜单含「编辑」', (WidgetTester tester) async {
+    // 2026-11-17 用户定：单击不编辑（防误触）；双击 / 右键「编辑」/ 键盘 Enter
+    // 是同一入口的三个触发方式。
+    seed('a', '一条', DateTime.now());
+    await pumpView(tester);
+
+    Finder editor() => find.byWidgetPredicate(
+      (Widget w) => w is TextField && w.controller?.text == '一条',
+    );
+
+    await tester.tap(find.text('一条'));
+    await tester.pumpAndSettle();
+    expect(editor(), findsNothing, reason: '单击不进编辑');
+
+    await tester.tapAt(
+      tester.getCenter(find.text('一条')),
+      buttons: kSecondaryButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('编辑'), findsOneWidget, reason: '右键菜单给「编辑」首项');
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+    expect(editor(), findsOneWidget, reason: '右键「编辑」进编辑态');
+
+    // 收起后双击也进编辑。
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    await doubleTap(tester, find.text('一条'));
+    expect(editor(), findsOneWidget, reason: '双击进编辑');
+  });
+
+  testWidgets('编辑态点「更多」：菜单开出来、卡片不收（bug 回归）', (WidgetTester tester) async {
+    // 2026-11-17 用户实报"点更多就关卡"：输入框在按下瞬间失焦、旧逻辑失焦
+    // 即收，按钮还没弹菜单就连编辑态一起卸载。`delete` 的确认框同理（在卡外）。
+    seed('a', '一条', DateTime.now());
+    await pumpView(tester);
+    await doubleTap(tester, find.text('一条'));
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('复制'), findsOneWidget, reason: '菜单要开出来');
+    expect(find.text('完成'), findsOneWidget, reason: '卡片仍在编辑态（不收）');
+
+    // 菜单里的「删除」也点得动：确认框（卡外）打开期间卡片同样不收。
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('将 1 条灵感移入回收站？可在回收站恢复或彻底删除。'),
+      findsOneWidget,
+      reason: '确认框开出来',
+    );
+    expect(find.text('完成'), findsOneWidget, reason: '确认框期间卡片仍在');
   });
 
   testWidgets('右键弹同款菜单：点删除走确认框，确认后进回收站', (WidgetTester tester) async {
@@ -531,7 +658,7 @@ void main() {
     seed('b', '已归档的', now.subtract(const Duration(days: 1)), archived: true);
 
     // 归档行只在**聚焦态**渲染（主列表只收待处理；台账页是另一套卡片）。
-    // 右键照样弹同款菜单——它行尾另有删除钮，右键是统一入口。
+    // 右键照样弹菜单；但归档条目**不给「删除」**（2026-11-17 用户定）。
     container.read(streamFocusProvider.notifier).focusOn('b');
     await pumpView(tester);
     await tester.tapAt(
@@ -540,6 +667,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('转为新笔记'), findsOneWidget, reason: '归档行右键也弹');
+    expect(find.text('删除'), findsNothing, reason: '归档条目不设删除');
     await tester.tapAt(const Offset(1, 1)); // 点空白关菜单
     await tester.pumpAndSettle();
 

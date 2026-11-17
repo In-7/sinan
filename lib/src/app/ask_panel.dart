@@ -249,7 +249,11 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SelectableText(answer?.text ?? '', style: theme.textTheme.bodyMedium),
+          // 空答案**不渲染**空 SelectableText：空文本节点仍是一个可长按的
+          // TextField 语义（实测 3×23、贴在答案区左上角），a11y 24×24 闸门会红
+          // （2026-11-17）。有文本才给可选文本。
+          if (answer != null && answer.text.isNotEmpty)
+            SelectableText(answer.text, style: theme.textTheme.bodyMedium),
           if (answer?.vectorFallbackReason != null) ...<Widget>[
             const SizedBox(height: Tokens.spaceSm),
             // 直接展示检索层给的降级原因（与主页搜索同一口径，见

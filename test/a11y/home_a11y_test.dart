@@ -41,15 +41,16 @@ void main() {
     settings = SettingsStore(db);
     // 标题栏在 initState 里向 window_manager 查窗口状态，不桩掉会 MissingPluginException。
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('window_manager'),
-            (MethodCall call) async {
-      if (call.method == 'isMaximized' ||
-          call.method == 'isFocused' ||
-          call.method == 'isFullScreen') {
-        return false;
-      }
-      return null;
-    });
+        .setMockMethodCallHandler(const MethodChannel('window_manager'), (
+          MethodCall call,
+        ) async {
+          if (call.method == 'isMaximized' ||
+              call.method == 'isFocused' ||
+              call.method == 'isFullScreen') {
+            return false;
+          }
+          return null;
+        });
   });
 
   tearDown(() {
@@ -69,20 +70,14 @@ void main() {
     });
   }
 
-  testWidgets('主页：状态语义——导航要报"按钮/选中"', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('主页：状态语义——导航要报"按钮/选中"', (WidgetTester tester) async {
     await _auditHome(tester, store, settings, Brightness.light);
 
     // 侧栏四枚导航：都必须是**可操作的按钮**，且带选中态位；
     // 当前视图（默认灵感）必须 selected=true。
     // 断言**控件声明**（比读运行时语义树可靠：标签与状态标记在树里可能未合并到
     // 同一个节点，但控件确实声明了它们 ⇒ 读屏最终能拿到）。
-    bool declares({
-      required bool button,
-      bool? selected,
-      bool? expanded,
-    }) =>
+    bool declares({required bool button, bool? selected, bool? expanded}) =>
         find
             .descendant(
               of: find.byType(AppIconRail),
@@ -134,12 +129,9 @@ void main() {
         .evaluate()
         .length;
     expect(selectedCount, 1, reason: '当前视图只能有一个');
-
   });
 
-  testWidgets('主页：焦点顺序——侧栏先于内容、每站不重复', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('主页：焦点顺序——侧栏先于内容、每站不重复', (WidgetTester tester) async {
     final _HomeAudit a = await _auditHome(
       tester,
       store,
@@ -148,7 +140,8 @@ void main() {
     );
 
     /// 某标记在 Tab 序列里出现的下标（未出现 = -1）。
-    int at(String mark) => a.order.indexWhere((List<String> m) => m.contains(mark));
+    int at(String mark) =>
+        a.order.indexWhere((List<String> m) => m.contains(mark));
 
     // 采样是"采到绕回起点为止"（2026-10-21，无魔法步数）：先确认真的闭合了
     // 一圈，否则后面的顺序断言只是在一段残缺序列上自说自话。
@@ -186,7 +179,6 @@ void main() {
     ]) {
       expect(i, lessThan(card), reason: '焦点顺序：侧栏「$k」必须在内容卡片之前');
     }
-
   });
 }
 
@@ -248,7 +240,9 @@ Future<_HomeAudit> _auditHome(
         databaseProvider.overrideWithValue(store.db),
       ],
       child: MaterialApp(
-        theme: brightness == Brightness.light ? AppTheme.light() : AppTheme.dark(),
+        theme: brightness == Brightness.light
+            ? AppTheme.light()
+            : AppTheme.dark(),
         // HomeScreen 的 Scaffold 是 transparent（窗口底由 OS 合成，测试里没有）。
         // 垫一层真实窗口底色 ⇒ 对比度检查器才算得出可信背景（否则拿透明当黑底，假阳性）。
         home: ColoredBox(
@@ -267,20 +261,18 @@ Future<_HomeAudit> _auditHome(
   await tester.pumpAndSettle();
 
   final Map<String, bool> passed = <String, bool>{};
-  for (final (String key, AccessibilityGuideline g) in <(
-    String,
-    AccessibilityGuideline,
-  )>[
-    ('labeled', labeledTapTargetGuideline),
-    ('contrast', textContrastGuideline),
-    (
-      'tap',
-      const MinimumTapTargetGuideline(
-        size: Size(24, 24),
-        link: 'WCAG 2.2 SC 2.5.8',
-      ),
-    ),
-  ]) {
+  for (final (String key, AccessibilityGuideline g)
+      in <(String, AccessibilityGuideline)>[
+        ('labeled', labeledTapTargetGuideline),
+        ('contrast', textContrastGuideline),
+        (
+          'tap',
+          const MinimumTapTargetGuideline(
+            size: Size(24, 24),
+            link: 'WCAG 2.2 SC 2.5.8',
+          ),
+        ),
+      ]) {
     try {
       passed[key] = key == 'contrast'
           ? await _contrastOk(tester)
@@ -341,10 +333,7 @@ Future<bool> _contrastOk(WidgetTester tester) async {
   final Evaluation eval = await textContrastGuideline.evaluate(tester);
   if (eval.passed) return true;
   final String reason = eval.reason ?? '';
-  final List<String> blocks = reason
-      .split('SemanticsNode#')
-      .skip(1)
-      .toList();
+  final List<String> blocks = reason.split('SemanticsNode#').skip(1).toList();
   final bool onlyKnownArtifact =
       blocks.isNotEmpty &&
       blocks.every(
@@ -373,11 +362,13 @@ List<String> _marksOfFocus(WidgetTester tester) {
     if (w is Semantics) return w.properties.label;
     return null;
   }
+
   void visit(Element e) {
     final String? m = markOf(e.widget);
     if (m != null && m.isNotEmpty) marks.add(m);
     e.visitChildElements(visit);
   }
+
   final String? selfMark = markOf(ctx.widget);
   if (selfMark != null && selfMark.isNotEmpty) marks.add(selfMark);
   (ctx as Element).visitChildElements(visit);

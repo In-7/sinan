@@ -150,10 +150,12 @@ final selectedNoteIdProvider = NotifierProvider<SelectedNoteNotifier, String?>(
 /// 呈现选择归外壳，状态保持**单一真相源**，于是「命令 / 图标 / 自己的关闭钮 /
 /// Esc」四条入口写的都是同一个布尔。
 ///
-/// 默认关闭。再按一次 `Ctrl+J`（`ai.ask` 命令）或导航板 Sparkles 收起。
+/// 默认**打开**（2026-11-17 用户定：灵感页是启动默认视图，问笔记与它同屏
+/// 对照是常态）。再按一次 `Ctrl+J`（`ai.ask` 命令）或导航板 Sparkles 收起；
+/// 窄窗（< `Tokens.askRailBreakpoint`）由外壳立刻复位，不会出现右栏。
 class AiPanelNotifier extends Notifier<bool> {
   @override
-  bool build() => false;
+  bool build() => true;
 
   void open() => state = true;
   void close() => state = false;

@@ -11,6 +11,7 @@ import 'package:flutter/services.dart'
         KeyDownEvent,
         LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -42,11 +43,18 @@ import 'stream_ledger_panel.dart' show showStreamLedger;
 /// 2. **工具行**（28 高：搜索 / 选择 + 快捷键提示与条数）；
 /// 3. **时间流**（左侧 56 日期栏 + 右侧行；行间只靠 8px 间距，**不画分隔线**）。
 ///
-/// ## 交互
-/// - hover 一行：铺 [AppTheme.hoverOverlay] + 左侧 2px 蓝竖条 + 右侧操作簇浮出；
-/// - 点击行：就地编辑（`Esc` / `Ctrl+Enter` 保存），不是"放大成卡片"；
-/// - 选择：工具行换成「已选 N 条 / 取消」，底部浮出唯一的实色按钮「合并为新笔记」；
-/// - 已处理：列表末尾一条折叠行；归档条目降对比、只读、行尾「拿回」。
+/// ## 交互（2026-11-17 卡片墙改版，同日三次收口）
+/// - **真瀑布卡片墙**（可用宽 <680 单列 / <1100 两列 / 其上三列）：内容
+///   自适应高、**全文零截断**、两列各自堆叠不等高——一眼概览所有想法
+///   （用户定）。时间顺序不重要：排序按 createdAt，显示不带时间；
+/// - **双击**卡：就地编辑（同列宽、随内容长高，`Esc` / `Ctrl+Enter` 保存
+///   收起）——单击不编辑（2026-11-17 用户定，防误触）；右键菜单「编辑」、
+///   键盘 Enter 同一入口。时间与「更多」只在编辑态脚注里出现；
+/// - hover 卡：放大 1.025（呼应点击放大）；行上**右键**弹动作菜单（墙上
+///   最快的操作入口，零版面成本）；
+/// - 选择：工具行换成「已选 N 条 / 取消」，勾选框覆盖卡左上角，合并走唯一的
+///   实色按钮「合并为新笔记」；
+/// - 归档条目：只出现在「引用聚焦」视图，降对比、只读、脚注给红字「删除」。
 ///
 /// ## 边界
 /// 只读 `streamProvider`（独立表 `stream_items`），**不读笔记 / 画布数据**；
@@ -69,6 +77,21 @@ class _StreamViewState extends ConsumerState<StreamView> {
   /// 多选合并：进入后点击行 = 勾选，不再展开编辑。
   bool _selectMode = false;
   final Set<String> _selected = <String>{};
+
+  /// 卡片墙里**就地编辑**的那一条（2026-11-17：同列宽、随内容长高，不跨列）。
+  /// 单值 ⇒ 同时只展开一张。换卡时旧卡的失焦保存是异步的，收尾**只清自己**
+  /// （见下），否则会把刚展开的新卡挤回折叠态。
+  String? _expandedId;
+
+  void _setExpanded(String id, bool value) {
+    setState(() {
+      if (value) {
+        _expandedId = id;
+      } else if (_expandedId == id) {
+        _expandedId = null;
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -141,10 +164,7 @@ class _StreamViewState extends ConsumerState<StreamView> {
       // 选择模式全选的候选：**当前可见**的待处理条目（含搜索过滤）。
       visibleIds: <String>[for (final StreamItem i in open) i.id],
       empty: empty,
-      // 聚焦视图是一条条的清单，不需要日期分组。
-      entries: empty
-          ? const <_Entry>[]
-          : _entries(shown, withDates: focusId == null),
+      shown: shown,
     );
     _sliceSource = items;
     _sliceQuery = _query;
@@ -291,25 +311,41 @@ class _StreamViewState extends ConsumerState<StreamView> {
                   // `builder`（不是 `children`）：条目再多也只构建视口内那几行
                   // ——之前每次 hover / 输入都会重建全部卡片（2026-10-17 复查）。
                   //
-                  // **列表铺满整卡宽**、条目在内部居中到 640（2026-10-18 用户定）：
-                  // ① 滚动条由 `MaterialScrollBehavior` 自动挂在 Scrollable 边缘
-                  //    ⇒ 它贴在**窗口/卡片右缘**，而不是缩在 640 列里那条"小细线"；
-                  // ② 鼠标放在两侧留白上也能滚—— Scrollable 的热区就是整卡宽，
-                  //    不再只有中间那条（用户实报"以为不能滚"）。
-                  ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 72),
-                    itemCount: flow.entries.length,
-                    itemBuilder: (BuildContext context, int i) =>
-                        _pageColumn(switch (flow.entries[i]) {
-                          _DateEntry(:final String label) => _DayHeader(
-                            label: label,
+                  // **真瀑布卡片墙**（2026-11-17 用户定，二次收口）：内容自适应高、
+                  // 两边各自堆叠**不等高**——行对齐方案会在矮卡旁留大片白（用户
+                  // 实报"个别留白会多"）。[MasonryGridView] 按**真实高度**把每条
+                  // 追加到较矮的列（连高度估算代码都不用写），懒构建虚拟化保留
+                  // （选它的主因；官方布局无"变高 + 懒"的网格，见依赖纪律说明）。
+                  // 列数按**可用宽**自适应——AI 栏在 <1000 会自动收起、内容反而
+                  // 变宽，按窗口宽定列会在 1000~1150（AI 开着、内容最窄）排成碎卡。
+                  //
+                  // 就地编辑（2026-11-17 同日定）：点开的卡在**自己的列里**长高，
+                  // 不跨列；时间 /「更多」进编辑脚注。全文零截断——长卡只是把
+                  // 那一列拉长，瀑布下不破版。
+                  //
+                  // 滚动视口仍整卡宽：滚动条贴窗口/卡片右缘，两侧留白也能滚
+                  // （2026-10-18 用户实报"以为不能滚"）。
+                  LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints c) =>
+                        MasonryGridView.count(
+                          crossAxisCount: _wallColumns(c.maxWidth),
+                          mainAxisSpacing: Tokens.cardGridSpacing,
+                          crossAxisSpacing: Tokens.cardGridSpacing,
+                          padding: const EdgeInsets.fromLTRB(
+                            Tokens.gridMargin,
+                            0,
+                            Tokens.gridMargin,
+                            72,
                           ),
-                          _ItemEntry(
-                            :final StreamItem item,
-                            archived: final bool a,
-                          ) =>
-                            _row(item, archived: a),
-                        }),
+                          itemCount: flow.shown.length,
+                          // `double.infinity` ⇒ 松约束下撑满列宽、紧约束下不变：
+                          // 卡片必须满列宽（内容再短也不缩成一条）。
+                          itemBuilder: (BuildContext context, int i) =>
+                              SizedBox(
+                                width: double.infinity,
+                                child: _card(flow.shown[i]),
+                              ),
+                        ),
                   ),
                 // 批量动作已挪到顶部「全选」左边（2026-10-18 用户定）：
                 // 不再有底部浮条，选择控件与动作在同一处。
@@ -323,22 +359,26 @@ class _StreamViewState extends ConsumerState<StreamView> {
     );
   }
 
-  /// 页面内容的**水平栅格**：左右 `gridMargin` 呼吸 + 640 阅读列居中。
+  /// 页面内容的**水平栅格**：左右 `gridMargin` 呼吸，**铺满可用宽**。
   ///
-  /// 头部 / 书写区 / 每一条灵感都走它 ⇒ 三者的左缘永远同在一条竖线上；
-  /// 而**滚动视口本身是整卡宽**（见 build 里的 ListView），滚动条因此贴边、
-  /// 留白也能滚。
+  /// 2026-11-17 卡片墙改版起不再是「640 阅读列居中」：页眉 / 书写区 / 卡片墙
+  /// 同一栅格锚点，整页读作一块板（卡片墙是全宽版式，顶部缩在 640 里会散）。
+  /// 滚动视口仍整卡宽（见 build 的 ListView）⇒ 滚动条贴边、留白也能滚。
   Widget _pageColumn(Widget child) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: Tokens.gridMargin),
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        // **撑到列宽**：Center 给子节点的是松约束（0..640），不撑的话输入框
-        // 会缩成自己的内容宽，左右留白就歪了。
-        child: SizedBox(width: double.infinity, child: child),
-      ),
-    ),
+    child: SizedBox(width: double.infinity, child: child),
   );
+
+  /// 卡片墙列数（2026-11-17）：按**可用宽**自适应，不按窗口宽——
+  /// AI 栏在 <1000 会自动收起、内容反而变宽，按窗口宽定列会在
+  /// 1000~1150 这段（AI 开着、内容最窄）排成 ~264px 的碎卡。
+  /// 账：可用宽 = 容器宽 − 2×gridMargin(24)；两列舒适区卡宽 340~540。
+  int _wallColumns(double maxWidth) {
+    final double u = maxWidth - Tokens.gridMargin * 2;
+    if (u < 680) return 1;
+    if (u < 1100) return 2;
+    return 3;
+  }
 
   // ── 列表头（条数 + 搜索框 + 选择）────────────────────────────────────
 
@@ -645,26 +685,6 @@ class _StreamViewState extends ConsumerState<StreamView> {
 
   // ── 时间流 ───────────────────────────────────────────────────────────
 
-  /// 拍平成`[日期标, 条目, 条目…]`，供 `ListView.builder`。
-  ///
-  /// [withDates]：时间流需要日期分组；「已处理」清单与引用聚焦都是一条条列出来，
-  /// 分组只会让人以为它们还在时间轴上。
-  List<_Entry> _entries(List<StreamItem> items, {required bool withDates}) {
-    final List<_Entry> out = <_Entry>[];
-    String? lastDay;
-    for (final StreamItem item in items) {
-      if (withDates) {
-        final String day = _dayKey(item.createdAt);
-        if (day != lastDay) {
-          out.add(_DateEntry(_dayLabel(item.createdAt)));
-          lastDay = day;
-        }
-      }
-      out.add(_ItemEntry(item, archived: item.archived));
-    }
-    return out;
-  }
-
   /// 聚焦态头部：告诉你"这是从某篇笔记引用跳过来的"，并给出回全量流的出口。
   Widget _focusHeader() {
     final ThemeData theme = Theme.of(context);
@@ -701,40 +721,26 @@ class _StreamViewState extends ConsumerState<StreamView> {
     );
   }
 
-  /// 单条灵感：**铺满整列**（没有左侧日期栏，正文左缘 = 行内 padding 8 + 竖条 2）。
-  ///
-  /// 行间距 6：底色**常显**之后，相邻两行的色块会连成一条长带；6px 让每条是
-  /// 独立的一张"纸片"，又还没松到把一组日期拆成两份（2026-10-17 用户定）。
-  Widget _row(StreamItem item, {bool archived = false}) => Padding(
-    padding: const EdgeInsets.only(bottom: Tokens.spaceXs + Tokens.spaceXxs),
-    child: _StreamRow(
-      key: ValueKey<String>(item.id),
-      item: item,
-      archived: archived,
-      selectMode: _selectMode,
-      selected: _selected.contains(item.id),
-      onToggleSelect: () => _toggleSelected(item.id),
-    ),
+  /// 一张灵感卡：**自适应高**（全文零截断，卡高由内容决定）；**双击**就地编辑
+  /// （同列宽、长高，不跨列）——单击不编辑，右键「编辑」/ Enter 同入口。
+  /// 稳定 [ValueKey]：state（编辑文本 / 悬浮 / 菜单）跟条目走，不跟索引走。
+  Widget _card(StreamItem item) => _StreamCard(
+    key: ValueKey<String>(item.id),
+    item: item,
+    archived: item.archived,
+    expanded: _expandedId == item.id,
+    onExpandChanged: (bool value) => _setExpanded(item.id, value),
+    selectMode: _selectMode,
+    selected: _selected.contains(item.id),
+    onToggleSelect: () => _toggleSelected(item.id),
   );
-
-  static String _dayKey(DateTime t) => '${t.year}-${t.month}-${t.day}';
-
-  static String _dayLabel(DateTime t) {
-    final DateTime now = DateTime.now();
-    final DateTime day = DateTime(t.year, t.month, t.day);
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final int diff = today.difference(day).inDays;
-    if (diff == 0) return '今天';
-    if (diff == 1) return '昨天';
-    if (day.year == today.year) return '${day.month} 月 ${day.day} 日';
-    return '${day.year} 年 ${day.month} 月 ${day.day} 日';
-  }
 }
 
 /// 一次 build 需要的全部派生结果（见 `_StreamViewState._flowSlice`）。
 ///
-/// 2026-11-16 收口：过滤 / 计数 / 拍平原先在 build 里各跑一遍 O(n)，且每敲一个
+/// 2026-11-16 收口：过滤 / 计数原先在 build 里各跑一遍 O(n)，且每敲一个
 /// 搜索字符都重来。整份缓存之后，只有「数据引用 / 搜索词 / 聚焦」变了才重算。
+/// （2026-11-17 卡片墙改版起不再拍平日期标——日期落进卡脚注。）
 typedef _FlowSlice = ({
   List<StreamItem> scoped,
   List<StreamItem> open,
@@ -742,60 +748,11 @@ typedef _FlowSlice = ({
   int archivedTotal,
   List<String> visibleIds,
   bool empty,
-  List<_Entry> entries,
+  List<StreamItem> shown,
 });
 
-/// 列表里的一项：日期标题 / 一条灵感 / 「已处理」折叠行。
-///
-/// 拍平成一维再交给 `ListView.builder`——不为列表性能保留 widget 树。
-sealed class _Entry {
-  const _Entry();
-}
-
-class _DateEntry extends _Entry {
-  const _DateEntry(this.label);
-  final String label;
-}
-
-class _ItemEntry extends _Entry {
-  const _ItemEntry(this.item, {this.archived = false});
-  final StreamItem item;
-  final bool archived;
-}
-
-/// 日期组标题（今天 / 昨天 / `12 月 31 日`）：单独一行、左对齐内容左缘，
-/// 条目在它下面**铺满整列**。
-class _DayHeader extends StatelessWidget {
-  const _DayHeader({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    // 日期是**分类标题**：没有自己的底色、没有纸片，只是正文上方的一行字
-    // （2026-10-17 用户定）。行的底色只在灵感卡上。
-    return Padding(
-      // 左缘对齐列表头的「N 条」（= 内容区左缘，0 缩进）：日期是这一段的标签，
-      // 和上面的条数、下面的卡片同一条竖线，才有"段落"的读法（2026-10-17 用户定）。
-      // 上下留 16 / 4：上边距撑开与上一组的距离，下边距只隔一条呼吸缝。
-      padding: const EdgeInsets.only(
-        top: Tokens.spaceLg,
-        bottom: Tokens.spaceXs,
-      ),
-      child: Semantics(
-        header: true,
-        child: Text(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: Bauhaus.inkMuted(theme.brightness),
-            letterSpacing: 1,
-          ),
-        ),
-      ),
-    );
-  }
-}
+// （日期组标 `_DayHeader` / 拍平 `_Entry` 2026-11-17 撤：卡片墙把日期收进
+//   每张卡的脚注，不再按天分组。）
 
 /// 空态：一句轻邀请 + 键位提示（输入条常驻，空库也能直接写第一条）。
 class _StreamEmpty extends StatelessWidget {
@@ -1288,39 +1245,60 @@ class _PendingMedia {
   final String kind; // 'image' | 'video'
 }
 
-// ───────────────────────────── 灵感行 ─────────────────────────────
+// ───────────────────────────── 灵感卡 ─────────────────────────────
 
-/// 一行灵感：**没有卡片边框**，静止透明；hover / 选中才铺底色与左侧蓝竖条。
+/// 卡片墙里的一张灵感卡（2026-11-17 由时间流的「行」改版，同日三次收口）。
 ///
-/// - 点击就地编辑（`Esc` / `Ctrl+Enter` 保存），不是"放大成卡片"；
-/// - hover 时右侧浮出「更多」（复制已收进菜单；**归档由使用/转换自动触发**，无手动钮）；
-/// - 归档条目只读、降对比，行尾给「删除」。
-class _StreamRow extends ConsumerStatefulWidget {
-  const _StreamRow({
+/// - **自适应高 + 全文零截断**：内容就是全部版面（2026-11-17 用户定"看全部"）。
+///   右上角一枚「N 图」角标（有图才有：这是内容信号）；
+/// - **双击**就地编辑（同列宽、随内容长高，不跨列），`Esc` / `Ctrl+Enter`
+///   保存收起——单击不编辑（2026-11-17 用户定，防误触），右键菜单「编辑」、
+///   键盘 Enter 同一入口。**时间与「更多」只在编辑态**的底部条里出现；
+/// - **右键**弹动作菜单（复制 / 转为 / 删除红字，锚在光标处）——墙上最快的
+///   操作入口，零版面成本（2026-11-16 起，2026-11-17 用户定保留）；
+/// - 多选模式：勾选框覆盖在左上角；归档条目只读、降对比、保留细脚注
+///   （「归档于 …」）——**不设删除**（2026-11-17 用户定：归档 = 已转为
+///   笔记/画布，内容有落地，这里是历史记录）。
+class _StreamCard extends ConsumerStatefulWidget {
+  const _StreamCard({
     super.key,
     required this.item,
     required this.archived,
     required this.selectMode,
     required this.selected,
+    required this.expanded,
+    required this.onExpandChanged,
     this.onToggleSelect,
   });
+
+  // （等高 `tileHeight` 2026-11-17 撤：用户定"两边各自自适应高度，不要等高"
+  //   ——行对齐在矮卡旁留白太多；真瀑布下高度全由内容决定。）
 
   final StreamItem item;
   final bool archived;
   final bool selectMode;
   final bool selected;
+
+  /// 就地编辑（同列宽、随内容长高）。归档条目不可编辑。
+  final bool expanded;
+  final ValueChanged<bool> onExpandChanged;
   final VoidCallback? onToggleSelect;
 
   @override
-  ConsumerState<_StreamRow> createState() => _StreamRowState();
+  ConsumerState<_StreamCard> createState() => _StreamCardState();
 }
 
-class _StreamRowState extends ConsumerState<_StreamRow> {
+class _StreamCardState extends ConsumerState<_StreamCard> {
   final FocusNode _rowFocus = FocusNode();
   final FocusNode _editFocus = FocusNode();
   final TextEditingController _editController = TextEditingController();
   bool _hover = false;
-  bool _expanded = false;
+
+  /// 指针按在卡内（含按下未放）。点「更多」时输入框在**按下瞬间**失焦、菜单
+  /// 要到抬起才开——失焦即收会把按钮连编辑态一起卸载（2026-11-17 用户实报
+  /// "点更多就关卡"）。[_onEditFocusChange] 靠这个标志区别"点卡内控件"
+  /// （焦点暂离，不收）与"点到卡外"（保存收起）。
+  bool _pressInCard = false;
 
   /// 菜单打开期间保持"悬浮态"：鼠标移进菜单时 [MouseRegion] 会触发 onExit，
   /// 只看 `_hover` 会让操作簇在弹窗打开的瞬间消失（2026-10-17 用户实报）。
@@ -1344,16 +1322,23 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   void _expand() {
     if (widget.archived || widget.selectMode) return;
     _editController.text = widget.item.text;
-    setState(() => _expanded = true);
+    widget.onExpandChanged(true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _editFocus.requestFocus();
     });
   }
 
+  /// 失焦即收，但**一帧后再判**（2026-11-17 bug 修复）：点「更多」时输入框在
+  /// 按下瞬间失焦、菜单抬起才开，立即收会把按钮连编辑态一起卸载（用户实报
+  /// "点更多就关卡"）。指针还按在卡上（点卡内控件）或菜单 / 确认框开着 ⇒
+  /// 焦点只是暂离，不收；点到卡外（含切别的卡）才保存收起。
   void _onEditFocusChange() {
-    if (!_editFocus.hasFocus && _expanded) {
+    if (_editFocus.hasFocus || !widget.expanded) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.expanded) return;
+      if (_menuOpen || _pressInCard) return;
       unawaited(_saveAndCollapse());
-    }
+    });
   }
 
   Future<void> _saveAndCollapse() async {
@@ -1363,7 +1348,30 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     if (text.trim() != widget.item.text.trim()) {
       await ref.read(streamProvider.notifier).edit(widget.item.id, text);
     }
-    if (mounted) setState(() => _expanded = false);
+    // 收尾只通知"自己收起"：换卡时这份异步回调可能晚于新卡的展开，
+    // 父级 [_setExpanded] 用 id 守卫，不会把新卡挤回去。
+    if (mounted) widget.onExpandChanged(false);
+  }
+
+  /// 菜单动作的统一入口：动作全程挂"菜单开着"（`delete` 的确认框在**卡外**、
+  /// 会触发失焦，不挂起会把卡收掉），完事把焦点还给输入框、重挂"失焦即收"。
+  Future<void> _runMenuAction(String value) async {
+    if (!mounted) return;
+    setState(() => _menuOpen = true);
+    try {
+      await _onMenu(value);
+    } finally {
+      if (mounted) {
+        setState(() => _menuOpen = false);
+        _refocusEditor();
+      }
+    }
+  }
+
+  void _refocusEditor() {
+    if (mounted && widget.expanded && !_editFocus.hasFocus) {
+      _editFocus.requestFocus();
+    }
   }
 
   /// 复制到系统剪贴板（纯文本）。**不归档**——复制不等于"在应用里使用"，
@@ -1386,6 +1394,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   Future<void> _onMenu(String value) async {
     final String id = widget.item.id;
     switch (value) {
+      case 'edit':
+        // 读态右键菜单「编辑」（2026-11-17 用户定）：与双击、键盘 Enter 同入口。
+        _expand();
       case 'copy':
         await _copyToClipboard();
       case 'to-note':
@@ -1402,6 +1413,10 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // 这条灵感贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
+    final List<StreamAttachment> attachments = ref.watch(
+      streamAttachmentsProvider(widget.item.id),
+    );
     return MouseRegion(
       onEnter: (_) {
         if (mounted && !_hover) setState(() => _hover = true);
@@ -1409,22 +1424,38 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
       onExit: (_) {
         if (mounted && _hover) setState(() => _hover = false);
       },
-      child: _expanded ? _buildEditor(theme) : _buildView(theme),
+      child: Listener(
+        // 见 [_pressInCard]：按下置位在失焦之前（Listener 在命中链里先于
+        // TextField 的 TapRegion 收到事件），抬起清位。
+        onPointerDown: (_) => _pressInCard = true,
+        onPointerUp: (_) {
+          _pressInCard = false;
+          // 点完卡内控件把焦点还给输入框：重挂"失焦即收"，否则点过一次
+          // 卡内按钮后（焦点已丢）再点卡外不会触发收起。
+          if (mounted &&
+              widget.expanded &&
+              !_menuOpen &&
+              !_editFocus.hasFocus) {
+            _editFocus.requestFocus();
+          }
+        },
+        onPointerCancel: (_) => _pressInCard = false,
+        child: widget.expanded
+            ? _buildEditor(theme, attachments)
+            : _buildView(theme, attachments),
+      ),
     );
   }
 
-  Widget _buildView(ThemeData theme) {
+  Widget _buildView(ThemeData theme, List<StreamAttachment> attachments) {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
-    // 这条灵感贴的图（视频在第二步接入）；落库即不变，MVP 不编辑附件。
-    final List<StreamAttachment> attachments = ref.watch(
-      streamAttachmentsProvider(widget.item.id),
-    );
     final bool marked = widget.selected;
     // 菜单打开也算"悬浮中"：否则弹窗一开、按钮就滑走了。
     final bool active = _hover || _menuOpen;
-    // hover 的回答是"纸被轻推了一下"——见下方 `TweenAnimationBuilder`。归档条目
-    // 不参与任何悬浮动效（它已经"放下了"）。
+    // hover 的回答是"卡片迎上来"（放大 1.025，见下方 `TweenAnimationBuilder`）
+    // ——呼应点击"放大看全部"，一套语言（2026-11-17 用户定，替换旧的轻推左移）。
+    // 归档条目不参与任何悬浮动效（它已经"放下了"）。
     final bool lifted = active && !widget.archived && !widget.selectMode;
     // hover **不画描边**（2026-10-17 用户定：发丝边在常显底色上像"框"）。
     // 描边只留给选中——并且必须是单一颜色：`borderRadius` 与"四边异色"不能共存。
@@ -1451,10 +1482,14 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
       label: widget.item.text,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        // 单击**不编辑**（2026-11-17 用户定，防误触）：单击只在多选模式勾选。
         // 归档条目**不参与多选**（否则已处理的旧条目会被混进"合并成新笔记"里）。
         onTap: widget.selectMode
             ? (widget.archived ? null : widget.onToggleSelect)
-            : (widget.archived ? null : _expand),
+            : null,
+        // 双击 = 进编辑；与右键菜单「编辑」、键盘 Enter（下方 [Focus.onKeyEvent]）
+        // 同一入口。
+        onDoubleTap: widget.selectMode || widget.archived ? null : _expand,
         // 右键 = 行级动作菜单（与 hover「更多」同款，锚在光标处）。
         // 归档行、多选模式都照常弹（2026-11-16 用户定）。
         onSecondaryTapDown: (details) =>
@@ -1477,25 +1512,27 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
               }
               return KeyEventResult.handled;
             },
-            // **轻推**：整体左移 2px（不缩放、不上下移）。
+            // **放大**：hover 放大到 1.025（2026-11-17 用户定，替换旧的"轻推
+            // 左移"）——这张卡的点击动作是"放大看全部"，hover 放大正是它的预告。
             //
-            // 只做纯位移、**不缩放**：放大哪怕 0.6%，卡片左右也会各溢出 1~2px，
-            // 被 `ListView` 的视口切掉一条边（2026-10-17 用户实报）。位移不改变
-            // 横向尺寸，永远不会被切；热区跟着走，也不会"看得见点不到"。
-            // 左移安全：每张卡经 `_pageColumn` 左右各缩进 24px（gridMargin），
-            // 2px 推不到视口裁剪边，比上移（顶边是硬边）还稳（2026-10-20 改）。
+            // 数字的账：404 宽卡 ×1.025 ⇒ 每侧溢出 ~5px，落进列距 20 / 页边距
+            // 24 的空当里——不撞邻卡、不贴视口裁剪边；高向每侧 ~1px 量级。
+            // 圆心缩放、四向均匀；文字随矩阵重绘、不糊（不是缩放已栅格化层）。
+            // 📌 2026-10-17 旧注释警告"缩放会被 ListView 切边"——那是当年行铺满
+            // 列宽、无空当时的账；卡片墙有列距 + 页边距，5px 溢出安全。
+            // 变换不改布局尺寸 ⇒ 邻卡不重排、`getSize` 读数不变；命中区跟着
+            // 缩放后的范围走，不会"看得见点不到"。
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(begin: 0, end: lifted ? 1.0 : 0.0),
               curve: Curves.easeOut,
               duration: Tokens.durationHover,
               builder: (BuildContext context, double t, Widget? child) =>
-                  Transform.translate(
-                    offset: Offset(-2.0 * t, 0),
-                    child: child,
-                  ),
+                  Transform.scale(scale: 1.0 + 0.025 * t, child: child),
               child: AnimatedContainer(
                 curve: Curves.easeOut,
                 duration: Tokens.durationHover,
+                // 自适应高（2026-11-17 二次收口）：内容即全部版面、零截断——
+                // 等高卡撤了（行对齐会在矮卡旁留白）；长卡只把这一列拉长。
                 padding: const EdgeInsets.fromLTRB(
                   Tokens.spaceSm,
                   Tokens.spaceSm,
@@ -1504,119 +1541,114 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                 ),
                 decoration: BoxDecoration(
                   color: bg,
-                  borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  borderRadius: BorderRadius.circular(Tokens.radiusMd),
                   // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
                   border: Border.all(color: edge),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    if (widget.selectMode && !widget.archived) ...<Widget>[
-                      _SelectBox(selected: marked),
-                      const SizedBox(width: Tokens.spaceSm),
-                    ],
-                    Expanded(
-                      // 正文由外层 [Semantics.label] 朗读（整条一起念），这里排除，
-                      // 免得"标签 + 正文"念两遍；行内按钮的语义**保留**（可单独聚焦）。
-                      child: ExcludeSemantics(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            // 空卡（flomo 式，清空后保留）：显示淡灰占位，保证卡片
-                            // 仍可见、可点、能重新展开编辑，而不是一行纯空白。
-                            Text(
+                // 归档行只读、只在聚焦视图出现；普通卡全文上墙——高度都随
+                // 内容（真瀑布，2026-11-17 用户定）。
+                child: widget.archived
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          ExcludeSemantics(
+                            child: Text(
                               widget.item.text.trim().isNotEmpty
                                   ? widget.item.text
                                   : '（空）',
                               maxLines: 8,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                color: widget.item.text.trim().isEmpty
-                                    ? Bauhaus.inkMuted(brightness)
-                                    : (widget.archived
-                                          ? Bauhaus.inkMuted(brightness)
-                                          : Bauhaus.ink(brightness)),
+                                color: Bauhaus.inkMuted(brightness),
                                 height: 1.6,
                               ),
                             ),
-                            // 贴的图：缩略图条（视频在第二步接入）。
-                            if (attachments.isNotEmpty)
-                              _attachmentStrip(theme, attachments),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // **时间挪到右上角**（2026-10-17 用户定），与 hover 操作簇共用
-                    // 同一个 92 的固定槽：平时显示 `17:52`，悬浮/菜单打开时换成三枚
-                    // 图标——位置不变、宽度不变，正文永远不重排。
-                    if (widget.archived) ...<Widget>[
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          top: Tokens.spaceXxs,
-                          left: Tokens.spaceSm,
-                        ),
-                        // 时间是装饰性 meta：不参与朗读（行标签已含正文）。
-                        child: ExcludeSemantics(
-                          child: Text(
-                            '归档于 ${_clock(widget.item.archivedAt ?? widget.item.createdAt)}',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Bauhaus.inkMuted(brightness),
+                          ),
+                          const SizedBox(height: Tokens.spaceSm),
+                          // 归档行的细脚注。**不设删除**（2026-11-17 用户定：
+                          // 归档 = 已转为笔记/画布，内容有落地，这里是历史记录）。
+                          ExcludeSemantics(
+                            child: Text(
+                              '归档于 ${_dateClock(widget.item.archivedAt ?? widget.item.createdAt)}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Bauhaus.inkMuted(brightness),
+                              ),
                             ),
                           ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () async {
-                          final bool ok = await confirmTrashStream(context, 1);
-                          if (!ok || !mounted) return;
-                          await ref
-                              .read(streamProvider.notifier)
-                              .trash(widget.item.id);
-                        },
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: scheme.error,
-                          textStyle: theme.textTheme.labelSmall,
-                        ),
-                        child: const Text('删除'),
-                      ),
-                    ] else
-                      SizedBox(
-                        width: _actionsWidth,
-                        height: _actionSlot,
-                        // **从右侧滑出来**（而不是凭空出现）：与时间标签交叉淡入
-                        // 淡出，动势指向"手是从右边过来取操作的"。槽位尺寸恒定，
-                        // 所以正文依旧不重排（与 hover 不挤动文字同一条规矩）。
-                        child: AnimatedSwitcher(
-                          duration: Tokens.durationHover,
-                          switchInCurve: Curves.easeOut,
-                          switchOutCurve: Curves.easeOut,
-                          transitionBuilder:
-                              (Widget child, Animation<double> a) =>
-                                  SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0.25, 0),
-                                      end: Offset.zero,
-                                    ).animate(a),
-                                    child: FadeTransition(
-                                      opacity: a,
-                                      child: child,
+                        ],
+                      )
+                    : Stack(
+                        children: <Widget>[
+                          // 正文 **全文零截断**（2026-11-17 用户定"看全部"）——
+                          // 一眼概览的原始目标就是不截断。它是 Stack 里唯一
+                          // 非定位子节点 ⇒ 卡高由内容决定。正文由外层
+                          // [Semantics.label] 朗读（整卡一起念），这里排除，免得
+                          // "标签 + 正文"念两遍。
+                          ExcludeSemantics(
+                            child: Text(
+                              // 空卡（flomo 式，清空后保留）：淡灰占位，保证
+                              // 仍可见、可点、能重新编辑，而不是一行纯空白。
+                              widget.item.text.trim().isNotEmpty
+                                  ? widget.item.text
+                                  : '（空）',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: widget.item.text.trim().isEmpty
+                                    ? Bauhaus.inkMuted(brightness)
+                                    : Bauhaus.ink(brightness),
+                                height: 1.6,
+                              ),
+                            ),
+                          ),
+                          // 附件计数角标（右上角常显）：「这条有图」是**内容信号**
+                          // 不是元数据——长文里图往往是这条的重点（2026-11-17
+                          // 用户定脚注撤、角标留）。
+                          if (attachments.isNotEmpty)
+                            Positioned(
+                              top: 0,
+                              right: 0,
+                              child: ExcludeSemantics(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: Tokens.spaceXs,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Bauhaus.surface(brightness),
+                                    borderRadius: BorderRadius.circular(
+                                      Tokens.radiusXxs,
                                     ),
                                   ),
-                          child: (_hover || _menuOpen) && !widget.selectMode
-                              ? _actions(
-                                  theme,
-                                  key: const ValueKey<String>('actions'),
-                                )
-                              : _timeLabel(
-                                  theme,
-                                  brightness,
-                                  key: const ValueKey<String>('time'),
+                                  child: Text(
+                                    '${attachments.length} 图',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: Bauhaus.inkMuted(brightness),
+                                    ),
+                                  ),
                                 ),
-                        ),
+                              ),
+                            ),
+                          // 多选勾选框：覆盖在左上角（多选模式才出现）——
+                          // 脚注撤掉后勾选指示挪这儿，合并入口仍靠它。
+                          if (widget.selectMode)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: bg,
+                                  borderRadius: BorderRadius.circular(
+                                    Tokens.radiusXxs,
+                                  ),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: _SelectBox(selected: marked),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -1652,28 +1684,6 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     );
   }
 
-  /// 右上角的时间标签（与操作簇共用同一个槽位，右对齐、贴首行基线）。
-  Widget _timeLabel(ThemeData theme, Brightness brightness, {Key? key}) =>
-      Align(
-        key: key,
-        heightFactor: 1,
-        child: Padding(
-          padding: const EdgeInsets.only(
-            top: Tokens.spaceXxs,
-            right: Tokens.spaceXs,
-          ),
-          // 装饰性 meta：读屏只念行标签里的正文，不念时间。
-          child: ExcludeSemantics(
-            child: Text(
-              _clock(widget.item.createdAt),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: Bauhaus.inkMuted(brightness),
-              ),
-            ),
-          ),
-        ),
-      );
-
   /// hover 操作入口：只有「更多」一枚（复制已收进它的菜单，2026-10-20 用户定；
   /// 归档自动，不在这里）。
   ///
@@ -1682,8 +1692,10 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
   /// 2026-10-17 调整：
   /// - **去掉「引用到笔记」**——引用应从笔记 / 画布那一端发起（在正文里挑一条
   ///   灵感），而不是在灵感列表里逐个推出去；
-  /// - 图标 24 → **20 框**（视觉 ≈15），槽 24；整簇占位 **40** 且**始终保留**
-  ///   （见 [_actionsWidth]），所以 hover 不会挤动文字。
+  /// - 图标 24 → **20 框**（视觉 ≈15），槽 24。
+  ///
+  /// 📌 2026-11-17 起只出现在**编辑态**的底部条（读态卡只有内容）；
+  /// 卡上右键菜单是同款 actions 的快捷入口。
   Widget _actions(ThemeData theme, {Key? key}) {
     // 只剩一枚图标，靠右对齐，位置与原来的「更多」一致。
     return Align(
@@ -1700,23 +1712,38 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     );
   }
 
-  /// 「更多」菜单的条目：hover 图标与**右键**共用这一份（2026-11-16）。
+  /// 「更多」菜单的条目：编辑态的「更多」与**右键**共用这一份（2026-11-16）。
   ///
-  /// 「删除」给 [ColorScheme.error] 红字——三处删除入口（本菜单 / 批量工具条 /
-  /// 归档行尾钮）视觉统一，破坏性动作一眼可辨。确认框与软删语义在 [_onMenu]
-  /// 的 `delete` 分支（`confirmTrashStream` ⇒ 进回收站，可恢复）。
-  List<PopupMenuEntry<String>> _menuItems(ColorScheme scheme) =>
-      <PopupMenuEntry<String>>[
-        const PopupMenuItem(value: 'copy', child: Text('复制')),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
-        const PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'delete',
-          child: Text('删除', style: TextStyle(color: scheme.error)),
-        ),
-      ];
+  /// [withEdit]：读态右键菜单给「编辑」首项（2026-11-17 用户定：双击编辑 +
+  /// 右键编辑入口）；编辑态的「更多」不给（已经在编辑）。归档 / 多选模式
+  /// 也不给（归档只读，多选点卡是勾选）。
+  ///
+  /// [withDelete]：归档条目**不给删除**（2026-11-17 用户定：归档 = 已转为
+  /// 笔记/画布，内容有落地，这里只是历史记录）。「删除」给 [ColorScheme.error]
+  /// 红字——两处删除入口（本菜单 / 批量工具条）视觉统一，破坏性动作一眼可辨。
+  /// 确认框与软删语义在 [_onMenu] 的 `delete` 分支（`confirmTrashStream` ⇒
+  /// 进回收站，可恢复）。
+  List<PopupMenuEntry<String>> _menuItems(
+    ColorScheme scheme, {
+    bool withEdit = false,
+    bool withDelete = true,
+  }) => <PopupMenuEntry<String>>[
+    if (withEdit) ...<PopupMenuEntry<String>>[
+      const PopupMenuItem(value: 'edit', child: Text('编辑')),
+      const PopupMenuDivider(),
+    ],
+    const PopupMenuItem(value: 'copy', child: Text('复制')),
+    const PopupMenuDivider(),
+    const PopupMenuItem(value: 'to-note', child: Text('转为新笔记')),
+    const PopupMenuItem(value: 'to-canvas', child: Text('转为新画布')),
+    if (withDelete) ...<PopupMenuEntry<String>>[
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: 'delete',
+        child: Text('删除', style: TextStyle(color: scheme.error)),
+      ),
+    ],
+  ];
 
   /// 右键弹同一份「更多」菜单，锚在**光标处**（不是图标下方）。
   ///
@@ -1735,22 +1762,25 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     final String? value = await showMenu<String>(
       context: context,
       position: position,
-      items: _menuItems(Theme.of(context).colorScheme),
+      items: _menuItems(
+        Theme.of(context).colorScheme,
+        withEdit: !widget.archived && !widget.selectMode,
+        // 归档条目不设删除（2026-11-17 用户定）。
+        withDelete: !widget.archived,
+      ),
     );
     if (!mounted) return;
-    setState(() => _menuOpen = false);
-    if (value != null) unawaited(_onMenu(value));
+    if (value == null) {
+      setState(() => _menuOpen = false);
+      _refocusEditor();
+      return;
+    }
+    // `_runMenuAction` 接管 `_menuOpen` 与收尾（含 delete 确认框期间挂起）。
+    await _runMenuAction(value);
   }
 
   /// 动作槽边长（热区）：24（= a11y 触达下限）。图标 20 框居中，留 2。
   static const double _actionSlot = 24;
-
-  /// 操作簇的**固定占位宽** = 左留白 8 + 1 槽 24 + 右留白 8 = 40。
-  ///
-  /// 只剩「更多」一枚，但仍要留够时间标签 `17:52`（约 30 + 右内边距）的宽度；
-  /// 行内永远留出这 40，hover 只是把图标填进来 ⇒ 文字宽度恒定，不会重排。
-  static const double _actionsWidth =
-      Tokens.spaceSm + _actionSlot + Tokens.spaceSm;
 
   Widget _popupSlot({
     required String tooltip,
@@ -1763,11 +1793,13 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
       position: PopupMenuPosition.under,
       // 弹窗期保持行的悬浮态（鼠标移进菜单会触发 onExit）。
       onOpened: () => setState(() => _menuOpen = true),
-      onCanceled: () => setState(() => _menuOpen = false),
-      onSelected: (String value) {
+      onCanceled: () {
         setState(() => _menuOpen = false);
-        unawaited(_onMenu(value));
+        _refocusEditor();
       },
+      // `_runMenuAction` 接管 `_menuOpen`：动作全程挂起"失焦即收"
+      //（`delete` 的确认框在卡外、会触发失焦），完事还焦点给输入框。
+      onSelected: (String value) => unawaited(_runMenuAction(value)),
       itemBuilder: (BuildContext _) => items,
       // 用 child 而不是 icon：icon 版内部固定 48 的 IconButton，热区过大。
       child: SizedBox(
@@ -1778,7 +1810,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     );
   }
 
-  Widget _buildEditor(ThemeData theme) {
+  Widget _buildEditor(ThemeData theme, List<StreamAttachment> attachments) {
     final ColorScheme scheme = theme.colorScheme;
     final Brightness brightness = theme.brightness;
     return Focus(
@@ -1834,9 +1866,23 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                 contentPadding: EdgeInsets.zero,
               ),
             ),
+            // 编辑态看附件全貌：缩略图条（读态只报个数角标）。
+            if (attachments.isNotEmpty) _attachmentStrip(theme, attachments),
             const SizedBox(height: Tokens.spaceXs),
+            // 编辑态的元信息条：**时间 + 更多**都只在这里出现（2026-11-17 用户定
+            // "内容是主要的"——读态卡不带脚注，操作挪进编辑态；右键菜单仍在卡上）。
             Row(
               children: <Widget>[
+                // 时间是装饰性 meta：不参与朗读（卡标签已含正文）。
+                ExcludeSemantics(
+                  child: Text(
+                    _dateClock(widget.item.createdAt),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: Bauhaus.inkMuted(brightness),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Tokens.spaceSm),
                 Flexible(
                   child: Text(
                     'Esc 保存 · Ctrl+Enter 保存',
@@ -1848,6 +1894,7 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
                   ),
                 ),
                 const Spacer(),
+                _actions(theme),
                 TextButton(
                   onPressed: _saveAndCollapse,
                   style: TextButton.styleFrom(
@@ -1868,6 +1915,9 @@ class _StreamRowState extends ConsumerState<_StreamRow> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(t.hour)}:${two(t.minute)}';
   }
+
+  /// 卡脚注的日期时间：`11-14 17:52`（2026-11-17 去日期组标后，日期落卡内）。
+  String _dateClock(DateTime t) => '${t.month}-${t.day} ${_clock(t)}';
 }
 
 /// 选择态勾选框：16×16、2px 硬边、圆角 4（包豪斯几何，不用 Material Checkbox

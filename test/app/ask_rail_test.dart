@@ -39,10 +39,14 @@ void main() {
 
     final Finder field = find.byType(TextField);
     expect(field, findsOneWidget);
+    // 2026-11-17 起 `aiPanelOpenProvider` 默认**打开**（灵感页与问笔记同屏对照）。
+    // 这条钉的是"翻转 ⇒ 聚焦"，先收起回到关闭态再走流程。
+    container.read(aiPanelOpenProvider.notifier).close();
+    await tester.pump();
     expect(
       tester.widget<TextField>(field).focusNode?.hasFocus,
       isFalse,
-      reason: '初始关闭态不抢焦点',
+      reason: '关闭态不抢焦点',
     );
 
     // false → true ⇒ AskRail 的 ref.listen 在首帧后聚焦输入框。
@@ -80,6 +84,9 @@ void main() {
     await tester.pumpWidget(host(container));
 
     // 打开并点进提问框，让焦点真的落在右栏子树里。
+    // （2026-11-17 起默认打开 ⇒ 先收起再开，让 `ref.listen` 真正触发聚焦。）
+    container.read(aiPanelOpenProvider.notifier).close();
+    await tester.pump();
     container.read(aiPanelOpenProvider.notifier).open();
     await tester.pump();
     await tester.tap(find.byType(TextField));

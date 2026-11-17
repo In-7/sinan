@@ -113,7 +113,10 @@ void main() {
   /// 点左侧 [AppIconRail] 的某个视图导航（切换主区视图）。
   Future<void> tapViewTab(WidgetTester tester, String label) async {
     await tester.tap(
-      find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
+      find.descendant(
+        of: find.byType(AppIconRail),
+        matching: find.byTooltip(label),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -137,24 +140,12 @@ void main() {
     }
     // 上一步 / 下一步：2026-10-19 用户定**内容卡左缘 + 12px 呼吸**；
     // 两枚钮相接、位置不随列表折叠 / 视图移动。栈空时置灰（不进 Tab 链）。
-    expect(
-      find.byTooltip('上一步（Alt+←）'),
-      findsOneWidget,
-      reason: '上一步钮在标题栏左簇',
-    );
-    expect(
-      find.byTooltip('下一步（Alt+→）'),
-      findsOneWidget,
-      reason: '下一步钮在标题栏左簇',
-    );
+    expect(find.byTooltip('上一步（Alt+←）'), findsOneWidget, reason: '上一步钮在标题栏左簇');
+    expect(find.byTooltip('下一步（Alt+→）'), findsOneWidget, reason: '下一步钮在标题栏左簇');
     final Rect backRect = tester.getRect(find.byTooltip('上一步（Alt+←）'));
     final Rect forwardRect = tester.getRect(find.byTooltip('下一步（Alt+→）'));
     // 两枚钮相接（64 宽簇）。
-    expect(
-      backRect.right,
-      closeTo(forwardRect.left, 0.5),
-      reason: '两枚钮相接',
-    );
+    expect(backRect.right, closeTo(forwardRect.left, 0.5), reason: '两枚钮相接');
     // 内容卡左缘（轨宽 60）+ 12px 呼吸。
     expect(
       backRect.left,
@@ -174,8 +165,11 @@ void main() {
     expect(find.byType(NoteListColumn), findsNothing);
     expect(find.text('记下此刻的想法…'), findsOneWidget, reason: '灵感是灵感页');
     await tapViewTab(tester, '笔记');
-    expect(find.byType(NoteListColumn), findsOneWidget,
-        reason: '笔记 / 画布（以及保留的「全部 / 收藏」）走主从列表列');
+    expect(
+      find.byType(NoteListColumn),
+      findsOneWidget,
+      reason: '笔记 / 画布（以及保留的「全部 / 收藏」）走主从列表列',
+    );
     // 固定锚点：切到「笔记」（列表 + 折叠钮出现）后历史簇位置不变。
     final Rect backAll = tester.getRect(find.byTooltip('上一步（Alt+←）'));
     expect(
@@ -185,7 +179,10 @@ void main() {
     );
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
+        find.descendant(
+          of: find.byType(AppIconRail),
+          matching: find.byTooltip(label),
+        ),
         findsOneWidget,
         reason: 'AppIconRail 必须有视图导航：$label',
       );
@@ -209,8 +206,11 @@ void main() {
       expect(r.bottom, lessThanOrEqualTo(32.5), reason: '钮占满顶条高');
     }
     // 顺序：问笔记 → 最小化，问笔记紧贴窗控（与窗控成组）。
-    expect(minRect.left - aiRect.right, inInclusiveRange(-0.5, 4),
-        reason: '问笔记紧贴最小化左侧');
+    expect(
+      minRect.left - aiRect.right,
+      inInclusiveRange(-0.5, 4),
+      reason: '问笔记紧贴最小化左侧',
+    );
     expect(
       find.descendant(
         of: find.byType(WindowStrip),
@@ -219,12 +219,11 @@ void main() {
       findsNothing,
       reason: '设置已搬去 [AppIconRail]，顶条不该再有',
     );
-    expect(container.read(aiPanelOpenProvider), isFalse, reason: '默认未开');
+    // 2026-11-17 用户定：宽窗启动**默认展开**问笔记右栏（灵感与答案同屏对照）。
+    expect(container.read(aiPanelOpenProvider), isTrue, reason: '默认展开');
   });
 
-  testWidgets('AppIconRail：六枚视图导航带图标、两态常驻', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('AppIconRail：六枚视图导航带图标、两态常驻', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
 
     // 目的地以**视图导航**形式常驻最左 AppIconRail（灵感 / 笔记 / 画布 / 日历；
@@ -232,7 +231,10 @@ void main() {
     // ⇒ 用 find.byTooltip 定位。
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
+        find.descendant(
+          of: find.byType(AppIconRail),
+          matching: find.byTooltip(label),
+        ),
         findsOneWidget,
         reason: 'AppIconRail 必须有视图导航：$label',
       );
@@ -263,7 +265,10 @@ void main() {
     expect(find.byType(AppIconRail), findsOneWidget, reason: '侧栏两态常驻');
     for (final String label in kDestinations) {
       expect(
-        find.descendant(of: find.byType(AppIconRail), matching: find.byTooltip(label)),
+        find.descendant(
+          of: find.byType(AppIconRail),
+          matching: find.byTooltip(label),
+        ),
         findsOneWidget,
         reason: '编辑态视图导航仍常驻：$label',
       );
@@ -284,9 +289,7 @@ void main() {
     );
   });
 
-  testWidgets('笔记 / 画布视图：主从与「全部」同布局，列表按类型收池', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('笔记 / 画布视图：主从与「全部」同布局，列表按类型收池', (WidgetTester tester) async {
     final ProviderContainer container = await pump(tester);
     final Note n = await container.read(notesProvider.notifier).createNote();
     await container.read(notesProvider.notifier).saveTitle(n.id, '一篇笔记');
@@ -331,7 +334,11 @@ void main() {
     container.read(navHistoryProvider.notifier).goBack();
     await tester.pumpAndSettle();
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    expect(container.read(navHistoryProvider).canGoBack, isFalse, reason: '退到底了');
+    expect(
+      container.read(navHistoryProvider).canGoBack,
+      isFalse,
+      reason: '退到底了',
+    );
 
     // 下一步：重做，回到日历。
     container.read(navHistoryProvider.notifier).goForward();
@@ -383,7 +390,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(selectedNoteIdProvider), isNull);
     expect(container.read(navHistoryProvider).view, HomeView.timeline);
-    expect(container.read(navHistoryProvider).canGoForward, isFalse, reason: '进到底了');
+    expect(
+      container.read(navHistoryProvider).canGoForward,
+      isFalse,
+      reason: '进到底了',
+    );
   });
 
   testWidgets('标题栏不放搜索入口（主页页内搜索态 / 编辑器 Ctrl+F / 全局 Ctrl+K）', (
@@ -420,6 +431,9 @@ void main() {
       setSurfaceSize(tester, 1200, 900);
       mockWindowManager(tester);
       final ProviderContainer c = buildContainer();
+      // 这条测的是浮面卡的面 / 边 / 影，与 AI 无关 ⇒ 关掉 2026-11-17 起
+      // 默认展开的右栏，让工作区回到满宽 1200（否则卡宽 = 1200 − 344 = 856）。
+      c.read(aiPanelOpenProvider.notifier).close();
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: c,
@@ -457,8 +471,8 @@ void main() {
         // 两者都**不许**混进柔影（blur > 0）。
         final List<BoxShadow>? shadows = d.boxShadow;
         if (shadows == null || shadows.isEmpty) {
-          final DecoratedBox? fg =
-              e.findAncestorWidgetOfExactType<DecoratedBox>();
+          final DecoratedBox? fg = e
+              .findAncestorWidgetOfExactType<DecoratedBox>();
           final BoxDecoration? fd = fg?.decoration as BoxDecoration?;
           final Border? border = fd?.border as Border?;
           expect(
@@ -466,11 +480,7 @@ void main() {
             isNotNull,
             reason: '$brightness：浮面卡既没有外扩环、也没有 1px 内描边',
           );
-          expect(
-            border!.top.width,
-            1,
-            reason: '$brightness：内描边必须 1px',
-          );
+          expect(border!.top.width, 1, reason: '$brightness：内描边必须 1px');
           expect(
             border.top.color,
             AppTheme.surfaceRingColor(brightness),
@@ -478,11 +488,7 @@ void main() {
           );
           continue;
         }
-        expect(
-          shadows.length,
-          1,
-          reason: '$brightness：只能有一条环，不许混进柔影',
-        );
+        expect(shadows.length, 1, reason: '$brightness：只能有一条环，不许混进柔影');
         expect(
           shadows.single.blurRadius,
           0,
@@ -494,7 +500,8 @@ void main() {
         expect(
           shadows.single.spreadRadius,
           1,
-          reason: '$brightness：亮线靠 spread 外扩 1px；spread=0 等于没画'
+          reason:
+              '$brightness：亮线靠 spread 外扩 1px；spread=0 等于没画'
               '（影子与盒子重合、被盒子自己盖住）',
         );
         expect(
@@ -512,26 +519,16 @@ void main() {
       // 环缝已全部取消（2026-10-20）：顶缝 0（改为内描边后不再需要卡外的
       // "外扩线落脚位"）、右 / 下边距也 0 ⇒ 卡片上端贴合标题栏、右缘贴窗右、
       // 下缘贴窗底；贴窗的三只角随之改直角（见 [_kPanelRadius]）。
-      final double stripBottom = tester.getRect(find.byType(WindowStrip)).bottom;
+      final double stripBottom = tester
+          .getRect(find.byType(WindowStrip))
+          .bottom;
       final Size win = tester.view.physicalSize / tester.view.devicePixelRatio;
       for (final Element e in panels.evaluate()) {
         final Rect r = tester.getRect(find.byWidget(e.widget));
-        expect(
-          r.top,
-          stripBottom,
-          reason: '$brightness：卡片顶端必须贴合标题栏下沿（顶缝 0）',
-        );
+        expect(r.top, stripBottom, reason: '$brightness：卡片顶端必须贴合标题栏下沿（顶缝 0）');
         if (r.left >= win.width) continue; // AI 轨收起时整卡在视口外，只量主卡
-        expect(
-          r.right,
-          win.width,
-          reason: '$brightness：卡片右缘必须贴窗右（右边距 0）',
-        );
-        expect(
-          r.bottom,
-          win.height,
-          reason: '$brightness：卡片下缘必须贴窗底（下边距 0）',
-        );
+        expect(r.right, win.width, reason: '$brightness：卡片右缘必须贴窗右（右边距 0）');
+        expect(r.bottom, win.height, reason: '$brightness：卡片下缘必须贴窗底（下边距 0）');
       }
 
       // AI 问答右栏：四角**全直角**（2026-10-20 用户定，四周都不悬空），
@@ -544,14 +541,10 @@ void main() {
         return d.color == AppTheme.panelFill(brightness) &&
             d.borderRadius == BorderRadius.zero;
       });
-      expect(
-        railCards,
-        findsOneWidget,
-        reason: '$brightness：找不到 AI 右栏的直角浮面卡',
-      );
+      expect(railCards, findsOneWidget, reason: '$brightness：找不到 AI 右栏的直角浮面卡');
       for (final Element e in railCards.evaluate()) {
-        final DecoratedBox? fg =
-            e.findAncestorWidgetOfExactType<DecoratedBox>();
+        final DecoratedBox? fg = e
+            .findAncestorWidgetOfExactType<DecoratedBox>();
         final BoxDecoration? fd = fg?.decoration as BoxDecoration?;
         final Border? border = fd?.border as Border?;
         expect(border, isNotNull, reason: '$brightness：右栏缺 1px 收边');
@@ -595,26 +588,14 @@ void main() {
           .findAncestorWidgetOfExactType<DecoratedBox>();
       final Border? mainBorder =
           (mainFg?.decoration as BoxDecoration?)?.border as Border?;
-      expect(
-        mainBorder?.top.width,
-        1,
-        reason: '$brightness：主卡顶边（接标题栏）必须 1px',
-      );
-      expect(
-        mainBorder?.left.width,
-        1,
-        reason: '$brightness：主卡左边（接图标轨）必须 1px',
-      );
+      expect(mainBorder?.top.width, 1, reason: '$brightness：主卡顶边（接标题栏）必须 1px');
+      expect(mainBorder?.left.width, 1, reason: '$brightness：主卡左边（接图标轨）必须 1px');
       expect(
         mainBorder?.right.width,
         0,
         reason: '$brightness：主卡右缘贴窗 / 拼缝 ⇒ 不描边',
       );
-      expect(
-        mainBorder?.bottom.width,
-        0,
-        reason: '$brightness：主卡下缘贴窗底 ⇒ 不描边',
-      );
+      expect(mainBorder?.bottom.width, 0, reason: '$brightness：主卡下缘贴窗底 ⇒ 不描边');
     });
   }
 
@@ -690,11 +671,7 @@ void main() {
         .map((FocusTraversalOrder o) => (o.order as NumericFocusOrder).order)
         .toList();
     expect(orders, containsAll(<double>[10, 20, 30]), reason: '轨/列表/详情三段编号');
-    expect(
-      orders.where((double o) => o == 10).length,
-      1,
-      reason: '图标轨只有一段',
-    );
+    expect(orders.where((double o) => o == 10).length, 1, reason: '图标轨只有一段');
   });
 
   testWidgets('笔记列表右键删除：确认后进回收站（软删）', (WidgetTester tester) async {

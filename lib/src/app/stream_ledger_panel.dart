@@ -12,7 +12,6 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'providers.dart';
 import 'settings_panel.dart' show appNavigatorKey, floatScrimAlpha;
-import 'stream_delete.dart';
 
 /// **已处理（处理台账）浮层**（2026-10-18 定稿）。
 ///
@@ -120,9 +119,8 @@ class _LedgerOverlayState extends State<_LedgerOverlay>
               child: FadeTransition(
                 opacity: _fade,
                 child: ColoredBox(
-                  color: Theme.of(context).colorScheme.scrim.withValues(
-                    alpha: floatScrimAlpha,
-                  ),
+                  color: Theme.of(context).colorScheme.scrim
+                      .withValues(alpha: floatScrimAlpha),
                 ),
               ),
             ),
@@ -182,15 +180,14 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
   Widget build(BuildContext context) {
     final List<StreamItem> all =
         ref.watch(streamProvider).value ?? const <StreamItem>[];
-    final List<StreamItem> done = <StreamItem>[
-      for (final StreamItem i in all)
-        if (i.archived && _matches(i)) i,
-    ]..sort(
-      (StreamItem a, StreamItem b) =>
-          (b.archivedAt ?? b.createdAt).compareTo(
-            a.archivedAt ?? a.createdAt,
-          ),
-    );
+    final List<StreamItem> done =
+        <StreamItem>[
+          for (final StreamItem i in all)
+            if (i.archived && _matches(i)) i,
+        ]..sort(
+          (StreamItem a, StreamItem b) => (b.archivedAt ?? b.createdAt)
+              .compareTo(a.archivedAt ?? a.createdAt),
+        );
 
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
@@ -298,7 +295,10 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
                   iconSize: Tokens.iconXs,
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.all(Tokens.spaceSm),
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 28,
+                  ),
                   onPressed: widget.onClose,
                   icon: const tabler.X(),
                 ),
@@ -431,29 +431,8 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
             )
           else
             for (final StreamExport e in exports) _flowRow(e, theme, b),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 28),
-              child: TextButton(
-                onPressed: () async {
-                  final bool ok = await confirmTrashStream(context, 1);
-                  if (!ok || !mounted) return;
-                  await ref.read(streamProvider.notifier).trash(item.id);
-                },
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: Tokens.spaceSm,
-                  ),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  foregroundColor: theme.colorScheme.error,
-                  textStyle: theme.textTheme.labelMedium,
-                ),
-                child: const Text('删除'),
-              ),
-            ),
-          ),
+          // （卡片尾的红字「删除」2026-11-17 撤：用户定"归档意味着已经改为
+          //   笔记或画布"——内容有落地，这里是历史记录，不需要删。）
         ],
       ),
     );
@@ -467,16 +446,14 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
     return InkWell(
       onTap: () {
         if (!ref.read(noteStoreProvider).targetNoteExists(e.targetId)) {
-          ScaffoldMessenger.maybeOf(
-            context,
-          )?.showSnackBar(const SnackBar(content: Text('这个去向已经删掉了')));
+          ScaffoldMessenger.maybeOf(context)
+              ?.showSnackBar(const SnackBar(content: Text('这个去向已经删掉了')));
           return;
         }
         widget.onClose();
-        ref.read(locateProvider.notifier).locate(
-          noteId: e.targetId,
-          blockId: e.targetBlockId,
-        );
+        ref
+            .read(locateProvider.notifier)
+            .locate(noteId: e.targetId, blockId: e.targetBlockId);
       },
       borderRadius: BorderRadius.circular(Tokens.radiusSm),
       child: Padding(
@@ -505,8 +482,7 @@ class _LedgerCardState extends ConsumerState<_LedgerCard> {
                     TextSpan(
                       children: <TextSpan>[
                         TextSpan(
-                          text:
-                              '${e.isCanvas ? '画布' : '笔记'}《${e.targetTitle}》',
+                          text: '${e.isCanvas ? '画布' : '笔记'}《${e.targetTitle}》',
                           style: theme.textTheme.labelLarge?.copyWith(
                             color: Bauhaus.ink(b),
                             decoration: TextDecoration.underline,
