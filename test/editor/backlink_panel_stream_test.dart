@@ -11,10 +11,11 @@ import 'package:sinan/src/theme/app_float_surface.dart';
 import 'package:sinan/src/theme/app_theme.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// 反链面板的**灵感侧**（双链的另一半，2026-10-18）。
+/// 反链面板 × 灵感来源（2026-11-19 用户定：**不进双链**）。
 ///
-/// 结构化引用（ref 块 / 画布卡）的反链早就有了；这里钉的是**复制**这类快照边——
-/// 它没有结构化痕迹，只存在于台账 `stream_exports`，所以必须由面板反过来读。
+/// 灵感转笔记只在灵感页的「已处理」台账单向记录（`stream_exports`），**不反向**
+/// 投到笔记的双链面板——双链只认结构化引用边（ref 块 / 画布卡）。
+/// 这里是**反向闸门**：钉住"复制进来的灵感不出现在反链面板"，防将来又接回去。
 void main() {
   late Database db;
   late NoteStore store;
@@ -29,7 +30,7 @@ void main() {
 
   tearDown(() => db.close());
 
-  testWidgets('「来自灵感」段：列出来源、手法与原文；点它去灵感定位', (WidgetTester tester) async {
+  testWidgets('复制进来的灵感**不**出现在反链面板（只在台账单向记录）', (WidgetTester tester) async {
     final Note target = store.create(title: '周五的闲聊');
     final StreamItem s = streams.add('想清楚的那句话')!;
     expect(store.copyStreamIntoNote(s.id, target.id), isTrue);
@@ -43,9 +44,6 @@ void main() {
     addTearDown(container.dispose);
     await container.read(notesProvider.future);
 
-    String? opened;
-    // 挂载环境**照生产**：编辑器的气泡经 Overlay 挂到根 Overlay，外层是
-    // `AppFloatSurface`（它负责提供 Material 祖先，见 tags_panel 的同类回归）。
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -57,11 +55,7 @@ void main() {
                 builder: (BuildContext _) => AppFloatSurface(
                   width: BacklinkPanel.width,
                   padding: EdgeInsets.zero,
-                  child: BacklinkPanel(
-                    noteId: target.id,
-                    onOpenNote: (_) {},
-                    onOpenStream: (String id) => opened = id,
-                  ),
+                  child: BacklinkPanel(noteId: target.id, onOpenNote: (_) {}),
                 ),
               ),
             ],
@@ -71,13 +65,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('来自灵感'), findsOneWidget);
-    expect(find.text('想清楚的那句话'), findsOneWidget, reason: '原文当上下文');
-    expect(find.text('复制'), findsOneWidget, reason: '手法要说清');
-
-    await tester.tap(find.text('想清楚的那句话'));
-    await tester.pumpAndSettle();
-    expect(opened, s.id, reason: '点它 = 灵感页定位这一条');
+    // 灵感原文**不出**现在反链面板（只有结构化引用才进双链）。
+    expect(find.text('想清楚的那句话'), findsNothing);
+    expect(find.text('来自灵感'), findsNothing);
+    // 没有结构化引用 ⇒ 走空态引导。
+    expect(find.text('还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接'), findsOneWidget);
   });
 
   testWidgets('空态：既无引用也无灵感来源时，还是那句引导', (WidgetTester tester) async {
@@ -103,11 +95,7 @@ void main() {
                 builder: (BuildContext _) => AppFloatSurface(
                   width: BacklinkPanel.width,
                   padding: EdgeInsets.zero,
-                  child: BacklinkPanel(
-                    noteId: lonely.id,
-                    onOpenNote: (_) {},
-                    onOpenStream: (_) {},
-                  ),
+                  child: BacklinkPanel(noteId: lonely.id, onOpenNote: (_) {}),
                 ),
               ),
             ],
@@ -117,10 +105,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.text('还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接'),
-      findsOneWidget,
-    );
+    expect(find.text('还没有笔记引用这里。\n在别处输入「引用笔记」就能建立链接'), findsOneWidget);
     expect(find.text('来自灵感'), findsNothing);
   });
 }

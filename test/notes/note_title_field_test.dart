@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:sinan/src/editor/core/editor_typography.dart';
@@ -22,8 +23,7 @@ void main() {
       // （主题若本来就没有描边，漏写 enabledBorder 也不会出问题）。
       // 主题侧的取值类型随 Material 版本演进而变（InputDecorationThemeData），
       // 这里让类型自动推导，只关心"描边确实被设上了"这一事实。
-      final InputDecorationThemeData ids =
-          AppTheme.dark().inputDecorationTheme;
+      final InputDecorationThemeData ids = AppTheme.dark().inputDecorationTheme;
       expect(ids.enabledBorder, isA<OutlineInputBorder>());
       expect(ids.focusedBorder, isA<OutlineInputBorder>());
 
@@ -132,6 +132,65 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).style!.fontSize,
         EditorTypography.snap(20 * EditorTypography.titleScale),
       );
+    });
+
+    testWidgets('标题左对齐 + 左侧 48px 表情钮槽（文字左缘对齐正文）', (WidgetTester tester) async {
+      // 2026-11-19 用户定案：标题改**左对齐**（推翻「居中封面」），左缘与正文
+      // 文字对齐。左侧让出一条与正文块手柄同槽同宽的槽
+      // （[EditorTypography.blockHandleWidth]），表情钮占它。
+      final TextEditingController controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _harness(controller: controller, typography: typography),
+      );
+
+      final TextField field = tester.widget<TextField>(find.byType(TextField));
+      // 左对齐（`textAlign` 不显式设 ⇒ 默认 `TextAlign.start`）。
+      expect(field.textAlign, TextAlign.start);
+
+      // 文字左缘 = 框左 + blockPadding.left + blockHandleWidth（与正文文字同左缘）。
+      final double frameLeft = tester
+          .getTopLeft(find.byType(NoteTitleField))
+          .dx;
+      final double textLeft = tester.getTopLeft(find.byType(TextField)).dx;
+      expect(
+        textLeft - frameLeft,
+        closeTo(
+          EditorTypography.blockPadding.left +
+              EditorTypography.blockHandleWidth,
+          1,
+        ),
+        reason: '标题文字左缘应 = blockPadding.left + blockHandleWidth（对齐正文文字左缘）',
+      );
+    });
+
+    testWidgets('hover 标题行才露表情钮，移开即隐（槽 maintainSize 不推挤）', (
+      WidgetTester tester,
+    ) async {
+      // hover 露出（Notion / 飞书式），`Visibility(maintainSize)` 常驻占位
+      // ⇒ 显隐不推挤标题文字（正文手柄同款约定）。
+      final TextEditingController controller = TextEditingController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        _harness(controller: controller, typography: typography),
+      );
+
+      final Finder emojiButton = find.byKey(
+        const ValueKey<String>('editor.emoji'),
+      );
+      // 静止：按钮在树上但不可点（Visibility 隐藏 + IgnorePointer）。
+      expect(emojiButton, findsOneWidget, reason: '表情按钮应在树上（maintainSize 占位）');
+
+      // hover 标题行 ⇒ 露出。
+      final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(
+        mouse.hover(tester.getCenter(find.byType(NoteTitleField))),
+      );
+      await tester.pumpAndSettle();
+
+      // 移开 ⇒ 隐。
+      await tester.sendEventToBinding(mouse.hover(const Offset(0, 0)));
+      await tester.pumpAndSettle();
     });
   });
 }

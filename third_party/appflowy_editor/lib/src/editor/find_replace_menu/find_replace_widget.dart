@@ -2,8 +2,15 @@ import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
+// [sinan 补丁 12] 查找面板的 Material Icons 换成 tabler（全 app 图标规矩：
+// 禁用 Material Icons）。不写 height/width ⇒ 经 AppIconTheme 桥接跟随
+// `IconButton.iconSize`（见 `app_icon_theme.dart` 的 _BridgedIconThemeData）。
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import 'find_replace_menu_icon_button.dart';
+// [sinan 补丁] `find_and_replace.dart` barrel 显式 `hide MatchWrapper`，但命中
+// 回调要用它的 `selection` ⇒ 直接引源文件（只 show 这一个符号，最小改动）。
+import 'search_service_v3.dart' show MatchWrapper;
 
 const double _iconButtonSize = 30;
 
@@ -85,6 +92,13 @@ class _FindAndReplaceMenuWidgetState extends State<FindAndReplaceMenuWidget> {
             caseSensitive: widget.caseSensitive,
             localizations: widget.localizations,
             showReplaceMenu: showReplaceMenu,
+            // [sinan 补丁 13] 官方**漏了转发**这两个开关：`FindAndReplaceMenuWidget`
+            // 声明了 `showRegexButton` / `showCaseSensitiveButton` 并存进 state
+            // （见 initState），但 build 里构造 `FindMenu` 时没往下传 ⇒ `FindMenu`
+            // 恒走默认 true，宿主传 false 无效。补上转发，宿主才能真正关掉
+            // 正则 / 大小写两个按钮。
+            showRegexButton: showRegexButton,
+            showCaseSensitiveButton: showCaseSensitiveButton,
             onShowReplace: (value) => setState(() {
               showReplaceMenu = value;
             }),
@@ -215,9 +229,9 @@ class _FindMenuState extends State<FindMenu> {
       children: [
         // expand/collapse button
         FindAndReplaceMenuIconButton(
-          icon: Icon(
-            showReplaceMenu ? Icons.expand_less : Icons.expand_more,
-          ),
+          icon: showReplaceMenu
+              ? const tabler.ChevronUp()
+              : const tabler.ChevronDown(),
           onPressed: () {
             widget.onShowReplace(!showReplaceMenu);
             setState(() {
@@ -312,7 +326,7 @@ class _FindMenuState extends State<FindMenu> {
             findTextFieldFocusNode.requestFocus();
             widget.searchService.navigateToMatch(moveUp: true);
           },
-          icon: const Icon(Icons.arrow_upward),
+          icon: const tabler.ArrowUp(),
           tooltip: widget.localizations?.previousMatch ??
               AppFlowyEditorL10n.current.previousMatch,
         ),
@@ -322,14 +336,14 @@ class _FindMenuState extends State<FindMenu> {
             findTextFieldFocusNode.requestFocus();
             widget.searchService.navigateToMatch();
           },
-          icon: const Icon(Icons.arrow_downward),
+          icon: const tabler.ArrowDown(),
           tooltip: widget.localizations?.nextMatch ??
               AppFlowyEditorL10n.current.nextMatch,
         ),
         FindAndReplaceMenuIconButton(
           iconButtonKey: const Key('closeButton'),
           onPressed: widget.onDismiss,
-          icon: const Icon(Icons.close),
+          icon: const tabler.X(),
           tooltip: widget.localizations?.close ??
               AppFlowyEditorL10n.current.closeFind,
         ),
@@ -368,6 +382,17 @@ class _FindMenuState extends State<FindMenu> {
   }
 
   void _setState() {
+    // [sinan 补丁] 命中集递出（宿主自绘"所有命中标黄 + 当前醒目"高亮层用）。
+    // 与 build 里的取值同源：matchWrappers 全集 + 当前下标（无命中 -1）。
+    widget.style.onMatchesChanged?.call(
+      widget.editorState,
+      widget.searchService.matchWrappers.value
+          .map((MatchWrapper m) => m.selection)
+          .toList(),
+      widget.searchService.matchWrappers.value.isEmpty
+          ? -1
+          : widget.searchService.selectedIndex,
+    );
     setState(() {});
   }
 }
@@ -425,7 +450,7 @@ class _ReplaceMenuState extends State<ReplaceMenu> {
         FindAndReplaceMenuIconButton(
           iconButtonKey: const Key('replaceSelectedButton'),
           onPressed: _replaceSelectedWord,
-          icon: const Icon(Icons.find_replace),
+          icon: const tabler.Replace(),
           tooltip: widget.localizations?.replace ??
               AppFlowyEditorL10n.current.replace,
         ),
@@ -434,7 +459,8 @@ class _ReplaceMenuState extends State<ReplaceMenu> {
           onPressed: () => widget.searchService.replaceAllMatches(
             replaceTextEditingController.text,
           ),
-          icon: const Icon(Icons.change_circle_outlined),
+          // tabler 无 ReplaceAll ⇒ 用 ArrowsExchange（批量交换）表"全部替换"。
+          icon: const tabler.ArrowsExchange(),
           tooltip: widget.localizations?.replaceAll ??
               AppFlowyEditorL10n.current.replaceAll,
         ),

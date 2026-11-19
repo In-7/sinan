@@ -36,9 +36,15 @@ abstract class AppFlowyScrollService implements AutoScrollerService {
     Duration duration,
   });
 
+  /// 滚到第 [index] 个块。
+  ///
+  /// **[sinan 补丁]** [alignment]（0 = 置顶，1 = 置底）：查找跳转传 0.35
+  /// 让命中落在视野上 1/3（留点上文、命中醒目）。为 null 时保持原语义
+  /// （已在可见范围就不滚，避免无谓抖动）。
   void jumpTo(
-    int index,
-  );
+    int index, {
+    double? alignment,
+  });
 
   void jumpToTop();
   void jumpToBottom();

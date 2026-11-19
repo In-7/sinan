@@ -26,12 +26,28 @@ class FindReplaceStyle {
     this.selectedHighlightColor = const Color(0xFFFFB931),
     this.unselectedHighlightColor = const Color(0x60ECBC5F),
     this.findMenuBuilder,
+    this.onMatchesChanged,
   });
 
   //selected highlight color is used as background color on the selected found pattern.
   final Color selectedHighlightColor;
   //unselected highlight color is used on every other found pattern which can be selected.
   final Color unselectedHighlightColor;
+
+  /// **[sinan 补丁]** 命中集变化回调（自绘命中高亮层用）。
+  ///
+  /// [SearchServiceV3] 只会把**当前那一处**命中设成编辑器选区来表达高亮
+  /// （选区仅一个，其余命中不可见）。宿主要画"所有命中标黄 + 当前醒目"，就得
+  /// 自己拿命中集去算矩形自绘 —— 本回调把 `matchWrappers` + 当前下标递出去，
+  /// 免得宿主反过来订阅 [SearchServiceV3] 内部实例（它由查找面板私有创建）。
+  ///
+  /// [selections] 为全部命中的选区；[selectedIndex] 为当前命中下标
+  /// （0-based，无命中时为 -1）。每次命中集或当前命中变化都会回调。
+  final void Function(
+    EditorState editorState,
+    List<Selection> selections,
+    int selectedIndex,
+  )? onMatchesChanged;
 
   // find menu builder
   Widget Function(

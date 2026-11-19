@@ -193,14 +193,13 @@ class MainApp extends ConsumerStatefulWidget {
       <Brightness, ThemeData>{};
 
   /// 取（并缓存）一套主题。**不接种子**——种子只染窗口，不进 ColorScheme。
-  static ThemeData _themeFor(Brightness brightness) =>
-      _themeCache.putIfAbsent(
-        brightness,
-        () => switch (brightness) {
-          Brightness.light => AppTheme.light(),
-          Brightness.dark => AppTheme.dark(),
-        },
-      );
+  static ThemeData _themeFor(Brightness brightness) => _themeCache.putIfAbsent(
+    brightness,
+    () => switch (brightness) {
+      Brightness.light => AppTheme.light(),
+      Brightness.dark => AppTheme.dark(),
+    },
+  );
 
   @override
   ConsumerState<MainApp> createState() => _MainAppState();
@@ -295,7 +294,15 @@ class _MainAppState extends ConsumerState<MainApp> with WidgetsBindingObserver {
         // 缺失会抛 "AppFlowyEditorLocalizations not found"。
         AppFlowyEditorLocalizations.delegate,
       ],
-      // 本地化解析需要：系统 zh-CN 时各层字符串才落到中文。
+      // 中文**为主**（2026-11-19 用户定）：不跟系统 locale。
+      //
+      // sinan 自己的 UI 全是硬编码中文（"查找""反链""加表情""已处理 N 条"…），
+      // 没有 i18n 也没有语言设置项 ⇒ 整个 app 事实上是中文产品。而 appflowy_editor
+      // 的官方文案走 l10n、**跟随系统 locale**：系统是英文时，编辑器那套（占位符 /
+      // 斜杠菜单 / 右键菜单 / 查找替换）会全部回落英文，与其余中文界面割裂。
+      // 固定 `locale` 为 zh-CN ⇒ 各层字符串恒为中文，与官方默认（英文为主）相反。
+      locale: const Locale('zh', 'CN'),
+      // 本地化解析需要：解析结果必须命中下面列表里的 zh-CN 那一项。
       //
       // ⚠️ **必须带国家码**：appflowy_editor 的 `load()` 是用
       // `locale.toString()`（即 `zh_CN`）去它的消息表里查的，而解析结果只会

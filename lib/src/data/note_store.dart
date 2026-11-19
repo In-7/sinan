@@ -245,20 +245,22 @@ class NoteStore {
     final Map<String, List<StreamExport>> out = <String, List<StreamExport>>{};
     for (final Row r in rs) {
       final String sid = r['stream_id'] as String;
-      out.putIfAbsent(sid, () => <StreamExport>[]).add(
-        StreamExport(
-          id: r['id'] as String,
-          streamId: sid,
-          targetType: r['target_type'] as String,
-          targetId: r['target_id'] as String,
-          targetTitle: r['target_title'] as String,
-          kind: StreamExportKind.parse(r['kind'] as String),
-          createdAt: DateTime.fromMillisecondsSinceEpoch(
-            r['created_at'] as int,
-          ),
-          targetBlockId: r['target_block_id'] as String?,
-        ),
-      );
+      out
+          .putIfAbsent(sid, () => <StreamExport>[])
+          .add(
+            StreamExport(
+              id: r['id'] as String,
+              streamId: sid,
+              targetType: r['target_type'] as String,
+              targetId: r['target_id'] as String,
+              targetTitle: r['target_title'] as String,
+              kind: StreamExportKind.parse(r['kind'] as String),
+              createdAt: DateTime.fromMillisecondsSinceEpoch(
+                r['created_at'] as int,
+              ),
+              targetBlockId: r['target_block_id'] as String?,
+            ),
+          );
     }
     return out;
   }
@@ -290,12 +292,10 @@ class NoteStore {
   }
 
   /// 台账要能点进去 ⇒ 跳之前先确认目标还在（删掉的话就别跳了）。
-  bool targetNoteExists(String targetId) => db
-      .select(
-        'SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL',
-        <Object?>[targetId],
-      )
-      .isNotEmpty;
+  bool targetNoteExists(String targetId) => db.select(
+    'SELECT 1 FROM notes WHERE id = ? AND deleted_at IS NULL',
+    <Object?>[targetId],
+  ).isNotEmpty;
 
   // 灵感「引用到笔记」的**写入口**已于 2026-10-18 移除（用户定：不再加笔记端
   // 的插入入口，简化功能）。读侧**保留**：存量 `ref_type='stream'` 块仍能解析 /
@@ -315,7 +315,9 @@ class NoteStore {
     final List<String> lines = StreamStore.linesOf(text);
     final String firstBlockId = _uuid.v4();
     for (int i = 0; i < lines.length; i++) {
-      children.add(_paragraphNode(i == 0 ? firstBlockId : _uuid.v4(), lines[i]));
+      children.add(
+        _paragraphNode(i == 0 ? firstBlockId : _uuid.v4(), lines[i]),
+      );
     }
     _persistContentSync(noteId, jsonEncode(tree));
     _recordStreamExport(
@@ -420,9 +422,9 @@ class NoteStore {
     if (rs.isEmpty) return null;
     final List<String> lines = <String>[
       for (final Row r in rs)
-        ...(r['text'] as String).split('\n').where(
-          (String l) => l.trim().isNotEmpty,
-        ),
+        ...(r['text'] as String)
+            .split('\n')
+            .where((String l) => l.trim().isNotEmpty),
     ];
     if (lines.isEmpty) return null;
     final String plain = lines.join('\n');
@@ -790,7 +792,9 @@ class NoteStore {
       'SELECT id FROM notes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
       <Object?>[cutoff],
     );
-    final List<String> ids = <String>[for (final Row r in rs) r['id'] as String];
+    final List<String> ids = <String>[
+      for (final Row r in rs) r['id'] as String,
+    ];
     for (final String id in ids) {
       await delete(id);
     }
@@ -802,7 +806,9 @@ class NoteStore {
     final ResultSet rs = db.select(
       'SELECT id FROM notes WHERE deleted_at IS NOT NULL',
     );
-    final List<String> ids = <String>[for (final Row r in rs) r['id'] as String];
+    final List<String> ids = <String>[
+      for (final Row r in rs) r['id'] as String,
+    ];
     for (final String id in ids) {
       await delete(id);
     }
@@ -1190,38 +1196,6 @@ class NoteStore {
     }
     for (final Row r in cards) {
       add(r, canvasCard: true);
-    }
-    return out;
-  }
-
-  /// **来自灵感的反链**（双链的另一半）：这篇笔记收过哪些灵感、怎么收的。
-  ///
-  /// 与 [backlinks] 的方向相反，数据来源也相反：结构化引用（`ref` 块 / 画布卡）
-  /// 那边已经能查到；而**复制是快照、没有边**，只能靠台账 `stream_exports`。
-  /// 一条灵感对同一目标可能有多种手法（先复制后又转新）⇒ 按灵感去重，留最新那笔。
-  List<StreamSource> streamSourcesOf(String noteId) {
-    final ResultSet rs = db.select(
-      'SELECT e.stream_id AS sid, s.text AS text, e.kind AS kind, '
-      '       e.created_at AS at, e.target_block_id AS block_id '
-      'FROM stream_exports e JOIN stream_items s ON s.id = e.stream_id '
-      'WHERE e.target_id = ? '
-      'ORDER BY e.created_at DESC, e.rowid DESC',
-      <Object?>[noteId],
-    );
-    final Set<String> seen = <String>{};
-    final List<StreamSource> out = <StreamSource>[];
-    for (final Row r in rs) {
-      final String sid = r['sid'] as String;
-      if (!seen.add(sid)) continue;
-      out.add(
-        StreamSource(
-          streamId: sid,
-          text: r['text'] as String,
-          kind: StreamExportKind.parse(r['kind'] as String),
-          createdAt: DateTime.fromMillisecondsSinceEpoch(r['at'] as int),
-          blockId: r['block_id'] as String?,
-        ),
-      );
     }
     return out;
   }

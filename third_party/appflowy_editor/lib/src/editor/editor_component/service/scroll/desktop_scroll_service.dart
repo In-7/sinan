@@ -81,8 +81,11 @@ class _DesktopScrollServiceState extends State<DesktopScrollService>
   }
 
   @override
-  void jumpTo(int index) {
-    editorScrollController.jumpTo(offset: index.toDouble());
+  void jumpTo(int index, {double? alignment}) {
+    editorScrollController.jumpTo(
+      offset: index.toDouble(),
+      alignment: alignment,
+    );
   }
 
   @override

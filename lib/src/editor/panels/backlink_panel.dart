@@ -14,9 +14,10 @@ import '../../theme/tokens.dart';
 /// 数据来自 [NoteStore.backlinks]，它把指向本笔记的两类结构化边合起来：
 /// 别的笔记里的 `ref` 块、画布上的卡片（见 `domain/backlink.dart`）。
 ///
-/// 2026-10-18 起多一段 **「来自灵感」**：灵感的「复制 / 引用 / 转新 / 合并」都记在
-/// 台账 `stream_exports` 里，而**复制是快照、没有结构化边**——不反过来读，复制进
-/// 本篇的灵感就永久失联，双链只剩一半（见 [NoteStore.streamSourcesOf]）。
+/// ⚠️ 2026-11-19 用户定：**灵感来源不进双链**（去掉曾有的「来自灵感」段）。
+/// 灵感转笔记仍照写台账 `stream_exports`——那份记录**单向**留在灵感页的
+/// 「已处理」台账（`StreamLedgerView`）里看"这条灵感变成了什么"，但不反向
+/// 投到笔记的双链面板。双链只认结构化引用边。
 ///
 /// ## 为什么是 ConsumerWidget 而不是宿主把数据传进来
 /// 面板**只在打开时挂载**，所以它可以放心 `watch(notesProvider)`：任何笔记内容
@@ -28,7 +29,6 @@ class BacklinkPanel extends ConsumerWidget {
     super.key,
     required this.noteId,
     required this.onOpenNote,
-    required this.onOpenStream,
   });
 
   /// 面板宽度（浮层用；与目录气泡同档）。
@@ -40,9 +40,6 @@ class BacklinkPanel extends ConsumerWidget {
   /// 点条目 → 打开来源笔记。
   final ValueChanged<String> onOpenNote;
 
-  /// 点「来自灵感」那一条 → 灵感页定位该灵感（双链的灵感侧出口）。
-  final ValueChanged<String> onOpenStream;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 内容保存后列表快照会换一份 ⇒ 重建本面板（只在打开期间，成本可控）。
@@ -50,13 +47,10 @@ class BacklinkPanel extends ConsumerWidget {
     // 类型由 provider 推断（本层不 import `data/`，见架构闸门）。
     final store = ref.read(noteStoreProvider);
     final List<Backlink> links = store.backlinks(noteId);
-    // **来自灵感**：复制是快照、没有结构化边，这份关系只存在于台账里
-    // （见 [NoteStore.streamSourcesOf]）⇒ 双链的另一半在此补齐。
-    final List<StreamSource> sources = store.streamSourcesOf(noteId);
 
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final bool empty = links.isEmpty && sources.isEmpty;
+    final bool empty = links.isEmpty;
 
     return SizedBox(
       width: width,
@@ -110,84 +104,10 @@ class BacklinkPanel extends ConsumerWidget {
                         crossAxisAlignment: .stretch,
                         children: <Widget>[
                           for (final Backlink b in links) _row(context, b),
-                          // 灵感单独一段：它与 ref 反链不是同一种边（快照 vs 活链），
-                          // 混在一锅会让人以为点进去是同一回事。
-                          if (sources.isNotEmpty) ...<Widget>[
-                            _sectionLabel('来自灵感', theme, scheme),
-                            for (final StreamSource s in sources)
-                              _streamRow(context, s),
-                          ],
                           const SizedBox(height: Tokens.spaceXs),
                         ],
                       ),
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String text, ThemeData theme, ColorScheme scheme) =>
-      Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Tokens.spaceMd,
-          Tokens.spaceSm,
-          Tokens.spaceMd,
-          Tokens.spaceXxs,
-        ),
-        child: Text(
-          text,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            letterSpacing: 1,
-          ),
-        ),
-      );
-
-  /// 一条灵感反链：原文首行 + 手法。点它 → 灵感页定位那一条。
-  Widget _streamRow(BuildContext context, StreamSource s) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
-    final String first = s.text.trim().split('\n').first.trim();
-    return InkWell(
-      onTap: () => onOpenStream(s.streamId),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Tokens.spaceMd,
-          vertical: Tokens.spaceXs,
-        ),
-        child: Row(
-          children: <Widget>[
-            tabler.Inbox(
-              height: Tokens.iconMd,
-              width: Tokens.iconMd,
-              strokeWidth: 1.5,
-              colorFilter: ui.ColorFilter.mode(
-                scheme.onSurfaceVariant,
-                ui.BlendMode.srcIn,
-              ),
-            ),
-            const SizedBox(width: Tokens.spaceSm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: .start,
-                mainAxisSize: .min,
-                children: <Widget>[
-                  Text(
-                    first.isEmpty ? '（空灵感）' : first,
-                    maxLines: 2,
-                    overflow: .ellipsis,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  Text(
-                    s.kind.label,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -231,9 +151,8 @@ class BacklinkPanel extends ConsumerWidget {
                   // 操作完全不同（前者去画布上找卡片，后者去正文里找那一行）。
                   Text(
                     b.viaCanvasCard ? '画布卡片' : '引用',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   // 上下文：光有来源标题看不出"它为什么引用我"，这一句是判断
                   // 要不要点进去的唯一依据（Roam / Logseq 的反链都带它）。

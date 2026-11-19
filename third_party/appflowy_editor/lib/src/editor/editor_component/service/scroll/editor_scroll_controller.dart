@@ -190,8 +190,13 @@ class EditorScrollController {
     }
   }
 
+  /// [alignment]（0 = 置顶，1 = 置底）：**[sinan 补丁]** 查找跳转传非 null 时
+  /// **始终**把目标带到该位置（reveal in view，命中总在视野醒目处 —— 对齐
+  /// VS Code 的查找跳转）；为 null 时保持原语义（已在可见范围就不滚，避免
+  /// 无谓抖动；否则置顶）。
   void jumpTo({
     required double offset,
+    double? alignment,
   }) async {
     if (shrinkWrap) {
       if (scrollController.hasClients) {
@@ -207,6 +212,14 @@ class EditorScrollController {
     }
 
     final index = offset.toInt();
+    if (alignment != null) {
+      itemScrollController.jumpTo(
+        index: max(0, index),
+        alignment: alignment,
+      );
+      return;
+    }
+
     final (start, end) = visibleRangeNotifier.value;
 
     if (index < start || index > end) {

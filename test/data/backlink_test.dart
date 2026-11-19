@@ -26,7 +26,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  String v2(List<Map<String, Object?>> children) => jsonEncode(<String, Object?>{
+  String v2(List<Map<String, Object?>> children) =>
+      jsonEncode(<String, Object?>{
         'v': 2,
         'format': 'blocks',
         'document': <String, Object?>{
@@ -40,25 +41,27 @@ void main() {
     String id,
     String type, {
     Map<String, Object?> data = const <String, Object?>{},
-  }) =>
-      <String, Object?>{'id': id, 'type': type, 'data': data};
+  }) => <String, Object?>{'id': id, 'type': type, 'data': data};
 
   /// 一个 ref 块节点（属性与 `RefBlockKeys` 对齐）。
   Map<String, Object?> refBlock(String id, String refType, String refId) =>
-      block(id, 'ref', data: <String, Object?>{'ref_type': refType, 'ref_id': refId});
+      block(
+        id,
+        'ref',
+        data: <String, Object?>{'ref_type': refType, 'ref_id': refId},
+      );
 
   String canvasJson({
     Map<String, Object?> items = const <String, Object?>{},
     List<String> order = const <String>[],
-  }) =>
-      jsonEncode(<String, Object?>{
-        'camera': <String, Object?>{},
-        'document': <String, Object?>{
-          'items': items,
-          'itemOrder': order,
-          'strokes': <String, Object?>{},
-        },
-      });
+  }) => jsonEncode(<String, Object?>{
+    'camera': <String, Object?>{},
+    'document': <String, Object?>{
+      'items': items,
+      'itemOrder': order,
+      'strokes': <String, Object?>{},
+    },
+  });
 
   Map<String, Object?> card(String id, String blockId, String text) =>
       <String, Object?>{
@@ -72,7 +75,10 @@ void main() {
       };
 
   test('文档里的 ref 块引用整篇笔记 ⇒ 列出一条反链', () {
-    final Note target = store.create(title: '被引用', content: v2(<Map<String, Object?>>[]));
+    final Note target = store.create(
+      title: '被引用',
+      content: v2(<Map<String, Object?>>[]),
+    );
     final Note source = store.create(
       title: '引用方',
       content: v2(<Map<String, Object?>>[refBlock('r1', 'note', target.id)]),
@@ -131,8 +137,14 @@ void main() {
   });
 
   test('指向**别的**笔记的 ref 块不算我的反链（不误报）', () {
-    final Note me = store.create(title: '我', content: v2(<Map<String, Object?>>[]));
-    final Note other = store.create(title: '别人', content: v2(<Map<String, Object?>>[]));
+    final Note me = store.create(
+      title: '我',
+      content: v2(<Map<String, Object?>>[]),
+    );
+    final Note other = store.create(
+      title: '别人',
+      content: v2(<Map<String, Object?>>[]),
+    );
     store.create(
       content: v2(<Map<String, Object?>>[refBlock('r1', 'note', other.id)]),
     );
@@ -141,7 +153,10 @@ void main() {
   });
 
   test('同一篇笔记里的两处引用 ⇒ 两条反链（粒度是"哪一处"）', () {
-    final Note target = store.create(title: '目标', content: v2(<Map<String, Object?>>[]));
+    final Note target = store.create(
+      title: '目标',
+      content: v2(<Map<String, Object?>>[]),
+    );
     store.create(
       content: v2(<Map<String, Object?>>[
         refBlock('r1', 'note', target.id),
@@ -151,14 +166,17 @@ void main() {
 
     final List<Backlink> links = store.backlinks(target.id);
     expect(links.length, 2);
-    expect(
-      links.map((Backlink b) => b.viaBlockId).toSet(),
-      <String>{'r1', 'r2'},
-    );
+    expect(links.map((Backlink b) => b.viaBlockId).toSet(), <String>{
+      'r1',
+      'r2',
+    });
   });
 
   test('自引用照常列出（是真实存在的边，不该悄悄过滤）', () async {
-    final Note self = store.create(title: '自篇', content: v2(<Map<String, Object?>>[]));
+    final Note self = store.create(
+      title: '自篇',
+      content: v2(<Map<String, Object?>>[]),
+    );
     // ref 要指向自己的 id，只能建完再写一次。
     await store.updateContent(
       self.id,
@@ -172,66 +190,47 @@ void main() {
   });
 
   test('没有任何引用 ⇒ 空列表', () {
-    final Note lonely = store.create(title: '没人引用我', content: v2(<Map<String, Object?>>[]));
+    final Note lonely = store.create(
+      title: '没人引用我',
+      content: v2(<Map<String, Object?>>[]),
+    );
     expect(store.backlinks(lonely.id), isEmpty);
   });
 
-  // ── 来自灵感的反链（双链的另一半）─────────────────────────────────
+  // ── 灵感转笔记：台账**单向**记录（2026-11-19 用户定，不进双链）────
 
-  test('streamSourcesOf：复制算"这篇收过它"，合并算进产出那篇', () {
+  test('灵感转笔记仍单向记台账（streamExportsOf 能查到去向）', () {
     final Note target = store.create(title: '周五的闲聊');
     final StreamItem a = StreamStore(db).add('想清楚的那句话')!;
-    final StreamItem b = StreamStore(db).add('另一条灵感')!;
+
+    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
+
+    final Map<String, List<StreamExport>> book = store.streamExportsOf(<String>[
+      a.id,
+    ]);
+    expect(book[a.id], hasLength(1), reason: '台账仍记一行（归档页单向看去向）');
+    expect(book[a.id]!.single.kind, StreamExportKind.copy);
+    expect(book[a.id]!.single.targetTitle, '周五的闲聊', reason: '标题是当时快照');
+  });
+
+  test('合并也单向记台账（产出那篇的去向在台账里）', () {
     final StreamItem c = StreamStore(db).add('被合并的那条')!;
+    final Note merged = store.streamMergeToNewNote(<String>[c.id])!;
 
-    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
-    expect(store.copyStreamIntoNote(b.id, target.id), isTrue);
-    store.streamMergeToNewNote(<String>[c.id]);
-
-    // target 收了 a、b（都是复制）；合并那篇是**另一篇**，不算 target 的。
-    final List<StreamSource> mine = store.streamSourcesOf(target.id);
-    expect(
-      mine.map((StreamSource s) => s.streamId).toSet(),
-      <String>{a.id, b.id},
-    );
-    // 原文随行带上（面板里当上下文显示），手法标签可直接读。
-    final StreamSource copied = mine.firstWhere(
-      (StreamSource s) => s.streamId == a.id,
-    );
-    expect(copied.text, '想清楚的那句话');
-    expect(copied.kind, StreamExportKind.copy);
-    expect(copied.blockId, isNotNull, reason: '落点块要能高亮');
-
-    // 合并产出的那篇，反过来能看到它的来源。
-    final String mergedId = db
-        .select(
-          "SELECT id FROM notes WHERE kind = 'note' AND id <> ?",
-          <Object?>[target.id],
-        )
-        .map((Row r) => r['id'] as String)
-        .first;
-    expect(
-      store.streamSourcesOf(mergedId).single.streamId,
+    final Map<String, List<StreamExport>> book = store.streamExportsOf(<String>[
       c.id,
-      reason: '合并出来的笔记要能反查参与合并的灵感',
-    );
+    ]);
+    expect(book[c.id], hasLength(1));
+    expect(book[c.id]!.single.kind, StreamExportKind.merge);
+    expect(book[c.id]!.single.targetId, merged.id);
   });
 
-  test('streamSourcesOf：同一条灵感对同一目标重复复制只列一次（留最新）', () {
+  test('台账是单向的：backlinks 不含灵感来源', () {
     final Note target = store.create(title: '周五的闲聊');
-    final StreamItem a = StreamStore(db).add('重复复制')!;
-    // 同一篇复制两次 ⇒ 反链里只该出现一次（留最新那一笔）。
-    expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
+    final StreamItem a = StreamStore(db).add('想清楚的那句话')!;
     expect(store.copyStreamIntoNote(a.id, target.id), isTrue);
 
-    final List<StreamSource> mine = store.streamSourcesOf(target.id);
-    expect(mine, hasLength(1));
-    expect(mine.single.streamId, a.id);
-    expect(mine.single.kind, StreamExportKind.copy, reason: '留最新一笔');
-  });
-
-  test('streamSourcesOf：没收到过灵感 ⇒ 空', () {
-    final Note lonely = store.create(title: '只被引用的笔记');
-    expect(store.streamSourcesOf(lonely.id), isEmpty);
+    // 双链只认结构化边（ref 块 / 画布卡）；灵感不投影到 backlinks。
+    expect(store.backlinks(target.id), isEmpty);
   });
 }

@@ -337,9 +337,55 @@ class _NoteEditorViewAppFlowyState
   /// 默认面板的底色是 `editorStyle.selectionColor`（= 我们的选区色，主题色
   /// 30/40% 半透明）⇒ 一块半透明主题色面板，与其它浮层不是一路。这里**零
   /// vendored 改动**地换成统一浮层表面，见 [_buildFindMenu]。
+  ///
+  /// ## 命中高亮（2026-11-19 用户定：所有命中标黄 + 当前醒目）
+  /// V3 的"高亮"是把**单一选区**移到命中处（选区仅一个 ⇒ 只能高亮当前一处，
+  /// 其余命中不可见，查找变成盲跳）。这里借官方的**多人选区高亮**
+  /// （[EditorState.remoteSelections]，每块的 `BlockSelectionContainer` 自动画、
+  /// 随滚动、自动裁剪）把**全部命中**画成高亮块：非当前 = 淡黄、当前 = 主题色
+  /// 醒目。命中层是 paint-only，不抢手势、不遮挡编辑。
+  /// 关闭面板 / 切笔记时清空（见 [_buildFindMenu] 的 onDismiss 与 dispose）。
   static final FindReplaceStyle _findStyle = FindReplaceStyle(
+    // 命中层配色（V3 本不读这两个字段，正好借给 remoteSelections 命中层）：
+    // 当前命中 = 蓝 50% 醒目、其余 = 黄 20% 淡黄。两者半透明、明暗底都可见、
+    // 文字仍可读（`SelectionAreaPaint` 画在文字下层当背景块）。
+    selectedHighlightColor: const Color(0x803B6FD4),
+    unselectedHighlightColor: const Color(0x33F4C300),
     findMenuBuilder: _buildFindMenu,
+    onMatchesChanged: _paintFindMatches,
   );
+
+  /// 把查找命中画成「多人选区高亮」块（见 [_findStyle] 注释）。
+  ///
+  /// 借 [EditorState.remoteSelections] 这条官方多人协作高亮通道：它本就支持
+  /// **多选区 + 多颜色**，每块的 `BlockSelectionContainer` 自动画矩形、随内容
+  /// 滚动、自动裁剪到块内 ⇒ 命中高亮零自绘。sinan 是单机笔记、不碰多人协作，
+  /// 借用安全（若将来上协作需换通道）。
+  ///
+  /// 当前命中用主题色醒目、其余淡黄；[selectedIndex] 为 -1（无命中）时清空。
+  static void _paintFindMatches(
+    EditorState editorState,
+    List<Selection> selections,
+    int selectedIndex,
+  ) {
+    if (selections.isEmpty || selectedIndex < 0) {
+      editorState.remoteSelections.value = const <RemoteSelection>[];
+      return;
+    }
+    editorState.remoteSelections.value = <RemoteSelection>[
+      for (int i = 0; i < selections.length; i++)
+        RemoteSelection(
+          id: 'find-match-$i',
+          selection: selections[i],
+          // 当前命中主题色醒目、其余淡黄（FindReplaceStyle 的两个高亮色字段
+          // 对 V3 无效，这里正好拿来当命中层配色）。
+          selectionColor: i == selectedIndex
+              ? _findStyle.selectedHighlightColor
+              : _findStyle.unselectedHighlightColor,
+          cursorColor: _findStyle.selectedHighlightColor,
+        ),
+    ];
+  }
 
   /// 查找面板的浮层表面（L2）：内容仍是官方 [FindAndReplaceMenuWidget]，
   /// **行为逐字不变**，只把外壳从"半透明选区色 Material"换成 [AppFloatSurface]。
@@ -360,8 +406,15 @@ class _NoteEditorViewAppFlowyState
   /// （与我们自己 Ctrl+K 浮层曾踩的坑同源）。在这里接住它：Esc 走与关闭钮
   /// **同一个** `onDismiss`，和命令面板 / 搜索浮层的全局约定一致。
   ///
-  /// ⚠️ `showRegexButton` / `showCaseSensitiveButton` 与官方默认**保持一致**
-  /// （都是 true）——不传就等于悄悄去掉正则/大小写两个按钮。
+  /// ## 去掉正则 / 大小写两个开关（2026-11-19 用户定）
+  /// 官方面板带「正则」「区分大小写」两枚开关，但笔记页内查找用不到：正则面向
+  /// 开发者的模式匹配（普通用户翻笔记不写正则，还有 `\1` 反向引用 / 正则报错的
+  /// 破坏性风险）；大小写对中文完全无意义，对英文也因默认「不区分」而够用。
+  /// 笔记类标杆（Notion / 飞书 / Craft）的页内查找都**没有**这两开关——只有
+  /// VS Code / Word 这类专业工具才带。这里直接用官方留的
+  /// `showRegexButton` / `showCaseSensitiveButton` 口子关掉（零 vendored 改动），
+  /// 查找条从 8 个元素减到 6 个。服务层的 `SearchServiceV3.regex` / `.caseSensitive`
+  /// 保留（默认 false = 字面匹配 + 不区分大小写，正是期望行为），只是没有 UI 入口。
   static Widget _buildFindMenu(
     BuildContext context,
     EditorState editorState,
@@ -375,6 +428,8 @@ class _NoteEditorViewAppFlowyState
         official.DismissIntent: official.CallbackAction<official.DismissIntent>(
           onInvoke: (official.DismissIntent _) {
             onDismiss();
+            // 关闭查找面板 ⇒ 命中高亮层一并收起（否则残留荧光块）。
+            editorState.remoteSelections.value = const <RemoteSelection>[];
             return null;
           },
         ),
@@ -394,6 +449,9 @@ class _NoteEditorViewAppFlowyState
           showReplaceMenu: showReplaceMenu,
           localizations: localizations,
           style: style,
+          // 去掉正则 / 大小写两个开关（见上注释）。
+          showRegexButton: false,
+          showCaseSensitiveButton: false,
         ),
       ),
     ),
@@ -567,6 +625,8 @@ class _NoteEditorViewAppFlowyState
 
   @override
   void dispose() {
+    // 命中高亮层随视图消失（切 / 关笔记时不留残留荧光块）。
+    _editor.remoteSelections.value = const <RemoteSelection>[];
     _locateSub?.close();
     // 先注销退出前落盘：本视图即将消失，退出口径不该再找它（见 [PendingSaves]）。
     _exitFlush();
@@ -841,13 +901,6 @@ class _NoteEditorViewAppFlowyState
     ref.read(locateProvider.notifier).locate(noteId: noteId);
   }
 
-  /// 反链面板里「来自灵感」那一条：与引用块的灵感跳转同一条路
-  /// （先告诉灵感页停在哪，再切过去 —— 走统一导航历史，可「上一步」回来）。
-  void _openBacklinkStream(String streamId) {
-    _closeBacklink();
-    _openRefTarget(RefBlockKeys.refStream, streamId);
-  }
-
   /// 解析引用块的目标（标题 + 形态）；目标不存在返回 null ⇒ 块显示"引用已失效"。
   RefTarget? _resolveRefTarget(String refType, String refId) {
     final store = ref.read(noteStoreProvider);
@@ -928,7 +981,6 @@ class _NoteEditorViewAppFlowyState
             child: BacklinkPanel(
               noteId: widget.noteId,
               onOpenNote: _openBacklink,
-              onOpenStream: _openBacklinkStream,
             ),
           ),
         ),

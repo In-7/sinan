@@ -210,7 +210,8 @@ class _ScrollServiceWidgetState extends State<ScrollServiceWidget>
       forward.scrollTo(dy, duration: duration);
 
   @override
-  void jumpTo(int index) => forward.jumpTo(index);
+  void jumpTo(int index, {double? alignment}) =>
+      forward.jumpTo(index, alignment: alignment);
 
   @override
   void jumpToTop() {

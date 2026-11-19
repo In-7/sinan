@@ -69,8 +69,11 @@ class _MobileScrollServiceState extends State<MobileScrollService>
   }
 
   @override
-  void jumpTo(int index) {
-    editorScrollController.itemScrollController.jumpTo(index: index);
+  void jumpTo(int index, {double? alignment}) {
+    editorScrollController.itemScrollController.jumpTo(
+      index: index,
+      alignment: alignment ?? 0,
+    );
   }
 
   @override

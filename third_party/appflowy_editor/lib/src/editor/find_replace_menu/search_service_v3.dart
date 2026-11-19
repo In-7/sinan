@@ -49,8 +49,36 @@ class SearchServiceV3 {
     if (regex) {
       return RegExp(targetString, caseSensitive: caseSensitive);
     } else {
-      return RegExp(RegExp.escape(targetString), caseSensitive: caseSensitive);
+      // [sinan 补丁 11] 全半角归一（④）：中文输入法常出全角字母/数字/标点/空格，
+      // 搜「Ａｐｐｌｅ」应命中「Apple」。归一是**逐字符 1:1**（全角 U+FF01–FF5E
+      // → 半角 U+0021–007E，全角空格 U+3000 → 空格），长度不变 ⇒ 匹配偏移可直接
+      // 映射回原文（见 [_getMatchWrappers] 里对 text 做同样归一）。
+      // 只在**字面**模式归一；正则模式原样（用户可能有意写全角，归一会破坏正则）。
+      return RegExp(
+        RegExp.escape(_normalizeWidth(targetString)),
+        caseSensitive: caseSensitive,
+      );
     }
+  }
+
+  /// 全角 → 半角归一（长度 1:1 保持，偏移可直接映射回原文）。
+  ///
+  /// 只覆盖 ASCII 可映射的全角区（U+FF01–FF5E）与全角空格（U+3000）；
+  /// 其余（CJK、emoji）原样不动。
+  static String _normalizeWidth(String s) {
+    if (s.isEmpty) return s;
+    final StringBuffer sb = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final int c = s.codeUnitAt(i);
+      if (c == 0x3000) {
+        sb.writeCharCode(0x20); // 全角空格 → 空格
+      } else if (c >= 0xFF01 && c <= 0xFF5E) {
+        sb.writeCharCode(c - 0xFEE0); // 全角字母/数字/标点 → 半角
+      } else {
+        sb.writeCharCode(c);
+      }
+    }
+    return sb.toString();
   }
 
   String _getRegexReplaced(String replaceText, Match match) {
@@ -133,7 +161,11 @@ class SearchServiceV3 {
     final List<MatchWrapper> result = [];
     for (final node in nodes) {
       if (node.delta != null) {
-        final text = node.delta!.toPlainText();
+        // [sinan 补丁 11] 字面模式下把正文也做全半角归一（与 [_getPattern] 同口径）。
+        // 归一 1:1 保持长度 ⇒ `match.start/end` 仍是原文偏移，可直接用于
+        // 选区 / replaceText。正则模式不归一（同 _getPattern）。
+        final String raw = node.delta!.toPlainText();
+        final text = regex ? raw : _normalizeWidth(raw);
         final matches = searchAlgorithm.searchMethod(pattern, text);
         // we will store this list of offsets along with their path,
         // in a list of positions.
@@ -155,7 +187,10 @@ class SearchServiceV3 {
   ) {
     final MatchWrapper(:selection, :path) = matchWrappers.value[selectedIndex];
 
-    editorState.scrollService?.jumpTo(path.first);
+    // [sinan 补丁] 查找跳转 reveal 到视野上 1/3（留点上文、命中醒目），对齐
+    // VS Code；原 `jumpTo(path.first)` 无 alignment ⇒ 置顶且"可见就不滚"，
+    // 同屏多命中跳转时页面纹丝不动，看不出跳到哪了。
+    editorState.scrollService?.jumpTo(path.first, alignment: 0.35);
 
     editorState.updateSelectionWithReason(
       selection,

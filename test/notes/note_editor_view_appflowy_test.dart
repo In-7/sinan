@@ -15,7 +15,9 @@ import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/domain/settings.dart';
+import 'package:sinan/src/editor/core/emoji_picker.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
+import 'package:sinan/src/editor/core/note_title_field.dart';
 import 'package:sinan/src/editor/panels/backlink_panel.dart';
 import 'package:sinan/src/editor/panels/toc_panel.dart';
 import 'package:sinan/src/editor/widgets/link_hover_tooltip.dart';
@@ -187,6 +189,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('命中高亮：所有命中标黄 + 当前醒目（借多人选区高亮，2026-11-19）', (
+    WidgetTester tester,
+  ) async {
+    // V3 原只把**当前一处**设成选区（其余命中不可见，查找成盲跳）。现借官方
+    // `remoteSelections`（多人选区高亮）把**全部命中**画成高亮块：当前醒目、
+    // 其余淡黄；关闭面板清空。
+    const String content = '{"ops":[{"insert":"苹果香蕉苹果橘子苹果\\n"}]}';
+    final _FakeNotes notes = _FakeNotes(<Note>[_note(content: content)]);
+    await _pumpView(tester, notes);
+    await _focusEditor(tester);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('findTextField')), '苹果');
+    // 200ms 防抖（vendored 补丁 9）：显式推进，不能 settle（光标闪烁）。
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    final EditorState state = tester
+        .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+        .editorState;
+    final List<RemoteSelection> hits = state.remoteSelections.value;
+    expect(hits, hasLength(3), reason: '三处命中都要画成高亮块（不再只当前一处）');
+    expect(
+      hits[0].selectionColor,
+      isNot(hits[1].selectionColor),
+      reason: '当前命中（下标 0）应比其余命中更醒目',
+    );
+
+    // 下一处 ⇒ 当前命中下标移 1，醒目色随之换位。
+    await tester.tap(find.byKey(const Key('nextMatchButton')));
+    await tester.pump();
+    final List<RemoteSelection> hits2 = state.remoteSelections.value;
+    expect(
+      hits2[1].selectionColor,
+      hits[0].selectionColor,
+      reason: '新当前命中沿用醒目色',
+    );
+    expect(
+      hits2[0].selectionColor,
+      hits[1].selectionColor,
+      reason: '原当前命中降为淡黄',
+    );
+
+    // 关闭面板 ⇒ 命中高亮层一并收起。
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(state.remoteSelections.value, isEmpty, reason: '关闭面板应清空命中高亮');
+  });
+
   testWidgets('查找：计数 / 下一处 / 上一处（回绕）；Esc 关闭且不抛异常', (WidgetTester tester) async {
     // 2026-10-01 实测修复：面板里 TextField 的 Esc 默认快捷键会 invoke
     // DismissIntent，而官方面板没挂对应 Action ⇒ Esc 关不掉面板还抛
@@ -202,6 +257,10 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('closeButton')), findsOneWidget);
+    // 正则 / 大小写两个开关已去掉（2026-11-19 用户定：笔记页内查找用不到，
+    // Notion / 飞书等笔记标杆也都不带）——防将来又加回来。
+    expect(find.byKey(const Key('findRegexButton')), findsNothing);
+    expect(find.byKey(const Key('caseSensitiveButton')), findsNothing);
 
     await tester.enterText(find.byKey(const Key('findTextField')), '苹果');
     // 200ms 防抖（vendored 补丁 9）：显式推进，不能 settle（光标闪烁）。
@@ -227,6 +286,55 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('closeButton')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('查找：全半角归一（④）——全角搜半角命中，替换偏移仍正确', (WidgetTester tester) async {
+    // 2026-11-19 补丁 11：中文输入法常出全角字母/数字/标点，搜「Ａｐｐｌｅ１２３」
+    // 应命中「Apple123」。归一逐字符 **1:1 保长度** ⇒ 匹配偏移直接映射回原文，
+    // 所以 replaceText 落点也对（末尾的替换用例即验证这点，防"搜得到却替换错位"）。
+    const String content =
+        '{"ops":[{"insert":"Apple123 \uFF21\uFF50\uFF50\uFF4C\uFF45\uFF11\uFF12\uFF13\\n"}]}';
+    final _FakeNotes notes = _FakeNotes(<Note>[_note(content: content)]);
+    await _pumpView(tester, notes);
+    await _focusEditor(tester);
+
+    // Ctrl+H（替换模式）才带 replaceTextField 行；Ctrl+F 只有查找行。
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('replaceTextField')), findsOneWidget);
+
+    // 全角查询 ⇒ 归一后与半角「Apple123」、全角「Ａｐｐｌｅ１２３」各命中一处。
+    await tester.enterText(
+      find.byKey(const Key('findTextField')),
+      '\uFF21\uFF50\uFF50\uFF4C\uFF45\uFF11\uFF12\uFF13',
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(find.text('1 / 2'), findsOneWidget, reason: '全角查询应同时命中半角与全角各一处');
+
+    // 半角查询 ⇒ 同样两处（归一是双向的）。
+    await tester.enterText(find.byKey(const Key('findTextField')), 'Apple123');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(find.text('1 / 2'), findsOneWidget);
+
+    // 替换全部 ⇒ 两处（含全角那处）都落点正确，中间空格保留。
+    await tester.enterText(find.byKey(const Key('replaceTextField')), 'X');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('replaceAllButton')));
+    await tester.pumpAndSettle();
+
+    final EditorState state = tester
+        .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+        .editorState;
+    expect(
+      state.document.root.children.first.delta!.toPlainText().trim(),
+      'X X',
+      reason: '两处都替换成 X ⇒ 偏移映射正确（若归一没保长度，会替换错位/多字）',
+    );
   });
 
   testWidgets('Ctrl+H：打开替换行；Esc 同样能关', (WidgetTester tester) async {
@@ -450,6 +558,61 @@ void main() {
     expect(tester.takeException(), isNull);
     // 与 quill 版同口径：标题两端裁剪后入库。
     expect(notes.savedTitle, '新标题');
+  });
+
+  testWidgets('标题表情：hover 标题露出钮 → 挑表情 → 插到标题并落盘', (WidgetTester tester) async {
+    // inline 方案（2026-11-19 用户定，左对齐标题 + hover 露出钮）：表情是标题
+    // 文字的字符，零 schema 改动。本用例钉整条链路：hover 标题露钮 → 开弹层 →
+    // 点表情 → `insertEmojiAtCursor` 插入 → `onChanged` 触发防抖落盘。
+    // ⚠️ 外部改 `controller.value` 不走 TextField.onChanged ⇒ 漏回调 onChanged
+    // 就会"插进去了但没保存"。
+    final _FakeNotes notes = _FakeNotes(<Note>[_note(title: '会议纪要')]);
+    await _pumpView(tester, notes);
+
+    final Finder emojiButton = find.byKey(
+      const ValueKey<String>('editor.emoji'),
+    );
+    // hover 前：按钮在树上但 `Visibility(maintainSize)` 隐藏（不可点）。
+    expect(emojiButton, findsOneWidget, reason: '表情按钮没上树');
+
+    // hover 标题行 ⇒ 露出按钮（MouseRegion onEnter）。`WidgetTester.mouse`
+    // 不存在，用 [TestPointer] 的 mouse hover 事件走同一条指针链路。
+    final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(
+      mouse.hover(tester.getCenter(find.byType(NoteTitleField))),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(emojiButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(EmojiPickerPanel),
+      findsOneWidget,
+      reason: '点了表情按钮但弹层没开',
+    );
+
+    // 🎉 在「活动」分类（默认显示「笑脸」）⇒ 用搜索定位再点（搜「派对」= 它的中文名）。
+    final Finder pickerSearch = find.descendant(
+      of: find.byType(EmojiPickerPanel),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(pickerSearch, '派对');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('🎉'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EmojiPickerPanel), findsNothing, reason: '选完应自动收起');
+
+    final TextField titleField = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(NoteTitleField),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(titleField.controller!.text, '🎉会议纪要', reason: '无光标 ⇒ 表情插到开头当首个字符');
+
+    // 卸载兜底落盘（`onChanged` bump 防抖挂着，dispose 兜底写下去）。
+    await tester.pumpWidget(const SizedBox());
+    expect(notes.savedTitle, '🎉会议纪要');
+    expect(tester.takeException(), isNull);
   });
 
   // ─── 滚动高度稳定性（2026-09-14 立，防"离群项"回潮） ───
@@ -1112,10 +1275,10 @@ String _longNoteContent({int sections = 40}) {
   );
 }
 
-Note _note({String? content}) => Note(
+Note _note({String? content, String title = '标题'}) => Note(
   id: 'n1',
   kind: NoteKind.note,
-  title: '标题',
+  title: title,
   content: content ?? _kDelta,
   plainText: '你好世界',
   summary: '你好世界',

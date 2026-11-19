@@ -31,6 +31,10 @@ dependencies:
   logging: "^1.2.0"
   markdown: "^7.2.1"
   nanoid: "^1.0.0"
+  # [sinan 补丁 12] 查找面板的 Material Icons 换成 tabler（与全 app 图标规矩
+  # 统一：禁用 Material Icons）。版本与应用侧 `pubspec.yaml` 锁同一版，避免
+  # 同解出两份。仅 find_replace_widget.dart 用到。
+  tabler_icons_next: 3.47.0
   numerus: "^2.1.2"
   pdf: "^3.10.7"
   provider: "^6.0.5"
