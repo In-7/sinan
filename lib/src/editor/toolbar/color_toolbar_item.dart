@@ -152,7 +152,7 @@ class _ColorOverlay extends StatelessWidget {
   }
 }
 
-class _SinanColorPanel extends StatelessWidget {
+class _SinanColorPanel extends StatefulWidget {
   const _SinanColorPanel({
     required this.editorState,
     required this.selection,
@@ -164,16 +164,23 @@ class _SinanColorPanel extends StatelessWidget {
   final VoidCallback onDone;
 
   @override
+  State<_SinanColorPanel> createState() => _SinanColorPanelState();
+}
+
+class _SinanColorPanelState extends State<_SinanColorPanel> {
+  @override
   Widget build(BuildContext context) {
-    final List<Node> nodes = editorState.getNodesInSelection(selection);
+    final List<Node> nodes = widget.editorState.getNodesInSelection(
+      widget.selection,
+    );
     final String? textColor = _commonColor(
       nodes,
-      selection,
+      widget.selection,
       AppFlowyRichTextKeys.textColor,
     );
     final String? backgroundColor = _commonColor(
       nodes,
-      selection,
+      widget.selection,
       AppFlowyRichTextKeys.backgroundColor,
     );
 
@@ -194,8 +201,14 @@ class _SinanColorPanel extends StatelessWidget {
                 options: generateTextColorOptions(),
                 currentColor: textColor,
                 onSelected: (String? color) {
-                  formatFontColor(editorState, editorState.selection, color);
-                  onDone();
+                  formatFontColor(
+                    widget.editorState,
+                    widget.editorState.selection ?? widget.selection,
+                    color,
+                  );
+                  // 不关面板（2026-11-19 用户定：连续调字体 + 背景色，修"每次
+                  // 只能点一个"）。setState 重算 isSelected（当前字体色标出）。
+                  setState(() {});
                 },
               ),
               const SizedBox(height: Tokens.spaceMd),
@@ -206,11 +219,12 @@ class _SinanColorPanel extends StatelessWidget {
                 currentColor: backgroundColor,
                 onSelected: (String? color) {
                   formatHighlightColor(
-                    editorState,
-                    editorState.selection,
+                    widget.editorState,
+                    widget.editorState.selection ?? widget.selection,
                     color,
                   );
-                  onDone();
+                  // 同上：不关面板，连续调。
+                  setState(() {});
                 },
               ),
               if (textColor != null || backgroundColor != null) ...[
@@ -221,19 +235,20 @@ class _SinanColorPanel extends StatelessWidget {
                     onPressed: () {
                       if (textColor != null) {
                         formatFontColor(
-                          editorState,
-                          editorState.selection,
+                          widget.editorState,
+                          widget.editorState.selection ?? widget.selection,
                           null,
                         );
                       }
                       if (backgroundColor != null) {
                         formatHighlightColor(
-                          editorState,
-                          editorState.selection,
+                          widget.editorState,
+                          widget.editorState.selection ?? widget.selection,
                           null,
                         );
                       }
-                      onDone();
+                      // 清两色后面板保持（isSelected 归 null），点外部才关。
+                      setState(() {});
                     },
                     icon: const tabler.Eraser(
                       height: Tokens.iconSm,
