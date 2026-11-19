@@ -747,7 +747,11 @@ void _addBlock(EditorState editorState, Node node, BuildContext context) {
   unawaited(
     editorState.apply(transaction).then((_) {
       // 菜单要等新块**布局完成**再弹：锚点读的是块的 rect，早一帧就落空。
+      // ⚠️ 这层 post-frame **必要**（2026-11-19 实测）：去掉后
+      // `SelectionMenu._show` 因 `selectionRects.isEmpty` 直接 return、菜单不弹
+      // ⇒ 2 帧是锚点正确所需，不能减到 1 帧。
       WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!context.mounted) return;
         await _showSlashMenu(editorState, context);
       });
     }),

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
+import '../../theme/tokens.dart';
 import '../toolbar/heading_toolbar_item.dart';
 import 'callout_block_component.dart';
 import 'code_block_component.dart';
@@ -30,66 +32,133 @@ List<Widget> sinanBlockActionMenuItems({
   // 手柄点击已把选区切成本块 ⇒ 这里以块的起点为准（不依赖调用顺序）。
   final Selection selection = Selection.collapsed(Position(path: node.path));
 
-  Widget action({required String label, required VoidCallback onPressed}) =>
-      MenuItemButton(onPressed: onPressed, child: Text(label));
+  /// 一条菜单项。[isCurrent] 为真时左侧勾选（标记当前块类型，2026-11-19 借鉴
+  /// Notion / 官方——让用户知道"我这是什么块"，避免无意义重复转换）。
+  Widget action({
+    required String label,
+    required VoidCallback onPressed,
+    bool isCurrent = false,
+  }) => MenuItemButton(
+    leadingIcon: SizedBox(
+      width: Tokens.iconXs,
+      height: Tokens.iconXs,
+      child: isCurrent
+          ? const tabler.Check(
+              height: Tokens.iconXs,
+              width: Tokens.iconXs,
+              strokeWidth: 1.5,
+            )
+          : null,
+    ),
+    onPressed: onPressed,
+    child: Text(label),
+  );
 
-  /// 换块类型：一律走官方 `formatNode`（只改 `type` 与该类型必需的属性）。
-  Widget typeItem(String label, Node Function(Node node) transform) => action(
+  /// 换块类型：**白名单继承属性**（照 [applyBlockStyle] 口径，2026-11-19 修
+  /// 脏属性 bug）——只带走背景色 / 文字方向 / 文本 delta，其余不继承。
+  ///
+  /// ⚠️ 原来用 `node.copyWith(type: X)` 会**保留全部旧属性**（`Node.copyWith`
+  /// 的 `attributes ?? {...this.attributes}`）⇒ 标题转列表留 `level`、待办转
+  /// 引用留 `checked`，脏属性跟着落库、导出 markdown 时异常；且与正文/标题那条
+  /// 路径（[applyBlockStyle] 摘 `level`）口径不一致。这里改成同一白名单。
+  /// [extra] 是新类型**必需**的属性（如待办的 `checked`、折叠的 `collapsed`）。
+  Widget typeItem(
+    String label,
+    String type, {
+    Attributes extra = const {},
+    bool isCurrent = false,
+  }) => action(
     label: label,
+    isCurrent: isCurrent,
     onPressed: () {
-      unawaited(editorState.formatNode(selection, transform));
+      unawaited(
+        editorState.formatNode(
+          selection,
+          (Node node) => node.copyWith(
+            type: type,
+            attributes: <String, dynamic>{
+              ...extra,
+              blockComponentBackgroundColor:
+                  node.attributes[blockComponentBackgroundColor],
+              blockComponentTextDirection:
+                  node.attributes[blockComponentTextDirection],
+              blockComponentDelta: (node.delta ?? Delta()).toJson(),
+            },
+          ),
+        ),
+      );
       onClose();
     },
   );
 
+  /// 当前块是否已是该类型（勾选标记用）；标题按 [level] 细分。
+  bool isCurrent(String type, {int? level}) {
+    if (node.type != type) return false;
+    if (type == HeadingBlockKeys.type) {
+      final Object? lv = node.attributes[HeadingBlockKeys.level];
+      return (lv is int ? lv : 1) == (level ?? 1);
+    }
+    return true;
+  }
+
   return <Widget>[
     SubmenuButton(
       menuChildren: <Widget>[
-        // 正文 / 标题：走 `applyBlockStyle`（工具栏样式下拉的同一实现——它负责
-        // **摘掉 level** 这类脏属性，不让正文留着 `level` 键）。
-        // ⚠️ 它们**不能**塞进 `typeItem`：那会把 `applyBlockStyle` 放进
-        // `formatNode` 的 transform 里执行（transform 里做事务 = 重入）。
+        // ── 标题类 ── 正文 / 标题 1~3，走 `applyBlockStyle`（工具栏样式下拉的
+        // 同一实现——它负责**摘掉 level** 这类脏属性）。⚠️ 不能塞进 `typeItem`：
+        // 那会把 `applyBlockStyle` 放进 `formatNode` 的 transform 里执行 = 重入。
         for (final int? level in <int?>[null, 1, 2, 3])
           action(
             label: level == null ? '正文' : '标题 $level',
+            isCurrent: isCurrent(
+              level == null ? ParagraphBlockKeys.type : HeadingBlockKeys.type,
+              level: level,
+            ),
             onPressed: () {
               applyBlockStyle(editorState, selection, level: level);
               onClose();
             },
           ),
+        const Divider(height: 1),
+        // ── 列表类 ──
         typeItem(
           '无序列表',
-          (Node n) => n.copyWith(type: BulletedListBlockKeys.type),
+          BulletedListBlockKeys.type,
+          isCurrent: isCurrent(BulletedListBlockKeys.type),
         ),
         typeItem(
           '有序列表',
-          (Node n) => n.copyWith(type: NumberedListBlockKeys.type),
+          NumberedListBlockKeys.type,
+          isCurrent: isCurrent(NumberedListBlockKeys.type),
         ),
         typeItem(
           '待办列表',
-          (Node n) => n.copyWith(
-            type: TodoListBlockKeys.type,
-            attributes: <String, dynamic>{
-              ...n.attributes,
-              TodoListBlockKeys.checked: false,
-            },
-          ),
+          TodoListBlockKeys.type,
+          extra: <String, dynamic>{TodoListBlockKeys.checked: false},
+          isCurrent: isCurrent(TodoListBlockKeys.type),
         ),
-        typeItem('引用', (Node n) => n.copyWith(type: QuoteBlockKeys.type)),
+        const Divider(height: 1),
+        // ── 其他 ──
+        typeItem(
+          '引用',
+          QuoteBlockKeys.type,
+          isCurrent: isCurrent(QuoteBlockKeys.type),
+        ),
         typeItem(
           '折叠块',
-          (Node n) => n.copyWith(
-            type: ToggleListBlockKeys.type,
-            attributes: <String, dynamic>{
-              ...n.attributes,
-              ToggleListBlockKeys.collapsed: false,
-            },
-          ),
+          ToggleListBlockKeys.type,
+          extra: <String, dynamic>{ToggleListBlockKeys.collapsed: false},
+          isCurrent: isCurrent(ToggleListBlockKeys.type),
         ),
-        typeItem('高亮块', (Node n) => n.copyWith(type: CalloutBlockKeys.type)),
+        typeItem(
+          '高亮块',
+          CalloutBlockKeys.type,
+          isCurrent: isCurrent(CalloutBlockKeys.type),
+        ),
         // 代码块有整块级的特殊语义（行盒/占位/回车行为），走它自己的实现。
         action(
           label: '代码块',
+          isCurrent: isCurrent(CodeBlockKeys.type),
           onPressed: () {
             toggleSinanCodeBlock(editorState);
             onClose();
