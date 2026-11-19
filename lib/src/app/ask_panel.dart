@@ -153,6 +153,12 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
   Answer? _answer;
   String? _error;
 
+  /// 发送成功的**一次性**反馈（与灵感「记下」同款方案）：按钮绿勾
+  /// [Tokens.durationFeedback] 后回纸飞机——确认信号主要由"答案落位"承担，
+  /// 按钮只做瞬时应答。
+  bool _justSent = false;
+  Timer? _sentTimer;
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +167,7 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
 
   @override
   void dispose() {
+    _sentTimer?.cancel();
     _question.removeListener(_onQuestionChanged);
     _question.dispose();
     _focus.dispose();
@@ -209,6 +216,11 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
       setState(() {
         _answer = answer;
         _busy = false;
+        _justSent = true;
+      });
+      _sentTimer?.cancel();
+      _sentTimer = Timer(Tokens.durationFeedback, () {
+        if (mounted) setState(() => _justSent = false);
       });
     } on LlmUnavailableException catch (e) {
       // 服务没配 / 打不通：给可操作的报错（文案来自 LLM 客户端），不静默。
@@ -332,6 +344,7 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
           focusNode: _focus,
           canSend: _canSend,
           busy: _busy,
+          justSent: _justSent,
           onSend: _ask,
         ),
       ],
@@ -351,8 +364,9 @@ class AskPanelBodyState extends ConsumerState<AskPanelBody> {
 ///   [AppTheme.divider] + 圆角 [Tokens.radiusLg]），层次靠板色不靠粗描边；
 /// - 聚焦态**只提亮描边**（onSurfaceVariant 50%，150ms），不染主色、不发光；
 /// - 多行自适应（1–6 行），超出内部滚动；
-/// - 右下角 32 圆形发送钮（tabler.ArrowUp）：空内容禁用（primary 30%），
-///   `busy` 时原位换成转圈，不再改文字 / 不再外挂进度圈；
+/// - 右下角发送钮**与灵感「记下」同款**（2026-11-18 用户定）：24 方钮 +
+///   24 框朝上纸飞机（[tabler.Send2] 旋转 90°）+ 三态底（绿勾确认 /
+///   primary / 灰底禁用）；`busy` 原位换转圈，发送成功绿勾瞬时确认；
 /// - 桌面键位提示「Enter 发送 · Shift+Enter 换行」只在桌面显示。
 class _AskComposer extends StatefulWidget {
   const _AskComposer({
@@ -360,6 +374,7 @@ class _AskComposer extends StatefulWidget {
     required this.focusNode,
     required this.canSend,
     required this.busy,
+    required this.justSent,
     required this.onSend,
   });
 
@@ -367,6 +382,7 @@ class _AskComposer extends StatefulWidget {
   final FocusNode focusNode;
   final bool canSend;
   final bool busy;
+  final bool justSent;
   final VoidCallback onSend;
 
   @override
@@ -452,6 +468,7 @@ class _AskComposerState extends State<_AskComposer> {
               _SendButton(
                 active: widget.canSend && !widget.busy,
                 busy: widget.busy,
+                justSent: widget.justSent,
                 onSend: widget.onSend,
               ),
             ],
@@ -462,58 +479,74 @@ class _AskComposerState extends State<_AskComposer> {
   }
 }
 
-/// composer 右下角的 32 圆形发送钮。
+/// composer 右下角的发送钮：**与灵感「记下」同款样式、方案与图标**
+/// （2026-11-18 用户定，图标也统一为 [tabler.Send2] 纸飞机）——两处差异：
+/// ① 按钮尺寸收到 **24**（AI 的 composer 更紧凑）；② 纸飞机**旋转朝上**
+/// （灵感朝右上，AI 用 [RotatedBox] 逆时针转 90° 让尖端指向正上）。
 ///
-/// [active] 为 false（空内容或检索中）时：底色降到 primary 30%、不响应点击，
-/// 语义上就是 disabled；[busy] 时箭头原位换成 14px 转圈。
+/// ⚠️ 24 是真的渲染尺寸：默认 [IconButton] 有 48×48 的 tap-target 下限，
+/// 光设 `minimumSize: Size(24,24)` 仍是 48（量测实测）⇒ 必须同时给
+/// `padding: zero` + `tapTargetSize: shrinkWrap` 才落到 24×24。
+///
+/// 同款的四条：
+/// - `IconButton` + [Tokens.iconSm](18) 框（2026-11-19 用户定：图标 18，
+///   比灵感 24 小一号 —— 24 钮配 24 图标太满，18 留 ~3px 呼吸）；
+/// - **三态底**：绿勾确认（[Bauhaus.green]）/ 可发 [ColorScheme.primary] /
+///   禁用 [ColorScheme.surfaceContainerHighest] **灰底**（不是透明度——
+///   与灵感同一套 disabled 语言）；
+/// - **发送成功绿勾瞬时确认**（[Tokens.durationFeedback] 后回纸飞机）；
+/// - `busy` 原位换 14px 转圈（AI 特有：灵感无检索态），期间底色保持
+///   primary（"正在办"不是"不可用"）。
 class _SendButton extends StatelessWidget {
   const _SendButton({
     required this.active,
     required this.busy,
+    required this.justSent,
     required this.onSend,
   });
 
   final bool active;
   final bool busy;
+  final bool justSent;
   final VoidCallback onSend;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: '发送（Enter）',
-      child: Material(
-        color: active ? scheme.primary : scheme.primary.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(Tokens.radiusFull),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(Tokens.radiusFull),
-          onTap: active ? onSend : null,
-          child: SizedBox(
-            width: 32,
-            height: 32,
-            child: Center(
-              child: busy
-                  ? SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: scheme.onPrimary,
-                      ),
-                    )
-                  : tabler.ArrowUp(
-                      height: 16,
-                      width: 16,
-                      strokeWidth: 2,
-                      colorFilter: ui.ColorFilter.mode(
-                        scheme.onPrimary,
-                        ui.BlendMode.srcIn,
-                      ),
-                    ),
-            ),
-          ),
-        ),
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final bool sent = justSent && !busy;
+    return IconButton(
+      onPressed: active ? onSend : null,
+      tooltip: sent ? '已发送' : '发送（Enter）',
+      iconSize: Tokens.iconSm,
+      style: IconButton.styleFrom(
+        // 24 = AI 输入框自己的档（灵感是 36）。默认 IconButton 有 48 的
+        // tap-target 下限，必须 padding:zero + shrinkWrap 才真落到 24×24。
+        minimumSize: const Size(24, 24),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: sent
+            ? Bauhaus.green(theme.brightness)
+            : active || busy
+            ? scheme.primary
+            : scheme.surfaceContainerHighest,
+        foregroundColor: sent
+            ? Bauhaus.onAccent(theme.brightness)
+            : active || busy
+            ? scheme.onPrimary
+            : scheme.onSurfaceVariant,
       ),
+      icon: busy
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : sent
+          ? const tabler.Check()
+          // 与灵感「记下」同一枚纸飞机，但尖端朝上：Send2 原始尖端在右
+          // （SVG 顶点 M21 12），逆时针 90°（quarterTurns -1）转到正上。
+          : const RotatedBox(quarterTurns: -1, child: tabler.Send2()),
     );
   }
 }
