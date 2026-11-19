@@ -24,6 +24,7 @@ import 'toggle_block_component.dart';
 /// [onReferenceOnCanvas] 是块可迁移 #5「双链多视图」的入口（把这块引用到画布上）：
 /// 它要读 provider、弹选择框，故由调用方（块手柄）提供；为 null 时不出现这一项。
 List<Widget> sinanBlockActionMenuItems({
+  required BuildContext context,
   required EditorState editorState,
   required Node node,
   required VoidCallback onClose,
@@ -32,26 +33,35 @@ List<Widget> sinanBlockActionMenuItems({
   // 手柄点击已把选区切成本块 ⇒ 这里以块的起点为准（不依赖调用顺序）。
   final Selection selection = Selection.collapsed(Position(path: node.path));
 
-  /// 一条菜单项。[isCurrent] 为真时左侧勾选（标记当前块类型，2026-11-19 借鉴
-  /// Notion / 官方——让用户知道"我这是什么块"，避免无意义重复转换）。
+  /// 一条菜单项。[icon] 是左侧图标（主菜单项用，如复制/删除/引用）；转为子菜单
+  /// 用 [isCurrent] 在同一位置勾选（标记当前块类型，2026-11-19 借鉴 Notion /
+  /// 官方）。两者共用同一 14px 左槽 ⇒ 所有项左缘对齐（否则 SubmenuButton 那条
+  /// 「转为」会比 MenuItemButton 的项更靠左）。
   Widget action({
     required String label,
     required VoidCallback onPressed,
     bool isCurrent = false,
+    Widget? icon,
+    Color? labelColor,
   }) => MenuItemButton(
     leadingIcon: SizedBox(
       width: Tokens.iconXs,
       height: Tokens.iconXs,
-      child: isCurrent
-          ? const tabler.Check(
-              height: Tokens.iconXs,
-              width: Tokens.iconXs,
-              strokeWidth: 1.5,
-            )
-          : null,
+      child:
+          icon ??
+          (isCurrent
+              ? const tabler.Check(
+                  height: Tokens.iconXs,
+                  width: Tokens.iconXs,
+                  strokeWidth: 1.5,
+                )
+              : null),
     ),
     onPressed: onPressed,
-    child: Text(label),
+    child: Text(
+      label,
+      style: labelColor == null ? null : TextStyle(color: labelColor),
+    ),
   );
 
   /// 换块类型：**白名单继承属性**（照 [applyBlockStyle] 口径，2026-11-19 修
@@ -103,6 +113,8 @@ List<Widget> sinanBlockActionMenuItems({
 
   return <Widget>[
     SubmenuButton(
+      // 与 MenuItemButton 同一 14px 左槽（见 [action]）⇒「转为」左缘对齐。
+      leadingIcon: const SizedBox(width: Tokens.iconXs, height: Tokens.iconXs),
       menuChildren: <Widget>[
         // ── 标题类 ── 正文 / 标题 1~3，走 `applyBlockStyle`（工具栏样式下拉的
         // 同一实现——它负责**摘掉 level** 这类脏属性）。⚠️ 不能塞进 `typeItem`：
@@ -170,6 +182,11 @@ List<Widget> sinanBlockActionMenuItems({
     const Divider(height: 1),
     action(
       label: '复制',
+      icon: const tabler.Copy(
+        height: Tokens.iconXs,
+        width: Tokens.iconXs,
+        strokeWidth: 1.5,
+      ),
       onPressed: () {
         final Transaction transaction = editorState.transaction
           ..insertNode(node.path.next, node.deepCopy());
@@ -179,6 +196,13 @@ List<Widget> sinanBlockActionMenuItems({
     ),
     action(
       label: '删除',
+      icon: const tabler.Trash(
+        height: Tokens.iconXs,
+        width: Tokens.iconXs,
+        strokeWidth: 1.5,
+      ),
+      // 删除红字（sinan 惯例：删除是红，与批量工具条同色）。
+      labelColor: Theme.of(context).colorScheme.error,
       onPressed: () {
         final Transaction transaction = editorState.transaction
           ..deleteNode(node);
@@ -192,6 +216,11 @@ List<Widget> sinanBlockActionMenuItems({
       // 同一份内容的卡片（两边编辑同一份真身）。与"搬去画布"是两回事。
       action(
         label: '在画布上引用这张卡片',
+        icon: const tabler.Link(
+          height: Tokens.iconXs,
+          width: Tokens.iconXs,
+          strokeWidth: 1.5,
+        ),
         onPressed: () {
           onClose();
           onReferenceOnCanvas();

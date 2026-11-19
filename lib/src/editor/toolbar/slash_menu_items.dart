@@ -15,7 +15,7 @@ import '../../notes/services/note_media_service.dart';
 import '../blocks/attachment_block_component.dart';
 import '../blocks/callout_block_component.dart';
 import '../blocks/code_block_component.dart';
-import '../blocks/block_picker.dart';
+
 import '../blocks/formula_block_component.dart';
 import '../blocks/note_picker.dart';
 import '../blocks/ref_block_component.dart';
@@ -49,7 +49,9 @@ SelectionMenuStyle sinanSlashMenuStyle({
   // （[AppTheme.floatSurface]，见 `app_float_surface.dart` 的浮层三件套）。
   selectionMenuBackgroundColor: background,
   selectionMenuItemTextColor: foreground,
-  selectionMenuItemIconColor: muted,
+  // 图标与文字同色（2026-11-19 用户定）：原来图标 muted、文字 foreground 是
+  // 两色 ⇒ 视觉不齐。Notion 斜杠菜单图标/文字同色，统一成 foreground。
+  selectionMenuItemIconColor: foreground,
   selectionMenuItemSelectedTextColor: foreground,
   selectionMenuItemSelectedIconColor: foreground,
   selectionMenuItemSelectedColor: foreground.withValues(alpha: 0.10),
@@ -90,10 +92,12 @@ List<SelectionMenuItem> sinanSelectionMenuItems() {
     ...toggleSlashMenuItems,
     formulaSlashMenuItem,
     attachmentSlashMenuItem,
+    // 引用类收成 **3 项**（2026-11-19 精简）：Quote（引用样式）+ 引用笔记 + 嵌入
+    // 笔记。删「引用块」「嵌入块」两个独立入口（与引用笔记/嵌入笔记同源、只差
+    // ref_type/ref_view）。块级引用/嵌入的数据层仍在（ref 块支持 ref_type='block'），
+    // 只是少了斜杠菜单里的独立入口。
     refSlashMenuItem,
-    refBlockSlashMenuItem,
     embedNoteSlashMenuItem,
-    embedBlockSlashMenuItem,
   ]);
 }
 
@@ -108,12 +112,14 @@ final List<SelectionMenuItem> toggleSlashMenuItems = <SelectionMenuItem>[
     keywords: const <String>['toggle', 'toggle list', '折叠', '折叠列表', '折叠清单'],
     nodeBuilder: toggleListNode,
   ),
-  for (int level = 1; level <= 3; level++)
-    _toggleSlashMenuItem(
-      name: '折叠标题 $level',
-      keywords: <String>['toggle heading $level', '折叠标题 $level', '折叠标题$level'],
-      nodeBuilder: () => toggleHeadingNode(level: level),
-    ),
+  // 折叠标题合并为 **1 项**（2026-11-19 精简）：原 1/2/3 级三项只差 level，收成
+  // 一项「折叠标题」（level 1）——级别可在手柄「转为」里改。减 2 项。
+  // （上游 selection_menu 是扁平无分组、项少不需精简；我们自研项多，故精简。）
+  _toggleSlashMenuItem(
+    name: '折叠标题',
+    keywords: const <String>['toggle heading', '折叠标题', '折叠标题1'],
+    nodeBuilder: () => toggleHeadingNode(level: 1),
+  ),
 ];
 
 /// 折叠块四个条目共用的插入语义（与代码块/高亮块那条同款：空块原地替换、
@@ -435,79 +441,6 @@ final SelectionMenuItem refSlashMenuItem = SelectionMenuItem(
       editorState,
       point,
       node: refBlockNode(refType: RefBlockKeys.refNote, refId: noteId),
-      canHoldCursor: false,
-    );
-  },
-);
-
-/// 引用块（块类型 `ref`，属性 `ref_type='block'` / `ref_id` = 目标块 id）。
-///
-/// 与上面的「引用笔记」同源（都是 `ref` 块），只差 `ref_type`：
-/// - `ref_type='note'` ⇒ 指向整篇笔记；
-/// - `ref_type='block'` ⇒ 指向**某一块**（块级双链）。
-///
-/// 反链查询、渲染、跳转三处**早已支持** `ref_type='block'`（见
-/// `NoteStore.backlinks` / `ref_block_component.dart` 的 `_labelOf` /
-/// `note_editor_view` 的 bridge），本项补的只是**创建入口**——此前
-/// `refBlockNode` 只在引用笔记处被调用，块级引用因此"数据层全有、用户摸不到"。
-final SelectionMenuItem refBlockSlashMenuItem = SelectionMenuItem(
-  getName: () => '引用块',
-  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    // 与「引用笔记」的 link 图标区分：这里强调的是"引用一段正文"。
-    icon: const tabler.FileText(
-      height: Tokens.iconSm,
-      width: Tokens.iconSm,
-      strokeWidth: 1.5,
-    ),
-    isSelected: isSelected,
-    style: style,
-  ),
-  keywords: const <String>['block', 'blockref', '引用块', '块引用', '块', '段落'],
-  handler: (editorState, _, BuildContext context) async {
-    // 落点必须在弹对话框**之前**取好（见 _InsertionPoint 的说明）。
-    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
-    if (point == null) return;
-    final String? blockId = await pickBlockToReference(context);
-    if (blockId == null) return;
-    await _insertBlockAt(
-      editorState,
-      point,
-      node: refBlockNode(refType: RefBlockKeys.refBlock, refId: blockId),
-      canHoldCursor: false,
-    );
-  },
-);
-
-/// 嵌入块：`ref` 块 + `ref_view='embed'` ⇒ **就地展开**那一块的内容。
-///
-/// 与「引用块」只差 `ref_view`：引用是一行卡片（显示标题），嵌入是把内容摊开
-/// 在这里（Obsidian 的 `![[…]]` / Notion 的"显示为 embed"）。两者共用同一块
-/// 类型 ⇒ 反链、渲染、跳转一条链都不用改。
-final SelectionMenuItem embedBlockSlashMenuItem = SelectionMenuItem(
-  getName: () => '嵌入块',
-  icon: (editorState, isSelected, style) => SelectionMenuIconWidget(
-    icon: const tabler.Quote(
-      height: Tokens.iconSm,
-      width: Tokens.iconSm,
-      strokeWidth: 1.5,
-    ),
-    isSelected: isSelected,
-    style: style,
-  ),
-  keywords: const <String>['embed', '嵌入块', '块嵌入', '展开块'],
-  handler: (editorState, _, BuildContext context) async {
-    final _InsertionPoint? point = _InsertionPoint.capture(editorState);
-    if (point == null) return;
-    final String? blockId = await pickBlockToReference(context);
-    if (blockId == null) return;
-    await _insertBlockAt(
-      editorState,
-      point,
-      node: refBlockNode(
-        refType: RefBlockKeys.refBlock,
-        refId: blockId,
-        refView: RefBlockKeys.viewEmbed,
-      ),
       canHoldCursor: false,
     );
   },

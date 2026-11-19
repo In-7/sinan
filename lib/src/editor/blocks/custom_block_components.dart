@@ -577,6 +577,7 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
               //（带种子色的 surface + elevation 3 + 无描边，见该函数文档）。
               style: sinanEditorFloatMenuStyle(context),
               menuChildren: sinanBlockActionMenuItems(
+                context: context,
                 editorState: editorState,
                 node: node,
                 onClose: _actionsMenu.close,
