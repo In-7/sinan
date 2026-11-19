@@ -1282,6 +1282,18 @@ class _CaptureBarState extends ConsumerState<_CaptureBar> {
 /// - 多选模式：勾选框覆盖在左上角；归档条目只读、降对比、保留细脚注
 ///   （「归档于 …」）——**不设删除**（2026-11-17 用户定：归档 = 已转为
 ///   笔记/画布，内容有落地，这里是历史记录）。
+
+/// 按 id **稳定**分配便签色下标（确定性 hash，不依赖 Dart 的 `hashCode`
+/// 跨运行稳定性）：同一条灵感永远同色、相邻几乎必然不同色 ⇒ 一眼区分。
+/// public 供测试直接钉映射语义（确定性 + 分布）。
+int noteIndexOf(String id) {
+  int h = 0;
+  for (final int c in id.codeUnits) {
+    h = (h * 31 + c) & 0x7fffffff;
+  }
+  return h % Bauhaus.noteSwatchCount;
+}
+
 class _StreamCard extends ConsumerStatefulWidget {
   const _StreamCard({
     super.key,
@@ -1493,196 +1505,215 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
     final Color edge = marked
         ? scheme.primary.withValues(alpha: 0.4)
         : Colors.transparent;
-    // **常显底色**（2026-10-17 用户定）：原来 hover 才铺的那层底色改成每行常驻，
-    // 悬浮时不再换底色——只留左侧颜色带与右上角按钮两个信号，安静得多。
+    // **便签色**（2026-11-19 用户定）：满墙同色毫无区分，改 Google Keep 式
+    // 多彩便签——每条按 id 稳定分配一个 Bauhaus 便签色（零操作、相邻几乎必然
+    // 不同色 ⇒ 一眼区分），不违背灵感"低摩擦收件箱"。
     //
     // 底色**烤实**（alphaBlend 进 surface）：半透明底会让对比度检查把文字算在
     // "未知/低对比"背景上，a11y 会红；而且行底本来就压在 panel 的 surface 上，
-    // 合成结果完全相同。
+    // 合成结果完全相同（2026-10-17 教训沿用）。
+    final int noteIdx = noteIndexOf(widget.item.id);
     final Color rowFill = Color.alphaBlend(
       AppTheme.hoverOverlay(brightness),
       scheme.surface,
     );
-    final Color bg = marked
-        ? scheme.primaryContainer.withValues(alpha: 0.35)
-        : rowFill;
+    // 便签纸底（Keep 式粉彩纸片）；归档退灰（中性，已"放下"）；选中压过走 primary。
+    // hover **不换底色**（2026-11-19 用户定：只放大就够，不变色）。
+    final Color bg;
+    if (marked) {
+      bg = scheme.primaryContainer.withValues(alpha: 0.35);
+    } else if (widget.archived) {
+      bg = rowFill;
+    } else {
+      bg = Bauhaus.noteSwatch(brightness, noteIdx);
+    }
 
-    return Semantics(
-      button: !widget.archived,
-      selected: widget.selectMode ? marked : null,
-      label: widget.item.text,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        // 单击**不编辑**（2026-11-17 用户定，防误触）：单击只在多选模式勾选。
-        // 归档条目**不参与多选**（否则已处理的旧条目会被混进"合并成新笔记"里）。
-        onTap: widget.selectMode
-            ? (widget.archived ? null : widget.onToggleSelect)
-            : null,
-        // 双击 = 进编辑；与右键菜单「编辑」、键盘 Enter（下方 [Focus.onKeyEvent]）
-        // 同一入口。
-        onDoubleTap: widget.selectMode || widget.archived ? null : _expand,
-        // 右键 = 行级动作菜单（与 hover「更多」同款，锚在光标处）。
-        // 归档行、多选模式都照常弹（2026-11-16 用户定）。
-        onSecondaryTapDown: (details) =>
-            unawaited(_showRowMenu(details.globalPosition)),
-        child: FocusRing(
+    // Semantics **下移到内容**（见下方 _stripeAround 的 child）：它的 label 边界
+    // 只包正文、不含左侧色带 ⇒ Flutter 的 `textContrastGuideline` 不会把装饰色带
+    // 误当"文字前景"采样（否则饱和便签色压在 tint 底上被判假低对比、a11y 红）。
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // 单击**不编辑**（2026-11-17 用户定，防误触）：单击只在多选模式勾选。
+      // 归档条目**不参与多选**（否则已处理的旧条目会被混进"合并成新笔记"里）。
+      onTap: widget.selectMode
+          ? (widget.archived ? null : widget.onToggleSelect)
+          : null,
+      // 双击 = 进编辑；与右键菜单「编辑」、键盘 Enter（下方 [Focus.onKeyEvent]）
+      // 同一入口。
+      onDoubleTap: widget.selectMode || widget.archived ? null : _expand,
+      // 右键 = 行级动作菜单（与 hover「更多」同款，锚在光标处）。
+      // 归档行、多选模式都照常弹（2026-11-16 用户定）。
+      onSecondaryTapDown: (details) =>
+          unawaited(_showRowMenu(details.globalPosition)),
+      child: FocusRing(
+        focusNode: _rowFocus,
+        borderRadius: BorderRadius.circular(Tokens.radiusSm),
+        child: Focus(
           focusNode: _rowFocus,
-          borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          child: Focus(
-            focusNode: _rowFocus,
-            onKeyEvent: (FocusNode _, KeyEvent event) {
-              if (event is! KeyDownEvent ||
-                  event.logicalKey != LogicalKeyboardKey.enter) {
-                return KeyEventResult.ignored;
-              }
-              if (widget.archived) return KeyEventResult.ignored;
-              if (widget.selectMode) {
-                widget.onToggleSelect?.call();
-              } else {
-                _expand();
-              }
-              return KeyEventResult.handled;
-            },
-            // **放大**：hover 放大到 1.025（2026-11-17 用户定，替换旧的"轻推
-            // 左移"）——这张卡的点击动作是"放大看全部"，hover 放大正是它的预告。
-            //
-            // 数字的账：404 宽卡 ×1.025 ⇒ 每侧溢出 ~5px，落进列距 20 / 页边距
-            // 24 的空当里——不撞邻卡、不贴视口裁剪边；高向每侧 ~1px 量级。
-            // 圆心缩放、四向均匀；文字随矩阵重绘、不糊（不是缩放已栅格化层）。
-            // 📌 2026-10-17 旧注释警告"缩放会被 ListView 切边"——那是当年行铺满
-            // 列宽、无空当时的账；卡片墙有列距 + 页边距，5px 溢出安全。
-            // 变换不改布局尺寸 ⇒ 邻卡不重排、`getSize` 读数不变；命中区跟着
-            // 缩放后的范围走，不会"看得见点不到"。
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: lifted ? 1.0 : 0.0),
+          onKeyEvent: (FocusNode _, KeyEvent event) {
+            if (event is! KeyDownEvent ||
+                event.logicalKey != LogicalKeyboardKey.enter) {
+              return KeyEventResult.ignored;
+            }
+            if (widget.archived) return KeyEventResult.ignored;
+            if (widget.selectMode) {
+              widget.onToggleSelect?.call();
+            } else {
+              _expand();
+            }
+            return KeyEventResult.handled;
+          },
+          // **放大**：hover 放大到 1.025（2026-11-17 用户定，替换旧的"轻推
+          // 左移"）——这张卡的点击动作是"放大看全部"，hover 放大正是它的预告。
+          //
+          // 数字的账：404 宽卡 ×1.025 ⇒ 每侧溢出 ~5px，落进列距 20 / 页边距
+          // 24 的空当里——不撞邻卡、不贴视口裁剪边；高向每侧 ~1px 量级。
+          // 圆心缩放、四向均匀；文字随矩阵重绘、不糊（不是缩放已栅格化层）。
+          // 📌 2026-10-17 旧注释警告"缩放会被 ListView 切边"——那是当年行铺满
+          // 列宽、无空当时的账；卡片墙有列距 + 页边距，5px 溢出安全。
+          // 变换不改布局尺寸 ⇒ 邻卡不重排、`getSize` 读数不变；命中区跟着
+          // 缩放后的范围走，不会"看得见点不到"。
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: lifted ? 1.0 : 0.0),
+            curve: Curves.easeOut,
+            duration: Tokens.durationHover,
+            builder: (BuildContext context, double t, Widget? child) =>
+                Transform.scale(scale: 1.0 + 0.025 * t, child: child),
+            child: AnimatedContainer(
               curve: Curves.easeOut,
               duration: Tokens.durationHover,
-              builder: (BuildContext context, double t, Widget? child) =>
-                  Transform.scale(scale: 1.0 + 0.025 * t, child: child),
-              child: AnimatedContainer(
-                curve: Curves.easeOut,
-                duration: Tokens.durationHover,
-                // 自适应高（2026-11-17 二次收口）：内容即全部版面、零截断——
-                // 等高卡撤了（行对齐会在矮卡旁留白）；长卡只把这一列拉长。
-                padding: const EdgeInsets.fromLTRB(
-                  Tokens.spaceSm,
-                  Tokens.spaceSm,
-                  Tokens.spaceSm,
-                  Tokens.spaceSm,
-                ),
-                decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: BorderRadius.circular(Tokens.radiusMd),
-                  // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
-                  border: Border.all(color: edge),
-                ),
-                // 归档行只读、只在聚焦视图出现；普通卡全文上墙——高度都随
-                // 内容（真瀑布，2026-11-17 用户定）。
-                child: widget.archived
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          ExcludeSemantics(
-                            child: Text(
-                              widget.item.text.trim().isNotEmpty
-                                  ? widget.item.text
-                                  : '（空）',
-                              maxLines: 8,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: Bauhaus.inkMuted(brightness),
-                                height: 1.6,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: Tokens.spaceSm),
-                          // 归档行的细脚注。**不设删除**（2026-11-17 用户定：
-                          // 归档 = 已转为笔记/画布，内容有落地，这里是历史记录）。
-                          ExcludeSemantics(
-                            child: Text(
-                              '归档于 ${_dateClock(widget.item.archivedAt ?? widget.item.createdAt)}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: Bauhaus.inkMuted(brightness),
-                              ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Stack(
-                        children: <Widget>[
-                          // 正文 **全文零截断**（2026-11-17 用户定"看全部"）——
-                          // 一眼概览的原始目标就是不截断。它是 Stack 里唯一
-                          // 非定位子节点 ⇒ 卡高由内容决定。正文由外层
-                          // [Semantics.label] 朗读（整卡一起念），这里排除，免得
-                          // "标签 + 正文"念两遍。
-                          ExcludeSemantics(
-                            child: Text(
-                              // 空卡（flomo 式，清空后保留）：淡灰占位，保证
-                              // 仍可见、可点、能重新编辑，而不是一行纯空白。
-                              widget.item.text.trim().isNotEmpty
-                                  ? widget.item.text
-                                  : '（空）',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: widget.item.text.trim().isEmpty
-                                    ? Bauhaus.inkMuted(brightness)
-                                    : Bauhaus.ink(brightness),
-                                height: 1.6,
-                              ),
-                            ),
-                          ),
-                          // 附件计数角标（右上角常显）：「这条有图/视频」是
-                          // **内容信号**不是元数据——长文里附件往往是这条的重点
-                          // （2026-11-17 用户定脚注撤、角标留；视频 Tier 0 起
-                          // 图/视频分开计数）。
-                          if (attachments.isNotEmpty)
-                            Positioned(
-                              top: 0,
-                              right: 0,
-                              child: ExcludeSemantics(
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    if (imageCount > 0)
-                                      _countChip(
-                                        theme,
-                                        brightness,
-                                        '$imageCount 图',
-                                      ),
-                                    if (videoCount > 0) ...<Widget>[
-                                      if (imageCount > 0)
-                                        const SizedBox(width: Tokens.spaceXxs),
-                                      _countChip(
-                                        theme,
-                                        brightness,
-                                        '$videoCount 视频',
-                                      ),
-                                    ],
-                                  ],
+              // 自适应高（2026-11-17 二次收口）：内容即全部版面、零截断——
+              // 等高卡撤了（行对齐会在矮卡旁留白）；长卡只把这一列拉长。
+              // 裁圆角：让内容贴合卡片圆角（不露直角）。
+              clipBehavior: Clip.antiAlias,
+              padding: const EdgeInsets.fromLTRB(
+                Tokens.spaceSm,
+                Tokens.spaceSm,
+                Tokens.spaceSm,
+                Tokens.spaceSm,
+              ),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(Tokens.radiusMd),
+                // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
+                border: Border.all(color: edge),
+              ),
+              // 归档行只读、只在聚焦视图出现；普通卡全文上墙——高度都随
+              // 内容（真瀑布，2026-11-17 用户定）。左侧便签色带由
+              // [_stripeAround] 包在内容外（Positioned，不参与卡高）。
+              child: _stripeAround(
+                child: Semantics(
+                  button: !widget.archived,
+                  selected: widget.selectMode ? marked : null,
+                  label: widget.item.text,
+                  child: widget.archived
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            ExcludeSemantics(
+                              child: Text(
+                                widget.item.text.trim().isNotEmpty
+                                    ? widget.item.text
+                                    : '（空）',
+                                maxLines: 8,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Bauhaus.inkMuted(brightness),
+                                  height: 1.6,
                                 ),
                               ),
                             ),
-                          // 多选勾选框：覆盖在左上角（多选模式才出现）——
-                          // 脚注撤掉后勾选指示挪这儿，合并入口仍靠它。
-                          if (widget.selectMode)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: bg,
-                                  borderRadius: BorderRadius.circular(
-                                    Tokens.radiusXxs,
+                            const SizedBox(height: Tokens.spaceSm),
+                            // 归档行的细脚注。**不设删除**（2026-11-17 用户定：
+                            // 归档 = 已转为笔记/画布，内容有落地，这里是历史记录）。
+                            ExcludeSemantics(
+                              child: Text(
+                                '归档于 ${_dateClock(widget.item.archivedAt ?? widget.item.createdAt)}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: Bauhaus.inkMuted(brightness),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : Stack(
+                          children: <Widget>[
+                            // 正文 **全文零截断**（2026-11-17 用户定"看全部"）——
+                            // 一眼概览的原始目标就是不截断。它是 Stack 里唯一
+                            // 非定位子节点 ⇒ 卡高由内容决定。正文由外层
+                            // [Semantics.label] 朗读（整卡一起念），这里排除，免得
+                            // "标签 + 正文"念两遍。
+                            ExcludeSemantics(
+                              child: Text(
+                                // 空卡（flomo 式，清空后保留）：淡灰占位，保证
+                                // 仍可见、可点、能重新编辑，而不是一行纯空白。
+                                widget.item.text.trim().isNotEmpty
+                                    ? widget.item.text
+                                    : '（空）',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: widget.item.text.trim().isEmpty
+                                      ? Bauhaus.inkMuted(brightness)
+                                      : Bauhaus.ink(brightness),
+                                  height: 1.6,
+                                ),
+                              ),
+                            ),
+                            // 附件计数角标（右上角常显）：「这条有图/视频」是
+                            // **内容信号**不是元数据——长文里附件往往是这条的重点
+                            // （2026-11-17 用户定脚注撤、角标留；视频 Tier 0 起
+                            // 图/视频分开计数）。
+                            if (attachments.isNotEmpty)
+                              Positioned(
+                                top: 0,
+                                right: 0,
+                                child: ExcludeSemantics(
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                      if (imageCount > 0)
+                                        _countChip(
+                                          theme,
+                                          brightness,
+                                          '$imageCount 图',
+                                        ),
+                                      if (videoCount > 0) ...<Widget>[
+                                        if (imageCount > 0)
+                                          const SizedBox(
+                                            width: Tokens.spaceXxs,
+                                          ),
+                                        _countChip(
+                                          theme,
+                                          brightness,
+                                          '$videoCount 视频',
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(2),
-                                  child: _SelectBox(selected: marked),
+                              ),
+                            // 多选勾选框：覆盖在左上角（多选模式才出现）——
+                            // 脚注撤掉后勾选指示挪这儿，合并入口仍靠它。
+                            if (widget.selectMode)
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: bg,
+                                    borderRadius: BorderRadius.circular(
+                                      Tokens.radiusXxs,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(2),
+                                    child: _SelectBox(selected: marked),
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
@@ -1690,6 +1721,21 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
       ),
     );
   }
+
+  /// 左侧便签色带包裹：4px 实带（hover 加宽到 6）贴卡片左缘当"色标"。
+  ///
+  /// `Positioned` 满高 ⇒ 不参与卡高计算（卡高仍由内容决定）；被外层
+  /// `AnimatedContainer(clipBehavior: Clip.antiAlias)` 裁到圆角内，贴合不露直角。
+  ///
+  /// 色带语义（2026-11-19）：常态 = 便签色（按 id 稳定分配，饱和点睛）；
+  /// hover 加宽到 6（"迎上来"）；选中转 primary（选中语义压过便签色）；归档退灰。
+  ///
+  /// [pinned]：编辑态传 true —— 色带固定不随 hover 加宽（编辑时鼠标常驻卡上，
+  /// 随 hover 抖会一直保持宽态）。
+  /// 左侧便签色带**已去掉**（2026-11-19 用户定：色带遮住文字）——便签观感改由
+  /// 彩色 tint 底承担（见 [_buildView] 的 bg），不再画色带。保留方法签名作直通，
+  /// 调用点结构不动。
+  Widget _stripeAround({required Widget child, bool pinned = false}) => child;
 
   /// 角标芯片（右上角常显）：图 / 视频计数各一枚。
   Widget _countChip(ThemeData theme, Brightness b, String label) => Container(
@@ -1888,6 +1934,9 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
         return KeyEventResult.ignored;
       },
       child: Container(
+        // 裁圆角：让左侧便签色带贴合（与读态同法）。
+        clipBehavior: Clip.antiAlias,
+        // 左内距让开色带宽：文字不被色带压住。
         padding: const EdgeInsets.fromLTRB(
           Tokens.spaceSm,
           Tokens.spaceSm,
@@ -1903,70 +1952,74 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
           // "圆角 + 四边异色"的 paint 断言。
           border: Border.all(color: scheme.primary),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            TextField(
-              controller: _editController,
-              focusNode: _editFocus,
-              autofocus: true,
-              minLines: 1,
-              maxLines: null,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Bauhaus.ink(brightness),
-                height: 1.6,
+        // 左侧便签色带（pinned：编辑态固定 4px 不随 hover 抖）当"我是哪张"的锚。
+        child: _stripeAround(
+          pinned: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              TextField(
+                controller: _editController,
+                focusNode: _editFocus,
+                autofocus: true,
+                minLines: 1,
+                maxLines: null,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Bauhaus.ink(brightness),
+                  height: 1.6,
+                ),
+                cursorColor: scheme.primary,
+                decoration: const InputDecoration(
+                  hintText: '改点什么…',
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-              cursorColor: scheme.primary,
-              decoration: const InputDecoration(
-                hintText: '改点什么…',
-                isDense: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-            // 编辑态看附件全貌：缩略图条（读态只报个数角标）。
-            if (attachments.isNotEmpty) _attachmentStrip(theme, attachments),
-            const SizedBox(height: Tokens.spaceXs),
-            // 编辑态的元信息条：**时间 + 更多**都只在这里出现（2026-11-17 用户定
-            // "内容是主要的"——读态卡不带脚注，操作挪进编辑态；右键菜单仍在卡上）。
-            Row(
-              children: <Widget>[
-                // 时间是装饰性 meta：不参与朗读（卡标签已含正文）。
-                ExcludeSemantics(
-                  child: Text(
-                    _dateClock(widget.item.createdAt),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: Bauhaus.inkMuted(brightness),
+              // 编辑态看附件全貌：缩略图条（读态只报个数角标）。
+              if (attachments.isNotEmpty) _attachmentStrip(theme, attachments),
+              const SizedBox(height: Tokens.spaceXs),
+              // 编辑态的元信息条：**时间 + 更多**都只在这里出现（2026-11-17 用户定
+              // "内容是主要的"——读态卡不带脚注，操作挪进编辑态；右键菜单仍在卡上）。
+              Row(
+                children: <Widget>[
+                  // 时间是装饰性 meta：不参与朗读（卡标签已含正文）。
+                  ExcludeSemantics(
+                    child: Text(
+                      _dateClock(widget.item.createdAt),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Bauhaus.inkMuted(brightness),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: Tokens.spaceSm),
-                Flexible(
-                  child: Text(
-                    'Esc 保存 · Ctrl+Enter 保存',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: Bauhaus.inkMuted(brightness),
+                  const SizedBox(width: Tokens.spaceSm),
+                  Flexible(
+                    child: Text(
+                      'Esc 保存 · Ctrl+Enter 保存',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Bauhaus.inkMuted(brightness),
+                      ),
                     ),
                   ),
-                ),
-                const Spacer(),
-                _actions(theme),
-                TextButton(
-                  onPressed: _saveAndCollapse,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: theme.textTheme.labelMedium,
+                  const Spacer(),
+                  _actions(theme),
+                  TextButton(
+                    onPressed: _saveAndCollapse,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: theme.textTheme.labelMedium,
+                    ),
+                    child: const Text('完成'),
                   ),
-                  child: const Text('完成'),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -334,6 +334,7 @@ Future<bool> _contrastOk(WidgetTester tester) async {
   if (eval.passed) return true;
   final String reason = eval.reason ?? '';
   final List<String> blocks = reason.split('SemanticsNode#').skip(1).toList();
+
   final bool onlyKnownArtifact =
       blocks.isNotEmpty &&
       blocks.every(

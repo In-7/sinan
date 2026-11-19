@@ -326,6 +326,32 @@ void main() {
     );
   });
 
+  test('便签色映射：不同 id ⇒ 不同色，同 id ⇒ 稳定同色', () {
+    // 2026-11-19 用户定：满墙同色毫无区分，改 Google Keep 式多彩便签——每条按
+    // id 稳定分配便签色，相邻几乎必然不同色。这里钉映射语义：确定性 + 分布。
+    expect(
+      noteIndexOf('alpha'),
+      isNot(noteIndexOf('beta')),
+      reason: '不同 id 不同色',
+    );
+    expect(noteIndexOf('gamma'), noteIndexOf('gamma'), reason: '同 id 稳定同色');
+    expect(
+      noteIndexOf('alpha'),
+      inInclusiveRange(0, Bauhaus.noteSwatchCount - 1),
+      reason: '下标取模落在 [0, noteSwatchCount)',
+    );
+  });
+
+  test('便签纸底：6 档粉彩纸片、实色', () {
+    const Brightness b = Brightness.light;
+    final List<Color> swatches = <Color>[
+      for (int i = 0; i < Bauhaus.noteSwatchCount; i++)
+        Bauhaus.noteSwatch(b, i),
+    ];
+    expect(swatches.toSet().length, Bauhaus.noteSwatchCount, reason: '6 档不同色');
+    expect(Bauhaus.noteSwatch(b, 0).a, 1, reason: '便签纸是实色纸片（Keep 式粉彩底）');
+  });
+
   testWidgets('空库：邀请文案 + 输入条常驻', (WidgetTester tester) async {
     await pumpView(tester);
     expect(find.text('还没有灵感'), findsOneWidget);

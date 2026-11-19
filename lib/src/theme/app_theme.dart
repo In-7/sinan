@@ -1754,6 +1754,52 @@ class Bauhaus {
   static Color quoteTint(Brightness b, Color primary) =>
       primary.withValues(alpha: b == Brightness.light ? 0.08 : 0.12);
 
+  // ── 便签纸底（灵感卡片自动着色，2026-11-19 用户定：Keep 式粉彩便签）───
+  // 满墙卡片若同色则毫无区分；Google Keep 的"多彩便签墙"是"每条一眼可分"
+  // 的经典解法。便签观感 = **彩色纸片**（粉彩底 + 圆角，无色带、无投影），
+  // 这里取 6 档纸片色（明暗各一档），按 id 稳定分配给每条灵感 —— 零操作、
+  // 相邻几乎必然不同色 ⇒ 一眼区分，不违背灵感"低摩擦收件箱"。
+  //
+  // ⚠️ 明暗档的方向：**亮色下浅饱和粉彩**（深字对比够，Keep 式便签纸）；
+  // **暗色下深粉彩纸片**（浅字对比够）——粉彩是浅色，压在近黑底上配浅字会糊，
+  // 故暗端换成同色系的深纸片。与 [_yellow]/[_greenLight]/[_greenDark] 同一套
+  // 明暗双轨做法。
+
+  /// 便签纸色数量（id → 下标取模用）。
+  static const int noteSwatchCount = 6;
+
+  /// 便签纸·亮色档（浅饱和粉彩：黄 / 蓝 / 绿 / 紫 / 橙 / 青）。
+  static const List<Color> _noteSwatchLight = <Color>[
+    Color(0xFFFFF475), // 黄（Keep 便签黄）
+    Color(0xFFCBF0F8), // 蓝
+    Color(0xFFD7F0D7), // 绿
+    Color(0xFFE8D8F0), // 紫
+    Color(0xFFFDE0C8), // 橙
+    Color(0xFFD0F0F0), // 青
+  ];
+
+  /// 便签纸·暗色档（深色带色调纸片，浅字对比够）。
+  ///
+  /// ⚠️ 暗底上没法用浅粉彩（浅粉彩 + 浅字会糊，实测对比 3.3:1）⇒ 换同色相的
+  /// **深纸片**，亮度压到 lum≈0.05 让浅字对比 > 8:1，靠**色相差异**保留"不同
+  /// 便签可分"感（Keep 暗色便签同理：深色纸片带色调，不是亮粉彩）。
+  static const List<Color> _noteSwatchDark = <Color>[
+    Color(0xFF4A3A18), // 黄（深纸片）
+    Color(0xFF1E2E40), // 蓝
+    Color(0xFF1E3222), // 绿
+    Color(0xFF2C1E38), // 紫
+    Color(0xFF442818), // 橙
+    Color(0xFF1E3434), // 青
+  ];
+
+  /// 便签纸底（**实色纸片**，灵感卡片底色）：浅饱和粉彩（亮）/ 深纸片（暗）。
+  static Color noteSwatch(Brightness b, int index) {
+    final List<Color> list = b == Brightness.light
+        ? _noteSwatchLight
+        : _noteSwatchDark;
+    return list[index % list.length];
+  }
+
   /// 控件**常驻底**（2026-11-16 用户定：主操作要有视觉权重）。
   ///
   /// 值来自 [ladder] 的 `control` 档：**相对卡底给定 ΔL\***（亮沉 6 / 暗抬 10），
