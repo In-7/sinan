@@ -1768,28 +1768,28 @@ class Bauhaus {
   /// 便签纸色数量（id → 下标取模用）。
   static const int noteSwatchCount = 6;
 
-  /// 便签纸·亮色档（浅饱和粉彩：黄 / 蓝 / 绿 / 紫 / 橙 / 青）。
+  /// 便签纸·亮色档（**温润灰调粉彩**，Muji / Nordic 风：低饱和、带一点灰、
+  /// 六色协调，久看不腻，与 Bauhaus 极简最搭）。黄 / 蓝 / 绿 / 紫 / 粉 / 青。
   static const List<Color> _noteSwatchLight = <Color>[
-    Color(0xFFFFF475), // 黄（Keep 便签黄）
-    Color(0xFFCBF0F8), // 蓝
-    Color(0xFFD7F0D7), // 绿
-    Color(0xFFE8D8F0), // 紫
-    Color(0xFFFDE0C8), // 橙
-    Color(0xFFD0F0F0), // 青
+    Color(0xFFF5EDD8), // 奶油黄
+    Color(0xFFD5E1EC), // 雾蓝
+    Color(0xFFDCE4D2), // 抹茶绿
+    Color(0xFFE1DAE6), // 藕紫
+    Color(0xFFF0DAD5), // 蜜桃粉
+    Color(0xFFD5E1E0), // 雾青
   ];
 
-  /// 便签纸·暗色档（深色带色调纸片，浅字对比够）。
+  /// 便签纸·暗色档（同色系深纸片，浅字对比够）。
   ///
-  /// ⚠️ 暗底上没法用浅粉彩（浅粉彩 + 浅字会糊，实测对比 3.3:1）⇒ 换同色相的
-  /// **深纸片**，亮度压到 lum≈0.05 让浅字对比 > 8:1，靠**色相差异**保留"不同
-  /// 便签可分"感（Keep 暗色便签同理：深色纸片带色调，不是亮粉彩）。
+  /// ⚠️ 暗底上没法用浅粉彩（浅粉彩 + 浅字会糊）⇒ 换同色相的**深纸片**，
+  /// 亮度压到 lum≈0.05 让浅字对比 > 8:1，靠**色相差异**保留"不同便签可分"感。
   static const List<Color> _noteSwatchDark = <Color>[
-    Color(0xFF4A3A18), // 黄（深纸片）
-    Color(0xFF1E2E40), // 蓝
-    Color(0xFF1E3222), // 绿
-    Color(0xFF2C1E38), // 紫
-    Color(0xFF442818), // 橙
-    Color(0xFF1E3434), // 青
+    Color(0xFF3E3420), // 奶油黄（深纸片）
+    Color(0xFF223440), // 雾蓝
+    Color(0xFF263422), // 抹茶绿
+    Color(0xFF322638), // 藕紫
+    Color(0xFF402622), // 蜜桃粉
+    Color(0xFF223434), // 雾青
   ];
 
   /// 便签纸底（**实色纸片**，灵感卡片底色）：浅饱和粉彩（亮）/ 深纸片（暗）。
