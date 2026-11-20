@@ -929,6 +929,11 @@ class _RowNavIntent extends Intent {
 
 class _NoteRowState extends State<_NoteRow> {
   bool _hover = false;
+
+  /// 本行的条目菜单是否正开着（2026-11-20 修 bug：点「···」后鼠标移向菜单时
+  /// `onExit` 把 [_hover] 置 false ⇒ 悬浮底色消失）。菜单开着 ⇒ 行保持 hover 底色，
+  /// 与移动端 `NoteListView._menuOpen` 同一先例。
+  bool _menuOpen = false;
   final FocusNode _focus = FocusNode();
 
   @override
@@ -987,6 +992,11 @@ class _NoteRowState extends State<_NoteRow> {
   /// 入口与样式对齐左侧旧列表 `NoteListView._openMenu`：零尺寸矩形锚在指针处、
   /// 危险项用 `scheme.error`。
   Future<void> _openMenu(Offset position) async {
+    // 菜单开着期间把本行标成"菜单目标"（2026-11-20 修 bug：点「···」后鼠标移向
+    // 菜单 ⇒ onExit 把 _hover 置 false ⇒ 悬浮底色消失，不知道点到哪行）。照移动端
+    // `NoteListView._openMenu` 的 `_menuOpen` 先例：菜单开着 ⇒ 行保持 hover 底色。
+    // `showMenu` 在**菜单关闭后**才返回，所以这是一对 setState。
+    setState(() => _menuOpen = true);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool promoted = widget.note.promotedAt != null;
     await showMenu<void>(
@@ -1038,6 +1048,9 @@ class _NoteRowState extends State<_NoteRow> {
         ),
       ],
     );
+    // 菜单关闭（showMenu 返回）⇒ 复位「菜单目标」标记。此时若鼠标仍悬在本行，
+    // `_hover` 仍为 true ⇒ 底色保持；若鼠标已移到菜单后没回来，底色自然退去。
+    if (mounted) setState(() => _menuOpen = false);
   }
 
   /// 「···」按钮的锚点（菜单贴在按钮下弹出）。
@@ -1072,7 +1085,11 @@ class _NoteRowState extends State<_NoteRow> {
         ? selectedBg
         : (widget.active
               ? activeBg
-              : (_hover ? AppTheme.hoverOverlay(b) : Colors.transparent));
+              // 菜单开着也算 hover（2026-11-20 修 bug）：点「···」后鼠标移向菜单
+              // 时 onExit 会置 _hover=false，靠 _menuOpen 保住底色 ⇒ 知道点到哪行。
+              : (_hover || _menuOpen
+                    ? AppTheme.hoverOverlay(b)
+                    : Colors.transparent));
 
     final String title = noteDisplayTitle(n);
     final String summary = n.summary.trim();

@@ -343,6 +343,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('收藏'), findsOneWidget, reason: '「···」弹菜单含收藏');
     expect(find.text('删除'), findsOneWidget, reason: '含删除');
+
+    // 2026-11-20 修 bug：菜单开着时行底色**保持**——点「···」后鼠标移向菜单时
+    // onExit 会把 _hover 置 false ⇒ 原 bug 是底色消失、不知道点到哪行。现在靠
+    // `_menuOpen` 保住（与移动端 NoteListView._menuOpen 同一先例）。
+    final bool anyHoverBg = tester
+        .widgetList<Container>(
+          find.ancestor(of: find.text('甲'), matching: find.byType(Container)),
+        )
+        .any(
+          (Container c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration! as BoxDecoration).color != null &&
+              (c.decoration! as BoxDecoration).color != Colors.transparent,
+        );
+    expect(anyHoverBg, isTrue, reason: '菜单开着时行底色保持（不消失）');
   });
 
   testWidgets('列表按时间分组：今天 / 昨天组头，行内不再显示日期', (tester) async {
