@@ -360,13 +360,11 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                 ),
               ),
               const SizedBox(width: Tokens.spaceXs),
-              Text(
-                '${shown.length}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: Bauhaus.inkMuted(b),
-                ),
-              ),
-              const SizedBox(width: Tokens.spaceSm),
+              // 篇数 chip（2026-11-20 方案 B 芯片化）：与筛选钮同款材质
+              // （4px 圆角 + hairline + 透明底、高 20）⇒ 标题 / 篇数 / 筛选
+              // 三件像一个套件，不再"纯文字夹带框控件"。
+              _CountChip(count: shown.length),
+              const SizedBox(width: Tokens.spaceXs),
               // 热区 20：本行行高由它决定，28 会把标题行撑高（见组件注释）。
               const FilterMenuButton(size: 20),
             ],
@@ -497,6 +495,36 @@ String _viewLabel(HomeView v) => switch (v) {
 ///
 /// 读法沿用灵感页的日期组头（`stream_view._DayHeader`）：时间信息由组头承担，
 /// 行内不再重复（2026-10-21 用户定，方案 A）。
+/// 篇数 chip（2026-11-20 方案 B 芯片化）：与 [FilterMenuButton] 同款材质
+/// （4px 圆角 + hairline + 透明底、高 20）⇒ 标题 / 篇数 / 筛选三件像一个套件，
+/// 不再"纯文字夹带框控件"。不可点（纯展示），故无 hover / pressed 层。
+class _CountChip extends StatelessWidget {
+  const _CountChip({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Brightness b = theme.brightness;
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        border: Bauhaus.hairline(b),
+        borderRadius: BorderRadius.circular(Tokens.radiusXxs),
+      ),
+      child: Text(
+        // 纯数字（同原标题）：「N 条」会与搜索态的命中计数「N 条」撞文本。
+        '$count',
+        style: theme.textTheme.labelSmall?.copyWith(color: Bauhaus.inkMuted(b)),
+      ),
+    );
+  }
+}
+
 class _RowHeader extends StatelessWidget {
   const _RowHeader({super.key, required this.label, this.first = false});
 
@@ -1185,20 +1213,25 @@ class _NoteRowState extends State<_NoteRow> {
                 // 一致"）：60 轨的钮就是 36 圆角 pill，不是通栏色带。外缩 4 + 内距 8
                 // = 原来的 12 ⇒ 文字左缘不动。
                 margin: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Tokens.spaceMd - Tokens.spaceXs,
-                  vertical: Tokens.spaceMd,
-                ),
-                decoration: BoxDecoration(
-                  color: bg,
-                  borderRadius: Bauhaus.radius,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // 按钮层与内容层平级（2026-11-20 重定方案）：原方案把按钮塞在
+                // **带 padding 的 Container 内**的 Stack 里 ⇒ `top:0` 从内容区
+                // 起算，被 12px 上内距推下去（用户实报"位置偏下"）。改为外层
+                // Stack：内容层保留原 padding，按钮相对**整个行块**定位，落进
+                // "标题到行顶"那段留白，既不上移过头也不压摘要。
+                child: Stack(
                   children: <Widget>[
-                    // 标题前**不再放 kind 图标**（2026-10-21 用户定：各页列表列统一去掉
-                    // 行首图标，标题直接从行左缘起排，行更干净、也不靠小图标区分形态）。
-                    Expanded(
+                    Container(
+                      // Stack 给的是 loose 约束 ⇒ 不写 width 就只包住文字，
+                      // 行体空白处点不中（原结构 Container 直接吃紧约束，无此问题）。
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Tokens.spaceMd - Tokens.spaceXs,
+                        vertical: Tokens.spaceMd,
+                      ),
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: Bauhaus.radius,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
@@ -1210,36 +1243,45 @@ class _NoteRowState extends State<_NoteRow> {
                         ],
                       ),
                     ),
-                    // 「···」按钮（2026-11-20 用户定）：hover 露出，点击弹条目菜单
-                    // （收藏 / 删除）。收藏入口收进菜单（不单列星标）；查看收藏走
-                    // 筛选的「只看收藏」。`maintainSize` 让 hover 显隐不推挤标题。
-                    Visibility(
-                      visible: _hover,
-                      maintainSize: true,
-                      maintainAnimation: true,
-                      maintainState: true,
-                      child: IconButton(
-                        key: _moreKey,
-                        // tooltip 不叫「更多」——那会撞列表头「新建」分半钮副区的
-                        // tooltip（`find.byTooltip('更多')`）。
-                        tooltip: '更多操作',
-                        iconSize: Tokens.iconXs,
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size.square(
-                            Tokens.headerActionSize,
+                    // 「更多」按钮浮在**行块右上角**（2026-11-20 重定方案）：
+                    // 相对外层 Stack（含 padding）定位 ⇒ 落在标题上方留白区，
+                    // 不参与标题/摘要布局、不撑高行高。hover 露出，点击弹条目菜单。
+                    // ⚠️ 菜单开着也算可见（点按钮后鼠标移向菜单时 onExit 置
+                    // _hover=false ⇒ 按钮消失，靠 _menuOpen 保住）。
+                    Positioned(
+                      // 4 而非贴边 0：18 图标在 24 热区里四周各余 3 ⇒ 实际距
+                      // 行块顶/右 7，与标题文字左缘 8 对齐、呼吸一致（2026-11-20 定）。
+                      top: Tokens.spaceXs,
+                      right: Tokens.spaceXs,
+                      child: Visibility(
+                        visible: _hover || _menuOpen,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: IconButton(
+                          key: _moreKey,
+                          tooltip: '更多',
+                          iconSize: Tokens.iconSm,
+                          // 热区 24（触达下限）：浮层不占行高，所以能比标题行高
+                          // 18 大一圈、好点。
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size.square(24),
+                            maximumSize: const Size.square(24),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            // hover 底色圆角跟行背景同一档（Bauhaus.radius=10），
+                            // 不再用 IconButton 默认 CircleBorder（2026-11-20 定）。
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: Bauhaus.radius,
+                            ),
                           ),
-                          maximumSize: const Size.square(
-                            Tokens.headerActionSize,
+                          icon: const tabler.Dots(
+                            height: Tokens.iconSm,
+                            width: Tokens.iconSm,
+                            strokeWidth: Tokens.iconStroke,
                           ),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onPressed: _openMenuAtButton,
                         ),
-                        icon: const tabler.Dots(
-                          height: Tokens.iconXs,
-                          width: Tokens.iconXs,
-                          strokeWidth: Tokens.iconStroke,
-                        ),
-                        onPressed: _openMenuAtButton,
                       ),
                     ),
                   ],

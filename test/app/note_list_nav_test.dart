@@ -336,7 +336,9 @@ void main() {
     await mouse.moveTo(rect.center);
     await tester.pumpAndSettle();
 
-    final Finder more = find.byTooltip('更多操作');
+    // tooltip「更多」与列表头「新建」分半钮副区同名 ⇒ 取最后一个（行按钮在
+    // 列表头之后）。
+    final Finder more = find.byTooltip('更多').last;
     expect(more, findsOneWidget, reason: 'hover 露出「···」');
 
     await tester.tap(more);
@@ -358,6 +360,35 @@ void main() {
               (c.decoration! as BoxDecoration).color != Colors.transparent,
         );
     expect(anyHoverBg, isTrue, reason: '菜单开着时行底色保持（不消失）');
+
+    // 「更多」按钮浮在行块右上角（外层 Stack/Positioned）⇒ **不撑高行高**
+    // （2026-11-20 用户问"撑高了行高没"：按钮若参与标题行布局会把行高撑到热区）。
+    final Rect titleRect = tester.getRect(find.text('甲'));
+    expect(titleRect.height, lessThan(22), reason: '标题行高不被「更多」按钮撑高（应 ≈18）');
+
+    // 2026-11-20 重定方案：按钮必须落在"标题上方留白区"——相对整个行块定位，
+    // 顶缘明显高过标题文字顶缘（原方案按钮在带 12px 内距的 Container 内的
+    // Stack 里，被推到与标题齐平甚至偏下，用户实报"位置偏下"）。
+    final Rect buttonRect = tester.getRect(more);
+    expect(
+      buttonRect.top,
+      lessThan(titleRect.top),
+      reason: '「更多」落在标题上方留白区（不偏下）',
+    );
+
+    // 按钮圆角与行背景同一档（2026-11-20）：IconButton 默认 CircleBorder，
+    // 不给 shape 就会在 10px 方角行块上贴一枚圆钮，读起来像外来贴纸。
+    // byTooltip 命中的是 IconButton 内的 RawTooltip ⇒ 往上找才是 IconButton。
+    final ButtonStyle moreStyle = tester.widget<IconButton>(
+      find.ancestor(of: more, matching: find.byType(IconButton)),
+    ).style!;
+    final OutlinedBorder? shape = moreStyle.shape?.resolve(<WidgetState>{});
+    expect(shape, isA<RoundedRectangleBorder>(), reason: '更多按钮不是默认圆形');
+    expect(
+      (shape! as RoundedRectangleBorder).borderRadius,
+      Bauhaus.radius,
+      reason: '「更多」圆角与行背景同一档（10px）',
+    );
   });
 
   testWidgets('列表按时间分组：今天 / 昨天组头，行内不再显示日期', (tester) async {

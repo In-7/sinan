@@ -334,7 +334,15 @@ void main() {
     final Rect undo = tester.getRect(find.byTooltip('撤销（Ctrl+Z）'));
     final double undoCenter = undo.center.dy;
     for (final String tip in <String>['新建', '搜索', '更多', '收起列表']) {
-      final Rect r = tester.getRect(find.byTooltip(tip));
+      // 「更多」与列表行「···」按钮同 tooltip（2026-11-20 用户定）⇒ 限定在新建
+      // 分半钮内，免得撞行按钮。
+      final Finder f = tip == '更多'
+          ? find.descendant(
+              of: find.byType(AppSplitIconButton),
+              matching: find.byTooltip(tip),
+            )
+          : find.byTooltip(tip);
+      final Rect r = tester.getRect(f);
       expect(
         r.height,
         Tokens.headerActionSize,
@@ -357,7 +365,12 @@ void main() {
     final Rect collapse = tester.getRect(find.byTooltip('收起列表'));
     final Rect search = tester.getRect(find.byTooltip('搜索'));
     final Rect create = tester.getRect(find.byTooltip('新建'));
-    final Rect createArrow = tester.getRect(find.byTooltip('更多'));
+    final Rect createArrow = tester.getRect(
+      find.descendant(
+        of: find.byType(AppSplitIconButton),
+        matching: find.byTooltip('更多'),
+      ),
+    );
     final Rect filter = tester.getRect(find.byTooltip('筛选与排序'));
     final Rect column = tester.getRect(find.byType(NoteListColumn));
     final Rect label = tester.getRect(
@@ -516,7 +529,12 @@ void main() {
     );
 
     final Rect left = tester.getRect(find.byTooltip('新建'));
-    final Rect right = tester.getRect(find.byTooltip('更多'));
+    final Rect right = tester.getRect(
+      find.descendant(
+        of: find.byType(AppSplitIconButton),
+        matching: find.byTooltip('更多'),
+      ),
+    );
     final TestGesture gesture = await tester.createGesture(
       kind: PointerDeviceKind.mouse,
     );
@@ -549,7 +567,12 @@ void main() {
     // 先确认托盘是**收起**的（菜单项不在树上）。
     expect(find.text('导入 Markdown…'), findsNothing);
 
-    await tester.tap(find.byTooltip('更多'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(AppSplitIconButton),
+        matching: find.byTooltip('更多'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // ⚠️ 返工闸门：`MenuAnchor` 不会自动响应点击 ⇒ 箭头必须自己 open。
