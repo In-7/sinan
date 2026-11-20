@@ -1,8 +1,11 @@
 import 'dart:async';
+
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
+
 import 'dart:io';
 
-import 'package:flutter/services.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../notes/services/note_media_service.dart';
 import '../theme/app_float_surface.dart';
@@ -17,6 +20,7 @@ import 'canvas_insert_panel.dart';
 import 'canvas_shape_panel.dart';
 import 'kernel/canvas_bundle.dart';
 import 'kernel/canvas_controller.dart';
+import 'kernel/canvas_item.dart';
 import 'kernel/canvas_export.dart';
 import 'kernel/canvas_media.dart';
 import 'kernel/canvas_view.dart';
@@ -369,15 +373,47 @@ class _CanvasToolbar extends StatelessWidget {
                 // 功能对齐 tldraw"重新挂回。
                 toolButton(
                   CanvasTool.select,
-                  const tabler.Mouse(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  const tabler.Mouse(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   '选择 / 框选',
                 ),
-                toolButton(CanvasTool.pan, const tabler.HandStop(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '抓手（空格）'),
-                toolButton(CanvasTool.pen, const tabler.Edit(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '画笔'),
-                toolButton(CanvasTool.eraser, const tabler.Eraser(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5), '橡皮'),
+                toolButton(
+                  CanvasTool.pan,
+                  const tabler.HandStop(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
+                  '抓手（空格）',
+                ),
+                toolButton(
+                  CanvasTool.pen,
+                  const tabler.Edit(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
+                  '画笔',
+                ),
+                toolButton(
+                  CanvasTool.eraser,
+                  const tabler.Eraser(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
+                  '橡皮',
+                ),
                 toolButton(
                   CanvasTool.connect,
-                  const tabler.Hierarchy(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  const tabler.Hierarchy(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   '连线（从一个卡片拖到另一个）',
                 ),
                 // 笔刷设置（颜色 / 笔迹粗细 / 橡皮大小）：画笔 / 橡皮工具
@@ -401,7 +437,11 @@ class _CanvasToolbar extends StatelessWidget {
                 // 在不定高的 Wrap 里会直接报无限高度。
                 const SizedBox(height: 24, child: VerticalDivider(width: 24)),
                 FocusRingIconButton(
-                  icon: const tabler.ZoomOut(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.ZoomOut(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '缩小',
                   onPressed: () => controller.zoomBy(1 / 1.25),
                 ),
@@ -416,27 +456,47 @@ class _CanvasToolbar extends StatelessWidget {
                   textStyle: Theme.of(context).textTheme.labelMedium,
                 ),
                 FocusRingIconButton(
-                  icon: const tabler.ZoomIn(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.ZoomIn(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '放大',
                   onPressed: () => controller.zoomBy(1.25),
                 ),
                 FocusRingIconButton(
-                  icon: const tabler.ArrowsMaximize(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.ArrowsMaximize(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '适应内容',
                   onPressed: controller.fitToContent,
                 ),
                 FocusRingIconButton(
-                  icon: const tabler.Photo(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.Photo(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '导出 PNG',
                   onPressed: onExport,
                 ),
                 FocusRingIconButton(
-                  icon: const tabler.Package(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.Package(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '导出画布文件（.canvas.json，含图片）',
                   onPressed: onExportBundle,
                 ),
                 FocusRingIconButton(
-                  icon: const tabler.Download(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                  icon: const tabler.Download(
+                    height: Tokens.iconMd,
+                    width: Tokens.iconMd,
+                    strokeWidth: 1.5,
+                  ),
                   tooltip: '导入画布文件（.canvas.json，替换当前画布）',
                   onPressed: onImport,
                 ),
@@ -545,6 +605,36 @@ class _SendCardToDocumentButton extends StatelessWidget {
   }
 }
 
+/// 「收藏」按钮（2026-11-20 用户定）：只在选中**单张**卡片时出现——切换收藏
+/// （`CardItem.promotedAt` + 浮顶）。已收藏实心星、未收藏空心星。
+class _FavoriteCardButton extends StatelessWidget {
+  const _FavoriteCardButton({required this.controller});
+
+  final CanvasController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final CardItem? card = controller.selectedCard;
+    if (card == null) return const SizedBox.shrink();
+    final bool promoted = card.promotedAt != null;
+    return IconButton(
+      onPressed: controller.toggleFavoriteSelectedCard,
+      tooltip: promoted ? '取消收藏' : '收藏',
+      icon: promoted
+          ? const tabler.StarFilled(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              strokeWidth: 1.5,
+            )
+          : const tabler.Star(
+              height: Tokens.iconMd,
+              width: Tokens.iconMd,
+              strokeWidth: 1.5,
+            ),
+    );
+  }
+}
+
 /// 选中物体的**上下文动作条**（tldraw / Figma 形态）。
 ///
 /// 当选区非空（[CanvasController.selectionBounds] 非 null）时，浮在选区世界包围盒
@@ -617,10 +707,17 @@ class _CanvasContextBar extends StatelessWidget {
                     controller: controller,
                     onSendCardToDocument: onSendCardToDocument,
                   ),
+                  // 收藏（2026-11-20 用户定）：只在选中**单张**卡片时出现——切换
+                  // 收藏（promotedAt + 浮顶）。已收藏实心星、未收藏空心星。
+                  _FavoriteCardButton(controller: controller),
                   // 分隔线（显式高度，理由同 [_CanvasToolbar]）。
                   const SizedBox(height: 24, child: VerticalDivider(width: 24)),
                   IconButton(
-                    icon: const tabler.Trash(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                    icon: const tabler.Trash(
+                      height: Tokens.iconMd,
+                      width: Tokens.iconMd,
+                      strokeWidth: 1.5,
+                    ),
                     tooltip: '删除所选（Delete）',
                     onPressed: controller.deleteSelection,
                   ),
@@ -706,12 +803,20 @@ class _CanvasHistoryBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               IconButton(
-                icon: const tabler.ArrowBackUp(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                icon: const tabler.ArrowBackUp(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                ),
                 tooltip: '撤销（Ctrl+Z）',
                 onPressed: controller.document.canUndo ? controller.undo : null,
               ),
               IconButton(
-                icon: const tabler.ArrowForwardUp(height: Tokens.iconMd, width: Tokens.iconMd, strokeWidth: 1.5),
+                icon: const tabler.ArrowForwardUp(
+                  height: Tokens.iconMd,
+                  width: Tokens.iconMd,
+                  strokeWidth: 1.5,
+                ),
                 tooltip: '重做（Ctrl+Shift+Z）',
                 onPressed: controller.document.canRedo ? controller.redo : null,
               ),

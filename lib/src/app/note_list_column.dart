@@ -410,6 +410,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                           .read(locateProvider.notifier)
                           .locate(noteId: n.id),
                       onDelete: () => _trash(context, ref, n),
+                      onToggleFavorite: () =>
+                          ref.read(notesProvider.notifier).togglePromoted(n),
                       // ↑/↓：读当前顺序 + 选中，算上/下一篇，走 [LocateNotifier.preview]
                       // （静默选中、**不入历史**，不刷爆前进/后退栈）。选中行自己在
                       // didUpdateWidget 里滚入视野 + 接管焦点（焦点锚跟着选中走）。
@@ -885,6 +887,7 @@ class _NoteRow extends StatefulWidget {
     required this.onOpen,
     required this.onNavigate,
     required this.onDelete,
+    required this.onToggleFavorite,
     this.anchorKey,
   });
 
@@ -908,6 +911,10 @@ class _NoteRow extends StatefulWidget {
 
   /// 行内「删除」（软删进全局回收站）。
   final VoidCallback onDelete;
+
+  /// 收藏 / 取消收藏（`Note.promotedAt` 非空 = 已收藏；收藏项在列表置顶，
+  /// 见 `NoteStore.allNotes` 的 ORDER BY）。
+  final VoidCallback onToggleFavorite;
 
   @override
   State<_NoteRow> createState() => _NoteRowState();
@@ -981,6 +988,7 @@ class _NoteRowState extends State<_NoteRow> {
   /// 危险项用 `scheme.error`。
   Future<void> _openMenu(Offset position) async {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool promoted = widget.note.promotedAt != null;
     await showMenu<void>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -990,6 +998,29 @@ class _NoteRowState extends State<_NoteRow> {
         position.dy,
       ),
       items: <PopupMenuEntry<void>>[
+        // 收藏 / 取消收藏（2026-11-20 用户定）：与移动端 `NoteListView._openMenu`
+        // 同款（收藏 / 删除）。收藏项列表置顶（promoted_at，见 NoteStore.allNotes）。
+        PopupMenuItem<void>(
+          onTap: widget.onToggleFavorite,
+          child: Row(
+            children: <Widget>[
+              if (promoted)
+                const tabler.StarFilled(
+                  height: Tokens.iconSm,
+                  width: Tokens.iconSm,
+                  strokeWidth: Tokens.iconStroke,
+                )
+              else
+                const tabler.Star(
+                  height: Tokens.iconSm,
+                  width: Tokens.iconSm,
+                  strokeWidth: Tokens.iconStroke,
+                ),
+              const SizedBox(width: Tokens.spaceSm),
+              Text(promoted ? '取消收藏' : '收藏'),
+            ],
+          ),
+        ),
         PopupMenuItem<void>(
           onTap: widget.onDelete,
           child: Row(
@@ -1007,6 +1038,18 @@ class _NoteRowState extends State<_NoteRow> {
         ),
       ],
     );
+  }
+
+  /// 「···」按钮的锚点（菜单贴在按钮下弹出）。
+  final GlobalKey _moreKey = GlobalKey();
+
+  /// 点「···」→ 在按钮处弹条目菜单（与右键同一 [_openMenu]）。
+  void _openMenuAtButton() {
+    final RenderBox? box =
+        _moreKey.currentContext?.findRenderObject() as RenderBox?;
+    final Offset pos =
+        box?.localToGlobal(box.size.bottomRight(Offset.zero)) ?? Offset.zero;
+    unawaited(_openMenu(pos));
   }
 
   @override
@@ -1150,9 +1193,38 @@ class _NoteRowState extends State<_NoteRow> {
                         ],
                       ),
                     ),
-                    // 行内**不再显示日期**（2026-10-21 方案 A）：时间由上方组头
-                    // （今天 / 昨天 / `12 月 31 日`）表达 ⇒ 每行右缘不再重复同一天，
-                    // 行 = 纯标题 + 摘要。删除同样已收进右键菜单。
+                    // 「···」按钮（2026-11-20 用户定）：hover 露出，点击弹条目菜单
+                    // （收藏 / 删除）。收藏入口收进菜单（不单列星标）；查看收藏走
+                    // 筛选的「只看收藏」。`maintainSize` 让 hover 显隐不推挤标题。
+                    Visibility(
+                      visible: _hover,
+                      maintainSize: true,
+                      maintainAnimation: true,
+                      maintainState: true,
+                      child: IconButton(
+                        key: _moreKey,
+                        // tooltip 不叫「更多」——那会撞列表头「新建」分半钮副区的
+                        // tooltip（`find.byTooltip('更多')`）。
+                        tooltip: '更多操作',
+                        iconSize: Tokens.iconXs,
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size.square(
+                            Tokens.headerActionSize,
+                          ),
+                          maximumSize: const Size.square(
+                            Tokens.headerActionSize,
+                          ),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const tabler.Dots(
+                          height: Tokens.iconXs,
+                          width: Tokens.iconXs,
+                          strokeWidth: Tokens.iconStroke,
+                        ),
+                        onPressed: _openMenuAtButton,
+                      ),
+                    ),
                   ],
                 ),
               ),

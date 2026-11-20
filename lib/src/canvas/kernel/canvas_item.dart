@@ -570,12 +570,17 @@ class CardItem extends CanvasItem {
     required this.blockId,
     this.text = '',
     this.colorSlot,
+    this.promotedAt,
     super.meta,
     super.groupId,
   });
 
   /// 卡片内容所在的 `blocks.id`（内容的真身在那一行，见类文档）。
   final String blockId;
+
+  /// 收藏时间（2026-11-20 用户定）：`null` = 未收藏。与 `Note.promotedAt` 同语义
+  /// （同时充当"是否收藏"与"收藏时间"）。收藏卡片在画布浮顶（z 序提到最上）。
+  DateTime? promotedAt;
 
   /// 卡片文本（运行时副本）。**可变**：编辑时就地改。
   String text;
@@ -692,6 +697,9 @@ class CardItem extends CanvasItem {
     // ⚠️ 空槽位**不写**这个键：老存档里没有它，无条件写会让"行 ⇄ 原文"的深比较
     // 失配 ⇒ 所有老画布静默回退 JSON（同 `edges` 键的处理）。
     if (colorSlot != null) 'colorSlot': colorSlot!.name,
+    // 收藏时间（2026-11-20）：**只在收藏时写**这个键（同 colorSlot 的处理）
+    // ——老存档没有它，无条件写会让"行 ⇄ 原文"的深比较失配。
+    if (promotedAt != null) 'promotedAt': promotedAt!.millisecondsSinceEpoch,
     'groupId': ?groupId,
     'meta': meta,
   };
@@ -708,6 +716,9 @@ class CardItem extends CanvasItem {
         colorSlot: canvasColorSlotOf(j['colorSlot']),
         meta: (j['meta'] as Map?)?.cast<String, dynamic>() ?? const {},
         groupId: CanvasItem.groupIdOf(j),
+        promotedAt: j['promotedAt'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(j['promotedAt'] as int),
       );
 }
 

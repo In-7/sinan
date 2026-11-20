@@ -94,8 +94,8 @@ void main() {
 
     // 视图导航都要声明 button + selected（可读屏才知"可点"与"当前是哪个"）。
     // ⚠️ 已处理**不是**导航站（2026-10-18 用户定：低频功能，是灵感页表头那枚计数
-    // 弹出来的浮层，见 `showStreamLedger`）。2026-10-21 起四枚
-    //（灵感 / 笔记 / 画布 / 日历，见 [kHomeTabs]；「全部」「收藏」已撤出轨）。
+    // 弹出来的浮层，见 `showStreamLedger`）。2026-11-20 起四枚
+    //（灵感 / 笔记 / 画布 / 日历，见 [kHomeTabs]；「收藏」不加导航、走筛选）。
     final int navDeclared = find
         .descendant(
           of: find.byType(AppIconRail),
@@ -151,7 +151,7 @@ void main() {
       reason: 'Tab 一圈没有闭合：某处吞掉了 Tab，或焦点掉空（顺序断言会失去意义）',
     );
 
-    // 侧栏导航依次出现（2026-10-21 起四枚：灵感 | 笔记 | 画布 | 日历）。
+    // 侧栏导航依次出现（2026-11-20 起四枚：灵感 | 笔记 | 画布 | 日历）。
     final int flow = at('灵感');
     final int notes = at('笔记');
     final int canvas = at('画布');

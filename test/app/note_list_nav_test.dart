@@ -232,6 +232,119 @@ void main() {
     expect(find.text('删除'), findsOneWidget, reason: '右键菜单提供删除');
   });
 
+  testWidgets('右键菜单「收藏」：切换收藏（promotedAt）', (tester) async {
+    // 2026-11-20 用户定：笔记收藏（Note.promotedAt）已有数据层，补主列表 UI 入口
+    // （右键菜单「收藏/取消收藏」）。收藏项列表置顶（NoteStore.allNotes 的 ORDER BY）。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    store.create(title: '普通笔记');
+    store.create(title: '要收藏的');
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder target = find.text('要收藏的');
+    expect(target, findsOneWidget);
+
+    // 右键 ⇒ 菜单有「收藏」。
+    await tester.tap(target, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('收藏'), findsOneWidget, reason: '右键菜单提供收藏');
+
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+
+    // 再右键 ⇒ 「取消收藏」（已收藏）。
+    await tester.tap(target, buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(find.text('取消收藏'), findsOneWidget, reason: '收藏后菜单变取消收藏');
+  });
+
+  testWidgets('hover「···」→ 弹条目菜单（收藏 / 删除）', (tester) async {
+    // 2026-11-20 用户定：列表内收藏入口 = hover「···」按钮 → 弹条目菜单（含收藏）。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    store.create(title: '甲');
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.all);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Rect rect = tester.getRect(find.text('甲'));
+
+    // hover ⇒「···」按钮出现（maintainSize 不推挤标题）。
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(rect.center);
+    await tester.pumpAndSettle();
+
+    final Finder more = find.byTooltip('更多操作');
+    expect(more, findsOneWidget, reason: 'hover 露出「···」');
+
+    await tester.tap(more);
+    await tester.pumpAndSettle();
+    expect(find.text('收藏'), findsOneWidget, reason: '「···」弹菜单含收藏');
+    expect(find.text('删除'), findsOneWidget, reason: '含删除');
+  });
+
   testWidgets('列表按时间分组：今天 / 昨天组头，行内不再显示日期', (tester) async {
     // 2026-10-21 方案 A：组头替行内日期说话（行内"2 天前"整列取消）。
     final TestFlutterView view = tester.view;

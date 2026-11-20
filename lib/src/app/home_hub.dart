@@ -111,12 +111,13 @@ extension HomeViewIcon on HomeView {
 /// 📌 2026-10-21 用户定，两步走：
 /// 1. 笔记 / 画布**升为独立视图**（推翻 2026-10-05 决策 E 的"只做筛选"）：与
 ///    原来的「全部」同布局（主从 + 240 列表列），只是池子按类型收；
-/// 2. 同日再定：**「全部」「收藏」撤出图标轨**——笔记 + 画布已覆盖「全部」的
-///    内容，轨上不再堆冗余目的地。
+/// 2. 同日再定：**「全部」撤出图标轨**——笔记 + 画布已覆盖「全部」的内容，
+///    轨上不再堆冗余目的地。
 ///
 /// ⚠️ 两枚枚举值本身**保留**：`HomeView.all` 仍是「从编辑器 / 画布页返回主页」
-/// 的落点（`search_palette` 的兜底 + 搜索结果空态文案在用）；「收藏」页暂留
-/// 代码（[Note.promotedAt] 语义未变），但**当前没有 UI 入口**。
+/// 的落点（`search_palette` 的兜底 + 搜索结果空态文案在用）；`HomeView.favorites`
+/// 代码健在（[Note.promotedAt] 语义未变），但**不加 UI 导航**（2026-11-20 用户定：
+/// 收藏入口只在各自列表内——笔记列表 / 画布卡片；查看收藏走筛选的「只看收藏」）。
 const List<HomeView> kHomeTabs = <HomeView>[
   HomeView.timeline,
   HomeView.notes,
@@ -259,6 +260,19 @@ typedef HomeItemsArgs = ({HomeView view, String? tag});
 /// List 实例**，不再每次 O(n log n) 全量重排。family 参数用 record，
 /// 结构相等自动复用；autoDispose 让每个条目随最后一个监听者释放。
 ///
+/// 「只看收藏」筛选开关（2026-11-20 用户定）：查看收藏的入口**不加导航**，
+/// 走筛选的这个 toggle（叠加在当前视图上，只列收藏项）。
+final favoriteOnlyProvider = NotifierProvider<FavoriteOnlyNotifier, bool>(
+  FavoriteOnlyNotifier.new,
+);
+
+class FavoriteOnlyNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void toggle() => state = !state;
+}
+
 /// 收藏视图不读全局排序，坚持"最近收藏在前"（收藏视图自身的语义）。
 final homeItemsProvider = Provider.autoDispose
     .family<List<Note>, HomeItemsArgs>((Ref ref, HomeItemsArgs args) {
@@ -285,11 +299,15 @@ final homeItemsProvider = Provider.autoDispose
         ]..sort((Note a, Note b) => b.promotedAt!.compareTo(a.promotedAt!)),
         HomeView.calendar => const <Note>[],
       };
+      // 「只看收藏」筛选（2026-11-20）：叠加在当前视图上，只列收藏项。
+      final List<Note> fav = ref.watch(favoriteOnlyProvider)
+          ? scope.where((Note n) => n.promotedAt != null).toList()
+          : scope;
       // 标签筛选是顶栏全局控件 ⇒ 对当前视图生效；未选标签时原样返回。
       // 有搜索词时不走这里（搜索态由 _SearchResultsView 跨形态渲染）。
       return args.tag == null
-          ? scope
-          : scope.where((Note n) => n.tags.contains(args.tag)).toList();
+          ? fav
+          : fav.where((Note n) => n.tags.contains(args.tag)).toList();
     });
 
 /// 超过该体积的画布 content 才把解析丢到后台 Isolate（[compute]）。
@@ -1167,6 +1185,26 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
       position: position,
       // 2026-11-09：形态段已撤——笔记 / 画布本身已是独立视图，再筛一遍重复。
       items: <PopupMenuEntry<void>>[
+        // 「只看收藏」（2026-11-20 用户定）：查看收藏的入口**不加导航**，走筛选
+        // 的这个 toggle（置顶/第一个）。叠加在当前视图上，只列收藏项。
+        _menuHeader('收藏'),
+        PopupMenuItem<void>(
+          onTap: () => ref.read(favoriteOnlyProvider.notifier).toggle(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text('只看收藏'),
+              if (ref.read(favoriteOnlyProvider)) ...<Widget>[
+                const SizedBox(width: Tokens.spaceSm),
+                const tabler.Check(
+                  height: Tokens.iconMdSm,
+                  width: Tokens.iconMdSm,
+                  strokeWidth: Tokens.iconStroke,
+                ),
+              ],
+            ],
+          ),
+        ),
         _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
           PopupMenuItem<void>(

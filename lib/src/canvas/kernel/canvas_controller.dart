@@ -178,6 +178,23 @@ class CanvasController extends ChangeNotifier {
     return card.blockId;
   }
 
+  /// 收藏 / 取消收藏选中的卡片（2026-11-20 用户定）：翻 `promotedAt`
+  /// （同 `Note.promotedAt` 语义——同时充当"是否收藏"与"收藏时间"）。
+  ///
+  /// 只做内存侧（见类注释的 DB 隔离），持久化由上层防抖保存。收藏卡片在画布
+  /// **浮顶**（移到 z 序末尾 = 最后画 = 最上层）。
+  void toggleFavoriteSelectedCard() {
+    final CardItem? card = selectedCard;
+    if (card == null) return;
+    card.promotedAt = card.promotedAt == null ? DateTime.now() : null;
+    // 浮顶：收藏卡片移到 z 序末尾（最后画 = 最上层）；取消收藏不动 z 序。
+    if (card.promotedAt != null) {
+      document.removeItems(<CanvasItem>[card]);
+      document.addItem(card);
+    }
+    notifyListeners();
+  }
+
   /// 当前选区的世界包围盒（进行中的框选 + 已选中的 item / 笔迹），无选区返回 null。
   /// UI 的"生成"按钮据此定位并判断是否有有效选区。
   Rect? get selectionBounds {

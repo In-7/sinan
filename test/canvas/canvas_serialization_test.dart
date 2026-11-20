@@ -10,13 +10,14 @@ import 'package:sinan/src/canvas/kernel/ink_stroke.dart';
 
 void main() {
   test('InkStroke 序列化往返：id/样式/轮廓一致', () {
-    final InkStroke stroke = InkStroke(
-      color: const Color(0xFF123456),
-      baseWidth: 3,
-      simulatePressure: false,
-    )
-      ..add(const InkPoint(Offset(0, 0), 0.5))
-      ..add(const InkPoint(Offset(10, 10), 0.8));
+    final InkStroke stroke =
+        InkStroke(
+            color: const Color(0xFF123456),
+            baseWidth: 3,
+            simulatePressure: false,
+          )
+          ..add(const InkPoint(Offset(0, 0), 0.5))
+          ..add(const InkPoint(Offset(10, 10), 0.8));
 
     final InkStroke restored = InkStroke.fromJson(stroke.toJson());
 
@@ -34,21 +35,23 @@ void main() {
 
   test('CanvasDocument 序列化往返：含 shape + image', () {
     final CanvasDocument doc = CanvasDocument();
-    doc.addStroke(InkStroke(color: const Color(0xFF000000), baseWidth: 2)
-      ..add(const InkPoint(Offset(1, 1), 0.5)));
-    doc.addItem(ShapeItem(
-      rect: const Rect.fromLTWH(0, 0, 10, 20),
-      kind: CanvasShapeKind.ellipse,
-      color: const Color(0xFF00FF00),
-      filled: true,
-    ));
-    doc.addItem(ImageItem(
-      rect: const Rect.fromLTWH(5, 5, 30, 40),
-      src: '/tmp/x.png',
-    ));
+    doc.addStroke(
+      InkStroke(color: const Color(0xFF000000), baseWidth: 2)
+        ..add(const InkPoint(Offset(1, 1), 0.5)),
+    );
+    doc.addItem(
+      ShapeItem(
+        rect: const Rect.fromLTWH(0, 0, 10, 20),
+        kind: CanvasShapeKind.ellipse,
+        color: const Color(0xFF00FF00),
+        filled: true,
+      ),
+    );
+    doc.addItem(
+      ImageItem(rect: const Rect.fromLTWH(5, 5, 30, 40), src: '/tmp/x.png'),
+    );
 
-    final CanvasDocument restored =
-        CanvasDocument.fromJson(doc.toJson());
+    final CanvasDocument restored = CanvasDocument.fromJson(doc.toJson());
 
     expect(restored.strokes.length, 1);
     expect(restored.items.length, 2);
@@ -74,8 +77,9 @@ void main() {
         ..add(const InkPoint(Offset(1, 1), 0.5)),
     );
 
-    final CanvasController restored =
-        CanvasController.fromJson(controller.toJson());
+    final CanvasController restored = CanvasController.fromJson(
+      controller.toJson(),
+    );
 
     expect(restored.camera.scale, controller.camera.scale);
     expect(restored.document.strokes.length, 1);
@@ -91,5 +95,32 @@ void main() {
     // 加载失败应静默（占位框保留），不抛异常。
     unawaited(img.load(onLoaded: () {}));
     img.dispose();
+  });
+
+  test('CardItem 收藏（promotedAt）序列化往返 + 非空才写', () {
+    // 2026-11-20 用户定：画布卡片收藏（同 Note.promotedAt 语义）。未收藏时**不写**
+    // 这个键（同 colorSlot，避免老存档"行 ⇄ 原文"深比较失配）。
+    final CardItem plain = CardItem(
+      rect: const Rect.fromLTWH(0, 0, 10, 10),
+      blockId: 'b1',
+      text: '未收藏',
+    );
+    expect(
+      plain.toJson().containsKey('promotedAt'),
+      isFalse,
+      reason: '未收藏不写键（同 colorSlot 的处理）',
+    );
+
+    final DateTime at = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+    final CardItem fav = CardItem(
+      rect: const Rect.fromLTWH(0, 0, 10, 10),
+      blockId: 'b2',
+      text: '已收藏',
+      promotedAt: at,
+    );
+    final Map<String, dynamic> j = fav.toJson();
+    expect(j['promotedAt'], at.millisecondsSinceEpoch, reason: '收藏写时间戳');
+    final CardItem restored = CardItem.fromJson(j);
+    expect(restored.promotedAt, at, reason: '往返一致');
   });
 }

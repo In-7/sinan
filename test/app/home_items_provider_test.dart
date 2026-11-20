@@ -106,6 +106,21 @@ void main() {
     expect(ids(HomeView.favorites), <String>['fav']);
   });
 
+  test('只看收藏（favoriteOnly）：叠加视图，只列收藏项', () {
+    // 2026-11-20 用户定：查看收藏的入口**不加导航**，走筛选的「只看收藏」toggle
+    // （叠加在当前视图上，只列收藏项）。
+    container.read(favoriteOnlyProvider.notifier).toggle();
+    expect(ids(HomeView.all), <String>['fav'], reason: '只看收藏 ⇒ 只列收藏项');
+    expect(ids(HomeView.notes), <String>['fav'], reason: '笔记视图 + 只看收藏');
+    container.read(favoriteOnlyProvider.notifier).toggle();
+    expect(ids(HomeView.all), <String>[
+      'n2',
+      'n1',
+      'cv1',
+      'fav',
+    ], reason: '关掉后恢复');
+  });
+
   test('记忆化：入参不变重复读是同一实例；排序变了才重算', () {
     const HomeItemsArgs args = (view: HomeView.all, tag: null);
 
