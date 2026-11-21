@@ -66,7 +66,13 @@ void main() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
 
-  final Finder importButton = find.byTooltip('导入画布文件（.canvas.json，替换当前画布）');
+  /// 导入入口已收进右下角「更多」菜单（2026-11-21）：先开菜单再点条目。
+  Future<void> openImport(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('导入画布文件（替换当前）'));
+    await tester.pumpAndSettle();
+  }
 
   /// 一份含两个形状的 `.canvas.json`（用"2 个 item"区分"导入成功"与"原本空画布"）。
   String bundleWithShapes() {
@@ -127,7 +133,7 @@ void main() {
     );
     expect(current(tester).document.items, isEmpty); // 前提：原本是空画布
 
-    await tester.tap(importButton);
+    await openImport(tester);
     await tester.pumpAndSettle();
     expect(
       find.text('导入画布文件'),
@@ -167,7 +173,7 @@ void main() {
       },
     );
 
-    await tester.tap(importButton);
+    await openImport(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -185,7 +191,7 @@ void main() {
       pickBundleText: () async => '这不是画布文件',
     );
 
-    await tester.tap(importButton);
+    await openImport(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
@@ -207,7 +213,7 @@ void main() {
       pickBundleText: () async => null,
     );
 
-    await tester.tap(importButton);
+    await openImport(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();

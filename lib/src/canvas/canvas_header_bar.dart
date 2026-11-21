@@ -3,6 +3,7 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import '../editor/panels/backlink_panel.dart';
 import '../editor/panels/tags_panel.dart';
+import '../theme/app_float_surface.dart';
 import '../theme/header_action_button.dart';
 import '../theme/tokens.dart';
 import 'kernel/canvas_controller.dart';
@@ -21,6 +22,7 @@ class CanvasHeaderBar extends StatefulWidget {
     required this.controller,
     this.noteId,
     this.onOpenNote,
+    this.center,
   });
 
   final CanvasController controller;
@@ -30,6 +32,10 @@ class CanvasHeaderBar extends StatefulWidget {
 
   /// 反链点条目 → 打开来源笔记。
   final void Function(String noteId)? onOpenNote;
+
+  /// 中段内容（绘制工具组，见 [CanvasToolStrip]）。
+  /// 为空时这条带只剩左右两组。
+  final Widget? center;
 
   @override
   State<CanvasHeaderBar> createState() => CanvasHeaderBarState();
@@ -135,111 +141,145 @@ class CanvasHeaderBarState extends State<CanvasHeaderBar> {
   @override
   Widget build(BuildContext context) {
     final String? noteId = widget.noteId;
+    // 一条**连续浮岛**（2026-11-21 用户定案）：两端按钮位置/尺寸不变，
+    // 中段塞绘制工具，段间用分隔线区分语义——文档级 │ 绘制 │ 文档信息。
+    // 浮岛底顺手解决"透明按钮在画布网格上糊"的问题。
     return Padding(
+      // 上留白交给浮岛内部的 vertical 4：带子贴画布顶，两端的 28 按钮落在
+      // y=6（原 4，差 2px 不可察），与中间 32 工具共用同一条中心线。
       padding: const EdgeInsets.only(
-        top: kHeaderActionTopPadding,
         left: Tokens.spaceMd,
         right: Tokens.spaceMd,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // 左：撤销 / 重做（**永远显示**——文档级、无选区也要能用）。
-          ListenableBuilder(
-            listenable: widget.controller,
-            builder: (BuildContext context, Widget? _) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                HeaderHistoryButton(
-                  itemKey: 'canvas.undo',
-                  icon: const tabler.ArrowBackUp(
-                    height: Tokens.iconSm,
-                    width: Tokens.iconSm,
-                    strokeWidth: Tokens.iconStroke,
+      child: AppFloatSurface(
+        // 水平 0 / 垂直 4：让两端的 28 按钮仍落在原来的 left:12 上（位置不变）。
+        padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXs),
+        // 40 高（4+32+4）⇒ 圆角取半高，与内部 32 工具的方角形成"胶囊里嵌方件"。
+        borderRadius: BorderRadius.circular(
+          (Tokens.toolbarButtonSize + Tokens.spaceXs * 2) / 2,
+        ),
+        child: Row(
+          children: <Widget>[
+            // 左：撤销 / 重做（**永远显示**——文档级、无选区也要能用）。
+            ListenableBuilder(
+              listenable: widget.controller,
+              builder: (BuildContext context, Widget? _) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  HeaderHistoryButton(
+                    itemKey: 'canvas.undo',
+                    icon: const tabler.ArrowBackUp(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    tooltip: '撤销（Ctrl+Z）',
+                    enabled: widget.controller.document.canUndo,
+                    onPressed: widget.controller.undo,
                   ),
-                  tooltip: '撤销（Ctrl+Z）',
-                  enabled: widget.controller.document.canUndo,
-                  onPressed: widget.controller.undo,
-                ),
-                const SizedBox(width: Tokens.spaceXs),
-                HeaderHistoryButton(
-                  itemKey: 'canvas.redo',
-                  icon: const tabler.ArrowForwardUp(
-                    height: Tokens.iconSm,
-                    width: Tokens.iconSm,
-                    strokeWidth: Tokens.iconStroke,
+                  const SizedBox(width: Tokens.spaceXs),
+                  HeaderHistoryButton(
+                    itemKey: 'canvas.redo',
+                    icon: const tabler.ArrowForwardUp(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    tooltip: '重做（Ctrl+Shift+Z）',
+                    enabled: widget.controller.document.canRedo,
+                    onPressed: widget.controller.redo,
                   ),
-                  tooltip: '重做（Ctrl+Shift+Z）',
-                  enabled: widget.controller.document.canRedo,
-                  onPressed: widget.controller.redo,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Spacer(),
-          if (noteId != null) ...<Widget>[
-            // 搜索：在本画布里找卡片文字，点结果直接带过去。
-            OverlayPortal.overlayChildLayoutBuilder(
-              controller: _findController,
-              overlayChildBuilder: _findPopover,
-              child: TapRegion(
-                groupId: _findTapGroupId,
-                child: HeaderActionButton(
-                  key: _findButtonKey,
-                  itemKey: 'canvas.ear.find',
-                  icon: const tabler.ListSearch(
-                    height: Tokens.iconSm,
-                    width: Tokens.iconSm,
-                    strokeWidth: Tokens.iconStroke,
-                  ),
-                  tooltip: '搜索画布（Ctrl+F）',
-                  active: _findVisible,
-                  onPressed: _toggleFind,
+            // 分隔：文档级动作 │ 绘制工具。
+            const SizedBox(
+              height: 20,
+              child: VerticalDivider(width: Tokens.spaceSm),
+            ),
+            // 中段：能居中就居中；窄到放不下时**横向滚动**而不是溢出裁切
+            // （2026-11-21：顶部带换行会把 40 撑成 80、压掉画布一条，所以
+            // 这里不能再用 Wrap）。
+            Expanded(
+              // `heightFactor: 1` 让这层只吃内容高度（裸 `Center` 会把
+              // 高度撑满整块画布 ⇒ 整条带变高、按钮跑到屏幕中间）。
+              child: Align(
+                heightFactor: 1,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: widget.center,
                 ),
               ),
             ),
-            const SizedBox(width: Tokens.spaceXs),
-            OverlayPortal.overlayChildLayoutBuilder(
-              controller: _backlinkController,
-              overlayChildBuilder: _backlinkPopover,
-              child: TapRegion(
-                groupId: _backlinkTapGroupId,
-                child: HeaderActionButton(
-                  key: _backlinkButtonKey,
-                  itemKey: 'canvas.ear.backlink',
-                  icon: const tabler.ArrowsSort(
-                    height: Tokens.iconSm,
-                    width: Tokens.iconSm,
-                    strokeWidth: Tokens.iconStroke,
+            if (noteId != null) ...[
+              // 分隔：绘制工具 │ 文档信息。
+              const SizedBox(
+                height: 20,
+                child: VerticalDivider(width: Tokens.spaceSm),
+              ),
+              // 搜索：在本画布里找卡片文字，点结果直接带过去。
+              OverlayPortal.overlayChildLayoutBuilder(
+                controller: _findController,
+                overlayChildBuilder: _findPopover,
+                child: TapRegion(
+                  groupId: _findTapGroupId,
+                  child: HeaderActionButton(
+                    key: _findButtonKey,
+                    itemKey: 'canvas.ear.find',
+                    icon: const tabler.ListSearch(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    tooltip: '搜索画布（Ctrl+F）',
+                    active: _findVisible,
+                    onPressed: _toggleFind,
                   ),
-                  tooltip: '反链（谁引用了我）',
-                  active: _backlinkVisible,
-                  onPressed: _toggleBacklink,
                 ),
               ),
-            ),
-            const SizedBox(width: Tokens.spaceXs),
-            OverlayPortal.overlayChildLayoutBuilder(
-              controller: _tagsController,
-              overlayChildBuilder: _tagsPopover,
-              child: TapRegion(
-                groupId: _tagsTapGroupId,
-                child: HeaderActionButton(
-                  key: _tagsButtonKey,
-                  itemKey: 'canvas.ear.tags',
-                  icon: const tabler.Tag(
-                    height: Tokens.iconSm,
-                    width: Tokens.iconSm,
-                    strokeWidth: Tokens.iconStroke,
+              const SizedBox(width: Tokens.spaceXs),
+              OverlayPortal.overlayChildLayoutBuilder(
+                controller: _backlinkController,
+                overlayChildBuilder: _backlinkPopover,
+                child: TapRegion(
+                  groupId: _backlinkTapGroupId,
+                  child: HeaderActionButton(
+                    key: _backlinkButtonKey,
+                    itemKey: 'canvas.ear.backlink',
+                    icon: const tabler.ArrowsSort(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    tooltip: '反链（谁引用了我）',
+                    active: _backlinkVisible,
+                    onPressed: _toggleBacklink,
                   ),
-                  tooltip: '标签',
-                  active: _tagsVisible,
-                  onPressed: _toggleTags,
                 ),
               ),
-            ),
+              const SizedBox(width: Tokens.spaceXs),
+              OverlayPortal.overlayChildLayoutBuilder(
+                controller: _tagsController,
+                overlayChildBuilder: _tagsPopover,
+                child: TapRegion(
+                  groupId: _tagsTapGroupId,
+                  child: HeaderActionButton(
+                    key: _tagsButtonKey,
+                    itemKey: 'canvas.ear.tags',
+                    icon: const tabler.Tag(
+                      height: Tokens.iconSm,
+                      width: Tokens.iconSm,
+                      strokeWidth: Tokens.iconStroke,
+                    ),
+                    tooltip: '标签',
+                    active: _tagsVisible,
+                    onPressed: _toggleTags,
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -394,14 +434,15 @@ class _CanvasFindPanelState extends State<_CanvasFindPanel> {
                       ),
                     );
                   }
-                  final List<(CanvasItem, String)> hits = <(CanvasItem, String)>[
-                    for (final CanvasItem item
-                        in widget.controller.document.items)
-                      if (canvasItemText(item).toLowerCase().contains(
-                        q.toLowerCase(),
-                      ))
-                        (item, canvasItemText(item)),
-                  ];
+                  final List<(CanvasItem, String)> hits =
+                      <(CanvasItem, String)>[
+                        for (final CanvasItem item
+                            in widget.controller.document.items)
+                          if (canvasItemText(item)
+                              .toLowerCase()
+                              .contains(q.toLowerCase()))
+                            (item, canvasItemText(item)),
+                      ];
                   if (hits.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(

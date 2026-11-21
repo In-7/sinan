@@ -167,10 +167,12 @@ void main() {
     await teardown(tester, controller);
   });
 
-  testWidgets('窄窗口下工具条换行，按钮一个都不藏（实测反馈的"看不到了"）', (
+  testWidgets('窄窗口下顶部带不溢出：工具可横滚、按钮一个都不藏', (
     WidgetTester tester,
   ) async {
-    // 420 ≈ "最小窗口 720 + 侧栏 300"时画布区的宽度：按钮排不下是常态而非极端。
+    // 420 ≈ "最小窗口 720 + 侧栏 300"时画布区的宽度：排不下是常态而非极端。
+    // 2026-11-21 顶部带改为**单行不换行**（换行会把 40 撑成 80、压掉画布
+    // 一条）⇒ 排不下时中段横向滚动，而不是溢出裁切。
     tester.view.physicalSize = const Size(420, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -180,11 +182,13 @@ void main() {
     expect(
       tester.takeException(),
       isNull,
-      reason: '工具条溢出（RenderFlex overflow）：右端按钮会被裁掉，用户根本点不到',
+      reason: '顶部带溢出（RenderFlex overflow）：按钮会被裁掉，用户点不到',
     );
-    // 被裁掉的正是最右端这两个（导出画布文件 / 导入）——它们必须在树上。
-    expect(find.byTooltip('导出画布文件（.canvas.json，含图片）'), findsOneWidget);
-    expect(find.byTooltip('导入画布文件（.canvas.json，替换当前画布）'), findsOneWidget);
+    // 工具与两端按钮都仍在树上（滚动容器里也照常构建）。
+    expect(find.byTooltip('画笔'), findsOneWidget);
+    expect(find.byTooltip('缩小'), findsOneWidget);
+    // 文件级动作用「更多」承载，不再挤在条上。
+    expect(find.byTooltip('更多'), findsOneWidget);
 
     await teardown(tester, controller);
   });

@@ -97,12 +97,14 @@ void main() {
     await teardown(tester, controller);
   });
 
-  testWidgets('主条上 15 个可聚焦控件都接了环（别漏掉条上的按钮）', (WidgetTester tester) async {
+  testWidgets('顶部工具组 + 右下视图组的按钮都接了环（别漏掉条上的按钮）', (
+    WidgetTester tester,
+  ) async {
     final CanvasController controller = await pumpToolbar(tester);
 
-    // 工具 5（`FocusRingIconButton`）+ 缩放/适应 3 + 导出 2 + 导入 1；
-    // 三块浮层入口按钮（笔刷 / 插入 / AI，锚点也是 `FocusRingIconButton`）；
-    // 缩放徽标 1（`TextButton`，走 `_ZoomBadge` 自带节点那条路）。
+    // 顶部中段：工具 5 + 三块浮层入口（笔刷 / 插入 / AI，锚点也是
+    // `FocusRingIconButton`）；右下：缩放/适应 3 + 缩放徽标 1（`TextButton`）。
+    // 导出/导入已收进「更多」菜单（2026-11-21），菜单项不做焦点环球。
     const List<String> tooltips = <String>[
       '选择 / 框选',
       '抓手（空格）',
@@ -112,9 +114,6 @@ void main() {
       '缩小',
       '放大',
       '适应内容',
-      '导出 PNG',
-      '导出画布文件（.canvas.json，含图片）',
-      '导入画布文件（.canvas.json，替换当前画布）',
       '笔刷：颜色 / 粗细 / 橡皮',
       '插入形状（按住拖拽定尺寸）/ 图片',
       'AI：用一句话让模型调整画布',
