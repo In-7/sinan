@@ -371,11 +371,11 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                   ),
           ),
         ),
-        // 第二行 = **视图名 + 篇数 + 筛选**（筛选 2026-11-09 从工具行搬来，
-        // 2026-11-17 挪到**篇数右边**紧挨着——它整理的是"当前这个列表"，语义
-        // 挨着列表名与篇数；此前的行右端位置撤掉，"漏斗对齐＋中心"的光学约定
-        // 随之作废）。皮肤与日历小按钮同款（4px 圆角方件 + hairline、透明底、
-        // hover 才亮，见 [FilterMenuButton]）。
+        // 第二行 = **视图名 + 筛选**（筛选 2026-11-09 从工具行搬来；2026-11-21
+        // 撤掉篇数 chip——平时列表滚动自感知规模，搜索时搜索框右侧已有
+        // `N 条`，chip 与它重复显示同一个 `shown.length`。现在筛选紧挨视图名，
+        // 它整理的就是"当前这个列表"）。皮肤与日历小按钮同款（4px 圆角方件
+        // + hairline、透明底、hover 才亮，见 [FilterMenuButton]）。
         //
         // ⚠️ 行高由 [FilterMenuButton] 的热区 20 决定（不是 28）：文字 18 居中
         // 只下沉 1px，标题行不会被撑高（2026-11-17 用户定热区维持 20）。
@@ -397,11 +397,6 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                   color: Bauhaus.ink(b),
                 ),
               ),
-              const SizedBox(width: Tokens.spaceXs),
-              // 篇数 chip（2026-11-20 方案 B 芯片化）：与筛选钮同款材质
-              // （4px 圆角 + hairline + 透明底、高 20）⇒ 标题 / 篇数 / 筛选
-              // 三件像一个套件，不再"纯文字夹带框控件"。
-              _CountChip(count: shown.length),
               const SizedBox(width: Tokens.spaceXs),
               // 热区 20：本行行高由它决定，28 会把标题行撑高（见组件注释）。
               // space：筛选读写本空间那份数据（2026-11-20）。
@@ -534,36 +529,6 @@ String _viewLabel(HomeView v) => switch (v) {
 ///
 /// 读法沿用灵感页的日期组头（`stream_view._DayHeader`）：时间信息由组头承担，
 /// 行内不再重复（2026-10-21 用户定，方案 A）。
-/// 篇数 chip（2026-11-20 方案 B 芯片化）：与 [FilterMenuButton] 同款材质
-/// （4px 圆角 + hairline + 透明底、高 20）⇒ 标题 / 篇数 / 筛选三件像一个套件，
-/// 不再"纯文字夹带框控件"。不可点（纯展示），故无 hover / pressed 层。
-class _CountChip extends StatelessWidget {
-  const _CountChip({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Brightness b = theme.brightness;
-    return Container(
-      height: 20,
-      padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        border: Bauhaus.hairline(b),
-        borderRadius: BorderRadius.circular(Tokens.radiusXxs),
-      ),
-      child: Text(
-        // 纯数字（同原标题）：「N 条」会与搜索态的命中计数「N 条」撞文本。
-        '$count',
-        style: theme.textTheme.labelSmall?.copyWith(color: Bauhaus.inkMuted(b)),
-      ),
-    );
-  }
-}
-
 class _RowHeader extends StatelessWidget {
   const _RowHeader({super.key, required this.label, this.first = false});
 

@@ -297,6 +297,32 @@ void main() {
     expect(hasHit, isTrue, reason: '命中片段要用主色高亮');
   });
 
+  testWidgets('搜索时计数只显示一次（标题行 chip 已撤）', (tester) async {
+    // 2026-11-21：撤掉标题行篇数 chip 后，搜索框右侧的 `N 条` 是唯一计数来源。
+    await pumpList(tester); // 建「甲」「乙」两篇。
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(inList(find.byType(TextField)), '乙');
+    await tester.pumpAndSettle();
+
+    expect(
+      inList(find.text('1 条')),
+      findsOneWidget,
+      reason: '搜索命中数只在搜索框右侧显示一次',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(NoteListColumn),
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is Text && w.data == '1',
+        ),
+      ),
+      findsNothing,
+      reason: '标题行不再有独立的数字 chip',
+    );
+  });
+
   testWidgets('新建：点 + 直建当前页类型（笔记页建笔记）', (tester) async {
     final ProviderContainer container = await pumpList(tester);
     final int before = container.read(notesProvider).value!.length;
@@ -378,10 +404,10 @@ void main() {
     }
   });
 
-  testWidgets('列表头布局：第一行 搜索 → 新建；筛选在篇数右边', (tester) async {
-    // 2026-11-09 筛选从工具行搬进「视图名 + 篇数」行；2026-11-17 挪到
-    // **篇数右边紧挨着**（语义挨着列表名与篇数），不再贴行右端——
-    // 旧的"漏斗中心对齐＋中心"光学约定随位置一并撤。
+  testWidgets('列表头布局：第一行 搜索 → 新建；筛选紧挨视图名（无篇数）', (tester) async {
+    // 2026-11-21 撤掉篇数 chip：平时列表自感知规模、搜索时搜索框右侧已有
+    // `N 条`，标题行的 chip 与它重复同一个 shown.length。现在第二行只有
+    // 「视图名 + 筛选」，筛选紧挨视图名。
     await pumpList(tester);
 
     final Rect collapse = tester.getRect(find.byTooltip('收起列表'));
@@ -440,22 +466,21 @@ void main() {
       inInclusiveRange(25, 30),
       reason: '标题行不该被 28 高的筛选热区推下去（搬过来之前是 27）',
     );
-    // 2026-11-17：筛选紧贴**篇数**右边（间隔 spaceSm），不贴行右端。
-    final Rect count = tester.getRect(inList(find.text('2')));
+    // 2026-11-21：筛选紧挨视图名（间隔 spaceXs），无篇数 chip。
     expect(
-      (filter.center.dy - count.center.dy).abs(),
-      lessThan(2),
-      reason: '筛选与篇数同高、垂直居中',
+      filter.left - label.right,
+      closeTo(Tokens.spaceXs, 1),
+      reason: '筛选紧挨视图名（间隔 spaceXs）',
     );
     expect(
-      filter.left - count.right,
-      closeTo(Tokens.spaceSm, 1),
-      reason: '筛选紧贴篇数右边（间隔 spaceSm）',
+      inList(find.text('2')),
+      findsNothing,
+      reason: '标题行不再显示篇数 2（撤掉 chip）',
     );
     expect(
       filter.right,
       lessThan(column.right - 60),
-      reason: '筛选不再贴行右端（旧的「对齐＋中心」约定已撤）',
+      reason: '筛选不贴行右端',
     );
   });
 
