@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 
 import '../../app/providers.dart';
-import '../../app/search_provider.dart' show allTagsProvider;
+import '../../app/search_provider.dart' show tagsForSpaceProvider;
 import '../../domain/note.dart';
 import '../../theme/tokens.dart';
 
@@ -14,8 +14,11 @@ import '../../theme/tokens.dart';
 /// 宿主不用为此 watch 整个列表。写走 [NotesNotifier.saveTags]（整理元数据，
 /// 不动 revised_at），UI 传原始列表，归一化在 store 层。
 ///
-/// 结构三段：当前标签（可删）→ 输入框（回车即加）→ 全库标签池里的**建议**
-/// （排除已打的，点一下就加——省得重新打一遍已有的标签名）。
+/// 结构三段：当前标签（可删）→ 输入框（回车即加）→ **本空间**标签池里的
+/// 建议（排除已打的，点一下就加——省得重新打一遍已有的标签名）。
+///
+/// 2026-11-21：笔记与画布**共用这一个组件**，但数据各自——建议池按本笔记的
+/// [NoteKind] 走 [tagsForSpaceProvider]，画布面板不会冒出文档的标签。
 class TagsPanel extends ConsumerStatefulWidget {
   const TagsPanel({super.key, required this.noteId});
 
@@ -48,6 +51,14 @@ class _TagsPanelState extends ConsumerState<TagsPanel> {
       if (n.id == widget.noteId) return n.tags;
     }
     return const <String>[];
+  }
+
+  /// 本面板对应的笔记形态（决定建议池按哪个空间取；找不到时按笔记处理）。
+  NoteKind _selfKind(List<Note> notes) {
+    for (final Note n in notes) {
+      if (n.id == widget.noteId) return n.kind;
+    }
+    return NoteKind.note;
   }
 
   /// 当前标签（**回调里用**——`ref.watch` 不许出 build，读一份快照即可）。
@@ -88,10 +99,16 @@ class _TagsPanelState extends ConsumerState<TagsPanel> {
     final ColorScheme scheme = theme.colorScheme;
     final List<String> current = _currentWatch();
 
-    // 建议池：全库标签（按出现篇数倒序），排除已打的，最多给 12 个防撑爆。
+    // 建议池：**本空间**的标签（2026-11-21 用户定：组件 UI 共用、数据各自）。
+    // 笔记空间只建议 spark/note 用过的标签，画布空间只建议画布笔记自己的——
+    // 画布面板里不会再冒出文档那套标签。排除已打的，最多 12 个防撑爆。
+    final NoteKind kind = _selfKind(ref.watch(notesProvider).value ?? const <Note>[]);
+    final NoteSpace space = kind == NoteKind.canvas
+        ? NoteSpace.canvas
+        : NoteSpace.notes;
     final Set<String> have = current.toSet();
     final List<String> suggestions = <String>[
-      for (final (String tag, _) in ref.watch(allTagsProvider))
+      for (final (String tag, _) in ref.watch(tagsForSpaceProvider(space)))
         if (!have.contains(tag)) tag,
     ].take(12).toList();
 

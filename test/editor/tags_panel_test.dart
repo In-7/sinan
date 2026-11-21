@@ -69,4 +69,46 @@ void main() {
     // 落库验证（不只是 UI 画出来了）。
     expect(store.noteById(note.id)!.tags, <String>['工作法']);
   });
+
+  testWidgets('建议池按空间隔离：画布面板不建议文档的标签', (
+    WidgetTester tester,
+  ) async {
+    // 2026-11-21 用户定：组件 UI 共用、**数据各自**。画布标签面板的
+    // "现有标签"只该来自画布笔记，不能冒出文档那套。
+    final Database db = sqlite3.openInMemory();
+    addTearDown(db.close);
+    AppDatabase.migrateForTesting(db);
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [noteStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+
+    final NotesNotifier notifier = container.read(notesProvider.notifier);
+    final Note doc = await notifier.createNote();
+    await notifier.saveTags(doc.id, <String>['文档标签']);
+    final Note canvas = await notifier.createNote(kind: NoteKind.canvas);
+    await notifier.saveTags(canvas.id, <String>['画布标签']);
+    final Note canvas2 = await notifier.createNote(kind: NoteKind.canvas);
+    await notifier.saveTags(canvas2.id, <String>['画布标签乙']);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: TagsPanel(noteId: canvas.id),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('画布标签乙'), findsOneWidget, reason: '画布空间的标签要出现');
+    expect(
+      find.text('文档标签'),
+      findsNothing,
+      reason: '文档标签不能出现在画布面板的建议里',
+    );
+  });
 }
