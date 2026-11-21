@@ -366,15 +366,30 @@ void main() {
     final Rect titleRect = tester.getRect(find.text('甲'));
     expect(titleRect.height, lessThan(22), reason: '标题行高不被「更多」按钮撑高（应 ≈18）');
 
-    // 2026-11-20 重定方案：按钮必须落在"标题上方留白区"——相对整个行块定位，
-    // 顶缘明显高过标题文字顶缘（原方案按钮在带 12px 内距的 Container 内的
-    // Stack 里，被推到与标题齐平甚至偏下，用户实报"位置偏下"）。
+    // 2026-11-21 定案：24 热区 vs 18 标题行盒，大小不同 ⇒ 不是顶缘对齐而是
+    // **中心对齐**：按钮 top=4−(24−18)/2=1 ⇒ 两者中心都在 y=13，看着一条线。
     final Rect buttonRect = tester.getRect(more);
     expect(
-      buttonRect.top,
-      lessThan(titleRect.top),
-      reason: '「更多」落在标题上方留白区（不偏下）',
+      (buttonRect.center.dy - titleRect.center.dy).abs(),
+      lessThan(1),
+      reason: '「更多」热区中心与标题行盒中心对齐（差 <1px）',
     );
+    // 标题右侧常驻避让 17（right 收到 1 后：24+1−8）⇒ 长标题不会钻到按钮底下。
+    final Finder titleFinder = find.text('甲');
+    final Padding titlePad = tester.widget<Padding>(
+      find.ancestor(of: titleFinder, matching: find.byType(Padding)).first,
+    );
+    expect(
+      (titlePad.padding as EdgeInsets).right,
+      17,
+      reason: '标题右侧预留 17 给「更多」，ellipsis 在按钮左缘前',
+    );
+    // top / right 内缩一致（用户 2026-11-21 定）：都是 1。
+    final Positioned morePos = tester.widget<Positioned>(
+      find.ancestor(of: more, matching: find.byType(Positioned)),
+    );
+    expect(morePos.top, 1, reason: '按钮 top=1');
+    expect(morePos.right, 1, reason: '按钮 right=1，与 top 一致');
 
     // 按钮圆角与行背景同一档（2026-11-20）：IconButton 默认 CircleBorder，
     // 不给 shape 就会在 10px 方角行块上贴一枚圆钮，读起来像外来贴纸。
@@ -606,8 +621,9 @@ void main() {
     addTearDown(container.dispose);
     addTearDown(db.close);
 
-    // 24 篇 ⇒ 列表可滚（900 高下大约只放得下 13 行）。
-    for (int i = 0; i < 24; i++) {
+    // 40 篇 ⇒ 列表可滚（900 高下大约只放得下 16 行；2026-11-21 行高从 12+12
+    // 收到 4+4 后每行短 16px，24 篇恰好能放下 ⇒ 加到 40 保证中部可滚）。
+    for (int i = 0; i < 40; i++) {
       store.create(title: '笔记 $i');
     }
     container.read(navHistoryProvider.notifier).selectHome(HomeView.all);

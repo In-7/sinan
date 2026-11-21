@@ -1525,7 +1525,7 @@ class _NoteCardState extends State<_NoteCard> {
                 if (isCanvas) ...<Widget>[
                   // 画布卡：**上图下文**——缩略图吃余高，下方标题 + meta 行，
                   // 与笔记卡同尺寸、同标题/底行语言，只是中段从文字换成画面。
-                  Expanded(child: _CanvasThumbnail(noteId: n.id)),
+                  Expanded(child: CanvasThumbnailView(noteId: n.id)),
                   const SizedBox(height: Tokens.spaceSm),
                   _titleRow(
                     context,
@@ -1674,15 +1674,23 @@ class _NoteCardState extends State<_NoteCard> {
   }
 }
 
-/// 画布卡的**几何缩略图**：懒读 [canvasThumbnailProvider]，用内核现成的
+/// 画布的**几何鸟瞰图**：懒读 [canvasThumbnailProvider]，用内核现成的
 /// [ItemPainter] + 一台 fit 到内容包围盒的相机绘制（不画笔迹、不解码图片）。
 ///
 /// 三态：解析中 / 空画布 ⇒ 淡形状图标水印居中（卡片永远不留白成"坏卡"）；
 /// 有 item ⇒ 全量 item 几何 fit 绘制。
-class _CanvasThumbnail extends ConsumerWidget {
-  const _CanvasThumbnail({required this.noteId});
+///
+/// 两处共用（2026-11-21 提出为共享件）：
+/// - HomeHub 卡片墙：`height: null`，吃 `Expanded` 给的余高；
+/// - 列表列画布行：传固定高度（如 72），**首次布局即定高**——加载完成前后
+///   等高，虚拟列表不会因异步缩略图跳行。
+class CanvasThumbnailView extends ConsumerWidget {
+  const CanvasThumbnailView({super.key, required this.noteId, this.height});
 
   final String noteId;
+
+  /// 固定高度。null = 填满父约束（卡片墙 `Expanded` 场景）。
+  final double? height;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1708,36 +1716,40 @@ class _CanvasThumbnail extends ConsumerWidget {
       ),
     );
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppTheme.contentCanvas(theme.brightness),
-        borderRadius: previewRadius,
-      ),
-      child: ClipRRect(
-        borderRadius: previewRadius,
-        child: thumb == null
-            ? watermark
-            // 每帧按当前尺寸现造相机：缩略图不响应交互，没有相机状态要维护，
-            // fit 是纯算术，比监听 resize 存状态更省。
-            : LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final CanvasCamera camera = CanvasCamera()
-                    ..fit(thumb.bounds, constraints.biggest, padding: 6);
-                  return CustomPaint(
-                    size: constraints.biggest,
-                    painter: ItemPainter(
-                      camera: camera,
-                      items: thumb.items,
-                      inkColor: AppTheme.canvasInk(theme.brightness),
-                      // 缩略图专用：屏幕短边 <20px 的卡片/导图退化成单色块，
-                      // 跳过文本排版与图片采样（缩到这个尺寸字早已不可辨）。
-                      // 形状不参与代理（单次 drawRect，且空心变实心会改语义）。
-                      lod: true,
-                      lodScale: camera.scale,
-                    ),
-                  );
-                },
-              ),
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppTheme.contentCanvas(theme.brightness),
+          borderRadius: previewRadius,
+        ),
+        child: ClipRRect(
+          borderRadius: previewRadius,
+          child: thumb == null
+              ? watermark
+              // 每帧按当前尺寸现造相机：缩略图不响应交互，没有相机状态要维护，
+              // fit 是纯算术，比监听 resize 存状态更省。
+              : LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final CanvasCamera camera = CanvasCamera()
+                      ..fit(thumb.bounds, constraints.biggest, padding: 6);
+                    return CustomPaint(
+                      size: constraints.biggest,
+                      painter: ItemPainter(
+                        camera: camera,
+                        items: thumb.items,
+                        inkColor: AppTheme.canvasInk(theme.brightness),
+                        // 鸟瞰专用：屏幕短边 <20px 的卡片/导图退化成单色块，
+                        // 跳过文本排版与图片采样（缩到这个尺寸字早已不可辨）。
+                        // 形状不参与代理（单次 drawRect，空心变实心会改语义）。
+                        lod: true,
+                        lodScale: camera.scale,
+                      ),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }

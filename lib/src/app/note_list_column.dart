@@ -18,7 +18,12 @@ import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import '../domain/note.dart';
 import 'home_hub.dart'
-    show FilterMenuButton, NoteSort, homeItemsProvider, homeSortProvider;
+    show
+        CanvasThumbnailView,
+        FilterMenuButton,
+        NoteSort,
+        homeItemsProvider,
+        homeSortProvider;
 import 'note_display.dart';
 import 'note_import.dart';
 import 'providers.dart';
@@ -29,6 +34,25 @@ import 'stream_delete.dart' show showStreamConfirm;
 ///（`_kHeaderActionTopPadding` = 4）。两条带都从内容卡顶边起算 ⇒ 按钮
 /// **同一 y、同一尺寸**（2026-10-22 用户定）。
 const double _kHeadBandPadding = 4;
+
+/// 画布行的**整图鸟瞰**高度（2026-11-21 用户定 72）：列表里一篇画布 = 一张
+/// 鸟瞰总览卡（苹果无边记式），不是把画布拆成几条卡片。固定高度 ⇒ 加载完成
+/// 前后等高，虚拟列表不跳行、滚动定位不偏。
+const double _kCanvasOverviewHeight = 72;
+
+/// 「更多」按钮距行块的 top / right 内缩（2026-11-21 用户定**两值一致**）：
+/// - top：热区 24 vs 标题行盒 18（13×1.4），都从 4 起时中心差 3（16 vs 13）
+///   ⇒ 上提 3 让两者中心都在 y=13，看着一条线；
+/// - right：原 4，用户要"间距一样"⇒ 收到 1。
+const double _kMoreTop = Tokens.spaceXs - (24 - 18) / 2;
+const double _kMoreRight = 1;
+
+/// 标题 / 摘要右侧的**常驻**避让宽（2026-11-21）：按钮 right:1 + 24 热区
+/// ⇒ 热区左缘距行右缘 25；内容层右内距 8 ⇒ 文字有 17px 落在按钮底下。
+/// 常驻预留这段，让 ellipsis 在按钮左缘截断——不等 hover 才缩，避免文字跳。
+/// = 24 + right(1) − (spaceMd(12) − spaceXs(4)) = 17。
+const double _kMoreHorizontalReserve =
+    24 + _kMoreRight - (Tokens.spaceMd - Tokens.spaceXs);
 
 /// 动作钮热区：与编辑页撤销 / 重做 / 双耳同一个 [Tokens.headerActionSize]（30）。
 const double _kHeadButtonSize = Tokens.headerActionSize;
@@ -1155,21 +1179,25 @@ class _NoteRowState extends State<_NoteRow> {
 
     // 无搜索词时保持普通 [Text]（`data` 可用——现有测试与 a11y 都按 `Text.data`
     // 认行）；只有带词才切 `Text.rich` 做命中高亮。
-    Widget rich(String text, int maxLines, TextStyle base) =>
-        widget.query.isEmpty
-        ? Text(
-            text,
-            maxLines: maxLines,
-            overflow: TextOverflow.ellipsis,
-            style: base,
-          )
-        : Text.rich(
-            TextSpan(
-              children: _highlightSpans(text, widget.query, base, hitStyle),
+    // 外层 Padding 常驻避让「更多」钮（见 [_kMoreHorizontalReserve]）——Text
+    // 本身不变，find.text 仍命中；只是可用宽收 20，截断发生在按钮左缘。
+    Widget rich(String text, int maxLines, TextStyle base) => Padding(
+      padding: const EdgeInsets.only(right: _kMoreHorizontalReserve),
+      child: widget.query.isEmpty
+          ? Text(
+              text,
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
+              style: base,
+            )
+          : Text.rich(
+              TextSpan(
+                children: _highlightSpans(text, widget.query, base, hitStyle),
+              ),
+              maxLines: maxLines,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: maxLines,
-            overflow: TextOverflow.ellipsis,
-          );
+    );
 
     return MouseRegion(
       onEnter: (_) {
@@ -1241,7 +1269,12 @@ class _NoteRowState extends State<_NoteRow> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                         horizontal: Tokens.spaceMd - Tokens.spaceXs,
-                        vertical: Tokens.spaceMd,
+                        // 2026-11-21 用户定：上下都收到 4（spaceXs）——标题贴行顶
+                        // 更紧凑。按钮在 top:4/right:4、24 热区，标题被它包在
+                        // 垂直区间里（8 或 4 都遮）⇒ 关键在**水平**避让：
+                        // rich() 右侧预留按钮宽 + 右偏 − 内容右内距，ellipsis
+                        // 在按钮左缘前截断，常驻不等 hover 才跳。
+                        vertical: Tokens.spaceXs,
                       ),
                       decoration: BoxDecoration(
                         color: bg,
@@ -1251,23 +1284,34 @@ class _NoteRowState extends State<_NoteRow> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           rich(title, 1, titleStyle),
-                          if (summary.isNotEmpty) ...<Widget>[
+                          // 2026-11-21 用户定：画布笔记在列表里显示**整图鸟瞰**
+                          // （苹果无边记式总览卡），不再显示文字摘要——画布是
+                          // 自由布局，摘要文字说明不了它的内容。`all` 视图里
+                          // 的画布行同样生效（视觉一致）。
+                          // 固定 72px：加载 / 空 / 有数据三态等高，虚拟列表不跳。
+                          if (n.kind == NoteKind.canvas) ...<Widget>[
+                            const SizedBox(height: Tokens.spaceXxs),
+                            SizedBox(
+                              height: _kCanvasOverviewHeight,
+                              child: CanvasThumbnailView(noteId: n.id),
+                            ),
+                          ] else if (summary.isNotEmpty) ...<Widget>[
                             const SizedBox(height: Tokens.spaceXxs),
                             rich(summary, 2, summaryStyle),
                           ],
                         ],
                       ),
                     ),
-                    // 「更多」按钮浮在**行块右上角**（2026-11-20 重定方案）：
-                    // 相对外层 Stack（含 padding）定位 ⇒ 落在标题上方留白区，
+                    // 「更多」按钮浮在**行块右上角**：相对外层 Stack 定位，
                     // 不参与标题/摘要布局、不撑高行高。hover 露出，点击弹条目菜单。
                     // ⚠️ 菜单开着也算可见（点按钮后鼠标移向菜单时 onExit 置
                     // _hover=false ⇒ 按钮消失，靠 _menuOpen 保住）。
                     Positioned(
-                      // 4 而非贴边 0：18 图标在 24 热区里四周各余 3 ⇒ 实际距
-                      // 行块顶/右 7，与标题文字左缘 8 对齐、呼吸一致（2026-11-20 定）。
-                      top: Tokens.spaceXs,
-                      right: Tokens.spaceXs,
+                      // 2026-11-21：top/right 同为 1（用户定间距一致）——top 上提
+                      // 3 让 24 热区中心与 18 标题中心都在 y=13；right 收到 1，
+                      // 水平避让随之从 20 改 17（见 _kMoreHorizontalReserve）。
+                      top: _kMoreTop,
+                      right: _kMoreRight,
                       child: Visibility(
                         visible: _hover || _menuOpen,
                         maintainSize: true,
