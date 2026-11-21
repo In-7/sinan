@@ -79,9 +79,9 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
   /// 空查询时点外部可收起（"取消"语义）；**有词时不自动关**，退出走
   /// 关闭钮 / Esc（两者都清空）——点结果查看笔记不打断搜索。
   ///
-  /// 只过滤**当前列表**（标题 + 摘要），刻意不碰全局检索
-  /// （[searchNotifierProvider]）——全局搜索后续要撤，先不耦合。
-  bool _searching = false;
+  /// 只过滤**当前列表**（标题 + 摘要），刻意不碰全局检索。
+  /// 2026-11-20 起状态放 [listSearchProvider]（按空间分家）：笔记页搜的词
+  /// 不带到画布页；本 State 只持有 controller / focus 这些 UI 瞬态。
   final TextEditingController _searchInput = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
@@ -107,10 +107,18 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
   @override
   void initState() {
     super.initState();
+    // 把当前空间的搜索词回填到输入框（切视图本列会按 key 重建 State，
+    // 但词存在 provider 里 ⇒ 切回来还在）。
+    _searchInput.text = ref.read(listSearchProvider(_space)).query;
     _searchInput.addListener(_onQueryChanged);
     // ↑/↓/Enter 挂在 focusNode 上 ⇒ 抢在 EditableText 的方向键处理之前。
     _searchFocus.onKeyEvent = _onSearchKey;
   }
+
+  /// 本列当前服务哪个空间（单一派生点，provider 读写都走它）。
+  NoteSpace get _space =>
+      ref.read(navHistoryProvider).view.space;
+
 
   @override
   void dispose() {
@@ -122,14 +130,20 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
     super.dispose();
   }
 
-  /// 输入变了 ⇒ 高亮作废（结果集换了，旧的"当前项"没意义了）。
-  void _onQueryChanged() => setState(() => _activeNoteId = null);
+  /// 程序化清词（[_closeSearch]）时置 true：controller.clear() 也会触发
+  /// listener，不能让它把刚 close 的搜索态重新 setQuery 打开。
+  bool _clearing = false;
+
+  /// 输入变了 ⇒ 写回本空间的搜索态 + 高亮作废（结果集换了，旧的"当前项"没意义）。
+  void _onQueryChanged() {
+    if (_clearing) return;
+    ref.read(listSearchProvider(_space).notifier).setQuery(_searchInput.text);
+    setState(() => _activeNoteId = null);
+  }
 
   void _openSearch() {
-    setState(() {
-      _searching = true;
-      _activeNoteId = null;
-    });
+    ref.read(listSearchProvider(_space).notifier).openSearch();
+    setState(() => _activeNoteId = null);
     // 帧末再要焦点：AnimatedSwitcher 的新子件当帧还没挂上焦点节点。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _searchFocus.requestFocus();
@@ -138,11 +152,11 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
 
   /// 收起并清词（Esc / 收起钮 / 空查询时点外部），焦点还给「⌕」钮。
   void _closeSearch() {
-    setState(() {
-      _searching = false;
-      _activeNoteId = null;
-      _searchInput.clear();
-    });
+    ref.read(listSearchProvider(_space).notifier).close();
+    _clearing = true;
+    _searchInput.clear();
+    _clearing = false;
+    setState(() => _activeNoteId = null);
     _searchButtonFocus.requestFocus();
   }
 
@@ -217,16 +231,16 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
     final HomeView view = ref.watch(
       navHistoryProvider.select((NavHistoryState s) => s.view),
     );
+    final NoteSpace space = view.space;
+    final String? activeTag = ref.watch(listTagProvider(space));
     final List<Note> items = ref.watch(
-      homeItemsProvider((
-        view: view,
-        tag: ref.watch(searchNotifierProvider).activeTag,
-      )),
+      homeItemsProvider((view: view, tag: activeTag)),
     );
     final String? selectedId = ref.watch(selectedNoteIdProvider);
 
-    // 页内过滤：命中标题或摘要（大小写不敏感；中文天然子串命中）。
-    final String query = _searchInput.text.trim();
+    // 页内过滤：读本空间的搜索态（词不在本 State 里，切视图各归各家）。
+    final ListSearchState searchState = ref.watch(listSearchProvider(space));
+    final String query = searchState.query.trim();
     final List<Note> shown = query.isEmpty
         ? items
         : items
@@ -249,7 +263,7 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
     // 排（不是 revisedAt）、标题 / 最近创建排序同理 ⇒ 那些情况退回平铺。
     final bool grouped =
         view != HomeView.favorites &&
-        ref.watch(homeSortProvider) == NoteSort.revised;
+        ref.watch(homeSortProvider(space)) == NoteSort.revised;
     // 组头与行交错成扁平列表，交给一个 ListView.builder 渲染（组头 = String，
     // 行 = Note）。
     final List<Object> rows = <Object>[];
@@ -287,7 +301,7 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
           ),
           child: AnimatedSwitcher(
             duration: Tokens.durationFast,
-            child: _searching
+            child: searchState.open
                 ? TapRegion(
                     // "点外部即关"**只对空查询生效**：有词时点外部（含点结果
                     // 查看笔记）**不关**，否则刚搜到就断了；退出搜索只走
@@ -295,11 +309,11 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
                     // 与「⌕」钮同组 ⇒ 点搜索钮自己不算"点外部"。
                     groupId: _searchTapGroupId,
                     onTapOutside: (_) {
-                      if (_searchInput.text.trim().isEmpty) _closeSearch();
+                      if (query.isEmpty) _closeSearch();
                     },
                     child: _ListSearchField(
                       key: const ValueKey<String>('list-search'),
-                      hint: view == HomeView.canvas ? '搜索画布' : '搜索笔记',
+                      hint: '搜索${space.label}',
                       controller: _searchInput,
                       focusNode: _searchFocus,
                       onClose: _closeSearch,
@@ -366,7 +380,8 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
               _CountChip(count: shown.length),
               const SizedBox(width: Tokens.spaceXs),
               // 热区 20：本行行高由它决定，28 会把标题行撑高（见组件注释）。
-              const FilterMenuButton(size: 20),
+              // space：筛选读写本空间那份数据（2026-11-20）。
+              FilterMenuButton(size: 20, space: space),
             ],
           ),
         ),

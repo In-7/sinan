@@ -222,7 +222,10 @@ class HomeScreen extends ConsumerWidget {
                         // 宽度 / 折叠 / 裁剪 / 焦点语义全部复用同一套几何。
                         child: view == HomeView.calendar
                             ? const CalendarListColumn()
-                            : const NoteListColumn(),
+                            // key 按空间（2026-11-20）：切笔记 ↔ 画布时重建 State，
+                            // 让 controller / focus 这些 UI 瞬态跟着当前空间走；
+                            // 搜索词本身存在 listSearchProvider，切回来还在。
+                            : NoteListColumn(key: ValueKey(view.space)),
                       ),
                     ),
                   ),

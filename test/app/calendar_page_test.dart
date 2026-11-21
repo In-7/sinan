@@ -543,7 +543,7 @@ void main() {
     // 点一枚排序（选默认的，不改变排序）⇒ 菜单关闭。
     await tester.tap(menuItem('最近编辑'));
     await tester.pumpAndSettle();
-    expect(container.read(homeSortProvider), NoteSort.revised);
+    expect(container.read(homeSortProvider(NoteSpace.notes)), NoteSort.revised);
 
     // ② 标签在**同一枚钮**的下半段：带篇数，点选即过滤。
     await tester.tap(filterButton);
@@ -576,7 +576,7 @@ void main() {
     );
 
     expect(
-      container.read(homeSortProvider),
+      container.read(homeSortProvider(NoteSpace.notes)),
       NoteSort.revised,
       reason: '默认最近编辑',
     );
@@ -586,13 +586,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(menuItem('标题 A–Z'));
     await tester.pumpAndSettle();
-    expect(container.read(homeSortProvider), NoteSort.title);
+    expect(container.read(homeSortProvider(NoteSpace.notes)), NoteSort.title);
 
-    // 对全部 / 收藏 / 笔记 / 画布**全局生效**：切走再回，选中不丢。
+    // 2026-11-20 起按空间分家：全部 / 收藏 / 笔记同归 notes 空间，切走再回保留；
+    // 画布是另一份（见新增的隔离测试）。
     await selectView(tester, container, HomeView.favorites);
     await tester.tap(find.byTooltip('筛选与排序'));
     await tester.pumpAndSettle();
-    expect(container.read(homeSortProvider), NoteSort.title);
+    expect(container.read(homeSortProvider(NoteSpace.notes)), NoteSort.title);
     // 无标签库 ⇒ 菜单里**没有标签段**（但筛选钮常驻，排序永远可达）。
     expect(find.text('标签'), findsNothing);
     expect(find.text('排序'), findsOneWidget);

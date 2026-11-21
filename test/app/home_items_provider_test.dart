@@ -101,18 +101,20 @@ void main() {
     expect(ids(HomeView.all, tag: '不存在的标签'), <String>[]);
   });
 
-  test('收藏视图固定"最近收藏在前"，不跟全局排序', () {
-    container.read(homeSortProvider.notifier).select(NoteSort.created);
+  test('收藏视图固定"最近收藏在前"，不跟本空间排序', () {
+    container
+        .read(homeSortProvider(NoteSpace.notes).notifier)
+        .select(NoteSort.created);
     expect(ids(HomeView.favorites), <String>['fav']);
   });
 
   test('只看收藏（favoriteOnly）：叠加视图，只列收藏项', () {
     // 2026-11-20 用户定：查看收藏的入口**不加导航**，走筛选的「只看收藏」toggle
-    // （叠加在当前视图上，只列收藏项）。
-    container.read(favoriteOnlyProvider.notifier).toggle();
+    // （叠加在当前视图上，只列收藏项）。all / notes 同归 notes 空间。
+    container.read(favoriteOnlyProvider(NoteSpace.notes).notifier).toggle();
     expect(ids(HomeView.all), <String>['fav'], reason: '只看收藏 ⇒ 只列收藏项');
     expect(ids(HomeView.notes), <String>['fav'], reason: '笔记视图 + 只看收藏');
-    container.read(favoriteOnlyProvider.notifier).toggle();
+    container.read(favoriteOnlyProvider(NoteSpace.notes).notifier).toggle();
     expect(ids(HomeView.all), <String>[
       'n2',
       'n1',
@@ -131,7 +133,9 @@ void main() {
     expect(identical(first, again), isTrue, reason: '快照/排序/入参都没变 ⇒ 必须复用，不该重排');
 
     // 换排序方案 ⇒ 结果与实例都更新。
-    container.read(homeSortProvider.notifier).select(NoteSort.created);
+    container
+        .read(homeSortProvider(NoteSpace.notes).notifier)
+        .select(NoteSort.created);
     final List<Note> byCreated = container.read(homeItemsProvider(args));
     expect(byCreated.map((Note n) => n.id).toList(), <String>[
       'fav',

@@ -391,6 +391,71 @@ void main() {
     );
   });
 
+  testWidgets('笔记 / 画布切视图：页内搜索词与筛选各归各家', (tester) async {
+    // 2026-11-20 用户定：共用一套列表模板，但数据是各自的——笔记页搜了词、
+    // 改了排序，切到画布页不会被带上；切回笔记页还在。
+    final TestFlutterView view = tester.view;
+    view.devicePixelRatio = 1;
+    view.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      view.devicePixelRatio = 3;
+      view.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    store.create(title: '笔记甲');
+    store.create(title: '画布乙', kind: NoteKind.canvas);
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.notes);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Finder inList(Finder of) =>
+        find.descendant(of: find.byType(NoteListColumn), matching: of);
+
+    // 笔记页：开搜索 + 输入词 + 改排序。
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(inList(find.byType(TextField)), '笔记');
+    await tester.pumpAndSettle();
+    expect(inList(find.text('笔记甲')), findsOneWidget);
+    expect(inList(find.text('画布乙')), findsNothing, reason: '笔记页列表不含画布');
+
+    // 切到画布页：搜索框不该带着笔记的词（画布那一份是空的）。
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.canvas);
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsNothing, reason: '画布页搜索未展开');
+    expect(inList(find.text('画布乙')), findsOneWidget);
+    expect(inList(find.text('笔记甲')), findsNothing, reason: '画布页列表不含笔记');
+
+    // 切回笔记页：词与展开态都还在（各自记住各自的）。
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.notes);
+    await tester.pumpAndSettle();
+    expect(inList(find.byType(TextField)), findsOneWidget, reason: '笔记页搜索仍展开');
+    expect(inList(find.text('笔记甲')), findsOneWidget, reason: '词还在，仍过滤');
+    expect(inList(find.text('画布乙')), findsNothing);
+  });
+
   testWidgets('列表按时间分组：今天 / 昨天组头，行内不再显示日期', (tester) async {
     // 2026-10-21 方案 A：组头替行内日期说话（行内"2 天前"整列取消）。
     final TestFlutterView view = tester.view;

@@ -44,9 +44,10 @@ import 'search_provider.dart';
 /// 漏斗钮里的「形态」facet 是在其上再筛一遍（笔记页选「画布」得空集），属重复
 /// 控件 ⇒ 已撤。灵感 / 全部 / 日历 / 收藏仍不分形态。
 ///
-/// ⚠️ **排序 / 标签都不是页面**：它们是全局控件，合住顶栏右侧一枚
-/// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、两段——排序 / 标签），
-/// 对所有视图同时生效。
+/// ⚠️ **排序 / 标签都不是页面**：它们是控件，合住顶栏右侧一枚
+/// 「筛选与排序」漏斗钮（[FilterMenuButton]：一个菜单、两段——排序 / 标签）。
+/// 2026-11-20 起按 [NoteSpace] 分家：笔记页 / 画布页各存一份筛选与标签池，
+/// 互不共享（样式模板同一套，数据各自）。
 /// [HomeView] 的**图标**扩展。
 ///
 /// 枚举本体在 `providers.dart`：统一导航历史（[NavHistoryNotifier]）要同时
@@ -158,11 +159,21 @@ enum NoteSort {
 }
 
 /// 主页当前的排序方案。默认 [NoteSort.revised]。
-final homeSortProvider = NotifierProvider<HomeSortNotifier, NoteSort>(
-  HomeSortNotifier.new,
-);
+///
+/// 2026-11-20 起按 [NoteSpace] 分家：笔记页与画布页各存一份排序，互不共享。
+/// 调用点必须传空间（`homeSortProvider(space)`）；旧的全局写法已不存在。
+final homeSortProvider = NotifierProvider.family<
+  HomeSortNotifier,
+  NoteSort,
+  NoteSpace
+>(HomeSortNotifier.new);
 
 class HomeSortNotifier extends Notifier<NoteSort> {
+  HomeSortNotifier(this.space);
+
+  /// family key：本实例服务哪个空间（Riverpod 为每个 key 建一个 Notifier）。
+  final NoteSpace space;
+
   @override
   NoteSort build() => NoteSort.revised;
 
@@ -262,11 +273,18 @@ typedef HomeItemsArgs = ({HomeView view, String? tag});
 ///
 /// 「只看收藏」筛选开关（2026-11-20 用户定）：查看收藏的入口**不加导航**，
 /// 走筛选的这个 toggle（叠加在当前视图上，只列收藏项）。
-final favoriteOnlyProvider = NotifierProvider<FavoriteOnlyNotifier, bool>(
-  FavoriteOnlyNotifier.new,
-);
+/// 按 [NoteSpace] 分家（2026-11-20）：笔记页 / 画布页的「只看收藏」互不影响。
+final favoriteOnlyProvider = NotifierProvider.family<
+  FavoriteOnlyNotifier,
+  bool,
+  NoteSpace
+>(FavoriteOnlyNotifier.new);
 
 class FavoriteOnlyNotifier extends Notifier<bool> {
+  FavoriteOnlyNotifier(this.space);
+
+  final NoteSpace space;
+
   @override
   bool build() => false;
 
@@ -277,7 +295,9 @@ class FavoriteOnlyNotifier extends Notifier<bool> {
 final homeItemsProvider = Provider.autoDispose
     .family<List<Note>, HomeItemsArgs>((Ref ref, HomeItemsArgs args) {
       final List<Note> all = ref.watch(notesProvider).value ?? const <Note>[];
-      final Comparator<Note> order = ref.watch(homeSortProvider).comparator;
+      // 2026-11-20：排序 / 只看收藏按**空间**分家（笔记页 ≠ 画布页）。
+      final NoteSpace space = args.view.space;
+      final Comparator<Note> order = ref.watch(homeSortProvider(space)).comparator;
       final List<Note> scope = switch (args.view) {
         // 灵感**不读笔记池**：它是独立表 `stream_items`，由
         // `StreamView` 自行渲染。这里给空列表是"此视图没有笔记项"的诚实回答——
@@ -300,7 +320,7 @@ final homeItemsProvider = Provider.autoDispose
         HomeView.calendar => const <Note>[],
       };
       // 「只看收藏」筛选（2026-11-20）：叠加在当前视图上，只列收藏项。
-      final List<Note> fav = ref.watch(favoriteOnlyProvider)
+      final List<Note> fav = ref.watch(favoriteOnlyProvider(space))
           ? scope.where((Note n) => n.promotedAt != null).toList()
           : scope;
       // 标签筛选是顶栏全局控件 ⇒ 对当前视图生效；未选标签时原样返回。
@@ -912,9 +932,9 @@ class _HomeBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // 2026-11-14 撤掉「全局搜索态覆盖日历」：日历是日记界面，不需要搜索；
-    // Ctrl+K 全局搜索浮层是独立 Overlay，不走这里。这里只留 activeTag 给
-    // 独立挂载时的「全部 / 收藏」兜底空态用。
-    final SearchState search = ref.watch(searchNotifierProvider);
+    // Ctrl+K 全局搜索浮层是独立 Overlay，不走这里。这里只留筛选用的标签给
+    // 独立挂载时的「全部 / 收藏」兜底空态用（2026-11-20 起按空间分家）。
+    final String? activeTag = ref.watch(listTagProvider(view.space));
 
     // ⚠️ 灵感**不由本页渲染**：它是独立的一页纸时间流，由外壳
     // `HomeScreen` 直接挂 `StreamView`（2026-10-17 修：此前挂在这里，而桌面壳
@@ -951,7 +971,7 @@ class _HomeBody extends ConsumerWidget {
     // 其余视图：卡片网格。取数走 [homeItemsProvider]（记忆化：无关 rebuild
     // 不重排；语义见 provider 文档）。
     final List<Note> items = ref.watch(
-      homeItemsProvider((view: view, tag: search.activeTag)),
+      homeItemsProvider((view: view, tag: activeTag)),
     );
 
     if (items.isEmpty) {
@@ -962,7 +982,7 @@ class _HomeBody extends ConsumerWidget {
               view: view,
               hasQuery: false,
               query: '',
-              activeTag: search.activeTag,
+              activeTag: activeTag,
             ),
           ),
         ],
@@ -1128,13 +1148,20 @@ class _SearchResultBar extends StatelessWidget {
 /// 📌 2026-11-17 挪到「视图名 + 篇数」行**篇数右边**（不再贴行右端），皮肤
 /// 换 [_TinyButton]（日历小按钮同款）。
 class FilterMenuButton extends ConsumerStatefulWidget {
-  const FilterMenuButton({super.key, this.size = Tokens.headerActionSize});
+  const FilterMenuButton({
+    super.key,
+    this.size = Tokens.headerActionSize,
+    this.space = NoteSpace.notes,
+  });
 
   /// 热区边长。默认 28（独立挂载 / 测试壳）；日历页顶栏漏斗 2026-11-14 已撤。
   ///
   /// 列表栏「视图名 + 篇数」行传 **20**：那行的行高由本钮决定，28 会把标题行
   /// 撑高、文字垂直居中下沉 5px（2026-11-09 用户实报"折叠钮与笔记的间距变大"）。
   final double size;
+
+  /// 读写哪一份列表数据（2026-11-20）：笔记页 / 画布页的筛选互不共享。
+  final NoteSpace space;
 
   @override
   ConsumerState<FilterMenuButton> createState() => _FilterMenuButtonState();
@@ -1146,9 +1173,12 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
   final GlobalKey _key = GlobalKey();
 
   Future<void> _openMenu() async {
-    final NoteSort currentSort = ref.read(homeSortProvider);
-    final List<(String, int)> tags = ref.read(allTagsProvider);
-    final String? activeTag = ref.read(searchNotifierProvider).activeTag;
+    final NoteSpace space = widget.space;
+    final NoteSort currentSort = ref.read(homeSortProvider(space));
+    // 2026-11-21：标签池按空间隔离——画布页只列画布笔记的标签（当前没有打标签
+    // 入口 ⇒ 池空 ⇒ 菜单不显示「标签」区块），笔记页只列笔记的。
+    final List<(String, int)> tags = ref.read(tagsForSpaceProvider(space));
+    final String? activeTag = ref.read(listTagProvider(space));
 
     // **锚点矩形**（Flutter 官方 PopupMenu 口径，别再手算零宽度点）：
     // 此前用 `RelativeRect.fromLTRB(dx, dy, dx, dy)`（锚点 = 按钮左下角的
@@ -1189,12 +1219,12 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
         // 的这个 toggle（置顶/第一个）。叠加在当前视图上，只列收藏项。
         _menuHeader('收藏'),
         PopupMenuItem<void>(
-          onTap: () => ref.read(favoriteOnlyProvider.notifier).toggle(),
+          onTap: () => ref.read(favoriteOnlyProvider(space).notifier).toggle(),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               const Text('只看收藏'),
-              if (ref.read(favoriteOnlyProvider)) ...<Widget>[
+              if (ref.read(favoriteOnlyProvider(space))) ...<Widget>[
                 const SizedBox(width: Tokens.spaceSm),
                 const tabler.Check(
                   height: Tokens.iconMdSm,
@@ -1208,7 +1238,7 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
         _menuHeader('排序'),
         for (final NoteSort s in NoteSort.values)
           PopupMenuItem<void>(
-            onTap: () => ref.read(homeSortProvider.notifier).select(s),
+            onTap: () => ref.read(homeSortProvider(space).notifier).select(s),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -1230,16 +1260,13 @@ class _FilterMenuButtonState extends ConsumerState<FilterMenuButton> {
           // 有选中标签时先给一枚显式的"清除"（否则只能再点同一枚取消）。
           if (activeTag != null)
             PopupMenuItem<void>(
-              onTap: () =>
-                  ref.read(searchNotifierProvider.notifier).selectTag(null),
+              onTap: () => ref.read(listTagProvider(space).notifier).clear(),
               child: const Text('全部标签（清除筛选）'),
             ),
           for (final (String tag, int count) in tags)
             PopupMenuItem<void>(
               // 点已选中的标签 = 取消（沿用旧 chips 的 toggle 语义）。
-              onTap: () => ref
-                  .read(searchNotifierProvider.notifier)
-                  .selectTag(tag == activeTag ? null : tag),
+              onTap: () => ref.read(listTagProvider(space).notifier).toggle(tag),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[

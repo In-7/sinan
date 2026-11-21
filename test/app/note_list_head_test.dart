@@ -10,6 +10,7 @@ import 'package:sinan/src/app/providers.dart';
 import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/data/settings_store.dart';
+import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/editor/core/note_title_field.dart';
 import 'package:sinan/src/theme/app_icon_button.dart';
 import 'package:sinan/src/theme/app_split_icon_button.dart';
@@ -47,7 +48,10 @@ void main() {
     );
   }
 
-  Future<ProviderContainer> pumpList(WidgetTester tester) async {
+  Future<ProviderContainer> pumpList(
+    WidgetTester tester, {
+    HomeView homeView = HomeView.notes,
+  }) async {
     final TestFlutterView view = tester.view;
     view.devicePixelRatio = 1;
     view.physicalSize = const Size(1200, 900);
@@ -74,7 +78,7 @@ void main() {
 
     store.create(title: '甲');
     store.create(title: '乙');
-    container.read(navHistoryProvider.notifier).selectHome(HomeView.notes);
+    container.read(navHistoryProvider.notifier).selectHome(homeView);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -306,6 +310,24 @@ void main() {
       reason: '新建一篇',
     );
     expect(container.read(selectedNoteIdProvider), isNotNull);
+  });
+
+  testWidgets('新建：画布页点 + 建的是画布，不共享笔记页新建', (tester) async {
+    // 2026-11-20 用户定：笔记 / 画布不共享新建。列表头那枚分半钮按当前 view
+    // 分派命令（canvas.new / note.new）——在画布页点「新建」必须建出画布。
+    final ProviderContainer container = await pumpList(
+      tester,
+      homeView: HomeView.canvas,
+    );
+    final int before = container.read(notesProvider).value!.length;
+
+    await tester.tap(find.byTooltip('新建'));
+    await tester.pumpAndSettle();
+
+    final List<Note> after = container.read(notesProvider).value!;
+    expect(after.length, before + 1, reason: '新建一项');
+    // createNote 把新笔记置顶（[n, ...旧]）⇒ 取 first 才是刚建的。
+    expect(after.first.kind, NoteKind.canvas, reason: '画布页新建的是画布');
   });
 
   testWidgets('头部标尺：与编辑页撤销 / 重做同一 y、同一 30 热区', (tester) async {

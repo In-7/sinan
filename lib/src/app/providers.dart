@@ -566,6 +566,32 @@ enum HomeView {
   final String label;
 }
 
+/// 列表**空间**（2026-11-20 用户定）：笔记 / 画布各自一份列表数据——
+/// 筛选（排序 / 只看收藏 / 标签）、页内搜索词、新建都按它分家，互不共享。
+///
+/// 样式模板（[NoteListColumn] / [FilterMenuButton]）共用一套，只有**数据**是各自的：
+/// 在笔记页把排序改成「标题 A–Z」、搜了词、只看收藏，切到画布页仍是各自的默认态；
+/// 切回来笔记页的设置还在。这是 family provider 的 key（record 之外最轻的 dividing line）。
+///
+/// 映射：[HomeView.canvas] → canvas；其余（notes / all / favorites / calendar /
+/// timeline）统一归 notes——后几者或不在图标轨、或无列表筛选，不值得再开一份状态。
+enum NoteSpace {
+  notes,
+  canvas;
+
+  /// 「笔记 / 搜索画布」这类提示文案（列表头页内搜索框 hint）。
+  String get label => switch (this) {
+    NoteSpace.notes => '笔记',
+    NoteSpace.canvas => '画布',
+  };
+}
+
+extension HomeViewSpace on HomeView {
+  /// 该视图用哪一份列表数据（见 [NoteSpace]）。
+  NoteSpace get space =>
+      this == HomeView.canvas ? NoteSpace.canvas : NoteSpace.notes;
+}
+
 /// 统一导航历史的一个**目的地**：主页视图，或某篇笔记 / 画布页。
 sealed class NavLocation {
   const NavLocation();

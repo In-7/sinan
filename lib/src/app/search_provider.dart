@@ -297,12 +297,100 @@ final searchNotifierProvider = NotifierProvider<SearchNotifier, SearchState>(
   SearchNotifier.new,
 );
 
+// ── 列表空间各自的筛选 / 搜索数据（2026-11-20 用户定）────────────────────
+//
+// 笔记页与画布页共用 [NoteListColumn] 这套**样式模板**，但数据各自一份：
+// 在笔记页选的标签 / 排序 / 搜索词不带到画布页，切回来还在。三者都是
+// NotifierProvider.family，key = [NoteSpace]（两值，轻量分家）。
+
+/// 列表的**标签筛选**（注意与 [SearchState.activeTag] 区分：那是全局搜索自己的
+/// 标签视图，本 provider 只服务列表漏斗钮）。`null` = 不过滤。
+final listTagProvider = NotifierProvider.family<
+  ListTagNotifier,
+  String?,
+  NoteSpace
+>(ListTagNotifier.new);
+
+class ListTagNotifier extends Notifier<String?> {
+  ListTagNotifier(this.space);
+
+  final NoteSpace space;
+
+  @override
+  String? build() => null;
+
+  /// 点已选中的 = 取消（沿用旧 chips 的 toggle 语义）。
+  void toggle(String tag) => state = state == tag ? null : tag;
+
+  void clear() => state = null;
+}
+
+/// 列表**页内搜索**的状态：只过滤当前列表（标题 + 摘要内存 contains），
+/// 刻意不碰全局检索。放在 provider 而非 State 是为了按 [NoteSpace] 分家——
+/// 切视图时 State 被复用，搜索词却必须各归各家。
+class ListSearchState {
+  const ListSearchState({this.query = '', this.open = false});
+
+  final String query;
+  final bool open;
+}
+
+final listSearchProvider = NotifierProvider.family<
+  ListSearchNotifier,
+  ListSearchState,
+  NoteSpace
+>(ListSearchNotifier.new);
+
+class ListSearchNotifier extends Notifier<ListSearchState> {
+  ListSearchNotifier(this.space);
+
+  final NoteSpace space;
+
+  @override
+  ListSearchState build() => const ListSearchState();
+
+  void openSearch() => state = ListSearchState(query: state.query, open: true);
+
+  void setQuery(String query) =>
+      state = ListSearchState(query: query, open: true);
+
+  /// 收起并清词（Esc / 关闭钮 / 空查询点外部）。
+  void close() => state = const ListSearchState();
+}
+
 /// 全库**标签池**（跨 kind 一套）：按出现篇数倒序、同数按名称排。
 ///
-/// 搜索页标签 chips 的数据源。[notesProvider] 本来就装着全部笔记的元数据，
-/// 这里纯内存聚合，零额外查询；标签一变（打/删）列表刷新时自动跟着重算。
+/// 当前唯一消费者 = 编辑器里给某篇笔记打标签时的**建议列表**（别人打过的
+/// 标签点一下就加）。全局搜索（[searchNotifierProvider]）并不用它——
+/// Ctrl+K 浮层没有标签 chips；列表筛选 2026-11-21 起也不用它（见
+/// [tagsForSpaceProvider]）。[notesProvider] 已装着全部元数据，纯内存聚合。
 final allTagsProvider = Provider<List<(String, int)>>((ref) {
+  return _collectTags(ref.watch(notesProvider).value ?? const <Note>[]);
+});
+
+/// **按空间**过滤的标签池（2026-11-21）：列表筛选菜单只列本空间自己的标签
+/// ——画布页只统计画布笔记的、笔记页只统计 spark/note 的。全库池
+/// [allTagsProvider] 只服务打标签时的建议，两者口径不同。
+///
+/// 注：`NoteSpace.notes` 覆盖 spark + note（与 [HomeView.notes] 的收池一致），
+/// `canvas` 单列——画布笔记虽然有 tags 字段，但当前没有打标签的 UI，池通常为空，
+/// 菜单里的「标签」区块随之自动不显示。
+final tagsForSpaceProvider = Provider.family<List<(String, int)>, NoteSpace>((
+  Ref ref,
+  NoteSpace space,
+) {
   final List<Note> notes = ref.watch(notesProvider).value ?? const <Note>[];
+  final List<Note> scoped = switch (space) {
+    NoteSpace.notes =>
+      notes.where((Note n) => n.kind != NoteKind.canvas).toList(),
+    NoteSpace.canvas =>
+      notes.where((Note n) => n.kind == NoteKind.canvas).toList(),
+  };
+  return _collectTags(scoped);
+});
+
+/// 标签聚合：按出现篇数倒序、同数按名称排（全库池 / 空间池共用）。
+List<(String, int)> _collectTags(List<Note> notes) {
   final Map<String, int> counts = <String, int>{};
   for (final Note n in notes) {
     for (final String t in n.tags) {
@@ -318,4 +406,4 @@ final allTagsProvider = Provider<List<(String, int)>>((ref) {
         return a.$1.compareTo(b.$1);
       });
   return out;
-});
+}
