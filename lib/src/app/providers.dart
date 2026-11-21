@@ -1057,15 +1057,20 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     state = AsyncData(rest);
 
     if (ref.read(selectedNoteIdProvider) == id) {
-      final String? next = rest.isEmpty
-          ? null
-          : rest[index.clamp(0, rest.length - 1)].id;
-      if (next == null) {
-        // 空列表不是"跳到哪里"，是"没地方可去"——`locate` 要求有个目标才成立，
-        // 所以这一处直接清空（本文件就是 `locateProvider` 的家，不算另开一条路）。
+      // 2026-11-21 bug：同 trashNote——原实现从全池按旧 index 取下一条，会跨
+      // 形态跳页（画布删空跳成文档编辑页）。只在同形态里找下一条，没有则空态。
+      final NoteKind deletedKind = before[index].kind;
+      final List<Note> sameKind = rest
+          .where((Note n) => n.kind == deletedKind)
+          .toList(growable: false);
+      if (sameKind.isEmpty) {
+        // 没有同形态可去 = 空态；`locate` 要求有目标，这里直接清（本文件即
+        // locateProvider 的家，不算另开一条路）。
         ref.read(selectedNoteIdProvider.notifier).select(null);
       } else {
-        ref.read(locateProvider.notifier).locate(noteId: next);
+        ref
+            .read(locateProvider.notifier)
+            .locate(noteId: sameKind[index.clamp(0, sameKind.length - 1)].id);
       }
     }
     return removed;
@@ -1096,12 +1101,20 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     final List<Note> rest = _store.allNotes();
     state = AsyncData(rest);
     if (ref.read(selectedNoteIdProvider) == id) {
-      if (rest.isEmpty) {
+      // 2026-11-21 bug：原实现取 `rest[旧 index]`（全池、混形态）⇒ 在画布页
+      // 删掉选中的画布后，那个下标可能落到一篇**文档**上，locate 它 ⇒
+      // home_screen 按 kind 选编辑器，右格就变成笔记编辑页（反向同理）。
+      // 正解：**只在被删项的同形态里**取下一条；同形态删空 ⇒ 空态（null）。
+      final NoteKind deletedKind = before[index].kind;
+      final List<Note> sameKind = rest
+          .where((Note n) => n.kind == deletedKind)
+          .toList(growable: false);
+      if (sameKind.isEmpty) {
         ref.read(selectedNoteIdProvider.notifier).select(null);
       } else {
         ref
             .read(locateProvider.notifier)
-            .locate(noteId: rest[index.clamp(0, rest.length - 1)].id);
+            .locate(noteId: sameKind[index.clamp(0, sameKind.length - 1)].id);
       }
     }
     ref.invalidate(trashProvider);
