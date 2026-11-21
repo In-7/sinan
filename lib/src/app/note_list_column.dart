@@ -1,7 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:ui' as ui;
 
-import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/services.dart'
     show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,9 +139,7 @@ class _NoteListColumnState extends ConsumerState<NoteListColumn> {
   }
 
   /// 本列当前服务哪个空间（单一派生点，provider 读写都走它）。
-  NoteSpace get _space =>
-      ref.read(navHistoryProvider).view.space;
-
+  NoteSpace get _space => ref.read(navHistoryProvider).view.space;
 
   @override
   void dispose() {
@@ -999,18 +996,17 @@ class _NoteRowState extends State<_NoteRow> {
     final ScrollableState? scrollable = Scrollable.maybeOf(context);
     final RenderObject? box = context.findRenderObject();
     if (scrollable == null || box is! RenderBox || !box.hasSize) return;
-    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
-      box,
-    );
-    if (viewport == null) return;
-
-    // 对齐顶端 / 底端所需的两个滚动偏移：当前像素区间能同时容下这两个 ⇒ 完全可见。
-    final ScrollPosition pos = scrollable.position;
-    final double alignTop = viewport.getOffsetToReveal(box, 0.0).offset;
-    final double alignBottom = viewport.getOffsetToReveal(box, 1.0).offset;
-    final double visibleMin = pos.pixels;
-    final double visibleMax = pos.pixels + pos.viewportDimension;
-    if (alignTop >= visibleMin && alignBottom <= visibleMax) return; // 已整行可见
+    // 2026-11-21 bug：原用 `viewport.getOffsetToReveal(box, 0/1)` 判"整行可见"，
+    // 但本行（RenderMouseRegion + FocusableActionDetector + Stack 多层包裹）上它
+    // 返回**倒置**偏移（alignTop 262 / alignBottom −515）⇒ 键盘 ↓ 判成"已可见"
+    // 从不滚，蓝框走出视口；点可见行又滚过头。改用**全局矩形**与视口矩形直接比：
+    // 两矩形都在同一全局坐标系，不依赖 getOffsetToReveal 的锚点推导。
+    final Rect rowRect = box.localToGlobal(Offset.zero) & box.size;
+    final RenderBox scrollBox = scrollable.context.findRenderObject()! as RenderBox;
+    final Rect viewRect = scrollBox.localToGlobal(Offset.zero) & scrollBox.size;
+    if (rowRect.top >= viewRect.top && rowRect.bottom <= viewRect.bottom) {
+      return; // 整行已在视口内：点可见行不该滚（2026-10-21 用户定）
+    }
 
     Scrollable.ensureVisible(
       context,
@@ -1198,117 +1194,121 @@ class _NoteRowState extends State<_NoteRow> {
           selected: selected,
           // 标签 = 显示标题（屏幕阅读器 / 焦点顺序测试靠它认行）。
           label: title,
-          child: FocusRing(
-            focusNode: _focus,
-            // 环只给**键盘**（2026-10-21 用户定）——鼠标点行也会抢焦点
-            //（为了 ↑/↓ 的键盘锚），环若跟着焦点走就会被误读成选中态。
-            keyboardOnly: true,
-            borderRadius: Bauhaus.radius,
-            child: GestureDetector(
-              onTap: () {
-                // 点行即把键盘锚放到这行：紧接着按 ↑/↓ 能继续在列表里走。
-                _focus.requestFocus();
-                widget.onOpen();
-              },
-              // 右键（2026-10-21 用户定）：删除从行内挪进**条目菜单**——入口与
-              // 样式对齐左侧旧列表 `NoteListView`（指针处弹出、危险项红字）。
-              onSecondaryTapDown: (TapDownDetails d) =>
-                  _openMenu(d.globalPosition),
-              child: Container(
-                // 键盘高亮行挂锚（滚进视口用）；其余行为 null。
-                key: widget.anchorKey,
-                // hover / 选中都做成**内缩的圆角块**（2026-10-21 用户定"和图标栏
-                // 一致"）：60 轨的钮就是 36 圆角 pill，不是通栏色带。外缩 4 + 内距 8
-                // = 原来的 12 ⇒ 文字左缘不动。
-                margin: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
-                // 按钮层与内容层平级（2026-11-20 重定方案）：原方案把按钮塞在
-                // **带 padding 的 Container 内**的 Stack 里 ⇒ `top:0` 从内容区
-                // 起算，被 12px 上内距推下去（用户实报"位置偏下"）。改为外层
-                // Stack：内容层保留原 padding，按钮相对**整个行块**定位，落进
-                // "标题到行顶"那段留白，既不上移过头也不压摘要。
-                child: Stack(
-                  children: <Widget>[
-                    Container(
-                      // Stack 给的是 loose 约束 ⇒ 不写 width 就只包住文字，
-                      // 行体空白处点不中（原结构 Container 直接吃紧约束，无此问题）。
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: Tokens.spaceMd - Tokens.spaceXs,
-                        // 2026-11-21 用户定：上下都收到 4（spaceXs）——标题贴行顶
-                        // 更紧凑。按钮在 top:4/right:4、24 热区，标题被它包在
-                        // 垂直区间里（8 或 4 都遮）⇒ 关键在**水平**避让：
-                        // rich() 右侧预留按钮宽 + 右偏 − 内容右内距，ellipsis
-                        // 在按钮左缘前截断，常驻不等 hover 才跳。
-                        vertical: Tokens.spaceXs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: bg,
-                        borderRadius: Bauhaus.radius,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          rich(title, 1, titleStyle),
-                          // 2026-11-21 用户定：画布笔记在列表里显示**整图鸟瞰**
-                          // （苹果无边记式总览卡），不再显示文字摘要——画布是
-                          // 自由布局，摘要文字说明不了它的内容。`all` 视图里
-                          // 的画布行同样生效（视觉一致）。
-                          // 固定 72px：加载 / 空 / 有数据三态等高，虚拟列表不跳。
-                          if (n.kind == NoteKind.canvas) ...<Widget>[
-                            const SizedBox(height: Tokens.spaceXxs),
-                            SizedBox(
-                              height: _kCanvasOverviewHeight,
-                              child: CanvasThumbnailView(noteId: n.id),
-                            ),
-                          ] else if (summary.isNotEmpty) ...<Widget>[
-                            const SizedBox(height: Tokens.spaceXxs),
-                            rich(summary, 2, summaryStyle),
+          // 2026-11-21：4px 内缩移到 FocusRing **外**。原实现把它放在环的内层
+          // Container(margin) 上 ⇒ 环画在整宽、背景内缩 4 ⇒ 环比背景宽 8px。
+          // 移到外面后环与背景同宽同高，文字左缘不变。
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Tokens.spaceXs),
+            child: FocusRing(
+              focusNode: _focus,
+              // 环只给**键盘**（2026-10-21 用户定）——鼠标点行也会抢焦点
+              //（为了 ↑/↓ 的键盘锚），环若跟着焦点走就会被误读成选中态。
+              keyboardOnly: true,
+              borderRadius: Bauhaus.radius,
+              child: GestureDetector(
+                onTap: () {
+                  // 点行即把键盘锚放到这行：紧接着按 ↑/↓ 能继续在列表里走。
+                  _focus.requestFocus();
+                  widget.onOpen();
+                },
+                // 右键（2026-10-21 用户定）：删除从行内挪进**条目菜单**——入口与
+                // 样式对齐左侧旧列表 `NoteListView`（指针处弹出、危险项红字）。
+                onSecondaryTapDown: (TapDownDetails d) =>
+                    _openMenu(d.globalPosition),
+                child: Container(
+                  // 键盘高亮行挂锚（滚进视口用）；其余行为 null。
+                  key: widget.anchorKey,
+                  // 4px 内缩已移到 FocusRing 外的 Padding（2026-11-21）——这里不再
+                  // margin，环与背景盒同宽；文字左缘仍由外层 Padding 保证不动。
+                  // 按钮层与内容层平级（2026-11-20 重定方案）：原方案把按钮塞在
+                  // **带 padding 的 Container 内**的 Stack 里 ⇒ `top:0` 从内容区
+                  // 起算，被 12px 上内距推下去（用户实报"位置偏下"）。改为外层
+                  // Stack：内容层保留原 padding，按钮相对**整个行块**定位，落进
+                  // "标题到行顶"那段留白，既不上移过头也不压摘要。
+                  child: Stack(
+                    children: <Widget>[
+                      Container(
+                        // Stack 给的是 loose 约束 ⇒ 不写 width 就只包住文字，
+                        // 行体空白处点不中（原结构 Container 直接吃紧约束，无此问题）。
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Tokens.spaceMd - Tokens.spaceXs,
+                          // 2026-11-21 用户定：上下都收到 4（spaceXs）——标题贴行顶
+                          // 更紧凑。按钮在 top:4/right:4、24 热区，标题被它包在
+                          // 垂直区间里（8 或 4 都遮）⇒ 关键在**水平**避让：
+                          // rich() 右侧预留按钮宽 + 右偏 − 内容右内距，ellipsis
+                          // 在按钮左缘前截断，常驻不等 hover 才跳。
+                          vertical: Tokens.spaceXs,
+                        ),
+                        decoration: BoxDecoration(
+                          color: bg,
+                          borderRadius: Bauhaus.radius,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            rich(title, 1, titleStyle),
+                            // 2026-11-21 用户定：画布笔记在列表里显示**整图鸟瞰**
+                            // （苹果无边记式总览卡），不再显示文字摘要——画布是
+                            // 自由布局，摘要文字说明不了它的内容。`all` 视图里
+                            // 的画布行同样生效（视觉一致）。
+                            // 固定 72px：加载 / 空 / 有数据三态等高，虚拟列表不跳。
+                            if (n.kind == NoteKind.canvas) ...<Widget>[
+                              const SizedBox(height: Tokens.spaceXxs),
+                              SizedBox(
+                                height: _kCanvasOverviewHeight,
+                                child: CanvasThumbnailView(noteId: n.id),
+                              ),
+                            ] else if (summary.isNotEmpty) ...<Widget>[
+                              const SizedBox(height: Tokens.spaceXxs),
+                              rich(summary, 2, summaryStyle),
+                            ],
                           ],
-                        ],
-                      ),
-                    ),
-                    // 「更多」按钮浮在**行块右上角**：相对外层 Stack 定位，
-                    // 不参与标题/摘要布局、不撑高行高。hover 露出，点击弹条目菜单。
-                    // ⚠️ 菜单开着也算可见（点按钮后鼠标移向菜单时 onExit 置
-                    // _hover=false ⇒ 按钮消失，靠 _menuOpen 保住）。
-                    Positioned(
-                      // 2026-11-21：top/right 同为 1（用户定间距一致）——top 上提
-                      // 3 让 24 热区中心与 18 标题中心都在 y=13；right 收到 1，
-                      // 水平避让随之从 20 改 17（见 _kMoreHorizontalReserve）。
-                      top: _kMoreTop,
-                      right: _kMoreRight,
-                      child: Visibility(
-                        visible: _hover || _menuOpen,
-                        maintainSize: true,
-                        maintainAnimation: true,
-                        maintainState: true,
-                        child: IconButton(
-                          key: _moreKey,
-                          tooltip: '更多',
-                          iconSize: Tokens.iconSm,
-                          // 热区 24（触达下限）：浮层不占行高，所以能比标题行高
-                          // 18 大一圈、好点。
-                          style: IconButton.styleFrom(
-                            minimumSize: const Size.square(24),
-                            maximumSize: const Size.square(24),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            // hover 底色圆角跟行背景同一档（Bauhaus.radius=10），
-                            // 不再用 IconButton 默认 CircleBorder（2026-11-20 定）。
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: Bauhaus.radius,
-                            ),
-                          ),
-                          icon: const tabler.Dots(
-                            height: Tokens.iconSm,
-                            width: Tokens.iconSm,
-                            strokeWidth: Tokens.iconStroke,
-                          ),
-                          onPressed: _openMenuAtButton,
                         ),
                       ),
-                    ),
-                  ],
+                      // 「更多」按钮浮在**行块右上角**：相对外层 Stack 定位，
+                      // 不参与标题/摘要布局、不撑高行高。hover 露出，点击弹条目菜单。
+                      // ⚠️ 菜单开着也算可见（点按钮后鼠标移向菜单时 onExit 置
+                      // _hover=false ⇒ 按钮消失，靠 _menuOpen 保住）。
+                      Positioned(
+                        // 2026-11-21：top/right 同为 1（用户定间距一致）——top 上提
+                        // 3 让 24 热区中心与 18 标题中心都在 y=13；right 收到 1，
+                        // 水平避让随之从 20 改 17（见 _kMoreHorizontalReserve）。
+                        top: _kMoreTop,
+                        right: _kMoreRight,
+                        child: Visibility(
+                          visible: _hover || _menuOpen,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: IconButton(
+                            key: _moreKey,
+                            tooltip: '更多',
+                            iconSize: Tokens.iconSm,
+                            // 热区 24（触达下限）：浮层不占行高，所以能比标题行高
+                            // 18 大一圈、好点。
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size.square(24),
+                              maximumSize: const Size.square(24),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              // hover 底色圆角跟行背景同一档（Bauhaus.radius=10），
+                              // 不再用 IconButton 默认 CircleBorder（2026-11-20 定）。
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: Bauhaus.radius,
+                              ),
+                            ),
+                            icon: const tabler.Dots(
+                              height: Tokens.iconSm,
+                              width: Tokens.iconSm,
+                              strokeWidth: Tokens.iconStroke,
+                            ),
+                            onPressed: _openMenuAtButton,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
