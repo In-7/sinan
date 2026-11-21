@@ -107,11 +107,74 @@ void main() {
     final int idx = ordered.indexWhere((Note n) => n.id == selectedAfter);
     // 先钉"导航是否真的前进"——区分「导航没触发」与「导航触发但没滚」。
     expect(idx, greaterThanOrEqualTo(30), reason: '↓ 35 次应选中靠后的笔记');
-    expect(
-      pos.pixels,
-      greaterThan(0),
-      reason: '键盘走到视口外的行，列表必须跟着滚（不能让蓝框停在原地）',
+    expect(pos.pixels, greaterThan(0), reason: '键盘走到视口外的行，列表必须跟着滚（不能让蓝框停在原地）');
+  });
+
+  testWidgets('按住 ↑ 不放能一路走到顶（不被滚动动画卡住）', (tester) async {
+    // 2026-11-21 用户实报：单次按正常，**按住不放**从下往上会在中间停住、再也
+    // 按不动。怀疑：键盘连发比滚动动画快 ⇒ 目标行被甩出 cacheExtent 卸载 ⇒
+    // 焦点丢失（行 FocusNode 随 State dispose），后续按键没人接。
+    // 200 行：连发时选中前进得比滚动动画快，目标行会被甩出 cacheExtent
+    // （40 行太矮，整列都在 cache 里，复现不出用户的现象）。
+    final ProviderContainer container = await pumpList(tester, count: 200);
+    final Finder listScroll = find.descendant(
+      of: find.byType(NoteListColumn),
+      matching: find.byType(Scrollable),
     );
+    final ScrollPosition pos = tester
+        .state<ScrollableState>(listScroll)
+        .position;
+    final List<Note> ordered = container.read(
+      homeItemsProvider((view: HomeView.all, tag: null)),
+    );
+
+    // 先滚到底部，点最后一行建立焦点（模拟用户从下往上）。
+    pos.jumpTo(pos.maxScrollExtent);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(ordered.last.title));
+    await tester.pumpAndSettle();
+    expect(container.read(selectedNoteIdProvider), ordered.last.id);
+
+    // 按住 ↑：按下 + 多次 repeat，每次只推 1ms（滚动动画 nowhere near 跑完）。
+    // 真实 key repeat ≈30ms/次、动画 150ms，量级一致。
+    final Rect viewRect = tester.getRect(listScroll);
+    int prevIdx = ordered.length - 1;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowUp);
+    for (int i = 0; i < 40; i++) {
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowUp);
+      // 两帧：第 1 帧跑 didUpdateWidget→post-frame reveal（duration 0 的
+      // jumpTo），第 2 帧让新偏移真正布局出来（否则目标行还停在旧位置）。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+
+      // 每次连发后：① 选中必须**前进**（不能停在原地="按不动"）；
+      // ② 选中行必须仍在视口内（否则蓝框消失，用户以为卡住）。
+      final String? id = container.read(selectedNoteIdProvider);
+      final int idx = ordered.indexWhere((Note n) => n.id == id);
+      expect(idx, lessThan(prevIdx), reason: '第 $i 次连发：选中必须继续向上（不能停在原地）');
+      prevIdx = idx;
+
+      // 限定在列表列内：编辑器标题行也可能有同名 Text（点行会打开详情）。
+      final Finder rowFinder = find.descendant(
+        of: find.byType(NoteListColumn),
+        matching: find.text(ordered[idx].title),
+      );
+      expect(
+        rowFinder,
+        findsOneWidget,
+        reason: '第 $i 次连发：选中行 idx=$idx 必须在列表内（滚跟上了才会有）',
+      );
+      final Rect rowRect = tester.getRect(rowFinder);
+      expect(
+        rowRect.top >= viewRect.top - 1 &&
+            rowRect.bottom <= viewRect.bottom + 1,
+        isTrue,
+        reason: '第 $i 次连发：选中行必须在视口内（蓝框不能消失）',
+      );
+    }
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(prevIdx, lessThanOrEqualTo(ordered.length - 41));
   });
 
   testWidgets('蓝框尺寸与行背景一致', (tester) async {
@@ -140,10 +203,6 @@ void main() {
       closeTo(bgRect.width, 1),
       reason: '蓝框宽度应与行背景一致（现在 margin 让环宽 8px）',
     );
-    expect(
-      ringRect.height,
-      closeTo(bgRect.height, 1),
-      reason: '蓝框高度应与行背景一致',
-    );
+    expect(ringRect.height, closeTo(bgRect.height, 1), reason: '蓝框高度应与行背景一致');
   });
 }

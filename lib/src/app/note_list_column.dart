@@ -1002,16 +1002,23 @@ class _NoteRowState extends State<_NoteRow> {
     // 从不滚，蓝框走出视口；点可见行又滚过头。改用**全局矩形**与视口矩形直接比：
     // 两矩形都在同一全局坐标系，不依赖 getOffsetToReveal 的锚点推导。
     final Rect rowRect = box.localToGlobal(Offset.zero) & box.size;
-    final RenderBox scrollBox = scrollable.context.findRenderObject()! as RenderBox;
+    final RenderBox scrollBox =
+        scrollable.context.findRenderObject()! as RenderBox;
     final Rect viewRect = scrollBox.localToGlobal(Offset.zero) & scrollBox.size;
     if (rowRect.top >= viewRect.top && rowRect.bottom <= viewRect.bottom) {
       return; // 整行已在视口内：点可见行不该滚（2026-10-21 用户定）
     }
 
+    // 2026-11-21 bug（用户实报"按住 ↑ 会在中间停住、按不动"）：原来带
+    // `durationFast`(150ms) 动画，而连发 ~30ms 一次 ⇒ 每次按键都从**当前
+    // 位置重启**动画，滚动只爬了几毫秒就被打断，选中却已前进一步 ⇒ 目标行
+    // 迅速甩出视口、蓝框消失，读作"卡住"。改为**即时对齐**（duration 0，
+    // 无动画可打断）+ **最小滚动**（哪条边越界就贴哪条边，不做"置顶"大跳）。
     Scrollable.ensureVisible(
       context,
-      duration: Tokens.durationFast,
-      curve: Curves.easeOut,
+      alignmentPolicy: rowRect.top < viewRect.top
+          ? ScrollPositionAlignmentPolicy.keepVisibleAtStart
+          : ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
     );
   }
 
