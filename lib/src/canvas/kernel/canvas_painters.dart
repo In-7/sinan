@@ -8,6 +8,7 @@ import 'canvas_camera.dart';
 import 'canvas_edge.dart';
 import 'canvas_item.dart';
 import 'canvas_palette.dart';
+import 'canvas_snap.dart';
 import 'ink_stroke.dart';
 
 /// 背景点阵网格：**屏幕坐标**下按相机绘制，间距随缩放自适应。
@@ -755,4 +756,56 @@ class OverlayPainter extends CustomPainter {
     }
     return false;
   }
+}
+
+/// 对齐参考线（屏幕坐标）：移动/缩放时显示吸附对齐线。
+///
+/// 与浮层分开是为了**重绘隔离**：吸附线只在移动手势中出现，
+/// 不影响其他层的重绘。
+class SnapLinesPainter extends CustomPainter {
+  const SnapLinesPainter({
+    required this.camera,
+    required this.color,
+    required this.lines,
+  });
+
+  final CanvasCamera camera;
+  final Color color;
+  final List<SnapLine> lines;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (lines.isEmpty) return;
+
+    final Paint paint = Paint()
+      ..color = color.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    for (final SnapLine line in lines) {
+      if (line.isVertical && line.x != null) {
+        // 垂直线：世界坐标 x → 屏幕坐标 x
+        final double screenX = camera.worldToScreen(Offset(line.x!, 0)).dx;
+        canvas.drawLine(
+          Offset(screenX, 0),
+          Offset(screenX, size.height),
+          paint,
+        );
+      } else if (!line.isVertical && line.y != null) {
+        // 水平线：世界坐标 y → 屏幕坐标 y
+        final double screenY = camera.worldToScreen(Offset(0, line.y!)).dy;
+        canvas.drawLine(
+          Offset(0, screenY),
+          Offset(size.width, screenY),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(SnapLinesPainter oldDelegate) =>
+      camera != oldDelegate.camera ||
+      color != oldDelegate.color ||
+      lines != oldDelegate.lines;
 }

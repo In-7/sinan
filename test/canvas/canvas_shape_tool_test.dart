@@ -3,7 +3,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/canvas/kernel/canvas_controller.dart';
 import 'package:sinan/src/canvas/kernel/canvas_item.dart';
-import 'package:sinan/src/canvas/kernel/ink_stroke.dart';
 
 // 构造指针事件用 `position`：无变换时 `localPosition` 就等于它，而控制器读的是
 // `localPosition`（真实事件由 Listener 把全局坐标折算成局部坐标）。
@@ -87,23 +86,23 @@ void main() {
     controller.dispose();
   });
 
-  test('颜色跟随笔刷（默认仍是哨兵：暗色画布上自动变浅）', () {
+  test('形状使用默认墨色', () {
     final CanvasController controller = setUpController();
     controller.setShapeTool(CanvasShapeKind.rectangle);
     controller.onPointerDown(_down(const Offset(10, 10)));
     controller.onPointerUp(_up(const Offset(60, 60)));
     expect(
       (controller.document.items.single as ShapeItem).color,
-      kThemeInk,
-      reason: '写具体色就烤死在当前明暗档：切主题后形状会隐形',
+      const Color(0xFF161513), // 默认墨色
+      reason: '画笔已移除（2026-11-22），使用固定默认色',
     );
 
-    controller.setPenColor(const Color(0xFFE5484D));
+    // 画笔已移除（2026-11-22），使用默认颜色
     controller.onPointerDown(_down(const Offset(80, 80)));
     controller.onPointerUp(_up(const Offset(120, 120)));
     expect(
       (controller.document.items.last as ShapeItem).color,
-      const Color(0xFFE5484D),
+      const Color(0xFF161513), // 默认墨色
       reason: '形状工具就是"用当前笔刷画个框"：笔色改了形状也该跟着改',
     );
     controller.dispose();

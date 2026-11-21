@@ -360,6 +360,37 @@ class _CanvasContextBar extends StatelessWidget {
   final CanvasController controller;
   final void Function(String blockId)? onSendCardToDocument;
 
+  Future<void> _confirmDelete(BuildContext context) async {
+    final int count = controller.selectedItems.length +
+        controller.selection.length +
+        (controller.selectedEdge != null ? 1 : 0);
+    if (count == 0) return;
+
+    // 批量删除（>3个）时弹确认框
+    if (count > 3) {
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: const Text('确认删除'),
+          content: Text('删除 $count 个项目？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    controller.deleteSelection();
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -422,7 +453,7 @@ class _CanvasContextBar extends StatelessWidget {
                       strokeWidth: 1.5,
                     ),
                     tooltip: '删除所选（Delete）',
-                    onPressed: controller.deleteSelection,
+                    onPressed: () => _confirmDelete(context),
                   ),
                 ],
               ),

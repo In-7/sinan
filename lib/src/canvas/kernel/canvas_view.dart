@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'canvas_controller.dart';
 import 'canvas_item.dart';
@@ -96,14 +97,18 @@ class _CanvasViewState extends State<CanvasView> {
             return Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                Listener(
-                  // 原始事件：压感 / 笔类型 / 接触面都要，GestureDetector 给不全。
-                  onPointerDown: controller.onPointerDown,
-                  onPointerMove: controller.onPointerMove,
-                  onPointerUp: controller.onPointerUp,
-                  onPointerCancel: controller.onPointerCancel,
-                  onPointerHover: controller.onPointerHover,
-                  onPointerSignal: controller.onPointerSignal,
+                GestureDetector(
+                  onSecondaryTapDown: (TapDownDetails details) {
+                    _showContextMenu(context, details.globalPosition);
+                  },
+                  child: Listener(
+                    // 原始事件：压感 / 笔类型 / 接触面都要，GestureDetector 给不全。
+                    onPointerDown: controller.onPointerDown,
+                    onPointerMove: controller.onPointerMove,
+                    onPointerUp: controller.onPointerUp,
+                    onPointerCancel: controller.onPointerCancel,
+                    onPointerHover: controller.onPointerHover,
+                    onPointerSignal: controller.onPointerSignal,
                   // opaque：空白区域也要能接到 hover / down（Stack 里的 CustomPaint
                   // 自身不参与命中）。
                   behavior: HitTestBehavior.opaque,
@@ -186,7 +191,6 @@ class _CanvasViewState extends State<CanvasView> {
                                 // （缓存那张 Picture 已由 pictureFor 按同一墨色烤好）。
                                 inkColor: widget.inkColor,
                                 picture: picture,
-                                activeStroke: controller.activeStroke,
                                 stamp: controller.repaintStamp,
                               ),
                             ),
@@ -197,11 +201,6 @@ class _CanvasViewState extends State<CanvasView> {
                                 marquee: controller.marquee,
                                 shapeDraft: controller.shapeDraft,
                                 shapeDraftKind: controller.shapeKind,
-                                eraserCenter:
-                                    controller.tool == CanvasTool.eraser
-                                    ? controller.eraserAt
-                                    : null,
-                                eraserRadius: controller.eraserRadius,
                                 selectedItems: controller.selectedItems,
                                 // 端点拖改（缺口4）的预览走同一条虚线通道。
                                 pendingEdge:
@@ -211,16 +210,28 @@ class _CanvasViewState extends State<CanvasView> {
                                 stamp: controller.repaintStamp,
                               ),
                             ),
+                            // 吸附对齐线（移动时显示）
+                            CustomPaint(
+                              painter: SnapLinesPainter(
+                                camera: controller.camera,
+                                color: widget.accentColor,
+                                lines: controller.snapEngine.activeLines,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
                   ),
                 ),
-                // ⚠️ "AI 生成"浮层入口已于 2026-09-18 **移除**（体验修复）：
-                // 它挂在"有选区"上 ⇒ 插入/选中任何东西都会在右上角冒出来，而生成
-                // 出来的图片又不可编辑，干扰主流程。内核能力（`generateFromSelection`
-                // / `AiImageItem` / `generator`）**保留**，将来再挂回 UI。
+                ),
+                // 文本编辑 overlay（双击卡片时显示）
+                if (controller.isEditing && controller.textEditController != null)
+                  _CardTextEditor(
+                    controller: controller,
+                    backgroundColor: widget.backgroundColor,
+                    accentColor: widget.accentColor,
+                  ),
               ],
             );
           },
@@ -229,15 +240,164 @@ class _CanvasViewState extends State<CanvasView> {
     );
   }
 
+  void _showContextMenu(BuildContext context, Offset position) {
+    final CanvasController controller = widget.controller;
+    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    unawaited(
+      showMenu<void>(
+        context: context,
+        position: RelativeRect.fromRect(
+          Rect.fromPoints(position, position),
+          Offset.zero & overlay.size,
+        ),
+        items: [
+          if (controller.hasSelection)
+            PopupMenuItem<void>(
+              onTap: controller.deleteSelection,
+              child: const Row(
+                children: [
+                  Icon(Icons.delete_outline, size: 18),
+                  SizedBox(width: 8),
+                  Text('删除'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   MouseCursor _cursorOf(CanvasController controller) =>
       switch (controller.tool) {
-        CanvasTool.pen => SystemMouseCursors.precise,
-        CanvasTool.eraser => SystemMouseCursors.precise,
         CanvasTool.select => SystemMouseCursors.basic,
         CanvasTool.pan => SystemMouseCursors.grab,
         // 十字光标：形状工具是"落点定框"的绘制行为（同笔），不是选择行为。
         CanvasTool.shape => SystemMouseCursors.precise,
-        // 连线工具：精确十字光标，提示"从一个卡片拖到另一个"。
+        // 连线工具：精确十字光标，提示"从一个 item 拖到另一个"。
         CanvasTool.connect => SystemMouseCursors.precise,
       };
+}
+
+/// 卡片文本编辑 overlay（双击卡片时叠加在卡片位置）。
+///
+/// 设计要点：
+/// - 世界坐标 → 屏幕坐标定位（跟随相机变换）
+/// - Enter 提交、Esc 取消、点击外部提交
+/// - 样式跟随卡片（圆角、边框、字号随缩放）
+class _CardTextEditor extends StatelessWidget {
+  const _CardTextEditor({
+    required this.controller,
+    required this.backgroundColor,
+    required this.accentColor,
+  });
+
+  final CanvasController controller;
+  final Color backgroundColor;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? editId = controller.editingItemId;
+    if (editId == null) return const SizedBox.shrink();
+
+    final CanvasItem? item = controller.document.itemById(editId);
+    if (item == null) return const SizedBox.shrink();
+
+    // 世界坐标 → 屏幕坐标
+    final Rect worldRect = item.rect;
+    final Offset topLeft = controller.camera.worldToScreen(worldRect.topLeft);
+    final Offset bottomRight = controller.camera.worldToScreen(worldRect.bottomRight);
+    final Rect screenRect = Rect.fromPoints(topLeft, bottomRight);
+
+    // 字号随缩放调整（保持视觉一致）
+    final double fontSize = 14 * controller.camera.scale;
+
+    return Positioned(
+      left: screenRect.left,
+      top: screenRect.top,
+      width: screenRect.width,
+      height: screenRect.height,
+      child: Material(
+        color: Colors.transparent,
+        child: Focus(
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent) {
+              if (event.logicalKey == LogicalKeyboardKey.escape) {
+                controller.cancelEdit();
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.enter &&
+                  !HardwareKeyboard.instance.isControlPressed) {
+                controller.commitEdit();
+                return KeyEventResult.handled;
+              }
+              // 格式快捷键：Ctrl+B/I/U
+              if (HardwareKeyboard.instance.isControlPressed) {
+                final TextEditingController? textCtrl = controller.textEditController;
+                if (textCtrl == null) return KeyEventResult.ignored;
+                final TextSelection sel = textCtrl.selection;
+                if (!sel.isValid) return KeyEventResult.ignored;
+                final String text = textCtrl.text;
+                final int start = sel.start;
+                final int end = sel.end;
+                String marker = '';
+                if (event.logicalKey == LogicalKeyboardKey.keyB) {
+                  marker = '**';
+                } else if (event.logicalKey == LogicalKeyboardKey.keyI) {
+                  marker = '*';
+                } else if (event.logicalKey == LogicalKeyboardKey.keyU) {
+                  marker = '__';
+                } else {
+                  return KeyEventResult.ignored;
+                }
+                // 插入 markdown 标记
+                final String newText = text.replaceRange(
+                  start,
+                  end,
+                  '$marker${text.substring(start, end)}$marker',
+                );
+                textCtrl.text = newText;
+                textCtrl.selection = TextSelection.collapsed(
+                  offset: end + marker.length * 2,
+                );
+                return KeyEventResult.handled;
+              }
+            }
+            return KeyEventResult.ignored;
+          },
+          child: TextField(
+            controller: controller.textEditController,
+            autofocus: true,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            style: TextStyle(
+              fontSize: fontSize,
+              color: Theme.of(context).colorScheme.onSurface,
+              height: 1.4,
+            ),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide(color: accentColor, width: 2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide(color: accentColor, width: 2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide(color: accentColor, width: 2),
+              ),
+              contentPadding: EdgeInsets.all(8 * controller.camera.scale),
+              fillColor: backgroundColor,
+              filled: true,
+              isDense: true,
+            ),
+            onTapOutside: (_) => controller.commitEdit(),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -72,8 +72,10 @@ void advanceEdgeIdSequence(Iterable<String> existingIds) {
 class CanvasEdge {
   CanvasEdge({
     String? id,
-    required this.fromId,
-    required this.toId,
+    this.fromItemId,
+    this.toItemId,
+    this.fromId = '',
+    this.toId = '',
     this.fromSide,
     this.toSide,
     this.startShape = _defaultStartShape,
@@ -84,12 +86,19 @@ class CanvasEdge {
 
   final String id;
 
+  /// 起点 item 的 **`item.id`**（任意 item 类型）。
+  ///
+  /// 优先使用此字段（2026-11-22 起支持任意 item 连线）；
+  /// 为 null 时回落到 [fromId]（旧存档兼容）。
+  final String? fromItemId;
+
+  /// 终点 item 的 `item.id`（任意 item 类型）。
+  final String? toItemId;
+
   /// 起点卡片的 **`blocks.id`**（**不是** item id）。
   ///
-  /// ⚠️ 用 blockId 而不是 item id，是为了与存储侧**同口径**：`canvas_edges.from_id`
-  /// 外键 `blocks(id)`，于是卡片被删时连线随外键级联消失，两端不会漂移。
-  /// 代价是内核要按它**反查** item（见 `CanvasDocument._itemByBlockId`）
-  /// ——卡片数量少，这个遍历值得。
+  /// ⚠️ 旧存档字段：仅 CardItem 有 blockId。新连线优先用 [fromItemId]。
+  /// 保留是为了向后兼容（旧画布的连线仍能工作）。
   final String fromId;
 
   /// 终点卡片的 `blocks.id`（同上）。
@@ -115,8 +124,10 @@ class CanvasEdge {
   /// props_json` 扩展位（不占任何新列、靠 `props_json` 往返）。
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
-    'fromId': fromId,
-    'toId': toId,
+    if (fromItemId != null) 'fromItemId': fromItemId,
+    if (toItemId != null) 'toItemId': toItemId,
+    if (fromId.isNotEmpty) 'fromId': fromId,
+    if (toId.isNotEmpty) 'toId': toId,
     if (fromSide != null) 'fromSide': fromSide!.name,
     if (toSide != null) 'toSide': toSide!.name,
     if (startShape != _defaultStartShape) 'startShape': startShape.name,
@@ -126,6 +137,8 @@ class CanvasEdge {
 
   factory CanvasEdge.fromJson(Map<String, dynamic> j) => CanvasEdge(
     id: j['id'] as String?,
+    fromItemId: j['fromItemId'] as String?,
+    toItemId: j['toItemId'] as String?,
     fromId: j['fromId'] as String? ?? '',
     toId: j['toId'] as String? ?? '',
     fromSide: _sideOf(j['fromSide']),

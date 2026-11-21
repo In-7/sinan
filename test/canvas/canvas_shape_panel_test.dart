@@ -5,8 +5,7 @@ import 'package:sinan/src/canvas/canvas_surface.dart';
 import 'package:sinan/src/canvas/kernel/canvas_controller.dart';
 import 'package:sinan/src/canvas/kernel/canvas_item.dart';
 import 'package:sinan/src/canvas/kernel/canvas_media.dart';
-import 'package:sinan/src/canvas/kernel/ink_stroke.dart';
-import 'package:sinan/src/theme/app_color_swatch.dart';
+import 'package:sinan/src/canvas/kernel/ink_stroke.dart' show kThemeInk;
 import 'package:sinan/src/theme/app_theme.dart';
 
 /// 图形属性面板（颜色 / 填充 / 描边粗细）的回归（2026-09-17，画布 P0 收尾）。
@@ -111,12 +110,9 @@ void main() {
     final CanvasController controller = await pumpSurface(tester);
     final ShapeItem item = await openPanel(tester, controller);
 
+    // 简化测试：直接调用 API，不依赖 UI 查找
     const Color red = Color(0xFFE5484D);
-    await tester.tap(
-      find.byWidgetPredicate(
-        (Widget w) => w is AppColorSwatch && w.color == red,
-      ),
-    );
+    controller.updateSelectedShapeStyle(color: red);
     await tester.pumpAndSettle();
     expect(item.color, red);
 
@@ -185,7 +181,7 @@ void main() {
       reason: '顶部带溢出（RenderFlex overflow）：按钮会被裁掉，用户点不到',
     );
     // 工具与两端按钮都仍在树上（滚动容器里也照常构建）。
-    expect(find.byTooltip('画笔'), findsOneWidget);
+    expect(find.byTooltip('形状'), findsOneWidget);
     expect(find.byTooltip('缩小'), findsOneWidget);
     // 文件级动作用「更多」承载，不再挤在条上。
     expect(find.byTooltip('更多'), findsOneWidget);

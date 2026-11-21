@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:flutter/widgets.dart';
 
 import 'canvas_ai.dart';
@@ -15,6 +14,7 @@ import 'canvas_item.dart';
 import 'canvas_media.dart';
 import 'canvas_palette.dart';
 import 'canvas_raster.dart';
+import 'canvas_snap.dart';
 import 'ink_stroke.dart';
 
 /// 工具状态机：每种工具的「按下」行为抽成独立处理器（见 `canvas_tool_handler.dart`）。
@@ -43,12 +43,6 @@ Rect _unionBounds(List<CanvasItem> items) {
 
 /// 当前工具。
 enum CanvasTool {
-  /// 笔（压感或模拟压感）。
-  pen,
-
-  /// 橡皮（整条笔迹擦除）。
-  eraser,
-
   /// 框选（选中后可整体删除 / 后续移动）。
   select,
 
@@ -56,16 +50,10 @@ enum CanvasTool {
   pan,
 
   /// 画形状：**按住拖拽定尺寸**；点一下则落一个默认大小。
-  ///
-  /// 它存在的直接原因是实测反馈——"点'矩形'只插入一个固定大小、还立刻切回框选，
-  /// 于是拖出来的是框选，矩形工具像假的"。只提供"插入一个矩形"不算一个**工具**：
-  /// 用户要的是"用当前笔刷画个框"。
   shape,
 
-  /// 连线（v9）：选工具后从一个**卡片**拖到另一个**卡片**，松手即建一条
-  /// [CanvasEdge]（端点存 blockId，binding）。点已有连线则选中它（再 Delete 删除）。
-  /// 只连卡片——连线端点存 blockId，与 `canvas_edges.from_id` 外键同口径；
-  /// 形状/图片没有 blockId，连了也画不出来（见 `CanvasEdge.fromId`）。
+  /// 连线：选工具后从一个 **item** 拖到另一个 **item**，松手即建一条
+  /// [CanvasEdge]（端点存 itemId，binding）。点已有连线则选中它（再 Delete 删除）。
   connect,
 }
 
@@ -91,24 +79,17 @@ class CanvasController extends ChangeNotifier {
   final CanvasCamera camera;
   final CanvasDocument document;
 
+  /// 吸附引擎（移动/缩放时对齐到其他 item）。
+  final SnapEngine snapEngine = SnapEngine();
+
   /// AI 生成器（依赖倒置）：默认离线桩，可替换为网络后端。
   final AiGenerator generator;
 
   // ───────────────────────── 工具与笔刷状态 ─────────────────────────
 
-  /// 默认"选择"：2026-09-18 砍掉笔迹入口后，默认**不再是画笔**——否则一进画布
-  /// 左键拖拽就是在画画（用户看不到任何笔迹工具，却画出了线）。
-  CanvasTool tool = CanvasTool.select;
-
-  /// 笔宽（世界单位）。
-  double penWidth = 4;
-
-  /// 当前笔色。默认 [kThemeInk]——**哨兵**而非具体色，于是新笔迹自动跟随主题
-  /// （画布底色随主题，墨色不跟就会"黑墨画黑纸"）。
-  Color penColor = kThemeInk;
-
-  /// 橡皮半径（世界单位）。
-  double eraserRadius = 8;
+  /// 默认"抓手"（2026-11-22 极简直觉式交互）：一进画布就是拖动平移，
+  /// 符合"浏览优先"的心智模型（同 Google Maps / Figma）。
+  CanvasTool tool = CanvasTool.pan;
 
   /// AI 生成提示词（由宿主页面绑定输入框设置；内核保持 Material-free）。
   String aiPrompt = '';
@@ -121,8 +102,99 @@ class CanvasController extends ChangeNotifier {
   Size _viewport = Size.zero;
   Size get viewport => _viewport;
 
-  InkStroke? _activeStroke;
-  InkStroke? get activeStroke => _activeStroke;
+  // ───────────────────────── 文本编辑态（双击卡片） ─────────────────────────
+
+  /// 正在编辑的 CardItem.id；null = 未在编辑。
+  String? _editingItemId;
+
+  /// 编辑态的文本控制器（由 UI 层挂 TextField 用）。
+  TextEditingController? _textEditController;
+
+  /// 是否正在编辑卡片文本。
+  bool get isEditing => _editingItemId != null;
+
+  /// 正在编辑的 item id（UI 层据此定位 overlay）。
+  String? get editingItemId => _editingItemId;
+
+  /// 编辑态的文本控制器（UI 层绑定 TextField）。
+  TextEditingController? get textEditController => _textEditController;
+
+  /// 进入编辑态（双击卡片时调用）。非 CardItem 则忽略。
+  void beginEdit(String itemId) {
+    final CanvasItem? item = document.itemById(itemId);
+    if (item is! CardItem) return;
+    // 若已在编辑别的卡片，先提交
+    if (_editingItemId != null && _editingItemId != itemId) {
+      commitEdit();
+    }
+    _editingItemId = itemId;
+    _textEditController = TextEditingController(text: item.text);
+    notifyListeners();
+  }
+
+  /// 提交编辑（保存 + 退出编辑态）。文本没变则直接退出。
+  void commitEdit() {
+    if (_editingItemId == null || _textEditController == null) return;
+    final String newText = _textEditController!.text;
+    final CanvasItem? item = document.itemById(_editingItemId!);
+    if (item is CardItem) {
+      final String oldText = item.text;
+      if (oldText != newText) {
+        item.text = newText;
+        document.updateCardText(_editingItemId!, oldText, newText);
+      }
+    }
+    _endEdit();
+  }
+
+  /// 取消编辑（丢弃改动 + 退出编辑态）。
+  void cancelEdit() {
+    _endEdit();
+  }
+
+  void _endEdit() {
+    _editingItemId = null;
+    _textEditController?.dispose();
+    _textEditController = null;
+    notifyListeners();
+  }
+
+  // ───────────────────────── 双击检测 ─────────────────────────
+
+  /// 上次点击时间（双击检测）。
+  DateTime? _lastTapTime;
+
+  /// 上次点击世界坐标（双击检测）。
+  Offset? _lastTapWorld;
+
+  /// 双击检测窗口（毫秒）。
+  static const int _doubleTapMs = 500;
+
+  /// 双击位置容差（世界单位）。
+  static const double _doubleTapSlop = 10;
+
+  /// 检测是否为双击，是则返回目标 itemId（进入编辑），否则返回 null。
+  String? _detectDoubleTap(Offset world) {
+    final DateTime now = DateTime.now();
+    if (_lastTapTime != null &&
+        now.difference(_lastTapTime!).inMilliseconds < _doubleTapMs &&
+        _lastTapWorld != null &&
+        (world - _lastTapWorld!).distance < camera.toWorld(_doubleTapSlop)) {
+      // 双击！命中检测
+      final CanvasItem? item = document.hitItemAt(
+        world,
+        camera.toWorld(CanvasController._itemHitTolerance),
+      );
+      if (item is CardItem) {
+        _lastTapTime = null;
+        _lastTapWorld = null;
+        return item.id;
+      }
+    }
+    _lastTapTime = now;
+    _lastTapWorld = world;
+    return null;
+  }
 
   Rect? _marquee;
   Rect? get marquee => _marquee;
@@ -214,9 +286,6 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// 橡皮光标位置（世界坐标），仅橡皮工具下维护。
-  Offset? _eraserAt;
-  Offset? get eraserAt => _eraserAt;
-
   // ───────────────────────── 连线（交互中 + 选中） ─────────────────────────
 
   /// 连线工具下，拖动起点卡片（[onPointerUp] 命中另一张卡片才落账）。
@@ -250,8 +319,13 @@ class CanvasController extends ChangeNotifier {
   EdgeGeometry? get selectedEdgeGeometry {
     final CanvasEdge? e = _selectedEdge;
     if (e == null) return null;
-    final CanvasItem? from = document.itemByBlockId(e.fromId);
-    final CanvasItem? to = document.itemByBlockId(e.toId);
+    // 端点查找：优先用 itemId（任意 item），回落到 blockId（旧存档兼容）。
+    final CanvasItem? from = e.fromItemId != null
+        ? document.itemById(e.fromItemId!)
+        : document.itemByBlockId(e.fromId);
+    final CanvasItem? to = e.toItemId != null
+        ? document.itemById(e.toItemId!)
+        : document.itemByBlockId(e.toId);
     if (from == null || to == null) return null;
     return CanvasEdges.geometryOf(e, from.rect, to.rect);
   }
@@ -350,7 +424,6 @@ class CanvasController extends ChangeNotifier {
   int? _panPointer;
   Offset? _panLast;
   Offset? _marqueeStart;
-  bool _erasing = false;
   DateTime? _lastTouchDown;
 
   // item 拖动 / 缩放的交互中状态：
@@ -434,7 +507,6 @@ class CanvasController extends ChangeNotifier {
   void setTool(CanvasTool value) {
     if (tool == value) return;
     tool = value;
-    _eraserAt = null;
     _selection.clear();
     _selectedItems.clear();
     _selectedEdge = null;
@@ -465,28 +537,6 @@ class CanvasController extends ChangeNotifier {
   ///
   /// 三个笔刷 setter 都要 `notifyListeners`：工具条上的"当前墨色"圆点靠它刷新
   /// ——只改字段的话用户改完颜色看不到任何反馈。
-  void setPenColor(Color value) {
-    if (penColor == value) return;
-    penColor = value;
-    notifyListeners();
-  }
-
-  /// 换笔宽（世界单位）。夹在 `1~24`：0 画不出东西，过大则一笔盖满整屏。
-  void setPenWidth(double value) {
-    final double next = value.clamp(1, 24);
-    if (penWidth == next) return;
-    penWidth = next;
-    notifyListeners();
-  }
-
-  /// 换橡皮半径（世界单位），夹在 `4~48`（理由同 [setPenWidth]）。
-  void setEraserRadius(double value) {
-    final double next = value.clamp(4, 48);
-    if (eraserRadius == next) return;
-    eraserRadius = next;
-    notifyListeners();
-  }
-
   void undo() {
     document.undo();
     refreshStaleness();
@@ -887,7 +937,17 @@ class CanvasController extends ChangeNotifier {
     // item 拖动：全部选中 item 按起点快照整体平移（含多选整体移动）。
     final Map<CanvasItem, Rect>? startRects = _moveStartRects;
     if (startRects != null && _moveStartWorld != null) {
-      final Offset delta = world - _moveStartWorld!;
+      Offset delta = world - _moveStartWorld!;
+      // 吸附：取第一个选中 item 作为参考（多选时整体移动，吸附基于主 item）
+      if (startRects.isNotEmpty) {
+        final CanvasItem mainItem = startRects.keys.first;
+        final Rect mainStartRect = startRects[mainItem]!;
+        final List<Rect> otherRects = <Rect>[
+          for (final CanvasItem item in document.items)
+            if (!startRects.containsKey(item)) item.rect,
+        ];
+        delta = snapEngine.snapMove(delta, mainStartRect, otherRects, camera.scale);
+      }
       for (final MapEntry<CanvasItem, Rect> e in startRects.entries) {
         e.key.rect = e.value.shift(delta);
       }
@@ -895,17 +955,7 @@ class CanvasController extends ChangeNotifier {
       return;
     }
 
-    final InkStroke? stroke = _activeStroke;
-    if (stroke != null) {
-      // 抽稀掉了（位移过小）就不重绘——省掉大量无意义的帧。
-      if (stroke.add(InkPoint(world, _pressureOf(event)))) {
-        notifyListeners();
-      }
-    } else if (_erasing) {
-      _eraserAt = world;
-      document.eraseAt(world, eraserRadius);
-      notifyListeners();
-    } else if (_marqueeStart != null) {
+    if (_marqueeStart != null) {
       _marquee = Rect.fromPoints(_marqueeStart!, world);
       notifyListeners();
     }
@@ -938,10 +988,6 @@ class CanvasController extends ChangeNotifier {
       return;
     }
 
-    final InkStroke? stroke = _activeStroke;
-    if (stroke != null && stroke.points.isNotEmpty) {
-      document.addStroke(stroke);
-    }
     final Rect? box = _marquee;
     if (box != null) {
       _selection
@@ -966,11 +1012,10 @@ class CanvasController extends ChangeNotifier {
       ]);
       _moveStartRects = null;
       _moveStartWorld = null;
+      snapEngine.clear();
     }
 
-    _activeStroke = null;
     _activePointer = null;
-    _erasing = false;
     _marqueeStart = null;
     _marquee = null;
     _pendingFrom = null;
@@ -986,8 +1031,6 @@ class CanvasController extends ChangeNotifier {
   void onPointerCancel(PointerCancelEvent event) {
     // 取消：进行中的那条直接丢弃（不进文档，也就不进撤销栈）。
     if (event.pointer == _activePointer) {
-      _activeStroke = null;
-      _erasing = false;
       _marqueeStart = null;
       _marquee = null;
       _cancelShapeDraft();
@@ -1069,12 +1112,12 @@ class CanvasController extends ChangeNotifier {
       _selection.clear();
       return;
     }
-    // 2) 从卡片起拉：起点端口由**按下位置**决定（缺口1，"从哪边拉出"）。
+    // 2) 从任意 item 起拉：起点端口由**按下位置**决定（缺口1，"从哪边拉出"）。
     final CanvasItem? item = document.hitItemAt(
       world,
       camera.toWorld(_itemHitTolerance),
     );
-    if (item is CardItem) {
+    if (item != null) {
       _pendingFrom = item;
       _pendingFromSide = _portAt(item.rect, world);
       _pendingCursor = world;
@@ -1082,7 +1125,7 @@ class CanvasController extends ChangeNotifier {
       _selectedItems.clear();
       _selection.clear();
     } else {
-      // 点空白/非卡片：清掉连线选区（不开始拉）。
+      // 点空白：清掉连线选区（不开始拉）。
       _selectedEdge = null;
       _selectedItems.clear();
       _selection.clear();
@@ -1109,22 +1152,33 @@ class CanvasController extends ChangeNotifier {
       world,
       camera.toWorld(_itemHitTolerance),
     );
-    if (target is! CardItem) return; // 没落在卡片上：取消
+    if (target == null) return; // 没落在 item 上：取消
     final CanvasSide? side = _portAt(target.rect, world);
-    final String newFromId = isFrom ? target.blockId : edge.fromId;
-    final String newToId = isFrom ? edge.toId : target.blockId;
-    if (newFromId == newToId) return; // 不许自连
+    final String? newFromItemId = isFrom ? target.id : edge.fromItemId;
+    final String? newToItemId = isFrom ? edge.toItemId : target.id;
+    final String newFromBlockId = isFrom
+        ? (target is CardItem ? target.blockId : '')
+        : edge.fromId;
+    final String newToBlockId = isFrom
+        ? edge.toId
+        : (target is CardItem ? target.blockId : '');
+    if (newFromItemId != null && newFromItemId == newToItemId) return; // 不许自连
+    if (newFromBlockId.isNotEmpty && newFromBlockId == newToBlockId) return;
     // 换端点后若与既有边完全同向 ⇒ 放弃（与起拉去重同口径）。
     final bool dup = document.edges.any(
       (CanvasEdge e) =>
-          e.id != edge.id && e.fromId == newFromId && e.toId == newToId,
+          e.id != edge.id &&
+          (e.fromItemId == newFromItemId || e.fromId == newFromBlockId) &&
+          (e.toItemId == newToItemId || e.toId == newToBlockId),
     );
     if (dup) return;
 
     final CanvasEdge next = CanvasEdge(
       id: edge.id,
-      fromId: newFromId,
-      toId: newToId,
+      fromItemId: newFromItemId,
+      toItemId: newToItemId,
+      fromId: newFromBlockId,
+      toId: newToBlockId,
       fromSide: isFrom ? side : edge.fromSide,
       toSide: isFrom ? edge.toSide : side,
       props: edge.props,
@@ -1142,18 +1196,23 @@ class CanvasController extends ChangeNotifier {
     );
     _pendingFrom = null;
     _pendingCursor = null;
-    if (from is CardItem && to is CardItem && to != from) {
+    if (from != null && to != null && to != from) {
       // 同向重复不重复建：端点/几何完全重合的两条边在屏幕上分不出来，
       // 删除也只能删中其中一条（"看不见的重复"比"少一条"更糟）。
       final bool exists = document.edges.any(
-        (CanvasEdge e) => e.fromId == from.blockId && e.toId == to.blockId,
+        (CanvasEdge e) =>
+            (e.fromItemId == from.id || e.fromId == (from is CardItem ? from.blockId : '')) &&
+            (e.toItemId == to.id || e.toId == (to is CardItem ? to.blockId : '')),
       );
       if (!exists) {
         // 两端端口都由**操作位置**决定（缺口1：从哪边拉出、连到哪边）。
         document.addEdge(
           CanvasEdge(
-            fromId: from.blockId,
-            toId: to.blockId,
+            fromItemId: from.id,
+            toItemId: to.id,
+            // 兼容旧存档：CardItem 同时写 blockId
+            fromId: from is CardItem ? from.blockId : '',
+            toId: to is CardItem ? to.blockId : '',
             fromSide: _pendingFromSide,
             toSide: _portAt(to.rect, world),
           ),
@@ -1193,7 +1252,7 @@ class CanvasController extends ChangeNotifier {
       rect: rect,
       kind: _shapeKind,
       // 颜色跟随笔刷：形状工具就是"用当前笔刷画个框"（改色在笔刷面板）。
-      color: penColor,
+      color: const Color(0xFF161513), // 默认墨色
     );
     document.addItem(item);
     // 画完即选中：接着就能调色/调描边（图形属性面板也正是在选中形状时出现）。
@@ -1214,9 +1273,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void onPointerHover(PointerHoverEvent event) {
-    if (tool != CanvasTool.eraser) return;
-    _eraserAt = camera.screenToWorld(event.localPosition);
-    notifyListeners();
+    // 橡皮工具已移除（2026-11-22 简化交互）
   }
 
   /// 滚轮 / 触控板：
@@ -1224,14 +1281,9 @@ class CanvasController extends ChangeNotifier {
   /// - 直接滚轮 = 平移（触控板双指滑动也走这条）。
   void onPointerSignal(PointerSignalEvent event) {
     if (event is! PointerScrollEvent) return;
-    final bool zoomIntent =
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
-    if (zoomIntent) {
-      camera.zoomAt(event.localPosition, math.exp(-event.scrollDelta.dy / 300));
-    } else {
-      camera.panBy(-event.scrollDelta);
-    }
+    // 极简直觉式交互（2026-11-22）：滚轮直接缩放（以鼠标为中心），
+    // 不需要按 Ctrl（同 Google Maps / Figma / tldraw）。
+    camera.zoomAt(event.localPosition, math.exp(-event.scrollDelta.dy / 300));
     notifyListeners();
   }
 
@@ -1388,23 +1440,8 @@ class CanvasController extends ChangeNotifier {
   }
 
   /// 手写笔（含橡皮端）且驱动真的给了压感值。
-  bool _hasRealPressure(PointerEvent event) =>
-      (event.kind == PointerDeviceKind.stylus ||
-          event.kind == PointerDeviceKind.invertedStylus) &&
-      event.pressure > 0;
 
-  /// 压感归一化到 0~1：不同驱动的 `pressureMin/Max` 区间不同。
-  /// 没有真压感时返回 0，交给 perfect_freehand 的 `simulatePressure` 模拟。
-  double _pressureOf(PointerEvent event) {
-    if (!_hasRealPressure(event)) return 0;
-    final double min = event.pressureMin;
-    final double max = event.pressureMax;
-    if (max > min) {
-      return ((event.pressure - min) / (max - min)).clamp(0.0, 1.0);
-    }
-    return event.pressure.clamp(0.0, 1.0);
-  }
-
+  /// 滚轮 / 触控板：
   /// 整页序列化（相机 + 文档），供保存/重载/导出。
   ///
   /// [media] 提供时图片路径写成**相对引用**（可移植），并随文档带一份媒体侧表；

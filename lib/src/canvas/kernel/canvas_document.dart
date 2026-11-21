@@ -294,9 +294,13 @@ class CanvasDocument {
     for (final String id in _edgeOrder) {
       final CanvasEdge? edge = _edges[id];
       if (edge == null) continue;
-      // 端点按 **blockId** 反查（与存储外键同口径，见 [CanvasEdge.fromId]）。
-      final CanvasItem? from = itemByBlockId(edge.fromId);
-      final CanvasItem? to = itemByBlockId(edge.toId);
+      // 端点查找：优先用 itemId（任意 item），回落到 blockId（旧存档兼容）。
+      final CanvasItem? from = edge.fromItemId != null
+          ? itemById(edge.fromItemId!)
+          : itemByBlockId(edge.fromId);
+      final CanvasItem? to = edge.toItemId != null
+          ? itemById(edge.toItemId!)
+          : itemByBlockId(edge.toId);
       if (from == null || to == null) continue;
       final EdgeGeometry? geo = CanvasEdges.geometryOf(
         edge,
@@ -327,9 +331,13 @@ class CanvasDocument {
     for (final String id in _edgeOrder) {
       final CanvasEdge? edge = _edges[id];
       if (edge == null) continue;
-      // 端点按 blockId 反查（与 [edgesIn] 同口径：连线依附卡片）。
-      final CanvasItem? from = itemByBlockId(edge.fromId);
-      final CanvasItem? to = itemByBlockId(edge.toId);
+      // 端点查找：优先用 itemId（任意 item），回落到 blockId（旧存档兼容）。
+      final CanvasItem? from = edge.fromItemId != null
+          ? itemById(edge.fromItemId!)
+          : itemByBlockId(edge.fromId);
+      final CanvasItem? to = edge.toItemId != null
+          ? itemById(edge.toItemId!)
+          : itemByBlockId(edge.toId);
       if (from == null || to == null) continue;
       final EdgeGeometry? geo = CanvasEdges.geometryOf(
         edge,
@@ -425,6 +433,18 @@ class CanvasDocument {
     ];
     if (entries.isEmpty) return;
     _push(_SetItemStyles(entries));
+    revision++;
+  }
+
+  /// 更新卡片文本（双击编辑后落账）。与 [setItemGroupIds] 同范式：
+  /// 调用方**先就地改** [CardItem.text]，再把改动交进来。
+  ///
+  /// 文本没真变不入栈（编辑器可能触发多次提交）。
+  void updateCardText(String id, String oldText, String newText) {
+    if (oldText == newText) return;
+    final CanvasItem? item = _items[id];
+    if (item is! CardItem) return;
+    _push(_UpdateCardText(id, oldText, newText));
     revision++;
   }
 
@@ -1131,6 +1151,27 @@ class _SetItemGroupIds extends CanvasCommand {
     for (final _ItemGroupId e in entries) {
       document._items[e.id]?.groupId = e.newGroupId;
     }
+  }
+}
+
+/// 更新卡片文本 = 一条命令（按 id 寻址、纯值，与 [_SetItemGroupIds] 同结构）。
+class _UpdateCardText extends CanvasCommand {
+  const _UpdateCardText(this.id, this.oldText, this.newText);
+
+  final String id;
+  final String oldText;
+  final String newText;
+
+  @override
+  void undo(CanvasDocument document) {
+    final CanvasItem? item = document._items[id];
+    if (item is CardItem) item.text = oldText;
+  }
+
+  @override
+  void redo(CanvasDocument document) {
+    final CanvasItem? item = document._items[id];
+    if (item is CardItem) item.text = newText;
   }
 }
 

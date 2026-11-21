@@ -75,15 +75,15 @@ void main() {
   testWidgets('焦点落在工具按钮上才画环，且环不改变布局', (WidgetTester tester) async {
     final CanvasController controller = await pumpToolbar(tester);
 
-    expect(ringOf('画笔'), findsNothing, reason: '没聚焦就不该有环（环是焦点表达）');
+    expect(ringOf('选择 / 框选'), findsNothing, reason: '没聚焦就不该有环（环是焦点表达）');
 
-    final Size before = tester.getSize(find.byTooltip('画笔'));
-    nodeOf(tester, '画笔').requestFocus();
+    final Size before = tester.getSize(find.byTooltip('选择 / 框选'));
+    nodeOf(tester, '选择 / 框选').requestFocus();
     await settleFocus(tester);
 
-    expect(ringOf('画笔'), findsOneWidget);
+    expect(ringOf('选择 / 框选'), findsOneWidget);
     expect(
-      tester.getSize(find.byTooltip('画笔')),
+      tester.getSize(find.byTooltip('选择 / 框选')),
       before,
       reason: '环必须画在边界内侧、不参与布局（否则按钮会位移）',
     );
@@ -91,7 +91,7 @@ void main() {
     // 焦点移走 ⇒ 环撤掉（不是"卡住不撤"，那是测试没多推一帧的假象）。
     nodeOf(tester, '缩小').requestFocus();
     await settleFocus(tester);
-    expect(ringOf('画笔'), findsNothing);
+    expect(ringOf('选择 / 框选'), findsNothing);
     expect(ringOf('缩小'), findsOneWidget);
 
     await teardown(tester, controller);
@@ -102,19 +102,17 @@ void main() {
   ) async {
     final CanvasController controller = await pumpToolbar(tester);
 
-    // 顶部中段：工具 5 + 三块浮层入口（笔刷 / 插入 / AI，锚点也是
+    // 顶部中段：工具 4 + 两块浮层入口（插入 / AI，锚点也是
     // `FocusRingIconButton`）；右下：缩放/适应 3 + 缩放徽标 1（`TextButton`）。
     // 导出/导入已收进「更多」菜单（2026-11-21），菜单项不做焦点环球。
     const List<String> tooltips = <String>[
       '选择 / 框选',
       '抓手（空格）',
-      '画笔',
-      '橡皮',
-      '连线（从一个卡片拖到另一个）',
+      '形状',
+      '连线（从一个 item 拖到另一个）',
       '缩小',
       '放大',
       '适应内容',
-      '笔刷：颜色 / 粗细 / 橡皮',
       '插入形状（按住拖拽定尺寸）/ 图片',
       'AI：用一句话让模型调整画布',
       '当前缩放（点击回到 100%）',

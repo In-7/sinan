@@ -4,13 +4,12 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import '../theme/focus_ring.dart';
 import '../theme/tokens.dart';
 import 'canvas_ai_button.dart';
-import 'canvas_brush_panel.dart';
 import 'canvas_insert_panel.dart';
 import 'kernel/canvas_controller.dart';
 
-/// 画布**绘制工具组**（2026-11-21 从底部工具条搬到顶部动作带中段）。
+/// 画布**绘制工具组**（2026-11-22 简化：移除画笔/橡皮）。
 ///
-/// 只放"画什么"：选择 / 抓手 / 画笔 / 橡皮 / 连线 + 笔刷 / 插入 / AI。
+/// 只放"画什么"：选择 / 抓手 / 形状 / 连线 + 插入 / AI。
 /// 缩放属"看哪里"（右下视图组）、导出导入属"文件级"（右下"更多"菜单），
 /// 都不在这里——一条带里混三种语义会互相稀释。
 ///
@@ -86,7 +85,7 @@ class CanvasToolStrip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 排布对齐 tldraw：选择 → 抓手 → 画笔 → 橡皮 → 连线。
+              // 极简直觉式（2026-11-22）：选择 → 抓手 → 形状 → 连线。
               toolButton(
                 CanvasTool.select,
                 const tabler.Mouse(
@@ -106,22 +105,13 @@ class CanvasToolStrip extends StatelessWidget {
                 '抓手（空格）',
               ),
               toolButton(
-                CanvasTool.pen,
-                const tabler.Edit(
+                CanvasTool.shape,
+                const tabler.Square(
                   height: Tokens.iconMd,
                   width: Tokens.iconMd,
                   strokeWidth: Tokens.iconStroke,
                 ),
-                '画笔',
-              ),
-              toolButton(
-                CanvasTool.eraser,
-                const tabler.Eraser(
-                  height: Tokens.iconMd,
-                  width: Tokens.iconMd,
-                  strokeWidth: Tokens.iconStroke,
-                ),
-                '橡皮',
+                '形状',
               ),
               toolButton(
                 CanvasTool.connect,
@@ -130,13 +120,12 @@ class CanvasToolStrip extends StatelessWidget {
                   width: Tokens.iconMd,
                   strokeWidth: Tokens.iconStroke,
                 ),
-                '连线（从一个卡片拖到另一个）',
+                '连线（从一个 item 拖到另一个）',
               ),
               const SizedBox(
                 height: 20,
                 child: VerticalDivider(width: Tokens.spaceSm),
               ),
-              CanvasBrushButton(controller: controller),
               CanvasInsertButton(
                 controller: controller,
                 onInsertImage: onInsertImage ?? () async {},

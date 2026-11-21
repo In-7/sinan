@@ -10,6 +10,7 @@ import 'canvas_ai.dart';
 import 'canvas_media.dart';
 import 'canvas_mindmap.dart';
 import 'canvas_palette.dart';
+import 'canvas_rich_text.dart';
 import 'ink_stroke.dart';
 
 /// item 的 id 前缀（存档里 id 的形态：`item-<递增序号>`）。
@@ -654,20 +655,17 @@ class CardItem extends CanvasItem {
         _paragraphWidth == width) {
       return _paragraph!;
     }
-    final ui.Paragraph paragraph =
-        (ui.ParagraphBuilder(
-                ui.ParagraphStyle(
-                  fontSize: CardMetrics.fontSize,
-                  height: CardMetrics.lineHeight,
-                  textAlign: ui.TextAlign.left,
-                ),
-              )
-              ..pushStyle(
-                ui.TextStyle(color: color, fontSize: CardMetrics.fontSize),
-              )
-              ..addText(text))
-            .build();
-    paragraph.layout(ui.ParagraphConstraints(width: width));
+    // Phase 4: 支持 markdown 富文本（粗体/斜体/代码/链接）
+    final ui.Paragraph paragraph = RichTextParser.parse(
+      text,
+      ui.TextStyle(color: color, fontSize: CardMetrics.fontSize),
+      width,
+      paragraphStyle: ui.ParagraphStyle(
+        fontSize: CardMetrics.fontSize,
+        height: CardMetrics.lineHeight,
+        textAlign: ui.TextAlign.left,
+      ),
+    );
     _paragraph?.dispose();
     _paragraph = paragraph;
     _paragraphText = text;
