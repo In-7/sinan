@@ -152,11 +152,13 @@ class CanvasHeaderBarState extends State<CanvasHeaderBar> {
         right: Tokens.spaceMd,
       ),
       child: AppFloatSurface(
-        // 水平 0 / 垂直 4：让两端的 28 按钮仍落在原来的 left:12 上（位置不变）。
-        padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXs),
-        // 40 高（4+32+4）⇒ 圆角取半高，与内部 32 工具的方角形成"胶囊里嵌方件"。
+        // 水平 0 / 垂直 2：**让两端 28 按钮的位置精确复原**（原 top=4）。
+        // 内容高由中间 32 工具决定 ⇒ 28 在 32 里居中偏 2 ⇒ 内边距取 2 后
+        // 耳顶缘回到 4、中心线仍与工具重合（"两边窄中间高"上下各多 2px）。
+        padding: const EdgeInsets.symmetric(vertical: Tokens.spaceXxs),
+        // 36 高（2+32+2）⇒ 圆角取半高，与内部 32 工具的方角形成"胶囊里嵌方件"。
         borderRadius: BorderRadius.circular(
-          (Tokens.toolbarButtonSize + Tokens.spaceXs * 2) / 2,
+          (Tokens.toolbarButtonSize + Tokens.spaceXxs * 2) / 2,
         ),
         child: Row(
           children: <Widget>[

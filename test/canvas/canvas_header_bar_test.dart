@@ -108,8 +108,9 @@ void main() {
     // 热区 = 笔记同档（Tokens.headerActionSize）。
     expect(undo.width, closeTo(Tokens.headerActionSize, 0.5));
     expect(find_.width, closeTo(Tokens.headerActionSize, 0.5));
-    // 浮岛内边距 4 + (32-28)/2 ⇒ 两端 28 按钮顶缘约 y=6（原 4，差 2px）。
-    expect(undo.top, closeTo(6, 1), reason: '两端按钮仍在原位置附近');
+    // 浮岛内边距 2 + (32-28)/2 ⇒ 两端 28 按钮顶缘回到 **4**（与加浮岛前一致）。
+    expect(undo.top, closeTo(4, 0.5), reason: '两端按钮位置不变（顶缘 4）');
+    expect(find_.top, closeTo(4, 0.5), reason: '右端同样在 4');
     // 撤销在左、三只耳在右（标签最靠右，右内距 = Tokens.spaceMd）。
     expect(undo.left, closeTo(Tokens.spaceMd, 1));
     final double screenRight =
