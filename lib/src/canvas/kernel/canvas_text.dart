@@ -12,23 +12,27 @@ import 'canvas_mindmap.dart';
 /// 顺序按传入的 z 序（[CanvasDocument.items] 已按 itemOrder 排好），用换行连接
 /// ——`Note.summarize` 会把它压成单行摘要，全局关键词索引按空白切词，换行等价于
 /// 分隔，不会把两张卡的字粘成一个词。
-String canvasSearchableText(Iterable<CanvasItem> items) {
-  final List<String> parts = <String>[];
-  for (final CanvasItem item in items) {
-    switch (item) {
-      case CardItem():
-        final String t = item.text.trim();
-        if (t.isNotEmpty) parts.add(t);
-      case CanvasGroupItem():
-        final String t = item.label.trim();
-        if (t.isNotEmpty) parts.add(t);
-      case MindMapItem():
-        _collectMindText(item.root, parts);
-      default:
-        break;
-    }
+String canvasSearchableText(Iterable<CanvasItem> items) =>
+    items.map(canvasItemText).where((String t) => t.isNotEmpty).join('\n');
+
+/// **单件** item 的可搜索文字（2026-11-21 画布内搜索用）：
+/// 卡片正文 / 分组标题 / 导图（全部节点，空格连接）。无文字的 item 返回空串。
+///
+/// 与 [canvasSearchableText] 同一口径（同一套分支），只是不拼接多件——
+/// 搜索面板要"命中哪张卡就带我去看哪张"，所以得按件取。
+String canvasItemText(CanvasItem item) {
+  switch (item) {
+    case CardItem():
+      return item.text.trim();
+    case CanvasGroupItem():
+      return item.label.trim();
+    case MindMapItem():
+      final List<String> parts = <String>[];
+      _collectMindText(item.root, parts);
+      return parts.join('\n');
+    default:
+      return '';
   }
-  return parts.join('\n');
 }
 
 void _collectMindText(MindNode node, List<String> out) {

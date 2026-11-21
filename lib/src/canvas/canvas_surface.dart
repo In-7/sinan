@@ -16,6 +16,7 @@ import 'canvas_ai_button.dart';
 import 'canvas_brush_panel.dart';
 import 'canvas_color_slot_panel.dart';
 import 'canvas_edge_shape_panel.dart';
+import 'canvas_header_bar.dart';
 import 'canvas_insert_panel.dart';
 import 'canvas_shape_panel.dart';
 import 'kernel/canvas_bundle.dart';
@@ -41,9 +42,18 @@ class CanvasSurface extends StatefulWidget {
     this.onImport,
     this.onSendCardToDocument,
     this.onAiRun,
+    this.noteId,
+    this.onOpenNote,
   });
 
   final CanvasController controller;
+
+  /// 当前画布笔记 id（2026-11-21）：有值时顶部渲染 搜索/反链/标签 三只耳
+  /// （面板都按 noteId 查）。独立演示 / 测试壳不传 ⇒ 只留撤销重做。
+  final String? noteId;
+
+  /// 反链条目点击 → 打开来源笔记。
+  final void Function(String noteId)? onOpenNote;
 
   /// 跑一次 AI 指令（一句话 → 结构化动作 → 改画布）。由宿主提供：它持有
   /// [NoteStore]（候选块与块文本）与 LLM 客户端。为 null 时 AI 按钮不出现
@@ -68,6 +78,10 @@ class CanvasSurface extends StatefulWidget {
 }
 
 class _CanvasSurfaceState extends State<CanvasSurface> {
+  /// 顶部动作带的 State（Ctrl+F 要直接调它的 openFind）。
+  final GlobalKey<CanvasHeaderBarState> _headerKey =
+      GlobalKey<CanvasHeaderBarState>();
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
@@ -121,17 +135,16 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
               ),
             ),
           ),
-          // 撤销 / 重做：画布**左上角**常驻浮岛，姿态与笔记标题行左端一致——
-          // 文档级、无选区也要能用（Word / VS Code / 笔记同款），不挤进底部工具条。
-          // 用 [ListenableBuilder] 订阅控制器：历史栈变空时按钮自动灰显。
+          // 顶部**动作带**（2026-11-21）：与笔记标题行同款——左撤销/重做、
+          // 右 搜索/反链/标签（不含目录）。规格由 `theme/header_action_button.dart`
+          // 统一，两处逐像素一致；浮层由 [CanvasHeaderBar] 自己管。
           Align(
             alignment: Alignment.topLeft,
-            child: Container(
-              margin: const EdgeInsets.only(
-                top: Tokens.spaceSm,
-                left: Tokens.spaceMd,
-              ),
-              child: _CanvasHistoryBar(controller: widget.controller),
+            child: CanvasHeaderBar(
+              key: _headerKey,
+              controller: widget.controller,
+              noteId: widget.noteId,
+              onOpenNote: widget.onOpenNote,
             ),
           ),
           // 选中物体的**上下文动作条**（tldraw / Figma 形态）：选区非空时浮在包围盒
@@ -235,6 +248,12 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
       } else {
         widget.controller.undo();
       }
+      return KeyEventResult.handled;
+    }
+    // Ctrl+F：与笔记一致，开本画布的搜索（找卡片文字）。走顶部动作带同一条
+    // 路径，不另起一套浮层（2026-11-21）。
+    if (ctrl && event.logicalKey == LogicalKeyboardKey.keyF) {
+      _headerKey.currentState?.openFind();
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.delete ||
@@ -760,70 +779,6 @@ class _ContextBarLayout extends SingleChildLayoutDelegate {
   }
 }
 
-/// 画布左上角的撤销 / 重做浮岛，与笔记标题行左端的常驻历史按钮同一定位逻辑。
-///
-/// 它们是**文档级、无选区也要能用**的操作（Word / VS Code / 笔记同款），故从
-/// 底部工具条抽出、常驻画布左上角，不挤进"当前画布"的工具区。
-///
-/// 与底部工具条同款 [AppFloatSurface] 浮岛（底色 + 描边 + 投影），保持画布内浮层
-/// 语言统一；[ListenableBuilder] 订阅控制器，历史栈空时按钮自动灰显。
-class _CanvasHistoryBar extends StatelessWidget {
-  const _CanvasHistoryBar({required this.controller});
+// 撤销 / 重做已并入顶部动作带 [CanvasHeaderBar]（2026-11-21）：与笔记标题行
+// 同一位置、同一规格，不再单独做一个浮岛。
 
-  final CanvasController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (BuildContext context, Widget? _) => IconButtonTheme(
-        // 与底部工具条同档热区（见 [_CanvasToolbar] 的 [IconButtonTheme] 说明）。
-        data: IconButtonThemeData(
-          style: IconButton.styleFrom(
-            iconSize: Tokens.iconMd,
-            fixedSize: const Size(
-              Tokens.toolbarButtonSize,
-              Tokens.toolbarButtonSize,
-            ),
-            minimumSize: const Size(
-              Tokens.toolbarButtonSize,
-              Tokens.toolbarButtonSize,
-            ),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ),
-        child: AppFloatSurface(
-          // 圆角不指定：继承浮层默认档 radiusLg（与全场浮层统一）。
-          padding: const EdgeInsets.symmetric(
-            horizontal: Tokens.spaceXs,
-            vertical: Tokens.spaceXs,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              IconButton(
-                icon: const tabler.ArrowBackUp(
-                  height: Tokens.iconMd,
-                  width: Tokens.iconMd,
-                  strokeWidth: 1.5,
-                ),
-                tooltip: '撤销（Ctrl+Z）',
-                onPressed: controller.document.canUndo ? controller.undo : null,
-              ),
-              IconButton(
-                icon: const tabler.ArrowForwardUp(
-                  height: Tokens.iconMd,
-                  width: Tokens.iconMd,
-                  strokeWidth: 1.5,
-                ),
-                tooltip: '重做（Ctrl+Shift+Z）',
-                onPressed: controller.document.canRedo ? controller.redo : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

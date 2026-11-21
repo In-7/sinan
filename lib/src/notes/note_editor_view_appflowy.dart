@@ -28,6 +28,7 @@ import '../app/providers.dart';
 import '../app/save_debounce.dart';
 import '../theme/app_float_surface.dart';
 import '../theme/app_theme.dart';
+import '../theme/header_action_button.dart';
 import '../theme/tokens.dart';
 import '../editor/core/block_height_predictor.dart';
 import '../editor/core/block_heights.dart';
@@ -1890,36 +1891,8 @@ String _formatRevised(DateTime t) {
       : '${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} $hhmm';
 }
 
-/// 标题行小按钮（撤销/重做 + 三个"耳"）的**图标色规格**。
-///
-/// 编辑页走**极简留白**（2026-09-23 用户定案）：常驻态只是"这里有入口"的
-/// 暗示，压到很低对比；**鼠标悬停 / 键盘聚焦**才明确起来。
-///
-/// ⚠️ 只能经 `IconButton.foregroundColor` 下发：tabler 图标不直接读 Material 的
-/// `IconTheme`（见 `AppIconTheme` 的说明），这份 style 就是图标唯一的色源。
-WidgetStateProperty<Color?> _headerActionColor(
-  ColorScheme scheme, {
-  bool active = false,
-}) {
-  return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
-    // "开着"（目录 / 反链面板展开）用强调色，与面板建立视觉关联。
-    if (active) {
-      return scheme.primary;
-    }
-    if (states.contains(WidgetState.hovered) ||
-        states.contains(WidgetState.focused)) {
-      return scheme.onSurface;
-    }
-    return scheme.onSurfaceVariant.withValues(alpha: _kHeaderActionIdleAlpha);
-  });
-}
-
-/// 常驻态的不透明度。
-///
-/// `onSurfaceVariant` 直接铺在暗色底上偏亮（实测 `#C2C2C2`，"极简留白"要的不是
-/// 这个存在感）；压到 0.5 才是"隐约可见、不抢戏"。禁用态再降一档。
-const double _kHeaderActionIdleAlpha = 0.5;
-const double _kHeaderActionDisabledAlpha = 0.28;
+// 图标色 / 透明度 / 规格已抽到 `theme/header_action_button.dart`（2026-11-21），
+// 与画布顶部共用同一套——**别在这里再复制一份数字**。
 
 /// 标题行两端按钮（撤销/重做 + 三个耳）的**上内边距**。
 ///
@@ -1934,7 +1907,8 @@ const double _kHeaderActionDisabledAlpha = 0.28;
 ///
 /// ⚠️ 2026-09-26：按钮已从标题行**分出去独占上面一条带**（标题下移），那条
 /// "略高于标题首行"的竖向校准随之**失效**——本值现在只是按钮带的上留白。
-const double _kHeaderActionTopPadding = 4;
+/// 2026-11-21：数值已抽到 [kHeaderActionTopPadding]（主题层共享），此处只别名。
+const double _kHeaderActionTopPadding = kHeaderActionTopPadding;
 
 /// 头部**按钮带**的高度（2026-09-26 定）：撤销 / 重做 + 双耳独占最上面这一条，
 /// 标题从它**下面**开始 ⇒ 头部分成两条带（理由见 build 里按钮带的注释）。
@@ -1946,8 +1920,7 @@ const double _kHeaderActionTopPadding = 4;
 ///（40，锚就是本带），两列顶端的动作区因此等高且同 y。2026-10-22 热区 30→28、
 /// 上留白 5→4 时，正是把**下留白 5→8** 补回来的，标题行与侧栏页头因此都没动。
 /// 改热区就得改这三档里的上 / 下留白，别只动一边。
-const double _kHeaderBandHeight =
-    _kHeaderActionTopPadding + Tokens.headerActionSize + 8;
+const double _kHeaderBandHeight = kHeaderActionBandHeight;
 
 /// 标题行**左侧**的常驻历史按钮（撤销 / 重做）。
 ///
@@ -1981,37 +1954,15 @@ class _HistoryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return withKeepEditorFocus(
-      IconButton(
-        key: ValueKey<String>(itemKey),
-        // ⚠️ tooltip 必须交给 [IconButton] 自己，**不要**在外面包一层 [Tooltip]：
-        // 外层 Tooltip 把提示挂在**父语义节点**上，按钮自己那个节点仍然没有名字
-        // ——读屏（NVDA）念出来只是个"按钮"。2026-09-17 由 a11y 盘点实测
-        // （`labeledTapTargetGuideline`，见 `test/a11y/accessibility_test.dart`）。
-        tooltip: tooltip,
-        onPressed: enabled ? onPressed : null,
-        style:
-            IconButton.styleFrom(
-              minimumSize: const Size.square(Tokens.headerActionSize),
-              maximumSize: const Size.square(Tokens.headerActionSize),
-              padding: EdgeInsets.zero,
-              iconSize: Tokens.iconSm,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(Tokens.radiusButton),
-              ),
-              // 与三个耳同一套色（见 [_headerActionColor]）；不可用再降一档，
-              // "现在按不了"一眼可见。
-              disabledForegroundColor: scheme.onSurfaceVariant.withValues(
-                alpha: _kHeaderActionDisabledAlpha,
-              ),
-            )
-            // ⚠️ `styleFrom` 的 `foregroundColor` 只收 `Color?`；要按状态解析只能走
-            // `ButtonStyle.copyWith`（它收 `WidgetStateProperty`）。
-            .copyWith(foregroundColor: _headerActionColor(scheme)),
-        icon: icon,
-      ),
+    // 规格与画布共用（2026-11-21 抽到 `theme/header_action_button.dart`）：
+    // 这里只负责"按下保焦"这一编辑器特有的一层。
+    return HeaderHistoryButton(
+      itemKey: itemKey,
+      icon: icon,
+      tooltip: tooltip,
+      enabled: enabled,
+      onPressed: onPressed,
+      wrap: withKeepEditorFocus,
     );
   }
 }
@@ -2047,34 +1998,13 @@ class _EarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return IconButton(
-      key: ValueKey<String>(itemKey),
-      // 见 [_HistoryButton]：tooltip 交给按钮自己，别在外面包 Tooltip
-      // （外层的提示会挂在父语义节点上，按钮节点仍然无标签）。
+    // 规格与画布共用（2026-11-21），见 `theme/header_action_button.dart`。
+    return HeaderActionButton(
+      itemKey: itemKey,
+      icon: icon,
       tooltip: tooltip,
       onPressed: onPressed,
-      style:
-          IconButton.styleFrom(
-            minimumSize: const Size.square(Tokens.headerActionSize),
-            maximumSize: const Size.square(Tokens.headerActionSize),
-            padding: EdgeInsets.zero,
-            // ⚠️ 图标尺寸**只有这一条路**：`icon` 里刻意不写 height/width，
-            // 由 `AppIconTheme` 把这个 `iconSize` 转发给 tabler（写死 24 会顶掉它，
-            // 那正是 2026-09-23 这三个耳"偏大偏亮"的一半原因）。
-            iconSize: Tokens.iconSm,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(Tokens.radiusSm),
-            ),
-          )
-          // 极简留白：常驻淡、悬停/聚焦明确、"开着"用强调色。
-          // ⚠️ `styleFrom` 的 `foregroundColor` 只收 `Color?`；按状态解析只能走
-          // `ButtonStyle.copyWith`（它收 `WidgetStateProperty`）。
-          .copyWith(
-            foregroundColor: _headerActionColor(scheme, active: active),
-          ),
-      icon: icon,
+      active: active,
     );
   }
 }

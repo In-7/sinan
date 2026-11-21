@@ -513,6 +513,10 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     final Widget surface = CanvasSurface(
       controller: _controller,
       media: _media,
+      // 顶部动作带（2026-11-21）：搜索 / 反链 / 标签 都按本篇 id 查。
+      noteId: widget.noteId,
+      onOpenNote: (String id) =>
+          ref.read(locateProvider.notifier).locate(noteId: id),
       onImport: () => _import(context),
       // 默认关闭（见 `AppSettings.aiEnabled`）：要用户去设置里显式开启，
       // 因为没起 Ollama 时露出入口只会让他点出一个报错。

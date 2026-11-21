@@ -531,6 +531,30 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 把某件 item 带到**视口中心**（画布内搜索"带我去看"用，2026-11-21）。
+  ///
+  /// 缩放策略：**不放大**——保持用户当前比例（突然放大到 400% 会眩晕），
+  /// 只有当这件 item 比视口还大时才缩到刚好放下。移动用"中心对齐"而非
+  /// `camera.fit`，避免小卡片把视口拉到极限倍率。
+  void focusItem(CanvasItem item) {
+    final Rect r = item.rect;
+    if (r.isEmpty || _viewport.isEmpty) return;
+    const double padding = 48;
+    final double fitScale = math
+        .min(
+          (_viewport.width - padding) / r.width,
+          (_viewport.height - padding) / r.height,
+        )
+        .clamp(camera.minScale, camera.maxScale);
+    final double nextScale = math.min(camera.scale, fitScale);
+    if (nextScale != camera.scale) {
+      camera.setScaleAt(_viewport.center(Offset.zero), nextScale);
+    }
+    final Offset screenCenter = camera.worldToScreen(r.center);
+    camera.panBy(_viewport.center(Offset.zero) - screenCenter);
+    notifyListeners();
+  }
+
   /// 改**所选形状**的样式（属性面板的唯一入口）。一次调用 = 一条撤销命令。
   ///
   /// 只作用于选中的 [ShapeItem]（笔迹与图片没有这个面板）。参数传 null 表示
