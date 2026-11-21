@@ -63,7 +63,8 @@ class CanvasViewBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             FocusRingIconButton(
-              icon: const tabler.ZoomOut(
+              // 2026-11-21 用户定：用纯符号 −/+，比放大镜系列更小、更"纯操作"。
+              icon: const tabler.Minus(
                 height: Tokens.iconSm,
                 width: Tokens.iconSm,
                 strokeWidth: Tokens.iconStroke,
@@ -78,7 +79,7 @@ class CanvasViewBar extends StatelessWidget {
               textStyle: Theme.of(context).textTheme.labelMedium,
             ),
             FocusRingIconButton(
-              icon: const tabler.ZoomIn(
+              icon: const tabler.Plus(
                 height: Tokens.iconSm,
                 width: Tokens.iconSm,
                 strokeWidth: Tokens.iconStroke,
@@ -88,7 +89,7 @@ class CanvasViewBar extends StatelessWidget {
               onPressed: () => controller.zoomBy(1.25),
             ),
             FocusRingIconButton(
-              icon: const tabler.ArrowsMaximize(
+              icon: const tabler.FocusCentered(
                 height: Tokens.iconSm,
                 width: Tokens.iconSm,
                 strokeWidth: Tokens.iconStroke,
