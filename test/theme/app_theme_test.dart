@@ -612,6 +612,49 @@ void main() {
     }
   });
 
+  test('便签五色：感知等亮度 + 正文对比达标（明暗两档）', () {
+    // 2026-11-21：旧六色亮度/饱和不齐（奶油黄 lum≈0.85、雾蓝≈0.70）⇒ 同墙
+    // 深浅杂乱。新五色按 WCAG 相对亮度反解（亮≈0.80 / 暗≈0.036），只变色相。
+    // 这两条不变量防止有人再按 HSL 等 L 配（蓝/紫感知亮度天然偏低，贴暗底
+    // 只有 1.05:1，卡片会消失）。
+    double luminance(Color c) {
+      double linear(double v) => v <= 0.03928
+          ? v / 12.92
+          : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+      return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b);
+    }
+
+    const List<Brightness> both = <Brightness>[
+      Brightness.light,
+      Brightness.dark,
+    ];
+    for (final Brightness b in both) {
+      final List<Color> swatches = <Color>[
+        for (int i = 0; i < Bauhaus.noteSwatchCount; i++)
+          Bauhaus.noteSwatch(b, i),
+      ];
+      // 五色感知亮度严格齐平（极差 < 0.01）。
+      final List<double> lums = swatches.map(luminance).toList();
+      final double spread = lums.reduce(math.max) - lums.reduce(math.min);
+      expect(
+        spread,
+        lessThan(0.01),
+        reason: '$b 五色感知亮度要齐平（极差 $spread）',
+      );
+      // 配对应墨色，正文对比远超 AA 4.5（亮 ≥14 / 暗 ≥9）。
+      final Color ink = b == Brightness.light
+          ? Bauhaus.ink(Brightness.light)
+          : Bauhaus.ink(Brightness.dark);
+      for (final Color swatch in swatches) {
+        expect(
+          contrast(swatch, ink),
+          greaterThan(b == Brightness.light ? 13 : 9),
+          reason: '$b 便签底配墨色需正文级对比',
+        );
+      }
+    }
+  });
+
   /// Apple 口径（`docs/ui_rewrite_plan.md` §9.2）：规格表里的每个值都要**机器可检**
   /// ——否则下次有人"顺手"把字号调回 14、把分隔线调回满档，没人会注意到。
   group('Apple 口径（§9.2 规格）', () {

@@ -342,13 +342,13 @@ void main() {
     );
   });
 
-  test('便签纸底：6 档粉彩纸片、实色', () {
+  test('便签纸底：5 档粉彩纸片、实色', () {
     const Brightness b = Brightness.light;
     final List<Color> swatches = <Color>[
       for (int i = 0; i < Bauhaus.noteSwatchCount; i++)
         Bauhaus.noteSwatch(b, i),
     ];
-    expect(swatches.toSet().length, Bauhaus.noteSwatchCount, reason: '6 档不同色');
+    expect(swatches.toSet().length, Bauhaus.noteSwatchCount, reason: '5 档不同色');
     expect(Bauhaus.noteSwatch(b, 0).a, 1, reason: '便签纸是实色纸片（Keep 式粉彩底）');
   });
 
