@@ -3,7 +3,8 @@ import 'dart:ui' as ui;
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../ai/llm_client.dart';
 import '../app/providers.dart';
@@ -22,6 +23,7 @@ import 'kernel/canvas_bundle.dart';
 import 'kernel/canvas_controller.dart';
 import 'kernel/canvas_item.dart';
 import 'kernel/canvas_media.dart';
+import 'kernel/canvas_text.dart';
 
 /// 一次 AI 指令喂给模型的候选块上限。
 ///
@@ -138,6 +140,15 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     _controller = _createController();
     // 载入时的文本就是"与库一致"的基线（见 [_syncedCardTexts]）。
     _rememberSyncedCardTexts();
+    // 存量画布补齐（2026-11-21）：旧档 plain_text 为空 ⇒ 页内搜索搜不到卡片
+    // 文字。只在打开时静默补一次（不动 content/revised_at），随后刷新列表快照。
+    // _loadFailed 时不碰原文（冻结保存保护）。
+    if (!_loadFailed) {
+      final String plainText = canvasSearchableText(_controller.document.items);
+      if (_store.backfillPlainText(widget.noteId, plainText)) {
+        _notes.refreshRow(widget.noteId);
+      }
+    }
     _controller.addListener(_onChanged);
     // 登记"关窗口时把防抖里还没写下去的画布写完"（见 [PendingSaves]）。
     _exitFlush = ref.read(pendingSavesProvider).register(_flushForExit);
@@ -217,7 +228,13 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     final String content = jsonEncode(_controller.toJson(media: _media));
     // 这份 content 就是即将落盘的内容（含本地刚改的那些）⇒ 记成新基线。
     _rememberSyncedCardTexts();
-    await _notes.saveContent(widget.noteId, content, plainText: '');
+    // 2026-11-21：画布正文是 Canvas JSON，但其中的文字要像笔记一样投影进
+    // plain_text ⇒ 列表页内搜索（summary）与全局搜索兜底路都能命中卡片内容。
+    await _notes.saveContent(
+      widget.noteId,
+      content,
+      plainText: canvasSearchableText(_controller.document.items),
+    );
   }
 
   /// 把**引用卡片**的文本拉到 `blocks` 的最新值（双链多视图 #5）。
@@ -297,8 +314,10 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     // 用户丢的是整张画布）。
     if (_dirty && !_loadFailed) {
       final String content = jsonEncode(_controller.toJson(media: _media));
+      final String plainText = canvasSearchableText(_controller.document.items);
       unawaited(
-        _notes.saveContent(widget.noteId, content, plainText: '').catchError((
+        _notes.saveContent(widget.noteId, content, plainText: plainText)
+            .catchError((
           Object _,
         ) {
           // 兜底链的**链尾**：到这里再失败就只剩放弃（进程正在退出 / 库已关），
@@ -309,7 +328,7 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
           // ⚠️ `updateContent` 返回 `Future<bool>` ⇒ `catchError` 的回调必须回 bool。
           unawaited(
             _store
-                .updateContent(widget.noteId, content, plainText: '')
+                .updateContent(widget.noteId, content, plainText: plainText)
                 .catchError((Object _) => false),
           );
         }),

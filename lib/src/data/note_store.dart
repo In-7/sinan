@@ -525,6 +525,29 @@ class NoteStore {
     return true;
   }
 
+  /// **只补写 `plain_text` / `summary`**，不动 content / content_hash / revised_at。
+  ///
+  /// 2026-11-21：画布旧档保存时传的是 `plainText: ''`，列表页内搜索与全局
+  /// plain_text 兜底路都搜不到卡片文字。[updateContent] 有 content_hash 门闩
+  /// （只覆盖 content）——存量画布内容没变时调用它会直接 return false，补不进去，
+  /// 所以单独开这条窄路。打开画布发现 plainText 为空时静默补一次，用户无感。
+  ///
+  /// 返回是否真的写了（空串 / 不存在不写）。
+  bool backfillPlainText(String noteId, String plainText) {
+    if (plainText.trim().isEmpty) return false;
+    final ResultSet exists = db.select(
+      'SELECT plain_text FROM notes WHERE id = ? AND deleted_at IS NULL',
+      <Object?>[noteId],
+    );
+    if (exists.isEmpty) return false;
+    if ((exists.first['plain_text'] as String? ?? '').isNotEmpty) return false;
+    db.execute(
+      'UPDATE notes SET plain_text = ?, summary = ? WHERE id = ?',
+      <Object?>[plainText, Note.summarize(plainText), noteId],
+    );
+    return true;
+  }
+
   /// 保存标题。短字段直接更新；revised_at 一并刷新（影响列表排序）。
   Future<void> updateTitle(String noteId, String title) async {
     final DateTime now = DateTime.now();

@@ -153,4 +153,62 @@ void main() {
       reason: '点画布行标题即选中（鸟瞰块不改变点击链路）',
     );
   });
+
+  testWidgets('页内搜索能命中画布卡片文字（走 summary 投影）', (tester) async {
+    // 2026-11-21：画布卡片文字投影进 plain_text/summary 后，列表页内搜索
+    // （只搜 title + summary）应能命中——用户搜画布里的字有结果。
+    final TestFlutterView flutterView = tester.view;
+    flutterView.devicePixelRatio = 1;
+    flutterView.physicalSize = const Size(1200, 900);
+    addTearDown(() {
+      flutterView.devicePixelRatio = 3;
+      flutterView.physicalSize = const Size(2400, 1800);
+    });
+    mockWindowManager(tester);
+
+    final Database db = sqlite3.openInMemory();
+    AppDatabase.migrateForTesting(db);
+    db.execute('PRAGMA foreign_keys = ON;');
+    final NoteStore store = NoteStore(db);
+    final ProviderContainer container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        noteStoreProvider.overrideWithValue(store),
+        settingsStoreProvider.overrideWithValue(SettingsStore(db)),
+        appDataDirProvider.overrideWithValue(r'C:\test\sinan'),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(db.close);
+
+    final Note canvas = store.create(title: '无标题画布', kind: NoteKind.canvas);
+    await store.updateContent(
+      canvas.id,
+      '{"camera":{},"document":{"schemaVersion":2,"items":{},"strokeOrder":[],"itemOrder":[]}}',
+      plainText: '',
+    );
+    // 打开画布时补写 projection（这里直接调同一个 backfill）。
+    store.backfillPlainText(canvas.id, '番茄工作法\n卡片二');
+    container.invalidate(notesProvider);
+    await container.read(notesProvider.future);
+    container.read(navHistoryProvider.notifier).selectHome(HomeView.canvas);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(inList(find.byType(TextField)), '番茄');
+    await tester.pumpAndSettle();
+
+    expect(inList(find.text('无标题画布')), findsOneWidget,
+        reason: '搜卡片文字「番茄」命中这篇画布');
+    expect(inList(find.text('1 条')), findsOneWidget,
+        reason: '命中计数 1');
+  });
 }

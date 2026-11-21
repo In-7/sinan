@@ -1025,6 +1025,11 @@ class NotesNotifier extends AsyncNotifier<List<Note>> {
     }
   }
 
+  /// 只把**某一行的列表快照**从库里重读并换掉（不动其它行、不动 revised_at）。
+  /// 用于"库里某字段被窄口径补写、但快照还是旧值"的场景——2026-11-21 画布
+  /// 打开时补写 plain_text/summary 后用它让页内搜索立刻能看到。
+  void refreshRow(String id) => _replaceRow(id);
+
   /// 保存标题并刷新列表（标题显示在列表条目上）。
   Future<void> saveTitle(String id, String title) async {
     await _store.updateTitle(id, title);
