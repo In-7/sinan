@@ -143,10 +143,20 @@ class _CanvasNoteViewState extends ConsumerState<CanvasNoteView>
     // 存量画布补齐（2026-11-21）：旧档 plain_text 为空 ⇒ 页内搜索搜不到卡片
     // 文字。只在打开时静默补一次（不动 content/revised_at），随后刷新列表快照。
     // _loadFailed 时不碰原文（冻结保存保护）。
+    //
+    // ⚠️ **必须延到帧末**：initState 处在 build 期，此时 `refreshRow` → 改
+    // notesProvider 会被 Riverpod 拦下并抛 "Tried to modify a provider while
+    // the widget tree was building"（2026-11-21 用户实报崩溃，栈顶就是这里）。
+    // 补齐是"静默后台动作"，晚一帧做完全无损。
     if (!_loadFailed) {
       final String plainText = canvasSearchableText(_controller.document.items);
-      if (_store.backfillPlainText(widget.noteId, plainText)) {
-        _notes.refreshRow(widget.noteId);
+      if (plainText.trim().isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (_store.backfillPlainText(widget.noteId, plainText)) {
+            _notes.refreshRow(widget.noteId);
+          }
+        });
       }
     }
     _controller.addListener(_onChanged);
