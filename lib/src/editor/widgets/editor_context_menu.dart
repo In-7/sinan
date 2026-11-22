@@ -3,6 +3,7 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../keys/image_block_clipboard.dart';
 import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -134,14 +135,24 @@ Widget sinanEditorContextMenu({
           _ContextMenuRow(
             label: '剪切',
             shortcut: 'Ctrl+X',
-            onPressed: hasRange ? cutCommand.handler : null,
+            // 图片块走应用内块剪贴板（官方 cutCommand 对 delta==null 是空操作）；
+            // 文本块仍走官方，且仅选区非空时才可用。
+            onPressed: isImageBlock
+                ? sinanImageCutCommand.handler
+                : hasRange
+                    ? cutCommand.handler
+                    : null,
             editorState: editorState,
             onDismiss: onDismiss,
           ),
           _ContextMenuRow(
             label: '复制',
             shortcut: 'Ctrl+C',
-            onPressed: hasRange ? copyCommand.handler : null,
+            onPressed: isImageBlock
+                ? sinanImageCopyCommand.handler
+                : hasRange
+                    ? copyCommand.handler
+                    : null,
             editorState: editorState,
             onDismiss: onDismiss,
           ),
@@ -149,7 +160,10 @@ Widget sinanEditorContextMenu({
           _ContextMenuRow(
             label: '粘贴',
             shortcut: 'Ctrl+V',
-            onPressed: onPaste ?? pasteCommand.handler,
+            // 块剪贴板有图片时在任意块上都优先粘图片块（同 Ctrl+V 顺序）。
+            onPressed: ImageBlockClipboard.hasContent
+                ? sinanImagePasteCommand.handler
+                : onPaste ?? pasteCommand.handler,
             editorState: editorState,
             onDismiss: onDismiss,
           ),

@@ -42,6 +42,7 @@ import '../editor/blocks/custom_block_components.dart';
 import '../editor/blocks/ref_block_component.dart';
 import '../editor/blocks/toggle_block_component.dart';
 import '../editor/keys/image_arrow_commands.dart';
+import '../editor/keys/image_block_clipboard.dart';
 import '../editor/toolbar/fixed_toolbar.dart';
 import '../editor/toolbar/slash_menu_items.dart';
 import '../editor/panels/backlink_panel.dart';
@@ -1858,6 +1859,12 @@ class _NoteEditorViewAppFlowyState
                   // **必须排在标准表之前**（先命中先赢，见命令文件文档）。
                   sinanImageArrowDownCommand,
                   sinanImageArrowUpCommand,
+                  // 图片块级复制 / 剪切 / 粘贴（2026-11-22）：应用内块剪贴板，
+                  // 只在纯图片选区 / 块剪贴板有内容时接管，其余交回官方命令。
+                  // **必须排在标准表之前**（先命中先赢）。
+                  sinanImageCopyCommand,
+                  sinanImageCutCommand,
+                  sinanImagePasteCommand,
                   // 智能粘贴（Ctrl+V）：**必须排在官方 paste 之前**（先命中先赢），
                   // 并把官方那条从标准表里摘掉，避免两条 ctrl+v 并存。
                   // 逻辑：剪贴板是图 ⇒ 落盘 + 插图；否则回退「粘贴 URL 自动转链」/
