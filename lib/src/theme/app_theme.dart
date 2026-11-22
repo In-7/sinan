@@ -953,6 +953,21 @@ class AppTheme {
   static Color canvasInk(Brightness brightness) =>
       brightness == Brightness.dark ? _textDark : const Color(0xFF1F1F1F);
 
+  // ── 画布形状色板（2026-11-22 从 canvas_shape_panel.dart 收口）──────────
+  //
+  // 形状/连线可涂的固定色选项。**值一律保留原样**（存量画布逐像素不变）——
+  // 这里只是把裸字面量收进令牌本营，供 UI 层引用，避免"画布里 invent 色值"。
+  // 与上面包豪斯主色（blue/yellow/green/red）区分：那组是**界面强调**色，
+  // 这组是**画布内容**色，各有各的语义，不互相套用。
+  static const Color canvasShapeInkLight = Color(0xFF161513);
+  static const Color canvasShapeInkDark = Color(0xFFF3F0EA);
+  static const Color canvasShapeBlue = Color(0xFF1B4FD8);
+  static const Color canvasShapeYellow = Color(0xFFF4C300);
+  static const Color canvasShapeGreen = Color(0xFF00A651);
+  static const Color canvasShapeRed = Color(0xFFE23A2E);
+  static const Color canvasShapePaperLight = Color(0xFFFFFFFF);
+  static const Color canvasShapePaperDark = Color(0xFF242320);
+
   /// 链接色：取主题 `primary` **原色**，但**钳到 APCA Lc 80**（正文档）。
   ///
   /// 取向仍是"种子即主色、不稀释"（与引用块竖条同源、明暗自动跟随）；钳制只在

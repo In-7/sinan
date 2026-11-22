@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../theme/app_color_swatch.dart';
 import '../theme/app_popover.dart';
+import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'canvas_panel_widgets.dart';
 import 'kernel/canvas_controller.dart';
@@ -140,11 +141,19 @@ class CanvasShapePanel extends StatelessWidget {
 List<AppColorOption> _shapePaletteOptions(Brightness brightness) {
   final bool dark = brightness == Brightness.dark;
   return <AppColorOption>[
-    AppColorOption(value: dark ? const Color(0xFFF3F0EA) : const Color(0xFF161513), tooltip: '墨'),
-    const AppColorOption(value: Color(0xFF1B4FD8), tooltip: '蓝'),
-    const AppColorOption(value: Color(0xFFF4C300), tooltip: '黄'),
-    const AppColorOption(value: Color(0xFF00A651), tooltip: '绿'),
-    const AppColorOption(value: Color(0xFFE23A2E), tooltip: '红'),
-    AppColorOption(value: dark ? const Color(0xFF242320) : const Color(0xFFFFFFFF), tooltip: '白'),
+    AppColorOption(
+      value: dark ? AppTheme.canvasShapeInkDark : AppTheme.canvasShapeInkLight,
+      tooltip: '墨',
+    ),
+    const AppColorOption(value: AppTheme.canvasShapeBlue, tooltip: '蓝'),
+    const AppColorOption(value: AppTheme.canvasShapeYellow, tooltip: '黄'),
+    const AppColorOption(value: AppTheme.canvasShapeGreen, tooltip: '绿'),
+    const AppColorOption(value: AppTheme.canvasShapeRed, tooltip: '红'),
+    AppColorOption(
+      value: dark
+          ? AppTheme.canvasShapePaperDark
+          : AppTheme.canvasShapePaperLight,
+      tooltip: '白',
+    ),
   ];
 }

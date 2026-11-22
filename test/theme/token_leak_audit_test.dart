@@ -190,7 +190,10 @@ exemptions = <String, Map<String, String>>{
     'lib/src/canvas/kernel/': '画布内核时序（LOD 稳定 180 / 手掌窗 100 / 模拟推理 600）：独立域',
   },
   'radius': <String, String>{
-    // 2026-10-08 收口后归零：新增圆角一律走 Tokens.radiusXs..Full。
+    'lib/src/canvas/kernel/':
+        '画布内核不 import 主题层（架构闸门锁死），文本编辑浮层的输入框'
+            '圆角只能写同值 4 = Tokens.radiusSm；与 colorHex/duration 同款内核豁免',
+    // 其余新增圆角一律走 Tokens.radiusXs..Full。
   },
   'fontSize': <String, String>{
     'lib/src/notes/services/note_image_preview.dart': '灯箱叠字 13/14：反相黑底域的固定字阶',
