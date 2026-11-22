@@ -13,6 +13,7 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/domain/settings.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
+import 'package:sinan/src/editor/widgets/editor_context_menu.dart';
 import 'package:sinan/src/notes/note_editor_view_appflowy.dart';
 import 'package:sinan/src/notes/services/note_image_preview.dart';
 import 'package:sinan/src/theme/app_theme.dart';
@@ -28,7 +29,10 @@ import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
 void main() {
   const String img = 'data:image/png;base64,iVBORw0KGgo=';
 
-  Future<EditorState> pumpEditor(WidgetTester tester) async {
+  Future<EditorState> pumpEditor(
+    WidgetTester tester, {
+    String imageSrc = img,
+  }) async {
     tester.view.physicalSize = const Size(800, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -37,7 +41,7 @@ void main() {
       Document(
         root: pageNode(children: <Node>[
           paragraphNode(text: '开头'),
-          imageNode(url: img, width: 500, height: 200),
+          imageNode(url: imageSrc, width: 500, height: 200),
           paragraphNode(text: '图片后面的一段'),
         ]),
       ),
@@ -192,6 +196,69 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
     }
+  });
+
+  /// 右键菜单条目判定（本地源显示「复制图片」、网络源不显示）。
+  Future<void> expectCopyItem(
+    WidgetTester tester,
+    String src,
+    Matcher matcher,
+  ) async {
+    final EditorState state = await pumpEditor(tester, imageSrc: src);
+    final Node image = state.document.root.children
+        .where((Node n) => n.type == ImageBlockKeys.type)
+        .single;
+    unawaited(
+      state.updateSelectionWithReason(
+        Selection.collapsed(Position(path: image.path)),
+        reason: SelectionUpdateReason.uiEvent,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(
+      tester.getCenter(find.bySemanticsLabel('图片').first),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('预览图片'), findsOneWidget);
+    expect(find.text('复制图片'), matcher, reason: '源 $src');
+  }
+
+  testWidgets('图片右键：本地源有「复制图片」', (tester) async {
+    await expectCopyItem(tester, 'D:/photos/pic.png', findsOneWidget);
+  });
+
+  test('复制图片：仅本地源出该项（网络源不显示）', () {
+    expect(shouldShowCopyImageItem('D:/photos/pic.png'), isTrue);
+    expect(shouldShowCopyImageItem('https://example.com/pic.png'), isFalse);
+    expect(shouldShowCopyImageItem(''), isFalse);
+  });
+
+  testWidgets('新插入图片：叠 4s 把手引导后自消，存量图片不弹', (tester) async {
+    final EditorState state = await pumpEditor(tester);
+    // 存量图片（initState 已登记为已知）不该有引导。
+    expect(find.text('拖动两侧把手调整宽度 · 双击放大'), findsNothing);
+
+    // 通过事务插入一张新图 ⇒ 检测新 id ⇒ 弹引导。
+    unawaited(
+      state.apply(
+        state.transaction..insertNode(
+          [1],
+          imageNode(url: img, width: 300, height: 100),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('拖动两侧把手调整宽度 · 双击放大'),
+      findsOneWidget,
+      reason: '新插入图片应弹把手引导',
+    );
+
+    // 4s 后自动消失。
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('拖动两侧把手调整宽度 · 双击放大'), findsNothing);
   });
 }
 

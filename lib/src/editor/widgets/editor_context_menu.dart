@@ -7,6 +7,7 @@ import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../notes/services/note_image_preview.dart';
+import '../../notes/services/note_media_service.dart';
 
 /// 编辑器正文的**右键菜单**（官方 `contextMenuBuilder` 的实现）。
 ///
@@ -29,6 +30,11 @@ import '../../notes/services/note_image_preview.dart';
 /// (n) => n.delta != null)`），且要求选区矩形非空——所以正文行的空白处右键
 /// 有效（那一行本身就是段落），而"整页末尾的大空白"（我们自己的
 /// `editor.trailingArea`）不在官方链路里，由视图侧另行处理。
+/// 是否给图片块显示「复制图片」：只有本地文件能写系统剪贴板
+/// （网络图没有本地字节，旧 quill 版同样只对本地源出该项）。
+bool shouldShowCopyImageItem(String src) =>
+    src.isNotEmpty && !src.startsWith('http');
+
 Widget sinanEditorContextMenu({
   required BuildContext context,
   required Offset position,
@@ -52,11 +58,17 @@ Widget sinanEditorContextMenu({
   // 只有图片块能预览（媒体块还可能是公式 / 附件等，它们没有灯箱）。
   final bool isImageBlock =
       selectedNode != null && selectedNode.type == ImageBlockKeys.type;
+  // 「复制图片」写系统剪贴板只支持**本地文件**（旧 quill 版同口径）；
+  // 网络图没有本地字节，给置灰入口没意义，直接不显示。
+  final String imageSrc = isImageBlock
+      ? (selectedNode.attributes[ImageBlockKeys.url] as String?) ?? ''
+      : '';
+  final bool isLocalImage = shouldShowCopyImageItem(imageSrc);
 
   // 出屏钳制：菜单 200 宽、四行约 160 高（够用即可，不做测量回调）。
   final Size window = MediaQuery.sizeOf(context);
   const double width = 200;
-  final double height = isImageBlock ? 200 : 160;
+  final double height = isImageBlock ? 220 : 160;
   final double left = position.dx + width > window.width
       ? (position.dx - width).clamp(0.0, window.width - width)
       : position.dx;
@@ -80,13 +92,21 @@ Widget sinanEditorContextMenu({
               label: '预览图片',
               shortcut: '双击',
               onPressed: (EditorState state) {
-                final Node? node = state.getNodeAtPath(
-                  state.selection?.end.path ?? const <int>[],
+                if (imageSrc.isEmpty) return KeyEventResult.ignored;
+                unawaited(showNoteImagePreview(context, imageSrc));
+                return KeyEventResult.handled;
+              },
+              editorState: editorState,
+              onDismiss: onDismiss,
+            ),
+          if (isLocalImage)
+            _ContextMenuRow(
+              label: '复制图片',
+              shortcut: '',
+              onPressed: (EditorState _) {
+                unawaited(
+                  NoteMediaService.copyImageFileToWindowsClipboard(imageSrc),
                 );
-                final String src =
-                    (node?.attributes[ImageBlockKeys.url] as String?) ?? '';
-                if (src.isEmpty) return KeyEventResult.ignored;
-                unawaited(showNoteImagePreview(context, src));
                 return KeyEventResult.handled;
               },
               editorState: editorState,

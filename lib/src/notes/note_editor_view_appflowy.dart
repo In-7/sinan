@@ -146,6 +146,13 @@ class _NoteEditorViewAppFlowyState
   /// 其余块返回 true 交给官方。注册/注销见 [_registerImagePreviewInterceptor]。
   static const String _imagePreviewInterceptorKey = 'image-preview';
 
+  /// 插入图片后的**把手引导**：官方 `ResizableImage` 的缩放把手只在 hover 时
+  /// 露出，用户不知道能拖。新图片落块后短暂（4s）在其上叠一条提示，随后自消。
+  /// 走 blockWrapper 的纯渲染层，不改文档/选区/官方源码。
+  final ValueNotifier<String?> _newImageHintId = ValueNotifier<String?>(null);
+  final Set<String> _knownImageIds = <String>{};
+  Timer? _imageHintTimer;
+
   /// 跳转请求的订阅（见 [_maybeConsumeLocate]）。
   ProviderSubscription<LocateRequest?>? _locateSub;
 
@@ -488,6 +495,12 @@ class _NoteEditorViewAppFlowyState
     _editor = EditorState(
       document: NoteDocumentAdapter.documentFromStoredContent(content),
     );
+    // 已有图片先登记为"已知"，避免打开笔记时把存量图片全当新插入弹引导。
+    _knownImageIds.addAll(
+      _editor.document.root.children
+          .where((Node n) => n.type == ImageBlockKeys.type)
+          .map((Node n) => n.id),
+    );
     _scroll = EditorScrollController(editorState: _editor);
     _placeInitialCursor();
     // 跳转请求（`locateProvider`，§4）：本视图按 `ValueKey(noteId)` 重建 ⇒ 切到
@@ -502,6 +515,7 @@ class _NoteEditorViewAppFlowyState
     // （撤销本身也走 `apply` ⇒ 这个流同样会响，见官方 `UndoManager.undo`）。
     _changesSub = _editor.transactionStream.listen((_) {
       _onContentChanged();
+      _detectNewImageForHint();
       // ⚠️ **必须延到微任务**：官方 `applyTransaction` 里事务流是**先广播、
       // 后记录历史**的（`_recordRedoOrUndo` 在两处 `_observer.add` 之后），
       // 当场读栈会读到"这一步还没进去"⇒ 按钮永远慢一步。
@@ -567,6 +581,28 @@ class _NoteEditorViewAppFlowyState
           },
         ),
       );
+    });
+  }
+
+  /// 事务后找出**新插入**的图片块，给它挂一次把手引导（4s 自消）。
+  ///
+  /// 增量集合差：当前文档的图片 id 减去已知集合。删图也会更新已知集合，
+  /// 但只对新增的那个弹提示。重复插图（连按粘贴）以最后一个为准。
+  void _detectNewImageForHint() {
+    final Set<String> current = _editor.document.root.children
+        .where((Node n) => n.type == ImageBlockKeys.type)
+        .map((Node n) => n.id)
+        .toSet();
+    final Set<String> added = current.difference(_knownImageIds);
+    _knownImageIds
+      ..clear()
+      ..addAll(current);
+    if (added.isEmpty) return;
+    _newImageHintId.value = added.first;
+    _imageHintTimer?.cancel();
+    _imageHintTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      _newImageHintId.value = null;
     });
   }
 
@@ -688,6 +724,8 @@ class _NoteEditorViewAppFlowyState
       }
     }
     unawaited(_changesSub?.cancel());
+    _imageHintTimer?.cancel();
+    _newImageHintId.dispose();
     _scroll.dispose();
     // 选区拦截器不在这里注销：dispose 时 AppFlowyEditor 子树已先卸载，
     // selectionService 代理的 forward 为 null（访问它会断言），而拦截器列表
@@ -1108,7 +1146,7 @@ class _NoteEditorViewAppFlowyState
     //
     // 回调走 [_onBlockMeasured] 而不是直连 `BlockHeights.measure`：实测值还要
     // **增量**喂给滚动器那份逐 item 高度（O(1)，见那里的说明）。
-    return BlockHeightProbe(
+    final Widget block = BlockHeightProbe(
       nodeId: node.id,
       onMeasured: _onBlockMeasured,
       child: ValueListenableBuilder<String?>(
@@ -1130,6 +1168,49 @@ class _NoteEditorViewAppFlowyState
           );
         },
       ),
+    );
+
+    // 新插入的图片块：叠一条短命引导（"拖动两侧把手调整宽度"）。
+    // 官方把手只在 hover 时露出，用户不知道能拖；提示走纯渲染 Stack +
+    // Positioned（不占布局、不改文档/选区），4s 后由 [_imageHintTimer] 清掉。
+    if (node.type != ImageBlockKeys.type) return block;
+    return ValueListenableBuilder<String?>(
+      valueListenable: _newImageHintId,
+      builder: (BuildContext context, String? hintId, Widget? child) {
+        final bool show = hintId == node.id;
+        if (!show) return child!;
+        final ThemeData theme = Theme.of(context);
+        final ColorScheme scheme = theme.colorScheme;
+        return Stack(
+          children: <Widget>[
+            child!,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: Tokens.spaceSm,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Tokens.spaceSm,
+                    vertical: Tokens.spaceXxs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.inverseSurface,
+                    borderRadius: BorderRadius.circular(Tokens.radiusSm),
+                  ),
+                  child: Text(
+                    '拖动两侧把手调整宽度 · 双击放大',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.onInverseSurface,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+      child: block,
     );
   }
 
