@@ -42,7 +42,7 @@ import '../editor/blocks/custom_block_components.dart';
 import '../editor/blocks/ref_block_component.dart';
 import '../editor/blocks/toggle_block_component.dart';
 import '../editor/keys/image_arrow_commands.dart';
-import '../editor/keys/image_block_clipboard.dart';
+import '../editor/keys/block_clipboard.dart';
 import '../editor/toolbar/fixed_toolbar.dart';
 import '../editor/toolbar/slash_menu_items.dart';
 import '../editor/panels/backlink_panel.dart';
@@ -538,7 +538,7 @@ class _NoteEditorViewAppFlowyState
     // 打开笔记时从系统剪贴板回填图片块缓存：覆盖"复制图片块 → 关掉应用 →
     // 重开后粘贴"（内存剪贴板早已丢失）。读不到会清空缓存，顺带消除"外部
     // 复制了别的东西、这里却还留着旧图片块"的污染。
-    unawaited(ImageBlockClipboard.refresh());
+    unawaited(BlockClipboard.refresh());
     _notes = ref.read(notesProvider.notifier);
     // 写入者绑定到本笔记的 id（编排本身在 [NoteSaver]，与 UI 无关）。
     _noteSaver = NoteSaver(
@@ -1864,12 +1864,12 @@ class _NoteEditorViewAppFlowyState
                   // **必须排在标准表之前**（先命中先赢，见命令文件文档）。
                   sinanImageArrowDownCommand,
                   sinanImageArrowUpCommand,
-                  // 图片块级复制 / 剪切 / 粘贴（2026-11-22）：应用内块剪贴板，
-                  // 只在纯图片选区 / 块剪贴板有内容时接管，其余交回官方命令。
+                  // 块级复制 / 剪切 / 粘贴（2026-11-22 从"仅图片"泛化到任意块）：
+                  // 整块选区走块剪贴板（系统自定义格式），部分选区交回官方纯文本。
                   // **必须排在标准表之前**（先命中先赢）。
-                  sinanImageCopyCommand,
-                  sinanImageCutCommand,
-                  sinanImagePasteCommand,
+                  sinanBlockCopyCommand,
+                  sinanBlockCutCommand,
+                  sinanBlockPasteCommand,
                   // 智能粘贴（Ctrl+V）：**必须排在官方 paste 之前**（先命中先赢），
                   // 并把官方那条从标准表里摘掉，避免两条 ctrl+v 并存。
                   // 逻辑：剪贴板是图 ⇒ 落盘 + 插图；否则回退「粘贴 URL 自动转链」/

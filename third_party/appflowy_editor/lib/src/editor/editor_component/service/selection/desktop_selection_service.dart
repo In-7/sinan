@@ -372,7 +372,8 @@ class _DesktopSelectionServiceWidgetState
     //     片菜单）。修：collapsed 选区不在被右键的 node 上 ⇒ 先聚焦它。
     //  ② cover 类块（图片）的 getPositionInOffset 只返回 end()，官方一律建
     //     collapsed 选区；但图片要的是整块选区（0..1），否则块级 Ctrl+C /
-    //     Ctrl+X 的 isImageOnlySelection 判 false。修：cover 块给 start..end。
+    //     块级 Ctrl+C / Ctrl+X 的整块判定（isWholeBlockSelection）为 false。
+    //     修：cover 块给 start..end。
     // 命中点在已选区内仍保留整段选区（多选右键作用于全部，业界语义）。
     Selection focusOnTappedNode() => selectable.cursorStyle == CursorStyle.cover
         ? Selection(start: selectable.start(), end: selectable.end())

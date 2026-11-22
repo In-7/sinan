@@ -3,7 +3,7 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../keys/image_block_clipboard.dart';
+import '../keys/block_clipboard.dart';
 import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
@@ -106,31 +106,17 @@ Widget sinanEditorContextMenu({
           _ContextMenuRow(
             label: '剪切',
             shortcut: 'Ctrl+X',
-            // 图片块走应用内块剪贴板（官方 cutCommand 对 delta==null 是空操作）；
-            // 文本块仍走官方，且仅选区非空时才可用——但**先清空块剪贴板**：
-            // 否则"复制图片块 → 复制文字 → 粘贴"会粘出旧图片（同 Ctrl+C 路径）。
-            onPressed: isImageBlock
-                ? sinanImageCutCommand.handler
-                : hasRange
-                    ? (EditorState state) {
-                        ImageBlockClipboard.clear();
-                        return cutCommand.handler(state);
-                      }
-                    : null,
+            // 统一语义（与 Ctrl+X 完全同一条逻辑）：**整块选区**走块剪贴板
+            // （保结构、可跨应用），部分选区回退官方纯文本。两条路都先清空
+            // 块剪贴板，避免"复制块 → 复制一句话 → 粘贴"粘出旧块。
+            onPressed: hasRange ? menuCut : null,
             editorState: editorState,
             onDismiss: onDismiss,
           ),
           _ContextMenuRow(
             label: '复制',
             shortcut: 'Ctrl+C',
-            onPressed: isImageBlock
-                ? sinanImageCopyCommand.handler
-                : hasRange
-                    ? (EditorState state) {
-                        ImageBlockClipboard.clear();
-                        return copyCommand.handler(state);
-                      }
-                    : null,
+            onPressed: hasRange ? menuCopy : null,
             editorState: editorState,
             onDismiss: onDismiss,
           ),
@@ -138,10 +124,9 @@ Widget sinanEditorContextMenu({
           _ContextMenuRow(
             label: '粘贴',
             shortcut: 'Ctrl+V',
-            // 块剪贴板有图片时在任意块上都优先粘图片块（同 Ctrl+V 顺序）。
-            onPressed: ImageBlockClipboard.hasContent
-                ? sinanImagePasteCommand.handler
-                : onPaste ?? pasteCommand.handler,
+            // 块剪贴板有内容 ⇒ 粘块；否则回退视图侧智能粘贴（剪贴板位图落盘）
+            // 或官方文本粘贴，与 Ctrl+V 同一顺序。
+            onPressed: (EditorState state) => menuPaste(state, fallback: onPaste),
             editorState: editorState,
             onDismiss: onDismiss,
           ),
