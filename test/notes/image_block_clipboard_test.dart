@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sinan/src/clipboard/block_clipboard_transport.dart';
 import 'package:sinan/src/clipboard/clipboard_codec.dart';
 import 'package:sinan/src/editor/keys/image_block_clipboard.dart';
-import 'package:sinan/src/editor/widgets/editor_context_menu.dart';
 
 /// 图片块级复制 / 剪切 / 粘贴（飞书/Notion 语义）：
 /// 应用内块剪贴板存 Node 快照，粘回来是**新块指向同一文件**，零文件副本。
@@ -133,13 +132,6 @@ void main() {
     select(state, Selection.collapsed(Position(path: [last], offset: 1)));
     expect(sinanImagePasteCommand.handler(state), KeyEventResult.handled);
     expect(images(state).length, 2, reason: '越界落点应夹到文档末尾插成功');
-  });
-
-  test('base64 图片不显示「复制图片」（File(data:) 必然读失败）', () {
-    expect(shouldShowCopyImageItem('D:/photos/pic.png'), isTrue);
-    expect(shouldShowCopyImageItem('https://example.com/pic.png'), isFalse);
-    expect(shouldShowCopyImageItem('data:image/png;base64,iVBORw0KGgo='), isFalse);
-    expect(shouldShowCopyImageItem(''), isFalse);
   });
 
   group('ClipboardCodec（逻辑层协议）', () {

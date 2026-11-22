@@ -8,7 +8,6 @@ import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
 import '../../notes/services/note_image_preview.dart';
-import '../../notes/services/note_media_service.dart';
 
 /// 编辑器正文的**右键菜单**（官方 `contextMenuBuilder` 的实现）。
 ///
@@ -23,21 +22,25 @@ import '../../notes/services/note_media_service.dart';
 /// 描边 + 投影），条目直接调**官方命令的 handler**（`ctrl+x` / `ctrl+c` /
 /// `ctrl+v` / `ctrl+a` 的同一实现 ⇒ 菜单与快捷键永不脱节）。
 ///
-/// ## 条目与可用性
-/// 剪切 / 复制 需要**非折叠选区**（否则置灰不发命令）；粘贴 / 全选 恒可用。
+/// ## 条目（2026-11-22 统一：图片与文本共用同一套）
+/// 预览图片（**图片专有**）/ 剪切 / 复制 / 粘贴 / 删除 / 全选。
+///
+/// - 剪切 / 复制：图片走应用内块剪贴板（系统剪贴板承载），文本走官方命令；
+/// - 删除：图片按块删、文本走官方 `deleteCommand`（见条目注释）；
+/// - 剪切 / 复制 在无选区时置灰；粘贴 / 删除 / 全选 只要 `selection != null` 就可用。
+///
+/// 不再给图片单独做「复制图片 / 删除图片」：块复制已经把位图挂进系统剪贴板
+/// （`ClipboardCodec.singleLocalImagePath`），外部应用照样能粘到图片。
 ///
 /// ## 与"空白处"的关系
 /// 官方 `_showContextMenu` 只对**文本节点**弹（`currentSelectedNodes.every(
 /// (n) => n.delta != null)`），且要求选区矩形非空——所以正文行的空白处右键
 /// 有效（那一行本身就是段落），而"整页末尾的大空白"（我们自己的
 /// `editor.trailingArea`）不在官方链路里，由视图侧另行处理。
-/// 是否给图片块显示「复制图片」：只有**本地文件**能写系统剪贴板。
 ///
-/// - 网络图（http/https）：没有本地字节，复制要另外下载，不出该项；
-/// - 内嵌 base64（`data:image/...;base64,...`）：不是文件路径，`File(src)`
-///   必然读失败 —— 早先只挡 http，用户点了「复制图片」毫无反应（2026-11-22）。
-bool shouldShowCopyImageItem(String src) =>
-    src.isNotEmpty && !src.startsWith('http') && !src.startsWith('data:');
+/// 菜单条目数（决定出屏钳制的估算高度）：图片块比文本块多一行「预览图片」，
+/// 其余行完全相同——按行数算，不写死 160/220 这种估大了的常数。
+int _rowCount({required bool isImageBlock}) => isImageBlock ? 6 : 5;
 
 Widget sinanEditorContextMenu({
   required BuildContext context,
@@ -51,28 +54,25 @@ Widget sinanEditorContextMenu({
   final Selection? selection = editorState.selection;
   final bool hasRange = selection != null && !selection.isCollapsed;
 
-  // 当前选区是否落在**非文本块**（图片等，delta == null）：这类块没有文字
-  // 可剪切/复制/全选，给通用的四项全灰没意义——换成块级「删除 / 复制块」
-  // （Notion 同款：图片块的菜单就是删除/复制/替换）。
+  // 当前选区落在哪个块。图片块只比文本块多一行「预览」——其余条目共用，
+  // 不再给它另做「复制图片 / 删除图片」（2026-11-22 用户定：菜单要统一）。
   final Node? selectedNode = selection == null
       ? null
       : editorState.getNodeAtPath(selection.end.path);
-  final bool isMediaBlock =
-      selectedNode != null && selectedNode.delta == null;
-  // 只有图片块能预览（媒体块还可能是公式 / 附件等，它们没有灯箱）。
+  // 非文本块（图片/公式/附件…，`delta == null`）：没有文字可切/复制，
+  // 删除要按**块**删（见下面「删除」条目）。
+  final bool isMediaBlock = selectedNode != null && selectedNode.delta == null;
+  // 只有图片块能预览（其它非文本块如公式/附件没有灯箱）。
   final bool isImageBlock =
       selectedNode != null && selectedNode.type == ImageBlockKeys.type;
-  // 「复制图片」写系统剪贴板只支持**本地文件**（旧 quill 版同口径）；
-  // 网络图没有本地字节，给置灰入口没意义，直接不显示。
   final String imageSrc = isImageBlock
       ? (selectedNode.attributes[ImageBlockKeys.url] as String?) ?? ''
       : '';
-  final bool isLocalImage = shouldShowCopyImageItem(imageSrc);
 
-  // 出屏钳制：菜单 200 宽、四行约 160 高（够用即可，不做测量回调）。
+  // 出屏钳制：菜单 200 宽、按行数估高（行高 ~34，取够用即可，不做测量回调）。
   final Size window = MediaQuery.sizeOf(context);
   const double width = 200;
-  final double height = isImageBlock ? 220 : 160;
+  final double height = _rowCount(isImageBlock: isImageBlock) * 34 + 24;
   final double left = position.dx + width > window.width
       ? (position.dx - width).clamp(0.0, window.width - width)
       : position.dx;
@@ -90,7 +90,7 @@ Widget sinanEditorContextMenu({
         mainAxisSize: .min,
         crossAxisAlignment: .stretch,
         children: <Widget>[
-          // 图片块首行「预览图片」：与双击同一灯箱（入口两处、实现一份）。
+          // 图片块**专有**的一行：预览灯箱（与双击同一实现）。其余条目与文本共用。
           if (isImageBlock)
             _ContextMenuRow(
               label: '预览图片',
@@ -98,38 +98,6 @@ Widget sinanEditorContextMenu({
               onPressed: (EditorState state) {
                 if (imageSrc.isEmpty) return KeyEventResult.ignored;
                 unawaited(showNoteImagePreview(context, imageSrc));
-                return KeyEventResult.handled;
-              },
-              editorState: editorState,
-              onDismiss: onDismiss,
-            ),
-          if (isLocalImage)
-            _ContextMenuRow(
-              label: '复制图片',
-              shortcut: '',
-              onPressed: (EditorState _) {
-                unawaited(
-                  NoteMediaService.copyImageFileToWindowsClipboard(imageSrc),
-                );
-                return KeyEventResult.handled;
-              },
-              editorState: editorState,
-              onDismiss: onDismiss,
-            ),
-          // 媒体块（图片等无 delta）：文本四项对它全灰没意义，次行换成
-          // 「删除图片」——块级删除走官方 transaction（与 Delete 键同款）。
-          if (isMediaBlock)
-            _ContextMenuRow(
-              label: '删除图片',
-              shortcut: 'Del',
-              onPressed: (EditorState state) {
-                final Selection? s = state.selection;
-                if (s == null) return KeyEventResult.ignored;
-                unawaited(
-                  state.apply(
-                    state.transaction..deleteNodesAtPath(s.end.path),
-                  ),
-                );
                 return KeyEventResult.handled;
               },
               editorState: editorState,
@@ -174,6 +142,33 @@ Widget sinanEditorContextMenu({
             onPressed: ImageBlockClipboard.hasContent
                 ? sinanImagePasteCommand.handler
                 : onPaste ?? pasteCommand.handler,
+            editorState: editorState,
+            onDismiss: onDismiss,
+          ),
+          const SizedBox(height: Tokens.spaceXs),
+          // 删除：图片与文本**同一个条目**，但处理分两种：
+          // - 文本块：官方 `deleteCommand`（按 selectionType 分流：删选区/删字符）；
+          // - 媒体块：直接按 path 删整块。
+          //   为什么不也用官方：`deleteCommand` 对 **collapsed** 选区 + `delta ==
+          //   null` 的块会 `return ignored`（`_deleteInCollapsedSelection` 里
+          //   `delta == null` 直接放弃）⇒ 选区形态一换就删不掉。块级删除不依赖
+          //   选区形态，稳定。
+          _ContextMenuRow(
+            label: '删除',
+            shortcut: 'Del',
+            onPressed: selection == null
+                ? null
+                : isMediaBlock
+                    ? (EditorState state) {
+                        unawaited(
+                          state.apply(
+                            state.transaction
+                              ..deleteNodesAtPath(selectedNode.path),
+                          ),
+                        );
+                        return KeyEventResult.handled;
+                      }
+                    : deleteCommand.handler,
             editorState: editorState,
             onDismiss: onDismiss,
           ),

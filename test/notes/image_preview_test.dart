@@ -13,7 +13,6 @@ import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/domain/settings.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
-import 'package:sinan/src/editor/widgets/editor_context_menu.dart';
 import 'package:sinan/src/notes/note_editor_view_appflowy.dart';
 import 'package:sinan/src/notes/services/note_image_preview.dart';
 import 'package:sinan/src/theme/app_theme.dart';
@@ -155,7 +154,7 @@ void main() {
 
     expect(find.text('预览图片'), findsOneWidget,
         reason: '图片右键菜单应有预览入口');
-    expect(find.text('删除图片'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
 
     await tester.tap(find.text('预览图片'));
     await tester.pumpAndSettle();
@@ -198,13 +197,10 @@ void main() {
     }
   });
 
-  /// 右键菜单条目判定（本地源显示「复制图片」、网络源不显示）。
-  Future<void> expectCopyItem(
-    WidgetTester tester,
-    String src,
-    Matcher matcher,
+  testWidgets('图片右键菜单与文本块共用同一套条目（只多「预览图片」）', (
+    tester,
   ) async {
-    final EditorState state = await pumpEditor(tester, imageSrc: src);
+    final EditorState state = await pumpEditor(tester);
     final Node image = state.document.root.children
         .where((Node n) => n.type == ImageBlockKeys.type)
         .single;
@@ -220,19 +216,16 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
+
+    // 共用条目（2026-11-22 用户定：不再单独做「复制图片 / 删除图片」）。
+    for (final String label in <String>['剪切', '复制', '粘贴', '删除', '全选']) {
+      expect(find.text(label), findsOneWidget, reason: '图片菜单应有「$label」');
+    }
+    // 图片专有。
     expect(find.text('预览图片'), findsOneWidget);
-    expect(find.text('复制图片'), matcher, reason: '源 $src');
-  }
-
-  testWidgets('图片右键：本地源有「复制图片」', (tester) async {
-    await expectCopyItem(tester, 'D:/photos/pic.png', findsOneWidget);
-  });
-
-  test('复制图片：仅本地源出该项（网络图 / base64 都不显示）', () {
-    expect(shouldShowCopyImageItem('D:/photos/pic.png'), isTrue);
-    expect(shouldShowCopyImageItem('https://example.com/pic.png'), isFalse);
-    expect(shouldShowCopyImageItem('data:image/png;base64,AAAA'), isFalse);
-    expect(shouldShowCopyImageItem(''), isFalse);
+    // 已删除的两个专有条目不得再出现。
+    expect(find.text('复制图片'), findsNothing);
+    expect(find.text('删除图片'), findsNothing);
   });
 
   testWidgets('新插入图片：叠 4s 把手引导后自消，存量图片不弹', (tester) async {

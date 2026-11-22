@@ -118,11 +118,11 @@ void main() {
       findsOneWidget,
       reason: '图片右键应弹出菜单（门禁 return 会让它完全不弹）',
     );
-    // 媒体块首行是「删除图片」（不是对图片无意义的「剪切」）。
-    expect(find.text('删除图片'), findsOneWidget);
+    // 图片块与文本块共用同一套条目（2026-11-22 统一），删除走官方命令。
+    expect(find.text('删除'), findsOneWidget);
 
-    // 点「删除图片」⇒ 图片块从文档里消失。
-    await tester.tap(find.text('删除图片'));
+    // 点「删除」⇒ 图片块从文档里消失。
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     expect(
       state.document.root.children

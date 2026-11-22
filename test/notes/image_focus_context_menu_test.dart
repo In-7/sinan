@@ -112,10 +112,10 @@ void main() {
     expect(state.selection!.isCollapsed, isFalse,
         reason: '图片是 cover 块，选区应为整块 0..1');
 
-    // 菜单应是图片菜单，不是文字菜单。
-    expect(find.text('删除图片'), findsOneWidget,
+    // 菜单应已按图片块生成（预览是图片专有行 ⇒ 出现了就说明对了）。
+    expect(find.text('预览图片'), findsOneWidget,
         reason: '应弹图片菜单（否则用户要点两下）');
-    expect(find.text('预览图片'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
   });
 
   testWidgets('图片被聚焦时画主题色描边（foreground 不占位）', (tester) async {
