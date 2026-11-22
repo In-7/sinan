@@ -173,28 +173,37 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
     final alignment = AlignmentExtension.fromString(
       attributes[ImageBlockKeys.align] ?? 'center',
     );
-    final width = attributes[ImageBlockKeys.width]?.toDouble() ??
-        MediaQuery.of(context).size.width;
     final height = attributes[ImageBlockKeys.height]?.toDouble();
 
-    // [sinan 补丁 24] [sinan 补丁 25] 图片聚焦描边：由 ResizableImage 把描边贴在**图片
-    // 像素**外沿（补丁 25，见 resizable_image.dart），focusedListenable 传
-    // 派生好的 focusNotifier——选区变化不重建 ResizableImage 本体（保住缩放
-    // 状态）。颜色按当前主题取 primary。
-    Widget child = ResizableImage(
-      src: src,
-      width: width,
-      height: height,
-      editable: editorState.editable,
-      alignment: alignment,
-      focusedListenable: focusNotifier,
-      focusColor: Theme.of(context).colorScheme.primary,
-      onResize: (width) {
-        final transaction = editorState.transaction
-          ..updateNode(node, {
-            ImageBlockKeys.width: width,
-          });
-        editorState.apply(transaction);
+    // [sinan 补丁 24] [sinan 补丁 25] [sinan 补丁 26] 图片聚焦描边 + 宽度钳制：
+    // - 描边由 ResizableImage 贴在**图片像素**外沿（补丁 25）；
+    // - **默认宽度取正文列宽**（`LayoutBuilder` 的 maxWidth），不再用
+    //   `MediaQuery.size.width`（那是屏幕宽，存进 attributes 语义就错了，
+    //   窗口一缩就被裁）；
+    // - `maxWidth` 传下去做拖拽上限（补丁 26）。
+    // focusedListenable 用派生 notifier：选区变化只重建描边，不重建本组件。
+    Widget child = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth;
+        final double width =
+            attributes[ImageBlockKeys.width]?.toDouble() ?? available;
+        return ResizableImage(
+          src: src,
+          width: width,
+          height: height,
+          editable: editorState.editable,
+          alignment: alignment,
+          focusedListenable: focusNotifier,
+          focusColor: Theme.of(context).colorScheme.primary,
+          maxWidth: available,
+          onResize: (width) {
+            final transaction = editorState.transaction
+              ..updateNode(node, {
+                ImageBlockKeys.width: width,
+              });
+            editorState.apply(transaction);
+          },
+        );
       },
     );
 

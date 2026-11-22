@@ -19,6 +19,7 @@ class ResizableImage extends StatefulWidget {
     this.height,
     this.focusedListenable,
     this.focusColor,
+    this.maxWidth,
   });
 
   final String src;
@@ -26,6 +27,14 @@ class ResizableImage extends StatefulWidget {
   final double? height;
   final Alignment alignment;
   final bool editable;
+
+  /// [sinan 补丁 26] 可拖到的**最大宽度**（= 正文可用列宽，由外层 LayoutBuilder
+  /// 传入）。null ⇒ 不设上限（沿用官方行为）。
+  ///
+  /// 为什么要它：官方无上限，能把图片拖到超过列宽——存的 `width` 大于列宽，
+  /// 窗口/列宽一变就被裁；而且首次插入的默认宽度取的是**屏幕宽**，语义本身
+  /// 就不对。
+  final double? maxWidth;
 
   /// [sinan 补丁 25] 选中态的可监听值。用 ValueListenable 而非 bool，避免
   /// 选区变化重建 ResizableImage 本体（会丢 imageWidth / _cacheImage 状态）。
@@ -38,7 +47,13 @@ class ResizableImage extends StatefulWidget {
   State<ResizableImage> createState() => _ResizableImageState();
 }
 
-const _kImageBlockComponentMinWidth = 30.0;
+/// [sinan 补丁 26] 最小宽度：官方 30px（几乎等于没有下限，能拖成一条缝）。
+/// 80px 是"还能看出是张图"的下限。
+const _kImageBlockComponentMinWidth = 80.0;
+
+/// [sinan 补丁 26] 拖拽热区宽度：官方 5px 且内缩 5px（热区落在「距边缘 5~10px」
+/// 的窄带里 ⇒ **点最边缘反而拖不动**，用户第一反应就是拖边缘）。改为贴边 8px。
+const _kImageBlockHandleWidth = 8.0;
 
 class _ResizableImageState extends State<ResizableImage> {
   late double imageWidth;
@@ -58,12 +73,33 @@ class _ResizableImageState extends State<ResizableImage> {
     imageWidth = widget.width;
   }
 
+  /// [sinan 补丁 26] 外部改 `width`（撤销、右键「恢复原始大小」删属性后回落到
+  /// 列宽）时同步本地值。官方只在 initState 取一次 ⇒ 之后属性变了画面不动，
+  /// 「恢复原始大小」会像失效。
+  @override
+  void didUpdateWidget(ResizableImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.width != oldWidget.width) {
+      imageWidth = widget.width;
+      moveDistance = 0;
+    }
+  }
+
+  /// 宽度一律走这里：夹在 [最小宽度, 列宽] 之间。
+  ///
+  /// 存量的超宽值（早先无上限时拖出来的）在这里被夹回列宽，不会溢出排版；
+  /// 列宽比最小宽度还窄时以列宽为准。
+  double _clampWidth(double value) {
+    final double upper = widget.maxWidth ?? double.infinity;
+    return min(max(_kImageBlockComponentMinWidth, value), upper);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Align(
       alignment: widget.alignment,
       child: SizedBox(
-        width: max(_kImageBlockComponentMinWidth, imageWidth - moveDistance),
+        width: _clampWidth(imageWidth - moveDistance),
         height: widget.height,
         child: MouseRegion(
           onEnter: (event) => setState(() {
@@ -136,12 +172,14 @@ class _ResizableImageState extends State<ResizableImage> {
       children: [
         child,
         if (widget.editable) ...[
+          // [sinan 补丁 26] 热区**贴边**且加宽到 8px（官方 left/right:5 + 宽 5
+          // ⇒ 热区在「距边缘 5~10px」的窄带里，点最边缘拖不动）。
           _buildEdgeGesture(
             context,
             top: 0,
-            left: 5,
+            left: 0,
             bottom: 0,
-            width: 5,
+            width: _kImageBlockHandleWidth,
             onUpdate: (distance) {
               setState(() {
                 moveDistance = distance;
@@ -151,9 +189,9 @@ class _ResizableImageState extends State<ResizableImage> {
           _buildEdgeGesture(
             context,
             top: 0,
-            right: 5,
+            right: 0,
             bottom: 0,
-            width: 5,
+            width: _kImageBlockHandleWidth,
             onUpdate: (distance) {
               setState(() {
                 moveDistance = -distance;
@@ -227,8 +265,7 @@ class _ResizableImageState extends State<ResizableImage> {
           }
         },
         onHorizontalDragEnd: (details) {
-          imageWidth =
-              max(_kImageBlockComponentMinWidth, imageWidth - moveDistance);
+          imageWidth = _clampWidth(imageWidth - moveDistance);
           initialOffset = 0;
           moveDistance = 0;
 
@@ -236,16 +273,19 @@ class _ResizableImageState extends State<ResizableImage> {
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.resizeLeftRight,
+          // [sinan 补丁 26] 视觉条改成**整条高度**（官方固定 height:40：图片一高，
+          // 中部"看不见把手"却能拖，顶部看见的又不在视觉条上 ⇒ 可见性与可拖区
+          // 不一致）。细条 3px、贴边，和热区一样贯穿全高。
           child: onFocus
               ? Center(
                   child: Container(
-                    height: 40,
+                    width: 3,
+                    height: double.infinity,
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: const BorderRadius.all(
-                        Radius.circular(5.0),
+                        Radius.circular(2.0),
                       ),
-                      border: Border.all(width: 1, color: Colors.white),
                     ),
                   ),
                 )

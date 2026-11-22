@@ -101,6 +101,11 @@ void main() {
         '补丁 25：描边贴图片像素——丢了不同尺寸照片描边又对不齐',
       ),
       (
+        'lib/src/editor/block_component/image_block_component/resizable_image.dart',
+        '[sinan 补丁 26]',
+        '补丁 26：缩放手感（贴边热区/整高可见条/宽度钳制/属性同步）',
+      ),
+      (
         'lib/src/editor/editor_component/service/selection/desktop_selection_service.dart',
         '[sinan 补丁 16d]',
         '补丁 16d：删掉 only-text-node 右键门禁——丢了图片右键又不弹菜单',

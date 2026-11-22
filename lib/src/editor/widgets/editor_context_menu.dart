@@ -40,7 +40,7 @@ import '../../notes/services/note_image_preview.dart';
 ///
 /// 菜单条目数（决定出屏钳制的估算高度）：图片块比文本块多一行「预览图片」，
 /// 其余行完全相同——按行数算，不写死 160/220 这种估大了的常数。
-int _rowCount({required bool isImageBlock}) => isImageBlock ? 6 : 5;
+int _rowCount({required bool isImageBlock}) => isImageBlock ? 7 : 5;
 
 Widget sinanEditorContextMenu({
   required BuildContext context,
@@ -98,6 +98,29 @@ Widget sinanEditorContextMenu({
               onPressed: (EditorState state) {
                 if (imageSrc.isEmpty) return KeyEventResult.ignored;
                 unawaited(showNoteImagePreview(context, imageSrc));
+                return KeyEventResult.handled;
+              },
+              editorState: editorState,
+              onDismiss: onDismiss,
+            ),
+          // 图片块**专有**：清掉宽/高属性 ⇒ 回落到「正文列宽 + 原图比例」。
+          // 拖坏了没法一键回退是很实际的痛点（拖到 80px 之后只能靠手感拖回来）。
+          // 注意 `updateNode` 是 merge，传 null 即"用默认值"，读取侧靠
+          // `attributes[width]?.toDouble() ?? 列宽` 回落。
+          if (isImageBlock)
+            _ContextMenuRow(
+              label: '恢复原始大小',
+              shortcut: '',
+              onPressed: (EditorState state) {
+                unawaited(
+                  state.apply(
+                    state.transaction
+                      ..updateNode(selectedNode, <String, Object?>{
+                        ImageBlockKeys.width: null,
+                        ImageBlockKeys.height: null,
+                      }),
+                  ),
+                );
                 return KeyEventResult.handled;
               },
               editorState: editorState,

@@ -685,6 +685,33 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 
 **何时可撤销**: 上游给图片块加官方"贴图片的选中描边"后，删掉这些即可。
 
+### [2026-11-22] 补丁 26 — 图片缩放手感（贴边热区 / 整高可见条 / 宽度钳制 / 属性同步）
+
+**问题**（官方 6.2.0 原样，逐条实测）：
+1. 热区 `left/right: 5` + `width: 5` ⇒ 热区落在「距边缘 5~10px」的窄带里，
+   **点最边缘反而拖不动**（用户第一反应就是拖边缘）。
+2. 视觉条固定 `height: 40`，而热区是 `top:0,bottom:0` 全高 ⇒ 图片一高，中部
+   "看不见却能拖"、看见的地方又不在热区正中，可见性与可拖区不一致。
+3. 宽度**无上限**（能拖到超过正文列宽，存的 width 大于列宽，窗口一缩就被裁）；
+   下限 `30px` 几乎等于没有。
+4. 默认宽度取 `MediaQuery.size.width`（**屏幕宽**，不是列宽）⇒ 首次插入存进
+   attributes 的宽度语义就是错的。
+5. `imageWidth` 只在 `initState` 赋值，外部改 `width` 不同步 ⇒"恢复原始大小"
+   之类的回退操作画面不更新。
+
+**改动**：
+- `_kImageBlockComponentMinWidth` 30 → **80**；新增 `_kImageBlockHandleWidth = 8`。
+- 热区贴边（`left/right: 0`）+ 8px 宽；视觉条改成 `width:3 / height:∞` 的
+  贴边细条，与热区一样贯穿全高。
+- 新增 `maxWidth` 参数（外层 `LayoutBuilder` 的列宽），所有宽度走
+  `_clampWidth()`：`min(max(80, w), maxWidth)`；渲染、拖拽结束、存量超宽值都走它。
+- 新增 `didUpdateWidget`：`widget.width` 变化时同步 `imageWidth`，让「恢复原始
+  大小」能生效。
+- `image_block_component.dart`：`LayoutBuilder` 取可用列宽作默认宽度与上限，
+  不再用 `MediaQuery.size.width`。
+
+**何时可撤销**: 上游修好上述 5 点后整段删掉。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`
