@@ -31,10 +31,13 @@ import '../../notes/services/note_media_service.dart';
 /// (n) => n.delta != null)`），且要求选区矩形非空——所以正文行的空白处右键
 /// 有效（那一行本身就是段落），而"整页末尾的大空白"（我们自己的
 /// `editor.trailingArea`）不在官方链路里，由视图侧另行处理。
-/// 是否给图片块显示「复制图片」：只有本地文件能写系统剪贴板
-/// （网络图没有本地字节，旧 quill 版同样只对本地源出该项）。
+/// 是否给图片块显示「复制图片」：只有**本地文件**能写系统剪贴板。
+///
+/// - 网络图（http/https）：没有本地字节，复制要另外下载，不出该项；
+/// - 内嵌 base64（`data:image/...;base64,...`）：不是文件路径，`File(src)`
+///   必然读失败 —— 早先只挡 http，用户点了「复制图片」毫无反应（2026-11-22）。
 bool shouldShowCopyImageItem(String src) =>
-    src.isNotEmpty && !src.startsWith('http');
+    src.isNotEmpty && !src.startsWith('http') && !src.startsWith('data:');
 
 Widget sinanEditorContextMenu({
   required BuildContext context,
@@ -136,11 +139,15 @@ Widget sinanEditorContextMenu({
             label: '剪切',
             shortcut: 'Ctrl+X',
             // 图片块走应用内块剪贴板（官方 cutCommand 对 delta==null 是空操作）；
-            // 文本块仍走官方，且仅选区非空时才可用。
+            // 文本块仍走官方，且仅选区非空时才可用——但**先清空块剪贴板**：
+            // 否则"复制图片块 → 复制文字 → 粘贴"会粘出旧图片（同 Ctrl+C 路径）。
             onPressed: isImageBlock
                 ? sinanImageCutCommand.handler
                 : hasRange
-                    ? cutCommand.handler
+                    ? (EditorState state) {
+                        ImageBlockClipboard.clear();
+                        return cutCommand.handler(state);
+                      }
                     : null,
             editorState: editorState,
             onDismiss: onDismiss,
@@ -151,7 +158,10 @@ Widget sinanEditorContextMenu({
             onPressed: isImageBlock
                 ? sinanImageCopyCommand.handler
                 : hasRange
-                    ? copyCommand.handler
+                    ? (EditorState state) {
+                        ImageBlockClipboard.clear();
+                        return copyCommand.handler(state);
+                      }
                     : null,
             editorState: editorState,
             onDismiss: onDismiss,

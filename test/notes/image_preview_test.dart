@@ -228,9 +228,10 @@ void main() {
     await expectCopyItem(tester, 'D:/photos/pic.png', findsOneWidget);
   });
 
-  test('复制图片：仅本地源出该项（网络源不显示）', () {
+  test('复制图片：仅本地源出该项（网络图 / base64 都不显示）', () {
     expect(shouldShowCopyImageItem('D:/photos/pic.png'), isTrue);
     expect(shouldShowCopyImageItem('https://example.com/pic.png'), isFalse);
+    expect(shouldShowCopyImageItem('data:image/png;base64,AAAA'), isFalse);
     expect(shouldShowCopyImageItem(''), isFalse);
   });
 
