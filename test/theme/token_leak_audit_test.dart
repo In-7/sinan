@@ -182,6 +182,8 @@ exemptions = <String, Map<String, String>>{
         '保存闪烁语义时序（淡出 220 / 停留 900 / 延迟 120）：行为时序',
     'lib/src/notes/services/note_media_service.dart':
         '磁盘等待轮询 20/10ms：IO 节流不是 UI 时长',
+    'lib/src/clipboard/block_clipboard_win32.dart':
+        '剪贴板独占锁重试间隔 20/10ms：系统资源重试不是 UI 时长',
     'lib/src/editor/widgets/link_hover_tooltip.dart':
         'tooltip 显示延迟/隐藏宽限 220ms：行为时序',
     'lib/src/editor/core/note_save.dart': '保存防抖 500ms：行为时序',

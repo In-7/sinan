@@ -1,6 +1,8 @@
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sinan/src/clipboard/block_clipboard_transport.dart';
+import 'package:sinan/src/clipboard/clipboard_codec.dart';
 import 'package:sinan/src/editor/keys/image_block_clipboard.dart';
 import 'package:sinan/src/editor/widgets/editor_context_menu.dart';
 
@@ -38,7 +40,11 @@ void main() {
       .where((Node n) => n.type == ImageBlockKeys.type)
       .toList();
 
-  setUp(ImageBlockClipboard.clear);
+  // 测试不碰真实系统剪贴板：注入"不支持"传输 ⇒ 只走内存回落（与改造前一致）。
+  setUp(() {
+    ImageBlockClipboard.transport = const UnsupportedClipboardTransport();
+    ImageBlockClipboard.clear();
+  });
   tearDown(ImageBlockClipboard.clear);
 
   test('块剪贴板 copy/take 生成新 id，多次粘贴互不污染', () {
@@ -135,4 +141,128 @@ void main() {
     expect(shouldShowCopyImageItem('data:image/png;base64,iVBORw0KGgo='), isFalse);
     expect(shouldShowCopyImageItem(''), isFalse);
   });
+
+  group('ClipboardCodec（逻辑层协议）', () {
+    test('encode → decode 往返保持类型/属性', () {
+      final List<Node> nodes = <Node>[
+        imageNode(url: img, width: 320, height: 180),
+      ];
+      final List<Node>? back = ClipboardCodec.decode(
+        ClipboardCodec.encode(nodes),
+      );
+      expect(back, isNotNull);
+      expect(back!.single.type, ImageBlockKeys.type);
+      expect(back.single.attributes[ImageBlockKeys.url], img);
+      expect(back.single.attributes[ImageBlockKeys.width], 320);
+    });
+
+    test('版本不匹配 / 损坏 JSON / 空数组 ⇒ null（当没有数据）', () {
+      expect(ClipboardCodec.decode('{"v":999,"nodes":[]}'), isNull);
+      expect(ClipboardCodec.decode('not-json'), isNull);
+      expect(ClipboardCodec.decode('{"v":1,"nodes":[]}'), isNull);
+    });
+
+    test('明文兜底：图片只留文件名，不泄漏目录', () {
+      final String text = ClipboardCodec.plainTextOf(<Node>[
+        imageNode(url: 'D:/secret/dir/pic.png'),
+      ]);
+      expect(text, 'pic.png');
+      expect(text.contains('secret'), isFalse);
+    });
+
+    test('只有单张本地图才附带位图路径', () {
+      expect(
+        ClipboardCodec.singleLocalImagePath(<Node>[imageNode(url: img)]),
+        img,
+      );
+      expect(
+        ClipboardCodec.singleLocalImagePath(<Node>[
+          imageNode(url: img),
+          imageNode(url: img),
+        ]),
+        isNull,
+        reason: '多张图不放位图（剪贴板只挂得下一张）',
+      );
+      expect(
+        ClipboardCodec.singleLocalImagePath(<Node>[
+          imageNode(url: 'https://example.com/a.png'),
+        ]),
+        isNull,
+        reason: '网络图不下载，不挂位图',
+      );
+    });
+  });
+
+  group('系统剪贴板通道（假 transport）', () {
+    test('copy 写系统剪贴板；refresh 能从系统回填（模拟重启后粘贴）', () async {
+      final _FakeTransport fake = _FakeTransport();
+      ImageBlockClipboard.transport = fake;
+      ImageBlockClipboard.clear();
+
+      ImageBlockClipboard.copy(
+        <Node>[imageNode(url: img, width: 320, height: 180)],
+        cut: false,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(fake.written, isNotNull, reason: 'copy 应写系统剪贴板');
+      expect(fake.written!.plainText, 'pic.png');
+      expect(fake.written!.imageFilePath, img);
+
+      // 模拟重启：内存清空，只剩系统剪贴板。
+      ImageBlockClipboard.clear();
+      expect(ImageBlockClipboard.hasContent, isFalse);
+
+      await ImageBlockClipboard.refresh();
+      expect(ImageBlockClipboard.hasContent, isTrue,
+          reason: 'refresh 应从系统剪贴板回填');
+      expect(ImageBlockClipboard.takeForPaste().single.type,
+          ImageBlockKeys.type);
+    });
+
+    test('系统剪贴板被外部覆盖 ⇒ refresh 清空缓存（不粘旧图片）', () async {
+      final _FakeTransport fake = _FakeTransport();
+      ImageBlockClipboard.transport = fake;
+      ImageBlockClipboard.copy(<Node>[imageNode(url: img)], cut: false);
+      await Future<void>.delayed(Duration.zero);
+
+      fake.payload = null; // 外部复制了别的东西
+      await ImageBlockClipboard.refresh();
+      expect(ImageBlockClipboard.hasContent, isFalse,
+          reason: '外部复制后不应再粘出旧图片块');
+    });
+  });
+}
+
+class _FakeTransport implements BlockClipboardTransport {
+  String? payload;
+  _Write? written;
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<bool> write({
+    required String payload,
+    required String plainText,
+    String? imageFilePath,
+  }) async {
+    this.payload = payload;
+    written = _Write(payload: payload, plainText: plainText, imageFilePath: imageFilePath);
+    return true;
+  }
+
+  @override
+  Future<String?> read() async => payload;
+}
+
+class _Write {
+  const _Write({
+    required this.payload,
+    required this.plainText,
+    required this.imageFilePath,
+  });
+
+  final String payload;
+  final String plainText;
+  final String? imageFilePath;
 }

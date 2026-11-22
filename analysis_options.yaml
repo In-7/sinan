@@ -37,6 +37,7 @@ analyzer:
     # docs/editor_migration_spike.md 的「quill 归档」一节）。
     # 必须排除：它们 import 已摘除的 flutter_quill，否则分析报错。
     - archive/**
+    - macos/**
 include: package:flutter_lints/flutter.yaml
 
 # ─── 本项目额外规则 ────────────────────────────────────────────────────────

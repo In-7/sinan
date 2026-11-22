@@ -3,47 +3,96 @@ import 'dart:async' show unawaited;
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 
-/// 应用内**块剪贴板**（2026-11-22）：图片块的复制 / 剪切 / 粘贴。
+import '../../clipboard/block_clipboard_transport.dart';
+import '../../clipboard/clipboard_codec.dart';
+
+/// **块剪贴板**：图片块的复制 / 剪切 / 粘贴。
 ///
-/// ## 为什么不用系统剪贴板
-/// 官方 `copyCommand` 只写 text + html，而 `AppFlowyClipboard.setData` 在
+/// ## 为什么不能直接用官方复制
+/// `copyCommand` 只取 text + html，`AppFlowyClipboard.setData` 在
 /// `text == null`（图片块没有 delta）时**直接 return** ⇒ 图片块复制是空操作。
-/// 跨应用复制本地图又必须传位图（见 note_media_service.copyImageFileToWindowsClipboard），
-/// 那条路粘回编辑器会**重新落盘一份文件副本**——不是块复制的语义。
 ///
-/// 飞书 / Notion 的块复制是**应用内**的：复制的是节点快照，粘贴时插入新块、
-/// 指向**同一个**图片文件（零文件副本、零 IO）。这里照此实现。
+/// ## 双通道设计（2026-11-22 第二版）
+/// - **系统剪贴板**（优先）：把块载荷写进自定义格式（Windows 注册格式 /
+///   macOS UTI，见 `lib/src/clipboard/`），同时挂纯文本与位图给外部应用。
+///   ⇒ 重启后仍能粘、能粘到别的应用、外部复制会覆盖它（不存在"粘出旧图片"）。
+/// - **内存剪贴板**（回落）：平台不支持自定义格式（Linux/Web）或写入失败时，
+///   用进程内快照，行为与上一版一致。
 ///
-/// ## 生命周期
-/// 进程内单例，app 重启即失效（与飞书/Notion 的块复制一致）。
-/// 只承载图片块；文本块的复制粘贴仍走官方命令，互不干扰。
+/// 两条通道共用同一份 [ClipboardCodec] 协议。
 abstract final class ImageBlockClipboard {
-  static final List<Node> _nodes = <Node>[];
-  static bool _cut = false;
+  /// 平台层（可注入假实现做单测）。
+  static BlockClipboardTransport transport = createClipboardTransport();
 
-  /// 当前是否有可粘贴的图片块。
-  static bool get hasContent => _nodes.isNotEmpty;
+  /// 内存回落。
+  static final List<Node> _memory = <Node>[];
 
-  /// 复制或剪切：存节点快照（`copyWith()` 生成新 id，避免与源块 id 冲突）。
-  static void copy(List<Node> nodes, {required bool cut}) {
-    if (nodes.isEmpty) return;
-    _nodes
-      ..clear()
-      ..addAll(nodes.map((Node n) => n.copyWith()));
-    _cut = cut;
+  /// 系统剪贴板读取缓存：读是异步的，而命令 handler 是同步的。
+  ///
+  /// 复制/剪切时同步写入，粘贴时直接命中；[refresh] 在编辑器聚焦/打开笔记时
+  /// 异步从系统剪贴板回填（覆盖"重启后粘贴"）。
+  static List<Node>? _cached;
+
+  /// 当前是否有可粘贴的图片块（同步判定，供命令 handler 用）。
+  static bool get hasContent => _cached != null || _memory.isNotEmpty;
+
+  /// 取粘贴用节点（同步；每次克隆新 id，允许多次粘贴）。
+  static List<Node> takeForPaste() {
+    final List<Node> source = _cached ?? _memory;
+    return source.map((Node n) => n.copyWith()).toList(growable: false);
   }
 
-  /// 取出粘贴用的快照（每次取都再克隆一份，允许多次粘贴）。
-  static List<Node> takeForPaste() =>
-      _nodes.map((Node n) => n.copyWith()).toList(growable: false);
+  /// 复制/剪切：同步填缓存 + 异步写系统剪贴板（不阻塞 UI）。
+  static void copy(List<Node> nodes, {required bool cut}) {
+    if (nodes.isEmpty) return;
+    _memory
+      ..clear()
+      ..addAll(nodes.map((Node n) => n.copyWith()));
+    _cached = List<Node>.of(_memory);
+    unawaited(_writeToSystem(_memory));
+  }
 
-  /// 剪切源是否已被剪切器删除（供粘贴端决定是否需要清理原块）。
-  /// 当前剪切在 `cut` 命令里同步删源，故此标记只用于语义/测试。
-  static bool get wasCut => _cut;
+  /// 从系统剪贴板回填缓存（编辑器打开/聚焦时调用）。
+  ///
+  /// 读到块载荷 ⇒ 覆盖缓存；读不到 ⇒ 清空缓存（外部复制了别的东西）。
+  /// 这样"内存里还留着旧图片块"的污染问题在系统剪贴板可用时自然消失。
+  static Future<void> refresh() async {
+    if (!transport.isSupported) return;
+    final String? payload = await transport.read();
+    if (payload == null) {
+      _cached = null;
+      _memory.clear();
+      return;
+    }
+    final List<Node>? nodes = ClipboardCodec.decode(payload);
+    if (nodes == null) {
+      _cached = null;
+      _memory.clear();
+      return;
+    }
+    _cached = nodes;
+    _memory
+      ..clear()
+      ..addAll(nodes);
+  }
 
   static void clear() {
-    _nodes.clear();
-    _cut = false;
+    _cached = null;
+    _memory.clear();
+  }
+
+  /// 写系统剪贴板：载荷 + 纯文本 + （单张本地图时）位图。
+  static Future<bool> _writeToSystem(List<Node> nodes) async {
+    if (!transport.isSupported) return false;
+    try {
+      return await transport.write(
+        payload: ClipboardCodec.encode(nodes),
+        plainText: ClipboardCodec.plainTextOf(nodes),
+        imageFilePath: ClipboardCodec.singleLocalImagePath(nodes),
+      );
+    } on Object {
+      return false;
+    }
   }
 }
 

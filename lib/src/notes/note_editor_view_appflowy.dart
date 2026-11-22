@@ -535,6 +535,10 @@ class _NoteEditorViewAppFlowyState
       NoteDocumentAdapter.plainTextFromDocument(_editor.document),
     );
     _loaded = note != null;
+    // 打开笔记时从系统剪贴板回填图片块缓存：覆盖"复制图片块 → 关掉应用 →
+    // 重开后粘贴"（内存剪贴板早已丢失）。读不到会清空缓存，顺带消除"外部
+    // 复制了别的东西、这里却还留着旧图片块"的污染。
+    unawaited(ImageBlockClipboard.refresh());
     _notes = ref.read(notesProvider.notifier);
     // 写入者绑定到本笔记的 id（编排本身在 [NoteSaver]，与 UI 无关）。
     _noteSaver = NoteSaver(
