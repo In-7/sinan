@@ -70,9 +70,6 @@ class _ResizableImageState extends State<ResizableImage> {
 
   Image? _cacheImage;
 
-  @visibleForTesting
-  bool onFocus = false;
-
   @override
   void initState() {
     super.initState();
@@ -113,15 +110,7 @@ class _ResizableImageState extends State<ResizableImage> {
         width: _clampWidth(imageWidth - moveDistance) +
             (_kImageBlockHandleWidth * 2),
         height: widget.height,
-        child: MouseRegion(
-          onEnter: (event) => setState(() {
-            onFocus = true;
-          }),
-          onExit: (event) => setState(() {
-            onFocus = false;
-          }),
-          child: _buildResizableImage(context),
-        ),
+        child: _buildResizableImage(context),
       ),
     );
   }
@@ -157,75 +146,88 @@ class _ResizableImageState extends State<ResizableImage> {
       _cacheImage ??= Image.file(File(src));
       child = _cacheImage!;
     }
-    // [sinan 补丁 25] 聚焦描边贴在**图片像素**外沿，而不是 ResizableImage
-    // 外层（Align 会撑满整列宽 ⇒ 描边比图片大一圈、不同比例对不齐）。
-    // 放 Stack 内、Positioned 手柄之下：描边盒 = Image 的渲染盒，任何原始
-    // 尺寸/比例/alignment 都严丝合缝；foreground 不占位、无圆角。
-    // 用 focusedListenable 驱动：选区变化只重建这层 DecoratedBox，不动
-    // ResizableImage 本体（保住 imageWidth / moveDistance / _cacheImage）。
-    final Widget imageChild = child;
-    if (widget.focusedListenable != null && widget.focusColor != null) {
-      child = ValueListenableBuilder<bool>(
-        valueListenable: widget.focusedListenable!,
-        builder: (BuildContext context, bool focused, Widget? child) {
-          // [sinan 补丁 26] hover 也画出"框"（弱一档）：成熟产品是"框 + 外侧
-          // 把手"一体，只有框在各状态都可见，"有框 = 有控件"才成立。选中态用
-          // 全强度色，hover 用 35% —— 不抢选中态的视觉优先级。
-          if (!focused && !onFocus) return child!;
-          final Color color = focused
-              ? widget.focusColor!
-              : widget.focusColor!.withValues(alpha: 0.35);
-          return DecoratedBox(
-            position: DecorationPosition.foreground,
-            decoration: BoxDecoration(border: Border.all(color: color)),
-            child: child,
-          );
-        },
-        child: imageChild,
+    // [sinan 补丁 25][26] **选中**才画"框 + 两侧把手"，两者同生同死 ⇒
+    // 一眼读出"这张图被选中了、可以缩放"。
+    //
+    // 为什么不是 hover（2026-11-23 用户定）：
+    // - 语义一致：描边就是选中态，框与把手同生同灭才有确定含义；
+    // - hover 常驻太吵：滚动浏览长文时鼠标扫过每张图都闪出一对竖条，
+    //   再叠一层淡框就是"满屏都是框"，噪声远大于收益；
+    // - 消除隐性交互：把手看不见时热区也在，用户会在看不见的地方拖动。
+    //
+    // 悬停只保留官方自带的 **cover 光标**反馈（鼠标变实心块）。
+    // 插入图片后 `insertImageNode` 会把选区落在新图块上 ⇒ 选中态立刻成立，
+    // 框与把手即刻出现（配合 4 秒引导文字），发现性不受影响。
+    final ValueListenable<bool>? focusedListenable = widget.focusedListenable;
+    final bool canShowSelection = focusedListenable != null &&
+        widget.focusColor != null;
+
+    Widget buildContent(BuildContext context, bool selected) {
+      Widget image = child;
+      if (canShowSelection && selected) {
+        // 描边贴在**图片像素**外沿（补丁 25）：描边盒 = Image 的渲染盒，任何
+        // 原始尺寸/比例/alignment 都严丝合缝；foreground 不占位、无圆角。
+        image = DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(border: Border.all(color: widget.focusColor!)),
+          child: image,
+        );
+      }
+      return Stack(
+        // 把手已落在盒子内的两侧留白里，不需要向外溢出绘制。
+        clipBehavior: Clip.none,
+        children: [
+          // 图片作为**非 Positioned** 子件决定 Stack 尺寸（`height` 为 null 时
+          // 高度全靠它撑），两侧 padding 就是给把手的留白。
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: _kImageBlockHandleWidth,
+            ),
+            child: image,
+          ),
+          if (widget.editable && selected) ...[
+            // [sinan 补丁 26] 把手贴**盒子两端**（= 图片外侧留白里），8px 热区。
+            // 官方是 left/right:5 + 宽 5（落在「距边缘 5~10px」的窄带，点最边缘
+            // 拖不动）；且那时把手压在图片内，看着像图片里的一条线。
+            _buildEdgeGesture(
+              context,
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: _kImageBlockHandleWidth,
+              onUpdate: (distance) {
+                setState(() {
+                  moveDistance = distance;
+                });
+              },
+            ),
+            _buildEdgeGesture(
+              context,
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: _kImageBlockHandleWidth,
+              onUpdate: (distance) {
+                setState(() {
+                  moveDistance = -distance;
+                });
+              },
+            ),
+          ],
+        ],
       );
     }
-    return Stack(
-      // 把手已落在盒子内的两侧留白里，不需要向外溢出绘制。
-      clipBehavior: Clip.none,
-      children: [
-        // 图片作为**非 Positioned** 子件决定 Stack 尺寸（`height` 为 null 时
-        // 高度全靠它撑），两侧 padding 就是给把手的留白。
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: _kImageBlockHandleWidth,
-          ),
-          child: child,
-        ),
-        if (widget.editable) ...[
-          // [sinan 补丁 26] 把手贴**盒子两端**（= 图片外侧留白里），8px 热区。
-          // 官方是 left/right:5 + 宽 5（落在「距边缘 5~10px」的窄带，点最边缘
-          // 拖不动）；且那时把手压在图片内，看着像图片里的一条线。
-          _buildEdgeGesture(
-            context,
-            top: 0,
-            left: 0,
-            bottom: 0,
-            width: _kImageBlockHandleWidth,
-            onUpdate: (distance) {
-              setState(() {
-                moveDistance = distance;
-              });
-            },
-          ),
-          _buildEdgeGesture(
-            context,
-            top: 0,
-            right: 0,
-            bottom: 0,
-            width: _kImageBlockHandleWidth,
-            onUpdate: (distance) {
-              setState(() {
-                moveDistance = -distance;
-              });
-            },
-          ),
-        ],
-      ],
+
+    // 选区变化只重建这一小层（Stack + 框 + 把手），不动图片本体
+    // （保住 imageWidth / moveDistance / _cacheImage）。
+    if (focusedListenable == null) {
+      // 没有"选中"这个概念 ⇒ 保持官方行为（editable 就有把手）。
+      return buildContent(context, true);
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: focusedListenable,
+      builder: (BuildContext context, bool selected, Widget? _) =>
+          buildContent(context, canShowSelection && selected),
     );
   }
 
@@ -310,24 +312,25 @@ class _ResizableImageState extends State<ResizableImage> {
           //   扫过时任何位置都能抓住，是加分不是不一致。所以两者**不需要**对齐。
           // - 矮图自动收缩：外层 `Center` 给 loose 约束，`Container` 的固定高
           //   被 clamp 到图片实际高度 ⇒ 30px 的图不会画出 44px 的条。
-          child: onFocus
-              ? Center(
-                  child: Container(
-                    width: 4,
-                    height: _kImageBlockHandleLength,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: const BorderRadius.all(
-                        Radius.circular(2.0),
-                      ),
-                      border: Border.all(
-                        width: 1,
-                        color: Colors.white.withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ),
-                )
-              : null,
+          //
+          // ⚠️ 整条把手（含热区）只在**选中**时构建（见 `_buildResizableImage`），
+          // 所以这里无条件显示即可。
+          child: Center(
+            child: Container(
+              width: 4,
+              height: _kImageBlockHandleLength,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(2.0),
+                ),
+                border: Border.all(
+                  width: 1,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

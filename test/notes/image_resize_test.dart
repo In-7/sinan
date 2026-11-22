@@ -170,21 +170,57 @@ void main() {
     expect(imageWidth, lessThanOrEqualTo(editorW));
   });
 
+  testWidgets('未选中时没有把手；选中后框与把手同时出现', (tester) async {
+    final EditorState state = await pumpEditor(tester, width: 300, height: 200);
+
+    Finder resizeHandles() => find.byWidgetPredicate(
+      (Widget w) =>
+          w is MouseRegion && w.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+
+    // 未选中：没有把手（2026-11-23 用户定：把手跟"选中"绑定，说明"可缩放"）。
+    expect(resizeHandles(), findsNothing);
+
+    final Node image = state.document.root.children
+        .where((Node n) => n.type == ImageBlockKeys.type)
+        .single;
+    unawaited(
+      state.updateSelectionWithReason(
+        Selection.collapsed(Position(path: image.path)),
+        reason: SelectionUpdateReason.uiEvent,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(resizeHandles(), findsNWidgets(2), reason: '选中后两侧各一条把手');
+    // 选中框：描边贴在图片像素外沿（补丁 25）。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).border != null,
+      ),
+      findsWidgets,
+      reason: '选中时应有描边',
+    );
+  });
+
   testWidgets('缩放把手的视觉条是短条（44），热区仍是全高', (tester) async {
     // 指定 height：假图源不会真的解码，不指定的话块高为 0、Stack 塌陷。
-    await pumpEditor(tester, width: 300, height: 200);
+    final EditorState state = await pumpEditor(tester, width: 300, height: 200);
 
-    // 视觉条只在 hover 时出现。widget test 里模拟 mouse enter 不靠谱，
-    // 直接用源码里 `@visibleForTesting` 的 `onFocus` 字段置位。
-    final dynamic imageState = tester.state(
-      find.byType(ResizableImage),
+    // 把手只在**选中**时出现（2026-11-23 用户定）⇒ 把选区放到图片块上。
+    final Node image = state.document.root.children
+        .where((Node n) => n.type == ImageBlockKeys.type)
+        .single;
+    unawaited(
+      state.updateSelectionWithReason(
+        Selection.collapsed(Position(path: image.path)),
+        reason: SelectionUpdateReason.uiEvent,
+      ),
     );
-    // State 是私有类型，只能走 dynamic；`onFocus` 标了 @visibleForTesting。
-    // ignore: avoid_dynamic_calls
-    imageState.onFocus = true;
-    // ignore: avoid_dynamic_calls
-    imageState.setState(() {});
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final Finder handles = find.byWidgetPredicate(
       (Widget w) =>
@@ -205,7 +241,19 @@ void main() {
   testWidgets('缩放把手在图片**外侧**（不压图片、且落在盒子内可命中）', (
     tester,
   ) async {
-    await pumpEditor(tester, width: 300);
+    final EditorState state = await pumpEditor(tester, width: 300);
+
+    // 把手只在选中时出现 ⇒ 先选中图片。
+    final Node image = state.document.root.children
+        .where((Node n) => n.type == ImageBlockKeys.type)
+        .single;
+    unawaited(
+      state.updateSelectionWithReason(
+        Selection.collapsed(Position(path: image.path)),
+        reason: SelectionUpdateReason.uiEvent,
+      ),
+    );
+    await tester.pumpAndSettle();
 
     final Finder resizeHandles = find.byWidgetPredicate(
       (Widget w) =>
