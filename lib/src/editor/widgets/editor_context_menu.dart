@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/app_float_surface.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../../notes/services/note_image_preview.dart';
 
 /// 编辑器正文的**右键菜单**（官方 `contextMenuBuilder` 的实现）。
 ///
@@ -48,11 +49,14 @@ Widget sinanEditorContextMenu({
       : editorState.getNodeAtPath(selection.end.path);
   final bool isMediaBlock =
       selectedNode != null && selectedNode.delta == null;
+  // 只有图片块能预览（媒体块还可能是公式 / 附件等，它们没有灯箱）。
+  final bool isImageBlock =
+      selectedNode != null && selectedNode.type == ImageBlockKeys.type;
 
   // 出屏钳制：菜单 200 宽、四行约 160 高（够用即可，不做测量回调）。
   final Size window = MediaQuery.sizeOf(context);
   const double width = 200;
-  const double height = 160;
+  final double height = isImageBlock ? 200 : 160;
   final double left = position.dx + width > window.width
       ? (position.dx - width).clamp(0.0, window.width - width)
       : position.dx;
@@ -70,7 +74,25 @@ Widget sinanEditorContextMenu({
         mainAxisSize: .min,
         crossAxisAlignment: .stretch,
         children: <Widget>[
-          // 媒体块（图片等无 delta）：文本四项对它全灰没意义，首行换成
+          // 图片块首行「预览图片」：与双击同一灯箱（入口两处、实现一份）。
+          if (isImageBlock)
+            _ContextMenuRow(
+              label: '预览图片',
+              shortcut: '双击',
+              onPressed: (EditorState state) {
+                final Node? node = state.getNodeAtPath(
+                  state.selection?.end.path ?? const <int>[],
+                );
+                final String src =
+                    (node?.attributes[ImageBlockKeys.url] as String?) ?? '';
+                if (src.isEmpty) return KeyEventResult.ignored;
+                unawaited(showNoteImagePreview(context, src));
+                return KeyEventResult.handled;
+              },
+              editorState: editorState,
+              onDismiss: onDismiss,
+            ),
+          // 媒体块（图片等无 delta）：文本四项对它全灰没意义，次行换成
           // 「删除图片」——块级删除走官方 transaction（与 Delete 键同款）。
           if (isMediaBlock)
             _ContextMenuRow(

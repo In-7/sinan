@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tabler;
@@ -74,19 +76,7 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
       1,
       8192,
     );
-    final Widget image = widget.source.startsWith('http')
-        ? Image.network(
-            widget.source,
-            fit: .contain,
-            cacheWidth: _maxDecodePx,
-            errorBuilder: (context, error, stackTrace) => _error(context),
-          )
-        : Image.file(
-            File(widget.source),
-            fit: .contain,
-            cacheWidth: _maxDecodePx,
-            errorBuilder: (context, error, stackTrace) => _error(context),
-          );
+    final Widget image = _buildImage(_maxDecodePx);
 
     return Dialog(
       backgroundColor: Colors.black,
@@ -210,6 +200,59 @@ class _NoteImagePreviewState extends State<_NoteImagePreview> {
         ),
       ),
     );
+  }
+
+  /// 按源类型构图片：http → network、`data:` → memory、其余 → file。
+  ///
+  /// 编辑器节点里的 src 绝大多数是 [NoteMediaService] 落盘的纯本地路径，
+  /// 走 file 分支；`data:` 兼容从旧 quill 版 / 网页粘贴迁移来的内嵌图；
+  /// `file://` 协议头（同样来自旧数据）剥掉再喂 [File]。
+  Widget _buildImage(int? maxDecodePx) {
+    final String source = widget.source;
+    Widget errorBuilder(BuildContext context, Object error, StackTrace? stack) =>
+        _error(context);
+    if (source.startsWith('http')) {
+      return Image.network(
+        source,
+        fit: .contain,
+        cacheWidth: maxDecodePx,
+        errorBuilder: errorBuilder,
+      );
+    }
+    if (source.startsWith('data:')) {
+      final Uint8List? bytes = _decodeDataUri(source);
+      if (bytes != null) {
+        return Image.memory(
+          bytes,
+          fit: .contain,
+          cacheWidth: maxDecodePx,
+          errorBuilder: errorBuilder,
+        );
+      }
+      return _error(context);
+    }
+    final String path = source.startsWith('file://')
+        ? Uri.tryParse(source)?.toFilePath() ?? source
+        : source;
+    return Image.file(
+      File(path),
+      fit: .contain,
+      cacheWidth: maxDecodePx,
+      errorBuilder: errorBuilder,
+    );
+  }
+
+  /// `data:<mime>;base64,<payload>` → 字节；非 base64 / 解不开返回 null。
+  static Uint8List? _decodeDataUri(String source) {
+    final int comma = source.indexOf(',');
+    if (comma < 0 || !source.substring(0, comma).contains('base64')) {
+      return null;
+    }
+    try {
+      return base64Decode(source.substring(comma + 1));
+    } on Object {
+      return null;
+    }
   }
 
   Widget _error(BuildContext context) {

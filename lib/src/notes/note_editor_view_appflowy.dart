@@ -50,6 +50,7 @@ import '../editor/panels/toc_panel.dart';
 import '../editor/widgets/editor_context_menu.dart';
 import '../editor/widgets/link_hover_tooltip.dart';
 import 'services/editor_image_paste.dart';
+import 'services/note_image_preview.dart';
 
 // **编辑器视图（appflowy_editor）**——迁移 ④ 的落地件，现在是**唯一**的编辑器
 // （quill 版 2026-09-10 退役并归档到 `archive/quill/src/notes/`，入口见
@@ -138,6 +139,12 @@ class _NoteEditorViewAppFlowyState
   ]);
 
   StreamSubscription<EditorTransactionValue>? _changesSub;
+
+  /// 图片双击 → 灯箱的选区拦截器。`canDoubleTap` 是官方唯一在**双击按下时**
+  /// 回调、且早于选区处理的口子（desktop_selection_service._onDoubleTapDown）：
+  /// 命中图片就弹灯箱并返回 false（挡掉官方 getWordBoundaryInOffset 的选词）；
+  /// 其余块返回 true 交给官方。注册/注销见 [_registerImagePreviewInterceptor]。
+  static const String _imagePreviewInterceptorKey = 'image-preview';
 
   /// 跳转请求的订阅（见 [_maybeConsumeLocate]）。
   ProviderSubscription<LocateRequest?>? _locateSub;
@@ -531,6 +538,36 @@ class _NoteEditorViewAppFlowyState
           ref.read(noteStoreProvider).embedPreview(refType, refId),
       revision: _refsRevision,
     );
+    _registerImagePreviewInterceptor();
+  }
+
+  /// 注册图片双击 → 灯箱的选区拦截器。
+  ///
+  /// 必须延到帧后：`_editor.selectionService` 是 `SelectionServiceWidget` 的
+  /// 代理，其 `forward` 要等 AppFlowyEditor 子树挂载才非 null（initState 里
+  /// 注册会打到空 forward）。`canDoubleTap` 在官方选区服务处理**双击按下**
+  /// 时最先跑：命中图片块就弹灯箱、返回 false 挡掉选词；其余返回 true。
+  void _registerImagePreviewInterceptor() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _editor.service.selectionService.registerGestureInterceptor(
+        SelectionGestureInterceptor(
+          key: _imagePreviewInterceptorKey,
+          canDoubleTap: (TapDownDetails details) {
+            final Node? node = _editor.selectionService.getNodeInOffset(
+              details.globalPosition,
+            );
+            if (node == null || node.type != ImageBlockKeys.type) return true;
+            final String src =
+                (node.attributes[ImageBlockKeys.url] as String?) ?? '';
+            if (src.isEmpty) return true;
+            unawaited(showNoteImagePreview(context, src));
+            // 图片块没有词边界，挡掉官方 getWordBoundaryInOffset（它会 clearSelection）。
+            return false;
+          },
+        ),
+      );
+    });
   }
 
   /// 打开笔记即落光标（Word/Notion 同款）。
@@ -652,6 +689,9 @@ class _NoteEditorViewAppFlowyState
     }
     unawaited(_changesSub?.cancel());
     _scroll.dispose();
+    // 选区拦截器不在这里注销：dispose 时 AppFlowyEditor 子树已先卸载，
+    // selectionService 代理的 forward 为 null（访问它会断言），而拦截器列表
+    // 本就随 DesktopSelectionServiceState.dispose 一起销毁，无需手动清。
     _editor.dispose();
     _titleController.dispose();
     _wordCount.dispose();
