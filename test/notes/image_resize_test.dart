@@ -27,6 +27,7 @@ void main() {
   Future<EditorState> pumpEditor(
     WidgetTester tester, {
     num? width,
+    num? height,
   }) async {
     tester.view.physicalSize = const Size(800, 600);
     tester.view.devicePixelRatio = 1;
@@ -35,6 +36,7 @@ void main() {
     final Map<String, Object> attrs = <String, Object>{
       ImageBlockKeys.url: img,
       ImageBlockKeys.width: ?width,
+      ImageBlockKeys.height: ?height,
     };
     final String content = NoteDocumentAdapter.storedContentFromDocument(
       Document(
@@ -166,6 +168,38 @@ void main() {
     expect(imageWidth, greaterThan(editorW * 0.5),
         reason: '默认宽度应接近列宽（不是 0、也不是屏幕宽溢出）');
     expect(imageWidth, lessThanOrEqualTo(editorW));
+  });
+
+  testWidgets('缩放把手的视觉条是短条（44），热区仍是全高', (tester) async {
+    // 指定 height：假图源不会真的解码，不指定的话块高为 0、Stack 塌陷。
+    await pumpEditor(tester, width: 300, height: 200);
+
+    // 视觉条只在 hover 时出现。widget test 里模拟 mouse enter 不靠谱，
+    // 直接用源码里 `@visibleForTesting` 的 `onFocus` 字段置位。
+    final dynamic imageState = tester.state(
+      find.byType(ResizableImage),
+    );
+    // State 是私有类型，只能走 dynamic；`onFocus` 标了 @visibleForTesting。
+    // ignore: avoid_dynamic_calls
+    imageState.onFocus = true;
+    // ignore: avoid_dynamic_calls
+    imageState.setState(() {});
+    await tester.pump();
+
+    final Finder handles = find.byWidgetPredicate(
+      (Widget w) =>
+          w is MouseRegion && w.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+    final Finder bars = find.descendant(
+      of: handles,
+      matching: find.byType(Container),
+    );
+    expect(bars, findsNWidgets(2), reason: '两侧各一条视觉条');
+    expect(tester.getSize(bars.first).height, 44,
+        reason: '视觉条是短条（全高会被读成图片边框，2026-11-23 用户定）');
+    // 热区全高：远高于视觉条。
+    expect(tester.getSize(handles.first).height, greaterThan(44),
+        reason: '热区保持全高（沿边缘任意位置都能抓）');
   });
 
   testWidgets('缩放把手在图片**外侧**（不压图片、且落在盒子内可命中）', (

@@ -55,6 +55,13 @@ const _kImageBlockComponentMinWidth = 80.0;
 /// 的窄带里 ⇒ **点最边缘反而拖不动**，用户第一反应就是拖边缘）。改为贴边 8px。
 const _kImageBlockHandleWidth = 8.0;
 
+/// [sinan 补丁 26] 把手**视觉条**的长度（px）：短条、垂直居中。
+///
+/// 与热区**刻意不相等**：热区是全高（沿边缘任意位置都能抓），视觉只画一小段
+/// （全高条会被读成图片边框的一部分）。标杆（Notion / Craft / Obsidian）同款。
+/// 图片比它矮时由 `Center` 的 loose 约束自动收缩，不会溢出。
+const _kImageBlockHandleLength = 44.0;
+
 class _ResizableImageState extends State<ResizableImage> {
   late double imageWidth;
 
@@ -292,14 +299,22 @@ class _ResizableImageState extends State<ResizableImage> {
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.resizeLeftRight,
-          // [sinan 补丁 26] 视觉条：**整条高度**（官方固定 height:40 ⇒ 图片一高，
-          // 中部"看不见却能拖"、看见的又不在热区正中），4px 宽 + 1px 白描边
-          // （纯黑在深色图片上根本看不见），圆角只在两端。
+          // [sinan 补丁 26] 视觉条：**短条、垂直居中**（`_kImageBlockHandleLength`
+          // = 44），热区仍是**全高**（`Positioned(top:0, bottom:0)`）。
+          //
+          // 为什么视觉半高而热区全高（2026-11-23 用户定，此前一版误改全高）：
+          // - 全高条在视觉上像"把图片切开"，会被误读成图片边框的一部分；
+          //   图片越矮越明显（120px 的图几乎被两条竖线封边）。
+          // - 标杆（Notion / Craft / Obsidian）左右把手都是**一段短竖条居中**。
+          // - 热区大于视觉是**惯例**（按钮点击区常大于视觉）：沿图片边缘上下
+          //   扫过时任何位置都能抓住，是加分不是不一致。所以两者**不需要**对齐。
+          // - 矮图自动收缩：外层 `Center` 给 loose 约束，`Container` 的固定高
+          //   被 clamp 到图片实际高度 ⇒ 30px 的图不会画出 44px 的条。
           child: onFocus
               ? Center(
                   child: Container(
                     width: 4,
-                    height: double.infinity,
+                    height: _kImageBlockHandleLength,
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: const BorderRadius.all(
