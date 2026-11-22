@@ -1171,31 +1171,7 @@ class _NoteEditorViewAppFlowyState
       ),
     );
 
-    // 图片没有光标（shouldCursorBlink=false、cursorStyle=cover），选中态在画面上
-    // 完全不可见——用户左键点它以为没聚焦，于是"右键要先点两下"。这里给选中
-    // 的图片块画一圈主题色描边（与文字选区同色），让"当前目标是这块"可见。
-    // 走 selectionNotifier 的 ValueListenableBuilder，只重建相关图片块；描边用
-    // foregroundDecoration（只画不占位，避免像 border 那样把图片推进 2px）。
     if (node.type != ImageBlockKeys.type) return block;
-    final Widget focused = ValueListenableBuilder<Selection?>(
-      valueListenable: _editor.selectionNotifier,
-      builder: (BuildContext context, Selection? selection, Widget? child) {
-        final bool selected = selection != null &&
-            selection.start.path.length == node.path.length &&
-            _samePath(selection.start.path, node.path);
-        if (!selected) return child!;
-        final ColorScheme scheme = Theme.of(context).colorScheme;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.primary),
-            borderRadius: BorderRadius.circular(Tokens.radiusSm),
-          ),
-          position: DecorationPosition.foreground,
-          child: child,
-        );
-      },
-      child: block,
-    );
 
     // 新插入的图片块：叠一条短命引导（"拖动两侧把手调整宽度"）。
     // 官方把手只在 hover 时露出，用户不知道能拖；提示走纯渲染 Stack +
@@ -1236,17 +1212,8 @@ class _NoteEditorViewAppFlowyState
           ],
         );
       },
-      child: focused,
+      child: block,
     );
-  }
-
-  /// 两条 Path 是否逐段相等（`List<int>` 没有值相等）。
-  static bool _samePath(Path a, Path b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
   }
 
   void _onContentChanged() {

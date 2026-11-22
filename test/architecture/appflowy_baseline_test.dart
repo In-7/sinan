@@ -91,6 +91,11 @@ void main() {
         '补丁 23：图片块语义标签——丢了读屏又念不出图片',
       ),
       (
+        'lib/src/editor/block_component/image_block_component/image_block_component.dart',
+        '[sinan 补丁 24]',
+        '补丁 24：图片聚焦描边——丢了左键点图片又没可见反馈',
+      ),
+      (
         'lib/src/editor/editor_component/service/selection/desktop_selection_service.dart',
         '[sinan 补丁 16d]',
         '补丁 16d：删掉 only-text-node 右键门禁——丢了图片右键又不弹菜单',

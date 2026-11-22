@@ -2,6 +2,15 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+/// 两条 Path 逐段相等（List 默认没有值相等）。
+bool _pathEquals(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 class ImageBlockKeys {
   const ImageBlockKeys._();
 
@@ -156,6 +165,28 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
           });
         editorState.apply(transaction);
       },
+    );
+
+    // [sinan 补丁 24] 图片聚焦描边：贴在 ResizableImage **本身**外沿画一圈
+    // 主题色描边，让用户左键点一下就知道"当前目标是这块"（图片没有光标）。
+    // 位置刻意放在 `Padding(key: imageKey)` 之内、`BlockComponentActionWrapper`
+    // 之前 ⇒ 描边只贴图片矩形、**不含左侧 48px 手柄槽**（从 blockWrapper 外层
+    // 画会把手柄也圈进去，用户实测位置不对）。无圆角：跟图片矩形边缘重合。
+    // foregroundDecoration 只画不占位，不给图片加 1px 内缩。
+    child = ValueListenableBuilder<Selection?>(
+      valueListenable: editorState.selectionNotifier,
+      builder: (BuildContext context, Selection? selection, Widget? child) {
+        final bool selected = selection != null &&
+            _pathEquals(selection.start.path, node.path);
+        if (!selected) return child!;
+        final Color color = Theme.of(context).colorScheme.primary;
+        return DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(border: Border.all(color: color)),
+          child: child,
+        );
+      },
+      child: child,
     );
 
     child = Padding(

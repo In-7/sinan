@@ -652,6 +652,22 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 
 **何时可撤销**: 上游给图片块加官方语义标签后，删掉这一层即可。
 
+### [2026-11-22] 补丁 24 — 图片聚焦描边（贴图片本身、无圆角、不含手柄槽）
+
+**问题**：图片块 `shouldCursorBlink=false`、`cursorStyle=cover`，左键点它没有任何
+画面反馈，用户以为没聚焦 ⇒ 右键要先点两下才出图片菜单。
+
+**改动**：`image_block_component.dart` 的 `build`，在 `ResizableImage` 外、
+`Padding(key: imageKey)` **之内**包 `ValueListenableBuilder(editorState.selectionNotifier)`
++ `DecoratedBox(position: foreground)`，选区落在本块时画一圈主题色描边（无圆角，
+与图片矩形边缘重合）。
+- 位置刻意放在 `BlockComponentActionWrapper` 之前 ⇒ 描边**只贴图片、不含左侧
+  48px 手柄槽**（早先在 `blockWrapper` 外层画，手柄被圈进去，用户实测位置不对）。
+- `foregroundDecoration` 只画不占位，不给图片加 1px 内缩。
+- 文件顶层加 `_pathEquals(List<int>, List<int>)` 路径逐段比较。
+
+**何时可撤销**: 上游给图片块加官方选中描边后，删掉这层即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

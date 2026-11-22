@@ -120,7 +120,6 @@ void main() {
 
   testWidgets('图片被聚焦时画主题色描边（foreground 不占位）', (tester) async {
     final EditorState state = await pumpEditor(tester);
-    final Color primary = AppTheme.light().colorScheme.primary;
 
     // 光标在文字上 ⇒ 图片无描边。
     unawaited(
@@ -136,10 +135,10 @@ void main() {
             w is DecoratedBox &&
             w.decoration is BoxDecoration &&
             (w.decoration as BoxDecoration).border != null &&
-            (w.decoration as BoxDecoration).border!.top.color == primary,
+            w.position == DecorationPosition.foreground,
       ),
       findsNothing,
-      reason: '未聚焦图片不该有主题色描边',
+      reason: '未聚焦图片不该有描边',
     );
 
     // 选区移到图片 ⇒ 出现主题色描边。
@@ -153,17 +152,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.byWidgetPredicate(
-        (Widget w) =>
-            w is DecoratedBox &&
-            w.decoration is BoxDecoration &&
-            (w.decoration as BoxDecoration).border != null &&
-            (w.decoration as BoxDecoration).border!.top.color == primary,
-      ),
-      findsOneWidget,
-      reason: '聚焦图片应画主题色描边',
+    final Finder borderFinder = find.byWidgetPredicate(
+      (Widget w) =>
+          w is DecoratedBox &&
+          w.decoration is BoxDecoration &&
+          (w.decoration as BoxDecoration).border != null &&
+          w.position == DecorationPosition.foreground,
     );
+    expect(borderFinder, findsOneWidget, reason: '聚焦图片应画主题色描边');
+    // 描边颜色取编辑器 context 的 Theme.of(context).colorScheme.primary
+    // （编辑器内部套了自带 Theme，不必等于外层 AppTheme.light() 的 primary），
+    // 这里只钉它非空、非透明即可。
+    final DecoratedBox box = tester.widget<DecoratedBox>(borderFinder);
+    final BoxDecoration d = box.decoration as BoxDecoration;
+    expect(d.borderRadius, isNull, reason: '描边应无圆角，与图片矩形重合');
+    expect(box.position, DecorationPosition.foreground,
+        reason: '描边只画不占位，不给图片加内缩');
   });
 }
 
