@@ -96,10 +96,15 @@ class _ResizableImageState extends State<ResizableImage> {
 
   @override
   Widget build(BuildContext context) {
+    // [sinan 补丁 26] 盒子比图片宽 2×handle（两侧各留一条），把手才能挂在
+    // **图片外侧**的描边旁——像 Notion 那样"框 + 外侧把手"，归属一眼可辨。
+    // 为什么不能直接 `Positioned(left: -8)` 画到盒外：Flutter 的命中测试要求
+    // 指针落在盒子自己的 size 内，画出去**点不到**（块手柄已踩过这个坑）。
     return Align(
       alignment: widget.alignment,
       child: SizedBox(
-        width: _clampWidth(imageWidth - moveDistance),
+        width: _clampWidth(imageWidth - moveDistance) +
+            (_kImageBlockHandleWidth * 2),
         height: widget.height,
         child: MouseRegion(
           onEnter: (event) => setState(() {
@@ -156,12 +161,16 @@ class _ResizableImageState extends State<ResizableImage> {
       child = ValueListenableBuilder<bool>(
         valueListenable: widget.focusedListenable!,
         builder: (BuildContext context, bool focused, Widget? child) {
-          if (!focused) return child!;
+          // [sinan 补丁 26] hover 也画出"框"（弱一档）：成熟产品是"框 + 外侧
+          // 把手"一体，只有框在各状态都可见，"有框 = 有控件"才成立。选中态用
+          // 全强度色，hover 用 35% —— 不抢选中态的视觉优先级。
+          if (!focused && !onFocus) return child!;
+          final Color color = focused
+              ? widget.focusColor!
+              : widget.focusColor!.withValues(alpha: 0.35);
           return DecoratedBox(
             position: DecorationPosition.foreground,
-            decoration: BoxDecoration(
-              border: Border.all(color: widget.focusColor!),
-            ),
+            decoration: BoxDecoration(border: Border.all(color: color)),
             child: child,
           );
         },
@@ -169,11 +178,21 @@ class _ResizableImageState extends State<ResizableImage> {
       );
     }
     return Stack(
+      // 把手已落在盒子内的两侧留白里，不需要向外溢出绘制。
+      clipBehavior: Clip.none,
       children: [
-        child,
+        // 图片作为**非 Positioned** 子件决定 Stack 尺寸（`height` 为 null 时
+        // 高度全靠它撑），两侧 padding 就是给把手的留白。
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _kImageBlockHandleWidth,
+          ),
+          child: child,
+        ),
         if (widget.editable) ...[
-          // [sinan 补丁 26] 热区**贴边**且加宽到 8px（官方 left/right:5 + 宽 5
-          // ⇒ 热区在「距边缘 5~10px」的窄带里，点最边缘拖不动）。
+          // [sinan 补丁 26] 把手贴**盒子两端**（= 图片外侧留白里），8px 热区。
+          // 官方是 left/right:5 + 宽 5（落在「距边缘 5~10px」的窄带，点最边缘
+          // 拖不动）；且那时把手压在图片内，看着像图片里的一条线。
           _buildEdgeGesture(
             context,
             top: 0,
@@ -273,18 +292,22 @@ class _ResizableImageState extends State<ResizableImage> {
         },
         child: MouseRegion(
           cursor: SystemMouseCursors.resizeLeftRight,
-          // [sinan 补丁 26] 视觉条改成**整条高度**（官方固定 height:40：图片一高，
-          // 中部"看不见把手"却能拖，顶部看见的又不在视觉条上 ⇒ 可见性与可拖区
-          // 不一致）。细条 3px、贴边，和热区一样贯穿全高。
+          // [sinan 补丁 26] 视觉条：**整条高度**（官方固定 height:40 ⇒ 图片一高，
+          // 中部"看不见却能拖"、看见的又不在热区正中），4px 宽 + 1px 白描边
+          // （纯黑在深色图片上根本看不见），圆角只在两端。
           child: onFocus
               ? Center(
                   child: Container(
-                    width: 3,
+                    width: 4,
                     height: double.infinity,
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
+                      color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: const BorderRadius.all(
                         Radius.circular(2.0),
+                      ),
+                      border: Border.all(
+                        width: 1,
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ),

@@ -86,6 +86,26 @@ bulleted / numbered / todo / quote / heading / table / divider / image / text / 
 另外：`<ul><li>` 会被解析成**多个并列的 `bulleted_list` 块**（不是一个容器节点）；
 `enableColorParse = false` 才能保证"按应用自己的排版渲染"；字体/字号/行高本来就不解析。
 
+### 4.1.1 块手柄的"首行对齐"对媒体块会失效（2026-11-23 用户截图确认）
+
+**症状**：图片块的 `+` `⋮⋮` 手柄不在图片顶部，而是停在块中部（实测偏下）。
+
+**根因**：`_SinanBlockHandleState._alignToFirstLine()` 靠
+`selectable.getCursorRectInPosition(...)` 的中心算 `_top`，而：
+- 图片没有"首行"，该函数返回的是**块高中心** ⇒ 算出来是居中而非贴顶；
+- 它给文字用的 `cjkInkCompensation`（-0.06em，"汉字墨迹中心低于字盒中心"）
+  对图片是**纯误差**，恒向下偏 ~1px；
+- 更关键：`_alignToFirstLine` 只在 `initState` 后 + `node` 变化时跑。图片从占位
+  高度（errorBuilder 100 / loading 150）切到真实高度**不会**触发它 ⇒ `_top`
+  钉在过期值上，**偏移量 = 新旧高度差的一半，方向取决于高度变大还是变小**
+  （所以"偏上/偏下"两种都能出现，别只按一种方向判断）。
+
+**正解**：`delta == null` 的块（图片/公式/表格）**不参与首行对齐**——`initState`
+里直接给固定贴顶值（= 该块 `configuration.padding.top`），`_alignToFirstLine`
+开头 `return`。业界（Notion / 飞书 / Craft / Obsidian）图片块手柄都贴**顶**，
+不居中。闸门：`sinanBlockHandleTop()`（`@visibleForTesting` 的纯函数）+
+`test/notes/image_resize_test.dart`。
+
 ### 4.2 块组件里别用 `LayoutBuilder` 测宽度（测试全绿、真机拖块必崩，2026-11-22）
 
 **症状**：`flutter test` 全过，`flutter run` 后一拖动块就炸：

@@ -11,6 +11,7 @@ import 'package:sinan/src/data/database.dart';
 import 'package:sinan/src/data/note_store.dart';
 import 'package:sinan/src/domain/note.dart';
 import 'package:sinan/src/domain/settings.dart';
+import 'package:sinan/src/editor/blocks/custom_block_components.dart';
 import 'package:sinan/src/editor/core/note_document_adapter.dart';
 import 'package:sinan/src/notes/note_editor_view_appflowy.dart';
 import 'package:sinan/src/theme/app_theme.dart';
@@ -165,6 +166,52 @@ void main() {
     expect(imageWidth, greaterThan(editorW * 0.5),
         reason: '默认宽度应接近列宽（不是 0、也不是屏幕宽溢出）');
     expect(imageWidth, lessThanOrEqualTo(editorW));
+  });
+
+  testWidgets('缩放把手在图片**外侧**（不压图片、且落在盒子内可命中）', (
+    tester,
+  ) async {
+    await pumpEditor(tester, width: 300);
+
+    final Finder resizeHandles = find.byWidgetPredicate(
+      (Widget w) =>
+          w is MouseRegion && w.cursor == SystemMouseCursors.resizeLeftRight,
+    );
+    expect(resizeHandles, findsNWidgets(2), reason: '左右各一条把手');
+
+    // ⚠️ `ResizableImage` 的 rect 是它的根 `Align`（撑满列宽），不是盒子；
+    // 盒子是内部那个 `SizedBox`（宽 = 图片宽 + 16）。
+    final Rect box = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(ResizableImage),
+            matching: find.byType(SizedBox),
+          )
+          .first,
+    );
+    final double imageLeft = box.left + 8; // 盒子两侧各留 8 给把手
+    final Rect leftHandle = tester.getRect(resizeHandles.first);
+
+    expect(leftHandle.left, closeTo(box.left, 0.5),
+        reason: '左手柄贴着盒子左端（= 图片左外侧）');
+    expect(leftHandle.right, lessThanOrEqualTo(imageLeft + 0.5),
+        reason: '左手柄不得伸进图片像素内');
+    expect(leftHandle.width, greaterThan(0), reason: '热区必须有宽度才可命中');
+  });
+
+  test('手柄垂直偏移：媒体块固定贴顶，文字块沿用首行对齐值', () {
+    // e2e 定位手柄（hover 才挂载、还要量 MenuAnchor）在 widget 树里太脆，
+    // 改为直接钉这条纯函数——它是"贴顶 vs 首行对齐"的唯一分叉点。
+    expect(
+      sinanBlockHandleTop(node: imageNode(url: img), textTop: 123),
+      4,
+      reason: '图片块（delta == null）必须固定贴顶，不能按块中心/首行算',
+    );
+    expect(
+      sinanBlockHandleTop(node: paragraphNode(text: '正文'), textTop: 123),
+      123,
+      reason: '文字块仍用首行对齐算出的值',
+    );
   });
 
   testWidgets('右键「恢复原始大小」清掉宽高属性，画面回落到列宽', (tester) async {

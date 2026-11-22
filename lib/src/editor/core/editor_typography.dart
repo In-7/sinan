@@ -240,6 +240,16 @@ class EditorTypography {
   /// 的文件头注释。）
   static const double blockHandleWidth = 6 + 20 + 2 + 20;
 
+  /// **图片左右缩放把手的留白**（单侧，px）：图片盒两侧各留这么宽，把手才挂
+  /// 在图片**外侧**的描边旁（Notion 同款"框 + 外侧把手"）。
+  ///
+  /// ⚠️ 与 vendored `resizable_image.dart` 的 `_kImageBlockHandleWidth` **必须
+  /// 相等**：那边用它算"盒子宽 = 图片宽 + 2×该值"，这边用它算"图片最大宽度"
+  /// 和"预测高度用的图片宽度"。不同步 ⇒ 预测器按更宽的列算高度，滚动条总高
+  /// 与实际脱节（2026-09-15 同类事故的翻版）。
+  static const double imageHandleOutset = 8;
+  static const double imageHandleOutsetTotal = imageHandleOutset * 2;
+
   /// **默认块高估计**（px）：块还没被布局过时的兜底值。
   ///
   /// 只服务于我们自己的"块 ↔ 像素"换算（见 `block_heights.dart`），

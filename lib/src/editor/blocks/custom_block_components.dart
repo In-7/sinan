@@ -206,9 +206,39 @@ class _SinanBlockHandle extends StatefulWidget {
   State<_SinanBlockHandle> createState() => _SinanBlockHandleState();
 }
 
+/// 块手柄的垂直偏移：**媒体块（`delta == null`）固定贴顶**，文字块沿用
+/// 首行对齐算出的 [textTop]。
+///
+/// 抽成纯函数只为可测：e2e 方式定位手柄（它 hover 才挂载，还要量 `MenuAnchor`）
+/// 在 widget 树里太脆（2026-11-23 实测拿不到），而"贴顶 vs 首行对齐"的全部
+/// 分叉就在这一行。改动这条逻辑必须同步改这条测试。
+@visibleForTesting
+double sinanBlockHandleTop({required Node node, required double textTop}) =>
+    node.delta == null ? _SinanBlockHandleState._mediaTop : textTop;
+
 class _SinanBlockHandleState extends State<_SinanBlockHandle> {
   ///
   double _top = 0;
+
+  /// 无文字块（图片 / 公式 / 表格…，`delta == null`）的手柄固定贴顶偏移。
+  ///
+  /// 为什么不做"首行对齐"（`_alignToFirstLine`）：
+  /// - 图片没有"首行"，`getCursorRectInPosition` 给的是**块高中心**，对齐出来的
+  ///   是居中而不是贴顶；而业界（Notion / 飞书 / Craft / Obsidian）图片块的手柄
+  ///   都贴图片**顶边**——手柄属于"块"，块从顶部开始，文字块跟首行、图片块跟
+  ///   图片顶边是同一套心智。
+  /// - 更要命的是**时机**：`_alignToFirstLine` 只在 initState 后 + `node` 变化时
+  ///   跑；图片从占位高度（errorBuilder 100 / loading 150）切到真实高度**不会**
+  ///   触发它 ⇒ `_top` 钉在过期值上，实测手柄停在块中部偏下（2026-11-23 用户
+  ///   截图确认）。固定常量 ⇒ 零时机依赖。
+  ///
+  /// 值 = 图片块自身的 `configuration.padding.top`（官方默认
+  /// `EdgeInsets.symmetric(vertical: 4)`）：让按钮**顶边**与图片顶边齐平。
+  /// 改图片块 padding 时这里要同步。
+  static const double _mediaTop = 4;
+
+  /// 本块是否"无文字的媒体块"（走固定贴顶，不参与首行对齐）。
+  bool get _isMediaBlock => _node.delta == null;
 
   ///
   bool _dragging = false;
@@ -276,6 +306,8 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
   @override
   void initState() {
     super.initState();
+    // 媒体块首帧就该贴顶（放 build 里判断会先画一帧 _top=0 再跳）。
+    _top = _isMediaBlock ? _mediaTop : 0;
     editorState.service.selectionService.registerGestureInterceptor(
       gestureInterceptor,
     );
@@ -511,6 +543,14 @@ class _SinanBlockHandleState extends State<_SinanBlockHandle> {
   ///
   void _alignToFirstLine() {
     if (!mounted) return;
+    // 媒体块走固定贴顶（见 [_mediaTop]）：不按首行算，也就不存在"图片尺寸变了
+    // 但 _top 没跟着变"的过期问题。
+    if (_isMediaBlock) {
+      if (_top != _mediaTop) {
+        setState(() => _top = _mediaTop);
+      }
+      return;
+    }
     final selectable = _node.selectable;
     final box = _renderBox;
     if (selectable == null || box == null || !box.hasSize) return;

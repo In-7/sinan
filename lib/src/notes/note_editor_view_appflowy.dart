@@ -1843,9 +1843,11 @@ class _NoteEditorViewAppFlowyState
                   // （与 `BlockHeightPredictor.textWidthOf` 同口径）。列宽是固定
                   // 档位，所以能在这里算好注入，不必在图片块里用 LayoutBuilder
                   // 测量（那会撞上拖拽反馈的 IntrinsicWidth，见补丁 26 说明）。
+                  // 还要再扣两侧把手留白（把手挂在图片外侧）。
                   imageMaxWidth: settings.contentWidth -
                       EditorTypography.blockPadding.horizontal -
-                      EditorTypography.blockHandleWidth,
+                      EditorTypography.blockHandleWidth -
+                      EditorTypography.imageHandleOutsetTotal,
                 ),
                 characterShortcutEvents: sinanCharacterShortcutEvents(
                   // 斜杠菜单配色：官方默认是硬编码浅色盘（白底 + 青蓝强调色，

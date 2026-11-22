@@ -259,14 +259,16 @@ void main() {
     test('图片：没存 height 但有宽高比 ⇒ 按比例算（不是"加载中"高度）', () {
       // 4:3 的图（高/宽 = 0.75）。
       // 列宽 720 − 块水平内边距 32 − **块手柄 48** ⇒ 文字区 640
-      // ⇒ 640 × 0.75 = 480，+ 块上下内边距 8 = 488。
+      // − **两侧缩放把手留白 16**（`EditorTypography.imageHandleOutsetTotal`，
+      //   把手挂在图片外侧，图片盒两侧各让 8px）⇒ 624
+      // ⇒ 624 × 0.75 = 468，+ 块上下内边距 8 = 476。
       // （手柄那条 48 见 `EditorTypography.blockHandleWidth`：动作槽常驻
       //  占位，图片同样被它让掉一段宽度。）
       final BlockHeights heights = BlockHeights()
         ..predictor = _predictor(imageAspectRatioOf: (String src) => 0.75);
       addTearDown(heights.dispose);
 
-      expect(heights.heightOf(imageNode(url: 'a.png'), _typography), 488);
+      expect(heights.heightOf(imageNode(url: 'a.png'), _typography), 476);
       // 图片自带 width 时以它为准（小者优先）。
       expect(
         heights.heightOf(

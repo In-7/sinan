@@ -701,8 +701,19 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 
 **改动**：
 - `_kImageBlockComponentMinWidth` 30 → **80**；新增 `_kImageBlockHandleWidth = 8`。
-- 热区贴边（`left/right: 0`）+ 8px 宽；视觉条改成 `width:3 / height:∞` 的
-  贴边细条，与热区一样贯穿全高。
+- **把手挂到图片外侧**（2026-11-23 二次修正）：盒子宽 = 图片宽 + `2×8`，图片包
+  `Padding(horizontal: 8)` 居中，两条把手 `Positioned` 到**盒子两端** ⇒ 落在图片
+  外侧的留白里，像 Notion 那样"框 + 外侧把手"，归属一眼可辨。
+  ⚠️ 不能直接 `Positioned(left: -8)` 画到盒外：Flutter 命中测试要求指针在盒子
+  自己的 size 内，画出去**点不到**（块手柄踩过同一个坑）。
+  代价：图片可用宽度减 16（sinan 侧 `imageMaxWidth` 同步减
+  `EditorTypography.imageHandleOutsetTotal`，块高预测器的图片宽度口径也同步减，
+  否则预测高度偏高、滚动条总高与实际脱节）。
+- 视觉条：4px 宽、`height: ∞`（整条高度）、黑 60% + **1px 白描边**（纯黑在深色
+  图片上根本看不见）。官方固定 `height: 40` ⇒ 图片一高，中部"看不见却能拖"、
+  看见的又不在热区正中。
+- **描边 hover 也画**（35% 强度），选中用全强度：成熟产品是"框 + 外侧把手"一体，
+  只有框在各状态都可见，"有框 = 有控件"才成立。
 - 新增 `maxWidth` 参数，所有宽度走 `_clampWidth()`：`min(max(80, w), maxWidth)`；
   渲染、拖拽结束、存量超宽值都走它。
 - 新增 `didUpdateWidget`：`widget.width` 变化时同步 `imageWidth`，让「恢复原始

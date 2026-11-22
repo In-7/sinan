@@ -205,7 +205,11 @@ class BlockHeightPredictor {
     if (ratio == null || !ratio.isFinite || ratio <= 0) {
       return imageLoadingHeight + verticalPadding;
     }
-    final double column = textWidthOf(node, availableWidth: availableWidth);
+    // 图片实际可占宽度要比文字列窄两侧把手留白（见
+    // `EditorTypography.imageHandleOutset`：图片盒两侧各留一条给外侧把手）。
+    // 不扣这笔 ⇒ 按更宽的列算高度，图片块预测偏高、滚动条总高与实渲染脱节。
+    final double column = textWidthOf(node, availableWidth: availableWidth) -
+        EditorTypography.imageHandleOutsetTotal;
     final double? storedWidth = (node.attributes[ImageBlockKeys.width] as num?)
         ?.toDouble();
     final double displayWidth = math.min(storedWidth ?? column, column);
