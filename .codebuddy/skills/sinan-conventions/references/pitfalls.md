@@ -67,3 +67,27 @@ macOS `NSPasteboard` 自定义 UTI；两边都**同时**挂纯文本与位图，
 - 内存剪贴板是个陷阱：它检测不到"外部复制了别的东西"，会产生粘出旧内容的幽灵 bug——
   能用系统剪贴板就别只用内存；
 - 平台层实现必须可注入，测试注入假实现，**测试不许碰真实系统剪贴板/窗口**。
+
+### 4.1 富文本粘贴（粘进来）的两个上游坑（2026-11-22）
+
+**① 官方 `pasteHtml` 是**库内私有**的 unnamed extension**（`paste_command.dart` 里
+`extension on EditorState`），`appflowy_editor.dart` 也没导出那个库 ⇒ **跨库不可见**
+（`import src/.../paste_command.dart` 也拿不到，unnamed extension 仅库内有效）。
+要用只能自己用公开 API 复刻：`htmlToDocument(html)` + `insertNodes` /
+`insertText`。注意 **`nodes.single` 在多块时会抛**，被外层 catch 吞成"粘贴失败"
+——这个坑真踩过。
+
+**② `DocumentHTMLDecoder` 没有 code 块解析器**：`plugins/html/decoder/` 只有
+bulleted / numbered / todo / quote / heading / table / divider / image / text / html。
+所以裸 `<pre>` / `<pre><code>` **解析出 0 个节点、内容凭空消失**（实测），比纯文本
+还糟。粘贴前必须把 `<pre>` 降级成 `<p>`（见 `normalizeHtmlForPaste`）：文字与
+`<code>` 行内样式保住，只是不再是"代码块"。**宁可降级，不能静默吞内容。**
+
+另外：`<ul><li>` 会被解析成**多个并列的 `bulleted_list` 块**（不是一个容器节点）；
+`enableColorParse = false` 才能保证"按应用自己的排版渲染"；字体/字号/行高本来就不解析。
+
+**验证方式**：CF_HTML 的头部偏移是**字节**偏移，中文下极易算错——一律优先用
+`<!--StartFragment-->` / `<!--EndFragment-->` 标记定位。端到端验证要**自己用
+ffi 写 UTF-8 字节**再读回（PowerShell 5.1 的 `Set-Clipboard -AsHtml` 按 ANSI
+写，读回来是乱码，会误判成自己的解码 bug；`[Clipboard]::SetData` 是延迟渲染，
+进程退出后数据就没了）。

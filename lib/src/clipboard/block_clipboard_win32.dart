@@ -167,16 +167,22 @@ bool _writeSync(_WriteRequest request) {
 }
 
 /// 读自定义格式载荷；没有/失败返回 null。
-String? _readSync() {
+String? _readSync() => _readFormatTextSync(ClipboardCodec.formatName);
+
+/// 读任意**已注册剪贴板格式**的 UTF-8 文本（如 `'HTML Format'`）。
+///
+/// 供富文本粘贴复用：与块载荷共用同一套「独占锁重试 + 必检关闭 + 拷贝后
+/// Unlock」的约束（见本文件顶部说明）。
+String? _readFormatTextSync(String formatName) {
   try {
     if (!_openWithRetry()) return null;
     try {
-      final PCWSTR name = _pcwstr(ClipboardCodec.formatName);
-      final int customFormat = RegisterClipboardFormat(name).value;
+      final PCWSTR name = _pcwstr(formatName);
+      final int format = RegisterClipboardFormat(name).value;
       freePcwstr(name);
-      if (customFormat == 0) return null;
+      if (format == 0) return null;
 
-      final data = GetClipboardData(customFormat);
+      final data = GetClipboardData(format);
       if (data.error.isError) return null;
       final hGlobal = HGLOBAL(data.value);
       final sizeResult = GlobalSize(hGlobal);
@@ -199,6 +205,12 @@ String? _readSync() {
   } on Object {
     return null;
   }
+}
+
+/// 读任意已注册格式的文本（跨 isolate 封装）；非 Windows / 失败 → null。
+Future<String?> readWindowsClipboardFormatText(String formatName) async {
+  if (!Platform.isWindows) return null;
+  return Isolate.run(() => _readFormatTextSync(formatName));
 }
 
 

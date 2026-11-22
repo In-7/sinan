@@ -65,6 +65,10 @@ class SinanClipboardPlugin {
           return
         }
         result(read(format: format))
+      case "readHtml":
+        // 富文本粘贴：public.html（网页/Word 复制过来时才有）。
+        let data = NSPasteboard.general.data(forType: .html)
+        result(data.flatMap { String(data: $0, encoding: .utf8) })
       default:
         result(FlutterMethodNotImplemented)
       }
