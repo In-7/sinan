@@ -601,6 +601,33 @@ parameter type 'Widget?'`）。改本目录后**务必跑一次仓库根的 `flu
 **何时可撤销**: 上游提供官方的中西文间距/标点处理后，还原 `adjustTextSpan`
 两行 + 删扩展文件即可（预测器侧同步删）。
 
+### [2026-11-22] 补丁 22 — 带 children 的块，子节点未布局时点击被路由到别的块
+
+**问题**（用户实报）：某篇笔记里一个写着「我在这里」的 heading 带了一个
+paragraph 子节点（全库唯一带 children 的块），点它的标题文字**选不中**、
+连带编辑/删除全失效。实测点击 `(324,186)` 明确落在该 heading 的 rect
+`(216,131)-(984,211)` 内，但选区却落到前一个块 `[0]`。
+
+**根因**：`lib/src/editor/editor_component/service/selection/shared.dart` 的
+`getNodeInOffset` 在命中一个带 children 的块后，无条件递归进 children：
+判定 `child.rect.top <= offset.dy` 对 `Rect.zero`（子节点被列表虚拟化卸载、
+`renderBox == null` 时的 rect）恒真（0 ≤ 186）⇒ 进入 children 后用 zero rect
+二分 ⇒ 把点击路由到无关的兄弟/前一个块。
+
+**改动**（两处，均在 `getNodeInOffset`）：
+- 递归的前提加上"首个子节点 rect 非空"（`firstChildLaidOut`）——子节点一个
+  都没布局时点击该落在父节点自己；
+- 进入 children 后、二分前，剔除 zero-rect 的子节点（被虚拟化卸载的那些）——
+  否则它们仍会把点击吸走。
+
+**闸门**：`test/notes/heading_with_children_selection_test.dart`——用渲染树里
+`RichText` 的真实位置点击（**不能**用 `getRectsInSelection+transformRectToGlobal`
+反推，那条路在带 children 时自身就会偏，会给出假红/假绿），断言选区落在该
+heading。补丁前红（落到 `[0]`）、补丁后绿。
+
+**何时可撤销**: 上游修复"未布局子节点的 rect 为空时命中测试应落回父节点"
+后，删掉这两处 `isEmpty` 守卫即可；本补丁未改任何官方 API 与数据结构。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

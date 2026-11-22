@@ -83,7 +83,15 @@ extension EditorStateSelection on EditorState {
     }
 
     final node = filteredNodes[min];
+    // [sinan 补丁 22] 带 children 的块，其子节点被 virtualization 卸载时 rect 为
+    // Rect.zero。原判定 `child.rect.top <= offset.dy` 对 zero 恒真（0 <= 186）⇒
+    // 递归进 children 后用 zero rect 二分，点击被路由到**别的块**——用户实报
+    // 「带子节点的 heading 点不中、选不上、编辑/删除全失效」（2026-11-22）。
+    // 子节点的 renderBox 不存在（rect 为空）时，点击应落在父节点自己。
+    final bool firstChildLaidOut = node.children.isNotEmpty &&
+        !_getCachedRect(node.children.first, rectCache).isEmpty;
     if (node.children.isNotEmpty &&
+        firstChildLaidOut &&
         _getCachedRect(node.children.first, rectCache).top <= offset.dy) {
       final skipSortingChildren =
           node.selectable?.skipSortingChildrenWhenSelecting ?? false;
@@ -128,6 +136,16 @@ extension EditorStateSelection on EditorState {
       }
       if (hasInvisibleChildren) {
         children = visibleChildren;
+      }
+
+      // [sinan 补丁 22] 同上：即便首个子节点已布局，也可能有部分子节点被
+      // virtualization 卸载（zero rect）。把它们从候选里剔掉，否则二分时
+      // zero rect 会把点击吸走。真的一个都没布局 ⇒ 落回父节点。
+      final List<Node> laidOutChildren = children
+          .where((Node c) => !_getCachedRect(c, rectCache!).isEmpty)
+          .toList(growable: false);
+      if (laidOutChildren.length != children.length) {
+        children = laidOutChildren;
       }
 
       if (children.isEmpty) {

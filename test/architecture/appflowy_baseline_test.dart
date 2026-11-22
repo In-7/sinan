@@ -79,6 +79,12 @@ void main() {
         '引用块竖条 = **官方原版**（主题色走应用侧 iconBuilder）——'
             '此处若被改成 Theme.of 之类，说明又在改 vendored 源码，回退它',
       ),
+      (
+        'lib/src/editor/editor_component/service/selection/shared.dart',
+        'firstChildLaidOut',
+        '补丁 22：未布局（zero-rect）子节点不得参与命中路由——'
+            '丢了则带 children 的 heading 又变成点不中/删不掉',
+      ),
     ];
 
     for (final (String file, String marker, String why) in fingerprints) {
