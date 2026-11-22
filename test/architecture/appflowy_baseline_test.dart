@@ -90,6 +90,11 @@ void main() {
         "label: '图片'",
         '补丁 23：图片块语义标签——丢了读屏又念不出图片',
       ),
+      (
+        'lib/src/editor/editor_component/service/selection/desktop_selection_service.dart',
+        '[sinan 补丁 16d]',
+        '补丁 16d：删掉 only-text-node 右键门禁——丢了图片右键又不弹菜单',
+      ),
     ];
 
     for (final (String file, String marker, String why) in fingerprints) {

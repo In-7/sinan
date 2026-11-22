@@ -1,4 +1,6 @@
-﻿import 'package:appflowy_editor/appflowy_editor.dart';
+﻿import 'dart:async' show unawaited;
+
+import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/app_float_surface.dart';
@@ -38,6 +40,15 @@ Widget sinanEditorContextMenu({
   final Selection? selection = editorState.selection;
   final bool hasRange = selection != null && !selection.isCollapsed;
 
+  // 当前选区是否落在**非文本块**（图片等，delta == null）：这类块没有文字
+  // 可剪切/复制/全选，给通用的四项全灰没意义——换成块级「删除 / 复制块」
+  // （Notion 同款：图片块的菜单就是删除/复制/替换）。
+  final Node? selectedNode = selection == null
+      ? null
+      : editorState.getNodeAtPath(selection.end.path);
+  final bool isMediaBlock =
+      selectedNode != null && selectedNode.delta == null;
+
   // 出屏钳制：菜单 200 宽、四行约 160 高（够用即可，不做测量回调）。
   final Size window = MediaQuery.sizeOf(context);
   const double width = 200;
@@ -59,6 +70,25 @@ Widget sinanEditorContextMenu({
         mainAxisSize: .min,
         crossAxisAlignment: .stretch,
         children: <Widget>[
+          // 媒体块（图片等无 delta）：文本四项对它全灰没意义，首行换成
+          // 「删除图片」——块级删除走官方 transaction（与 Delete 键同款）。
+          if (isMediaBlock)
+            _ContextMenuRow(
+              label: '删除图片',
+              shortcut: 'Del',
+              onPressed: (EditorState state) {
+                final Selection? s = state.selection;
+                if (s == null) return KeyEventResult.ignored;
+                unawaited(
+                  state.apply(
+                    state.transaction..deleteNodesAtPath(s.end.path),
+                  ),
+                );
+                return KeyEventResult.handled;
+              },
+              editorState: editorState,
+              onDismiss: onDismiss,
+            ),
           _ContextMenuRow(
             label: '剪切',
             shortcut: 'Ctrl+X',

@@ -536,10 +536,12 @@ class _DesktopSelectionServiceWidgetState
     // 非文本块时选区又常被清空。菜单本就按 `details.localPosition` 定位、不依赖选区
     // 矩形，故去掉该早退：只要 builder 在就弹（剪切/复制按可用性置灰）。
 
-    // For now, only support the text node.
-    if (!currentSelectedNodes.every((element) => element.delta != null)) {
-      return;
-    }
+    // [sinan 补丁 16d] 删掉官方的 "only support the text node" 门禁。
+    // 图片块有 SelectableMixin 但 delta == null，原门禁让"图片/非文本块右键"
+    // 完全不弹菜单（用户 2026-11-22 实报）。菜单本身按 details.localPosition
+    // 定位、不依赖选区矩形；文本动作（剪切/复制/全选）在无文本选区时由 builder
+    // 自行置灰即可，不该由这里整菜单吞掉。补丁 16b 已去掉 selectionRects 早退，
+    // 这一条是同一问题的残留。
 
     final mask = OverlayEntry(
       builder: (_) => Listener(

@@ -420,6 +420,12 @@ extraInfo: { selectionExtraInfoDisableToolbar: true }
    置灰）——非文本块 / 末尾空白 / 无选区都能弹。
 3. **[16c]** `_clearContextMenu`：关闭菜单时的两次 `updateSelectionWithReason` 从 `uiEvent`
    改为 `contextMenu` 原因，只刷新选区渲染、不触发"选区变化→滚到光标"。
+4. **[16d，2026-11-22]** `_showContextMenu` 再删一处官方残留门禁
+   `if (!currentSelectedNodes.every((n) => n.delta != null)) return;`（"only support
+   the text node"）。**用户实报**：图片上右键毫无反应——图片块有 `SelectableMixin`
+   但 `delta == null`，右键选区落到图片就中这道门禁；16b 只去掉了 `selectionRects`
+   早退、漏了这一条。删掉后非文本块右键同样弹菜单（文本动作由 builder 按可用性置灰）。
+   闸门 `test/notes/image_context_menu_test.dart`。
 
 > **`contextMenu` 原因的豁免机制**：`editor_state.dart:333` 只在 `reason == uiEvent` 时把
 > `_selectionType` 设成 `inline`（驱动滚动的开关）。`contextMenu` 不是 `uiEvent` ⇒
