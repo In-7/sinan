@@ -85,6 +85,11 @@ void main() {
         '补丁 22：未布局（zero-rect）子节点不得参与命中路由——'
             '丢了则带 children 的 heading 又变成点不中/删不掉',
       ),
+      (
+        'lib/src/editor/block_component/image_block_component/image_block_component.dart',
+        "label: '图片'",
+        '补丁 23：图片块语义标签——丢了读屏又念不出图片',
+      ),
     ];
 
     for (final (String file, String marker, String why) in fingerprints) {

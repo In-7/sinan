@@ -41,6 +41,7 @@ import '../editor/core/note_title_field.dart';
 import '../editor/blocks/custom_block_components.dart';
 import '../editor/blocks/ref_block_component.dart';
 import '../editor/blocks/toggle_block_component.dart';
+import '../editor/keys/image_arrow_commands.dart';
 import '../editor/toolbar/fixed_toolbar.dart';
 import '../editor/toolbar/slash_menu_items.dart';
 import '../editor/panels/backlink_panel.dart';
@@ -1731,6 +1732,11 @@ class _NoteEditorViewAppFlowyState
                 // 必须自己追加——这正是此前"Ctrl+F 完全无效"的原因。
                 // 追加时必须带上标准表，否则会顶掉全部内置快捷键。
                 commandShortcutEvents: <CommandShortcutEvent>[
+                  // 图片块方向键两阶段放行（2026-11-22）：图片没看全时 ↓/↑
+                  // 交回 Flutter 原生 ScrollAction 滚动，看全后交回官方跳块。
+                  // **必须排在标准表之前**（先命中先赢，见命令文件文档）。
+                  sinanImageArrowDownCommand,
+                  sinanImageArrowUpCommand,
                   // 智能粘贴（Ctrl+V）：**必须排在官方 paste 之前**（先命中先赢），
                   // 并把官方那条从标准表里摘掉，避免两条 ctrl+v 并存。
                   // 逻辑：剪贴板是图 ⇒ 落盘 + 插图；否则回退「粘贴 URL 自动转链」/

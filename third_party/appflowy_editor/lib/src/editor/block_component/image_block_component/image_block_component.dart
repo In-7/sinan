@@ -164,6 +164,15 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
       child: child,
     );
 
+    // [sinan 补丁 23] 图片块此前没有任何 Semantics，读屏完全念不出来
+    // （2026-11-22 键盘无障碍盘点）。补一个**有名字**的语义节点。
+    // ⚠️ 不传 container: true：那会把子树压平成单个节点、丢掉逐块导航
+    // （同补丁 17 的教训）；只给 label，让读屏念"图片"。
+    child = Semantics(
+      label: '图片',
+      child: child,
+    );
+
     child = BlockSelectionContainer(
       node: node,
       delegate: this,

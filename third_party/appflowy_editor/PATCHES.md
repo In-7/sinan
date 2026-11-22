@@ -628,6 +628,18 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 **何时可撤销**: 上游修复"未布局子节点的 rect 为空时命中测试应落回父节点"
 后，删掉这两处 `isEmpty` 守卫即可；本补丁未改任何官方 API 与数据结构。
 
+### [2026-11-22] 补丁 23 — 图片块补 `Semantics` 标签（读屏可念）
+
+**问题**：图片块（`image_block_component.dart`）与 `ResizableImage` 都没有任何
+`Semantics`，读屏遇到图片毫无提示；`docs/a11y.md` 却把编辑器读屏列为"已合格"
+（当时只查了标签/对比度/点击尺寸）。
+
+**改动**：`image_block_component.dart` 的 `build` 在 `Padding` 外包一层
+`Semantics(label: '图片')`。**刻意不传 `container: true`**——那会把子树压平
+成单个语义节点、丢掉逐块导航（补丁 17 的教训）。只给 label，读屏念"图片"。
+
+**何时可撤销**: 上游给图片块加官方语义标签后，删掉这一层即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

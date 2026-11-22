@@ -188,6 +188,9 @@ exemptions = <String, Map<String, String>>{
     'lib/src/editor/blocks/toggle_block_component.dart': '折叠展开 200ms 专门节奏',
     'lib/src/canvas/canvas_note_view.dart': '自动保存观察窗 600ms：行为时序',
     'lib/src/canvas/kernel/': '画布内核时序（LOD 稳定 180 / 手掌窗 100 / 模拟推理 600）：独立域',
+    'lib/src/editor/keys/image_arrow_commands.dart':
+        '图片键盘滚动用 1ms 让官方 animateTo 立刻到位（其断言 duration > 0），'
+            '是非视觉的行为节流而非动画档位',
   },
   'radius': <String, String>{
     'lib/src/canvas/kernel/':
