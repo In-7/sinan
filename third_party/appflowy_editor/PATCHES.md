@@ -668,6 +668,23 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 
 **何时可撤销**: 上游给图片块加官方选中描边后，删掉这层即可。
 
+### [2026-11-22] 补丁 25 — 描边贴图片像素本身（不同尺寸/比例都对齐）
+
+**问题**：补丁 24 把描边包在 `ResizableImage` 外层，而它里面是 `Align`（撑满
+整列宽）⇒ 描边盒 = 整列宽，图片比列窄时描边大一圈、不同比例/alignment 都对不齐。
+
+**改动**：
+- `resizable_image.dart`：新增 `focusedListenable`（`ValueListenable<bool>`）/
+  `focusColor` 参数，在 `Stack` 内把 `DecoratedBox(foreground)` 包在 `Image` 外
+  （Positioned 缩放手柄之下）。描边盒 = 图片像素渲染盒，任何原始尺寸/比例/
+  alignment 都严丝合缝；foreground 不占位、无圆角。用 ValueListenable 驱动，
+  选区变化只重建这层装饰、不重建 ResizableImage 本体（保住 imageWidth /
+  moveDistance / _cacheImage）。
+- `image_block_component.dart`：状态加派生 `focusNotifier`（订阅 selectionNotifier，
+  选区落本块为 true），去掉补丁 24 的外层 DecoratedBox，改传 `focusedListenable`。
+
+**何时可撤销**: 上游给图片块加官方"贴图片的选中描边"后，删掉这些即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

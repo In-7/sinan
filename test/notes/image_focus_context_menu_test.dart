@@ -168,6 +168,19 @@ void main() {
     expect(d.borderRadius, isNull, reason: '描边应无圆角，与图片矩形重合');
     expect(box.position, DecorationPosition.foreground,
         reason: '描边只画不占位，不给图片加内缩');
+
+    // 关键（补丁 25）：描边的渲染盒必须 == **图片像素**的渲染盒，而不是
+    // ResizableImage 外层 Align 那整列宽——否则不同尺寸/比例的照片对不齐。
+    final Finder imageInBorder = find.descendant(
+      of: borderFinder,
+      matching: find.byType(Image),
+    );
+    expect(imageInBorder, findsOneWidget);
+    expect(
+      tester.getSize(borderFinder),
+      tester.getSize(imageInBorder),
+      reason: '描边盒应与图片像素盒等大（贴 Image，不贴外层 Align）',
+    );
   });
 }
 

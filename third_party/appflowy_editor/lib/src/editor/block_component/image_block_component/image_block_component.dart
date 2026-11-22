@@ -139,9 +139,34 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
 
   bool alwaysShowMenu = false;
 
+  // [sinan 补丁 25] 由选区派生的聚焦态（供 ResizableImage 贴图片画描边）。
+  final ValueNotifier<bool> focusNotifier = ValueNotifier<bool>(false);
+  void Function()? _selectionListener;
+  bool _focusSubscribed = false;
+
+  @override
+  void dispose() {
+    if (_selectionListener != null) {
+      editorState.selectionNotifier.removeListener(_selectionListener!);
+    }
+    focusNotifier.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final node = widget.node;
+    final Node node = widget.node;
+    // editorState 是 lazy final；首次 build 才能拿到并订阅选区。
+    if (!_focusSubscribed) {
+      _focusSubscribed = true;
+      _selectionListener = () {
+        final Selection? s = editorState.selection;
+        focusNotifier.value =
+            s != null && _pathEquals(s.start.path, node.path);
+      };
+      editorState.selectionNotifier.addListener(_selectionListener!);
+      _selectionListener!(); // 初值
+    }
     final attributes = node.attributes;
     final src = attributes[ImageBlockKeys.url];
 
@@ -152,12 +177,18 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
         MediaQuery.of(context).size.width;
     final height = attributes[ImageBlockKeys.height]?.toDouble();
 
+    // [sinan 补丁 24] [sinan 补丁 25] 图片聚焦描边：由 ResizableImage 把描边贴在**图片
+    // 像素**外沿（补丁 25，见 resizable_image.dart），focusedListenable 传
+    // 派生好的 focusNotifier——选区变化不重建 ResizableImage 本体（保住缩放
+    // 状态）。颜色按当前主题取 primary。
     Widget child = ResizableImage(
       src: src,
       width: width,
       height: height,
       editable: editorState.editable,
       alignment: alignment,
+      focusedListenable: focusNotifier,
+      focusColor: Theme.of(context).colorScheme.primary,
       onResize: (width) {
         final transaction = editorState.transaction
           ..updateNode(node, {
@@ -165,28 +196,6 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
           });
         editorState.apply(transaction);
       },
-    );
-
-    // [sinan 补丁 24] 图片聚焦描边：贴在 ResizableImage **本身**外沿画一圈
-    // 主题色描边，让用户左键点一下就知道"当前目标是这块"（图片没有光标）。
-    // 位置刻意放在 `Padding(key: imageKey)` 之内、`BlockComponentActionWrapper`
-    // 之前 ⇒ 描边只贴图片矩形、**不含左侧 48px 手柄槽**（从 blockWrapper 外层
-    // 画会把手柄也圈进去，用户实测位置不对）。无圆角：跟图片矩形边缘重合。
-    // foregroundDecoration 只画不占位，不给图片加 1px 内缩。
-    child = ValueListenableBuilder<Selection?>(
-      valueListenable: editorState.selectionNotifier,
-      builder: (BuildContext context, Selection? selection, Widget? child) {
-        final bool selected = selection != null &&
-            _pathEquals(selection.start.path, node.path);
-        if (!selected) return child!;
-        final Color color = Theme.of(context).colorScheme.primary;
-        return DecoratedBox(
-          position: DecorationPosition.foreground,
-          decoration: BoxDecoration(border: Border.all(color: color)),
-          child: child,
-        );
-      },
-      child: child,
     );
 
     child = Padding(

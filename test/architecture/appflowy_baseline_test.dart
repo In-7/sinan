@@ -96,6 +96,11 @@ void main() {
         '补丁 24：图片聚焦描边——丢了左键点图片又没可见反馈',
       ),
       (
+        'lib/src/editor/block_component/image_block_component/resizable_image.dart',
+        '[sinan 补丁 25]',
+        '补丁 25：描边贴图片像素——丢了不同尺寸照片描边又对不齐',
+      ),
+      (
         'lib/src/editor/editor_component/service/selection/desktop_selection_service.dart',
         '[sinan 补丁 16d]',
         '补丁 16d：删掉 only-text-node 右键门禁——丢了图片右键又不弹菜单',

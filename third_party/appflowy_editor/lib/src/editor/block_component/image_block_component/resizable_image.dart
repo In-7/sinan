@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:string_validator/string_validator.dart';
 
@@ -16,6 +17,8 @@ class ResizableImage extends StatefulWidget {
     required this.width,
     required this.src,
     this.height,
+    this.focusedListenable,
+    this.focusColor,
   });
 
   final String src;
@@ -23,6 +26,11 @@ class ResizableImage extends StatefulWidget {
   final double? height;
   final Alignment alignment;
   final bool editable;
+
+  /// [sinan 补丁 25] 选中态的可监听值。用 ValueListenable 而非 bool，避免
+  /// 选区变化重建 ResizableImage 本体（会丢 imageWidth / _cacheImage 状态）。
+  final ValueListenable<bool>? focusedListenable;
+  final Color? focusColor;
 
   final void Function(double width) onResize;
 
@@ -100,6 +108,29 @@ class _ResizableImageState extends State<ResizableImage> {
       // load local file
       _cacheImage ??= Image.file(File(src));
       child = _cacheImage!;
+    }
+    // [sinan 补丁 25] 聚焦描边贴在**图片像素**外沿，而不是 ResizableImage
+    // 外层（Align 会撑满整列宽 ⇒ 描边比图片大一圈、不同比例对不齐）。
+    // 放 Stack 内、Positioned 手柄之下：描边盒 = Image 的渲染盒，任何原始
+    // 尺寸/比例/alignment 都严丝合缝；foreground 不占位、无圆角。
+    // 用 focusedListenable 驱动：选区变化只重建这层 DecoratedBox，不动
+    // ResizableImage 本体（保住 imageWidth / moveDistance / _cacheImage）。
+    final Widget imageChild = child;
+    if (widget.focusedListenable != null && widget.focusColor != null) {
+      child = ValueListenableBuilder<bool>(
+        valueListenable: widget.focusedListenable!,
+        builder: (BuildContext context, bool focused, Widget? child) {
+          if (!focused) return child!;
+          return DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              border: Border.all(color: widget.focusColor!),
+            ),
+            child: child,
+          );
+        },
+        child: imageChild,
+      );
     }
     return Stack(
       children: [
