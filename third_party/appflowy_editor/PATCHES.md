@@ -426,6 +426,12 @@ extraInfo: { selectionExtraInfoDisableToolbar: true }
    但 `delta == null`，右键选区落到图片就中这道门禁；16b 只去掉了 `selectionRects`
    早退、漏了这一条。删掉后非文本块右键同样弹菜单（文本动作由 builder 按可用性置灰）。
    闸门 `test/notes/image_context_menu_test.dart`。
+5. **[16e，2026-11-22]** `_onSecondaryTapDown` 右键即聚焦：官方 case 2（collapsed
+   选区直接保留）会让"光标在文字上、右键图片"时选区仍停文字 ⇒ 弹文字菜单，用户须
+   左键点两下才出图片菜单。修：collapsed 选区不在被右键 node 上时先聚焦它；且
+   cover 类块（图片）按 `start..end` 整块选区（官方 `getPositionInOffset` 只给
+   `end()`，collapsed 会让块级 Ctrl+C/X 判 false）。命中已选区仍保留整段（多选
+   右键作用于全部）。闸门 `test/notes/image_focus_context_menu_test.dart`。
 
 > **`contextMenu` 原因的豁免机制**：`editor_state.dart:333` 只在 `reason == uiEvent` 时把
 > `_selectionType` 设成 `inline`（驱动滚动的开关）。`contextMenu` 不是 `uiEvent` ⇒

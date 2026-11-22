@@ -95,6 +95,11 @@ void main() {
         '[sinan 补丁 16d]',
         '补丁 16d：删掉 only-text-node 右键门禁——丢了图片右键又不弹菜单',
       ),
+      (
+        'lib/src/editor/editor_component/service/selection/desktop_selection_service.dart',
+        '[sinan 补丁 16e]',
+        '补丁 16e：右键即聚焦——丢了图片右键又要点两下才出菜单',
+      ),
     ];
 
     for (final (String file, String marker, String why) in fingerprints) {

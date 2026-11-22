@@ -364,28 +364,30 @@ class _DesktopSelectionServiceWidgetState
     }
 
     final position = selectable.getPositionInOffset(offset);
+
+    // [sinan 补丁 16e] 右键 = "我把这块设为当前目标"（左键点同款聚焦），
+    // 然后才弹它的菜单。官方原逻辑两个问题：
+    //  ① case 2 对 collapsed 选区直接保留——光标在文字上、右键图片时选区
+    //     仍停在文字 ⇒ 菜单按选区判块弹出文字菜单（用户须左键点两下才出图
+    //     片菜单）。修：collapsed 选区不在被右键的 node 上 ⇒ 先聚焦它。
+    //  ② cover 类块（图片）的 getPositionInOffset 只返回 end()，官方一律建
+    //     collapsed 选区；但图片要的是整块选区（0..1），否则块级 Ctrl+C /
+    //     Ctrl+X 的 isImageOnlySelection 判 false。修：cover 块给 start..end。
+    // 命中点在已选区内仍保留整段选区（多选右键作用于全部，业界语义）。
+    Selection focusOnTappedNode() => selectable.cursorStyle == CursorStyle.cover
+        ? Selection(start: selectable.start(), end: selectable.end())
+        : Selection.collapsed(position);
+
     final Selection? newSelection;
-
-    // cases
-    // 1. if the selection is null, then select the current position as a collapsed selection
-    // 2. if the selection is collapsed, then keep it without changes
-    // 3. if the selection is not collapsed, then check if tap is within a selected node
-    // 4. if tap is within the selected nodes, then keep current selection
-    // 5. if tap is outside the selected nodes, then create a collapsed selection at tap point
-
     if (selection == null) {
-      newSelection = Selection.collapsed(position);
+      newSelection = focusOnTappedNode();
     } else if (selection.isCollapsed) {
-      newSelection = selection;
+      final Node? selectedNode = editorState.getNodeAtPath(selection.end.path);
+      newSelection = selectedNode == node ? selection : focusOnTappedNode();
     } else {
       final selectedNodes = editorState.getNodesInSelection(selection);
       final isTapInSelectedNode = selectedNodes.any((n) => n == node);
-
-      if (isTapInSelectedNode) {
-        newSelection = selection;
-      } else {
-        newSelection = Selection.collapsed(position);
-      }
+      newSelection = isTapInSelectedNode ? selection : focusOnTappedNode();
     }
 
     editorState.updateSelectionWithReason(
