@@ -1,8 +1,8 @@
 ---
 name: sinan-conventions
-description: "sinan 桌面笔记应用的开发约定与代码地图。当在本仓库新增或修改功能、挑选或引入依赖、触及窗口与材质、落盘与数据层、编辑器（vendored appflowy/quill）、画布内核，或打算自研一个官方可能已有的能力时使用。"
-description_zh: sinan 仓库开发约定：官方优先的取源顺序、代码地图、已踩过的坑
-description_en: sinan repo conventions: official-first sourcing, code map, verified pitfalls
+description: "sinan 桌面笔记应用的开发约定与代码地图。当在本仓库新增或修改功能、挑选或引入依赖、触及窗口与材质、落盘与数据层、编辑器（vendored appflowy/quill）、画布内核、系统能力与跨平台接入（Windows/macOS 双平台、剪贴板/对话框/通知等原生能力），或打算自研一个官方可能已有的能力时使用。"
+description_zh: sinan 仓库开发约定：官方优先的取源顺序、代码地图、双平台分层、已踩过的坑
+description_en: sinan repo conventions: official-first sourcing, code map, cross-platform layering, verified pitfalls
 version: 1.0.0
 allowed-tools: Read,Write,Bash
 ---
@@ -32,6 +32,7 @@ allowed-tools: Read,Write,Bash
 | `lib/src/data/**` | SQLite 的**唯一出口** | 业务层不拼 SQL；视图不直写库（唯一写入者是 `NotesNotifier`） |
 | `lib/src/app/save_debounce.dart`、`lib/src/app/pending_saves.dart` | 落盘调度 / 退出前落盘 | 见 §4 |
 | `lib/src/window/**`、`lib/main.dart` | 窗口、材质、退出 | 见 §3 |
+| `lib/src/clipboard/**` | **跨平台系统能力**：逻辑层 + 平台层分离 | 新增平台能力照此分层，见 §7 |
 | `tools/backup.ps1` | 离线备份（bundle 全量历史 + 工作区镜像 + vendored 历史） | 必须保持**纯 ASCII**：PS 5.1 读无 BOM 的 UTF-8 会按 GBK 解码，中文会让脚本解析失败（实测踩过）。`-Target` 应指向**第二块物理盘**——git 防不了盘坏 |
 
 ### 2.1 层与边界（总纲 `docs/architecture.md`，边界由 `test/architecture/` 锁住）
@@ -72,5 +73,57 @@ allowed-tools: Read,Write,Bash
 
 - 注释写**为什么**、**原来的错法**、**证据**（带日期，如 `2026-09-17 实测`）；不写"做了什么"的流水账。
 - 长期设计结论进 `docs/`（层与边界看 `docs/architecture.md`；落盘时机看 `docs/data_layer.md` §7.1；画布看 `docs/canvas_architecture.md`），代码里只留指针与理由。
+
+## 7. 平台接入：Windows + macOS 双平台（2026-11-22 起）
+
+> **目标已改**：早期结论「只做 Windows 桌面、mac 不维护」**作废**。现在
+> **Windows 与 macOS 双平台**都要能用；`macos/` 骨架已就位（`flutter create
+> --platforms=macos` 生成），后续新能力默认按双平台设计。
+
+### 7.1 铁律：逻辑层 / 平台层分离
+
+任何"系统能力"（剪贴板、文件对话框、通知、托盘、快捷键拦截…）都必须拆成两层：
+
+| 层 | 位置 | 规矩 |
+|---|---|---|
+| **逻辑层** | 纯 Dart，例如 `clipboard_codec.dart` | 协议、序列化、决策。**不许** import `dart:ffi` / `win32` / `MethodChannel`；单测直接覆盖 |
+| **平台层** | `*_win32.dart` / `*_macos.dart` | 各平台一套实现，实现同一个 interface；按 `Platform.isX` 选择 |
+
+- 现成模板照抄 `lib/src/clipboard/`（codec + transport 接口 + 两套实现）。
+- **必须有回退**：平台不支持 / 调用失败 ⇒ 降级到纯 Dart 实现或明确 no-op，**不许崩、不许静默丢数据**。
+- 平台实现要**可注入**（`static ... transport`），测试注入假实现——**测试绝不碰真实系统剪贴板/窗口**。
+
+### 7.2 Windows 侧
+
+- win32 调用一律 `Platform.isWindows` 守卫；文件顶层 import `dart:ffi`/`win32` 无妨（能跨平台编译，只是不能在别的平台调）。
+- 系统资源（剪贴板、句柄）三件套，已被 `note_media_service.dart` 验证过：
+  1. **独占锁要重试**（`OpenClipboard` 10×20ms）；
+  2. **释放必检**（`CloseClipboard` 失败 = 本进程永久锁死系统资源，重试 3 次并大声告警）；
+  3. **FFI 全程放后台 isolate**（`Isolate.run`），不阻塞 UI，也避开与 Flutter engine 平台通道的跨线程竞争。
+- 字符串指针用 `toNativeUtf16()` 自管分配/释放，别依赖 win32 的扩展方法（本项目已踩过 `toPcwstr` 歧义）。
+
+### 7.3 macOS 侧
+
+- 新增 Swift 代码**内联进 `macos/Runner/MainFlutterWindow.swift`**，不要新建 `.swift` 文件——新增文件要改
+  `Runner.xcodeproj/project.pbxproj`，手改极易碎工程。确实要拆文件时，必须在 Xcode 里 Add Files。
+- 平台通道命名统一 `com.sinan/<feature>`；`FlutterMethodChannel` 在 `awakeFromNib` 里 `register`。
+- 系统剪贴板用 `NSPasteboard`，自定义类型用反向域名 UTI（如 `com.sinan.blocks`），与 Windows 侧的
+  自定义格式名**保持同一个字符串**（协议一致，剪贴板内容本身两端不通用是系统限制）。
+- 写多格式时 `clearContents()` + `declareTypes([...])` 一次声明齐全，再逐项 set。
+
+### 7.4 无法在本机验证的平台，必须说清楚
+
+Windows 开发机上**编译不了 macOS 侧**。交付时：
+
+- 明确标注"macOS 侧未编译验证"，并给出 Mac 上的验收清单（`pod install`、Swift 编译、通道是否返回、真实粘贴）；
+- 不要把"analyze 通过"当成 macOS 已验证——`flutter analyze` 扫不到 Swift。
+
+### 7.5 生成平台骨架的副作用要清掉
+
+`flutter create --platforms=macos .` 除了生成 `macos/`，还会**顺手改** `analysis_options.yaml`、
+`pubspec.lock`、`.metadata`，并塞一个模板 `test/widget_test.dart`。做完立刻检查 `git status`，
+只保留 `macos/`，其余回退（模板 test 要删——它 import `flutter/material.dart`，本项目用 `material_ui`）。
+
+---
 
 已有坑的完整案例（症状 / 根因 / 正解 / 证据位置）见 [references/pitfalls.md](references/pitfalls.md)。
