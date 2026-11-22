@@ -60,9 +60,19 @@ Map<String, BlockComponentBuilder> sinanBlockComponentBuilders({
   required EditorTypography typography,
   required Color markerColor,
   RefBlockBridge? refBridge,
+  double? imageMaxWidth,
 }) {
   final builders = <String, BlockComponentBuilder>{
     ...standardBlockComponentBuilderMap,
+    // [sinan 补丁 26] 图片块：注入可用宽度上限（正文列宽 − 块内边距 − 手柄占位），
+    // 让"默认宽度"和"拖拽上限"都朝向正文列宽，而不是屏幕宽。
+    //
+    // ⚠️ 列宽是**固定档位**（`AppSettings.contentWidth`，不随窗口变），所以能
+    // 在这里算好注入；绝不可以在图片块内部用 `LayoutBuilder` 测量——块拖拽
+    // 反馈会 `IntrinsicWidth` 重建整块，而 `LayoutBuilder` 不支持 intrinsic，
+    // 真机一拖就崩（2026-11-22 实测）。
+    if (imageMaxWidth != null)
+      ImageBlockKeys.type: ImageBlockComponentBuilder(maxWidth: imageMaxWidth),
     HeadingBlockKeys.type: HeadingBlockComponentBuilder(
       configuration: BlockComponentConfiguration(
         // 官方这里写死英文 `Heading N`（没走 l10n），中文界面下突兀，换掉。

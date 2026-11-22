@@ -703,12 +703,28 @@ heading。补丁前红（落到 `[0]`）、补丁后绿。
 - `_kImageBlockComponentMinWidth` 30 → **80**；新增 `_kImageBlockHandleWidth = 8`。
 - 热区贴边（`left/right: 0`）+ 8px 宽；视觉条改成 `width:3 / height:∞` 的
   贴边细条，与热区一样贯穿全高。
-- 新增 `maxWidth` 参数（外层 `LayoutBuilder` 的列宽），所有宽度走
-  `_clampWidth()`：`min(max(80, w), maxWidth)`；渲染、拖拽结束、存量超宽值都走它。
+- 新增 `maxWidth` 参数，所有宽度走 `_clampWidth()`：`min(max(80, w), maxWidth)`；
+  渲染、拖拽结束、存量超宽值都走它。
 - 新增 `didUpdateWidget`：`widget.width` 变化时同步 `imageWidth`，让「恢复原始
   大小」能生效。
-- `image_block_component.dart`：`LayoutBuilder` 取可用列宽作默认宽度与上限，
-  不再用 `MediaQuery.size.width`。
+- `image_block_component.dart`：**默认宽度改用注入的 `maxWidth`**，不再用
+  `MediaQuery.size.width`。注入链：`ImageBlockComponentBuilder(maxWidth:)` →
+  `ImageBlockComponentWidget(maxWidth:)` → `ResizableImage(maxWidth:)`；sinan 侧在
+  `sinanBlockComponentBuilders(imageMaxWidth:)` 里覆盖 `ImageBlockKeys.type`，
+  值 = `contentWidth − blockPadding.horizontal − blockHandleWidth`。
+
+**⚠️ 最大的坑：不要在这里用 `LayoutBuilder` 测列宽**（2026-11-22 真机崩）。
+第一版就是在图片块内套 `LayoutBuilder` 取 `constraints.maxWidth`，测试全绿，
+但真机**一拖动块就崩溃**：
+`LayoutBuilder does not support returning intrinsic dimensions`。
+原因是块拖拽的 feedback（`custom_block_components.dart` 的 `_buildFeedback`）
+用 `IntrinsicWidth` + `IntrinsicHeight` 重建整块，而 `LayoutBuilder` 不支持
+intrinsic 计算 ⇒ 整棵渲染树连带 `hasSize` 断言全炸（日志里几十条
+"Cannot hit test a render box that has never been laid out"）。
+**正解**：sinan 的列宽是**固定档位**（`AppSettings.contentWidth` 728/800/1008，
+不随窗口变），在构造 builder 时算好注入即可，零布局期测量。
+闸门：`test/notes/image_resize_test.dart` 里有一条用
+`IntrinsicWidth(IntrinsicHeight(ResizableImage(...)))` 直接复现该崩溃路径。
 
 **何时可撤销**: 上游修好上述 5 点后整段删掉。
 

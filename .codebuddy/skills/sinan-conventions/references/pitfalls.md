@@ -86,6 +86,26 @@ bulleted / numbered / todo / quote / heading / table / divider / image / text / 
 另外：`<ul><li>` 会被解析成**多个并列的 `bulleted_list` 块**（不是一个容器节点）；
 `enableColorParse = false` 才能保证"按应用自己的排版渲染"；字体/字号/行高本来就不解析。
 
+### 4.2 块组件里别用 `LayoutBuilder` 测宽度（测试全绿、真机拖块必崩，2026-11-22）
+
+**症状**：`flutter test` 全过，`flutter run` 后一拖动块就炸：
+`LayoutBuilder does not support returning intrinsic dimensions`，紧跟着几十条
+`Cannot hit test a render box that has never been laid out`，整棵渲染树废掉。
+
+**根因**：块拖拽的 feedback（`custom_block_components.dart` 的 `_buildFeedback`）用
+`IntrinsicWidth` + `IntrinsicHeight` 重建整块；`LayoutBuilder` 不支持 intrinsic
+计算（它不能在布局回调之外被"推算"一次）。而 widget 测试通常不经过拖拽 feedback，
+所以完全测不出来。
+
+**正解**：sinan 的正文列宽是**固定档位**（`AppSettings.contentWidth` 728/800/1008，
+**不随窗口变**），需要列宽的地方一律**算好注入**（builder 参数 / 构造参数），
+不要在块组件内部测量。要测宽度就用 `EditorTypography` / `BlockHeightPredictor`
+那份同口径算式（列宽 − 块内边距 − 手柄占位）。
+
+**闸门**：涉及块内布局的改动，测试里要显式构造
+`IntrinsicWidth(IntrinsicHeight(YourBlock(...)))` 跑一遍
+（见 `test/notes/image_resize_test.dart`），否则这条路径永远是裸奔。
+
 **验证方式**：CF_HTML 的头部偏移是**字节**偏移，中文下极易算错——一律优先用
 `<!--StartFragment-->` / `<!--EndFragment-->` 标记定位。端到端验证要**自己用
 ffi 写 UTF-8 字节**再读回（PowerShell 5.1 的 `Set-Clipboard -AsHtml` 按 ANSI

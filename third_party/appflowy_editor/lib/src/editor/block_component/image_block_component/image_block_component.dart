@@ -66,6 +66,7 @@ class ImageBlockComponentBuilder extends BlockComponentBuilder {
     super.configuration,
     this.showMenu = false,
     this.menuBuilder,
+    this.maxWidth,
   });
 
   /// Whether to show the menu of this block component.
@@ -73,6 +74,10 @@ class ImageBlockComponentBuilder extends BlockComponentBuilder {
 
   ///
   final ImageBlockComponentMenuBuilder? menuBuilder;
+
+  /// [sinan 补丁 26] 图片可用宽度上限（正文列宽 − 内边距 − 手柄占位），
+  /// 由 sinan 侧构造 builder 时注入（列宽是固定档位，不必在块内测）。
+  final double? maxWidth;
 
   @override
   BlockComponentWidget build(BlockComponentContext blockComponentContext) {
@@ -92,6 +97,7 @@ class ImageBlockComponentBuilder extends BlockComponentBuilder {
       ),
       showMenu: showMenu,
       menuBuilder: menuBuilder,
+      maxWidth: maxWidth,
     );
   }
 
@@ -110,12 +116,22 @@ class ImageBlockComponentWidget extends BlockComponentStatefulWidget {
     super.configuration = const BlockComponentConfiguration(),
     this.showMenu = false,
     this.menuBuilder,
+    this.maxWidth,
   });
 
   /// Whether to show the menu of this block component.
   final bool showMenu;
 
   final ImageBlockComponentMenuBuilder? menuBuilder;
+
+  /// [sinan 补丁 26] 图片可用宽度上限（= 正文列宽 − 块内边距 − 手柄占位），
+  /// 由外层 builder 注入。
+  ///
+  /// ⚠️ **不能**用 `LayoutBuilder` 在块内测：块的拖拽反馈（
+  /// `custom_block_components.dart` 的 `_buildFeedback`）会用 `IntrinsicWidth`
+  /// 重新 build 整块，而 `LayoutBuilder` 不支持 intrinsic 计算 ⇒ 真机一拖块
+  /// 就 `LayoutBuilder does not support returning intrinsic dimensions` 崩。
+  final double? maxWidth;
 
   @override
   State<ImageBlockComponentWidget> createState() =>
@@ -177,33 +193,37 @@ class ImageBlockComponentWidgetState extends State<ImageBlockComponentWidget>
 
     // [sinan 补丁 24] [sinan 补丁 25] [sinan 补丁 26] 图片聚焦描边 + 宽度钳制：
     // - 描边由 ResizableImage 贴在**图片像素**外沿（补丁 25）；
-    // - **默认宽度取正文列宽**（`LayoutBuilder` 的 maxWidth），不再用
-    //   `MediaQuery.size.width`（那是屏幕宽，存进 attributes 语义就错了，
-    //   窗口一缩就被裁）；
-    // - `maxWidth` 传下去做拖拽上限（补丁 26）。
+    // - **默认宽度取注入的列宽**（`widget.maxWidth`），不再用
+    //   `MediaQuery.size.width`（那是屏幕宽，存进 attributes 语义就错了）；
+    // - 同一个值作为拖拽上限传下去（补丁 26）。
+    //
+    // ⚠️ **不要改成 `LayoutBuilder` 测量**：块的拖拽反馈会用 `IntrinsicWidth`
+    // 重新 build 整块，而 `LayoutBuilder` 不支持 intrinsic ⇒ 真机一拖块就崩
+    // `LayoutBuilder does not support returning intrinsic dimensions`（2026-11-22
+    // 实机踩到）。sinan 的列宽是固定档位（`AppSettings.contentWidth`），
+    // 由 builder 构造方注入即可，无需在布局期测量。
+    final double? maxWidth = widget.maxWidth;
+    final double width =
+        attributes[ImageBlockKeys.width]?.toDouble() ??
+            maxWidth ??
+            MediaQuery.of(context).size.width;
+
     // focusedListenable 用派生 notifier：选区变化只重建描边，不重建本组件。
-    Widget child = LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double available = constraints.maxWidth;
-        final double width =
-            attributes[ImageBlockKeys.width]?.toDouble() ?? available;
-        return ResizableImage(
-          src: src,
-          width: width,
-          height: height,
-          editable: editorState.editable,
-          alignment: alignment,
-          focusedListenable: focusNotifier,
-          focusColor: Theme.of(context).colorScheme.primary,
-          maxWidth: available,
-          onResize: (width) {
-            final transaction = editorState.transaction
-              ..updateNode(node, {
-                ImageBlockKeys.width: width,
-              });
-            editorState.apply(transaction);
-          },
-        );
+    Widget child = ResizableImage(
+      src: src,
+      width: width,
+      height: height,
+      editable: editorState.editable,
+      alignment: alignment,
+      focusedListenable: focusNotifier,
+      focusColor: Theme.of(context).colorScheme.primary,
+      maxWidth: maxWidth,
+      onResize: (width) {
+        final transaction = editorState.transaction
+          ..updateNode(node, {
+            ImageBlockKeys.width: width,
+          });
+        editorState.apply(transaction);
       },
     );
 

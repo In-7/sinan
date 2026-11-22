@@ -1839,6 +1839,13 @@ class _NoteEditorViewAppFlowyState
                   markerColor: scheme.onSurfaceVariant,
                   // 引用块的目标标题 / 跳转（双链）——块本身不碰 provider。
                   refBridge: _refBridge,
+                  // 图片可用宽度 = 正文列宽 − 每块水平内边距 − 块手柄占位
+                  // （与 `BlockHeightPredictor.textWidthOf` 同口径）。列宽是固定
+                  // 档位，所以能在这里算好注入，不必在图片块里用 LayoutBuilder
+                  // 测量（那会撞上拖拽反馈的 IntrinsicWidth，见补丁 26 说明）。
+                  imageMaxWidth: settings.contentWidth -
+                      EditorTypography.blockPadding.horizontal -
+                      EditorTypography.blockHandleWidth,
                 ),
                 characterShortcutEvents: sinanCharacterShortcutEvents(
                   // 斜杠菜单配色：官方默认是硬编码浅色盘（白底 + 青蓝强调色，

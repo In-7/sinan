@@ -106,6 +106,49 @@ void main() {
     return tester.getSize(box).width;
   }
 
+  testWidgets('IntrinsicWidth 下能布局（块拖拽反馈回归，2026-11-22 真机崩溃）', (
+    tester,
+  ) async {
+    // 块的拖拽反馈（`_buildFeedback`）用 IntrinsicWidth + IntrinsicHeight 重建
+    // 整块。图片块内部若用 LayoutBuilder 测量宽度，这里就会抛
+    // "LayoutBuilder does not support returning intrinsic dimensions"。
+    final List<String> layoutErrors = <String>[];
+    final void Function(FlutterErrorDetails)? previous = FlutterError.onError;
+    FlutterError.onError = (FlutterErrorDetails details) {
+      layoutErrors.add(details.exceptionAsString());
+    };
+    addTearDown(() => FlutterError.onError = previous);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: IntrinsicWidth(
+              child: IntrinsicHeight(
+                child: ResizableImage(
+                  src: img,
+                  width: 300,
+                  editable: true,
+                  alignment: Alignment.center,
+                  maxWidth: 600,
+                  onResize: (double _) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      layoutErrors.where((String e) => e.contains('intrinsic')),
+      isEmpty,
+      reason: '图片块不得在 intrinsic 查询路径上抛错（不能用 LayoutBuilder 测量）',
+    );
+  });
+
   testWidgets('超宽的已存 width 会被夹回列宽（不再撑破排版）', (tester) async {
     await pumpEditor(tester, width: 5000);
     final double imageWidth = imageBlockWidth(tester);
