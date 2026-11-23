@@ -289,9 +289,8 @@ extension SelectionTransform on EditorState {
             ),
             reason: SelectionUpdateReason.uiEvent,
           );
-        } else {
-          throw UnimplementedError();
         }
+        // delta == null（图片/分隔线等非文字块）⇒ 无字符可移，静默返回。
         break;
       case SelectionMoveRange.word:
         final delta = node.delta;
@@ -315,10 +314,8 @@ extension SelectionTransform on EditorState {
               reason: SelectionUpdateReason.uiEvent,
             );
           }
-        } else {
-          throw UnimplementedError();
         }
-
+        // delta == null（非文字块）⇒ 无词可移，静默返回。
         break;
       case SelectionMoveRange.line:
         if (delta != null) {
@@ -333,12 +330,12 @@ extension SelectionTransform on EditorState {
             ),
             reason: SelectionUpdateReason.uiEvent,
           );
-        } else {
-          throw UnimplementedError();
         }
+        // delta == null（非文字块）⇒ 无行可移，静默返回。
         break;
       default:
-        throw UnimplementedError();
+        // 未识别的 range：静默返回，不抛异常（键盘分发链不能断）。
+        break;
     }
   }
 }

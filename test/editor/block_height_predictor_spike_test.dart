@@ -587,6 +587,24 @@ List<(String, Node)> _cases() {
         (cjk(25), null),
       ]),
     )),
+    // 粗体 + palt 全角标点压缩 + 中西文间距（applyCjkTextSpacing）叠加：
+    // 三种排版调整同时生效时预测仍须 0.0px（方案 A' 的前提）。
+    (
+      '段落·粗体+palt+中西文间距',
+      paragraphNode(delta: _rich(<(String, Attributes?)>[
+        ('注意：', <String, dynamic>{'bold': true}),
+        ('Flutter编辑器在v6.2.0版本中加入「智能引号」（全角括号）。', null),
+        ('数字123与中文相邻。', <String, dynamic>{'bold': true}),
+        ('English中文English。，——省略号……', null),
+      ])),
+    ),
+    (
+      '段落·连续标点互挤2行',
+      paragraphNode(delta: _rich(<(String, Attributes?)>[
+        ('他说：「你好。」「再见！」（完）', null),
+        ('中文，中文。中文；中文：中文？中文！', <String, dynamic>{'bold': true}),
+      ])),
+    ),
   ];
 }
 

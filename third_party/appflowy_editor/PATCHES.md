@@ -752,6 +752,23 @@ intrinsic 计算 ⇒ 整棵渲染树连带 `hasSize` 断言全炸（日志里几
 
 **何时可撤销**: 上游修好上述 5 点后整段删掉。
 
+### [2026-11-23] 补丁 27 — 非文字块按方向键抛 UnimplementedError（键盘分发链断裂）
+
+**问题**（用户实报）：光标落在图片/分隔线等非文字块上时按 Arrow Left/Right，
+`SelectionTransform.moveCursor` 在 `node.delta == null` 分支直接
+`throw UnimplementedError()`，异常从 key message handler 冒出，整条键盘
+分发链断掉（后续按键全丢）。
+
+**文件**：
+- `lib/src/editor/command/selection_commands.dart`（3 处 `throw UnimplementedError()`
+  → 静默 `break`：`character`/`word`/`line` 三个 range 的 `delta == null` 分支
+  + `default` 分支）
+
+**改动**：非文字块（`node.delta == null`）无字符/词/行可移 ⇒ 静默返回，
+不抛异常。键盘分发链不断。
+
+**何时可撤销**: 上游把 `UnimplementedError` 改为静默返回后，还原即可。
+
 ## 已核对但**无需**补丁的项
 
 ### Flutter 3.44+ 的 `TextInputClient.onFocusReceived`

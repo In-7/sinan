@@ -295,6 +295,13 @@ class _NoteEditorViewAppFlowyState
   /// 块 id → 它在 [_itemExtents] 里的下标（增量更新用）。
   Map<String, int> _itemIndexOf = const <String, int>{};
 
+  /// 预测精确的块 id 集合（方案 A'，2026-11-23）：实测值不替换预测值——
+  /// 预测误差 0.0px（spike 实测），替换只引入舍入差 ⇒ 总高恒定 ⇒ 滑块稳定。
+  Set<String> _exactExtentIds = const <String>{};
+
+  /// 当前可用列宽（预测器在 [_onBlockMeasured] 里重跑预测要用）。
+  double _availableWidth = double.infinity;
+
   /// 图片宽高比缓存（`blocks/image_metrics.dart`）。
   ///
   /// 预算器要它才能在图片块**被构建之前**算出真实高度——否则"没存尺寸的图片"
@@ -1435,8 +1442,13 @@ class _NoteEditorViewAppFlowyState
     // 换代：此前派出去的异步回包（图片比例）作废，避免用旧参数写回表里。
     _extentsGeneration++;
     final List<Node> nodes = _editor.document.root.children;
+    _availableWidth = availableWidth;
     _itemIndexOf = <String, int>{
       for (int i = 0; i < nodes.length; i++) nodes[i].id: i,
+    };
+    _exactExtentIds = <String>{
+      for (final Node node in nodes)
+        if (BlockHeightPredictor.hasExactPrediction(node.type)) node.id,
     };
     _itemExtents = <double>[
       for (final Node node in nodes)
@@ -1483,6 +1495,31 @@ class _NoteEditorViewAppFlowyState
     _blockHeights.measure(nodeId, height);
     final int? index = _itemIndexOf[nodeId];
     if (index == null || index >= _itemExtents.length) return;
+
+    // 方案 A'（2026-11-23）：预测精确的块（文字/标题/列表/引用/代码/分隔线）
+    // 不被实测替换——预测误差 0.0px（spike 实测），替换只引入舍入差 ⇒ 总高
+    // 抖动 ⇒ 滑块长度微变。改用**重跑预测**拿当前值：文本没变时预测值相同
+    // （零开销早退）；文本变了则预测值跟随，保持总高精确。
+    if (_exactExtentIds.contains(nodeId)) {
+      final List<Node> children = _editor.document.root.children;
+      // 结构可能已变（增删块后 _rebuildItemExtents 还没跑）⇒ 越界直接跳过。
+      if (index >= children.length) return;
+      final Node node = children[index];
+      final double? predicted = _blockHeights.predictor?.predict(
+        node,
+        availableWidth: _availableWidth,
+      );
+      if (predicted != null) {
+        final double value = predicted.roundToDouble();
+        final double old = _itemExtents[index];
+        if (old != value) {
+          _adjustScrollForExtentChange(index, value - old);
+          _itemExtents[index] = value;
+        }
+      }
+      return;
+    }
+
     // 与 `BlockHeights.measure` 同口径（吸附整像素）。
     final double value = height.roundToDouble();
     final double old = _itemExtents[index];

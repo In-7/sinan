@@ -92,7 +92,8 @@ class HeaderActionButton extends StatelessWidget {
 /// 顶部**历史按钮**（撤销 / 重做）：文档级、无选区也要能用，故常驻。
 ///
 /// 与 [HeaderActionButton] 同规格，差别：
-/// 1. **灰显**表达可用性（历史栈空 ⇒ `onPressed: null` ⇒ M3 禁用态配色）；
+/// 1. **可用即亮**（2026-11-23 用户定案）：历史栈非空 ⇒ `onSurface` 全亮（一眼
+///    知道可点）；历史栈空 ⇒ 置灰不可点。不靠悬浮变亮表达可点性。
 /// 2. [wrap] 可包一层交互包装（编辑器用它做"按下保焦"，画布不需要）。
 class HeaderHistoryButton extends StatelessWidget {
   const HeaderHistoryButton({
@@ -136,7 +137,29 @@ class HeaderHistoryButton extends StatelessWidget {
             disabledForegroundColor: scheme.onSurfaceVariant.withValues(
               alpha: kHeaderActionDisabledAlpha,
             ),
-          ).copyWith(foregroundColor: headerActionColor(scheme)),
+          ).copyWith(
+            // 可用即亮（2026-11-23）：按状态分发——可用 `onSurface` 全亮，
+            // 不可用置灰。悬浮不更亮，只加背景热区。
+            foregroundColor: WidgetStateProperty.resolveWith((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.disabled)) {
+                return scheme.onSurfaceVariant.withValues(
+                  alpha: kHeaderActionDisabledAlpha,
+                );
+              }
+              return scheme.onSurface;
+            }),
+            backgroundColor: WidgetStateProperty.resolveWith((
+              Set<WidgetState> states,
+            ) {
+              if (states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused)) {
+                return scheme.onSurface.withValues(alpha: 0.08);
+              }
+              return null;
+            }),
+          ),
       icon: icon,
     );
     return wrap?.call(button) ?? button;

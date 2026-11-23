@@ -135,6 +135,16 @@ class BlockHeightPredictor {
     QuoteBlockKeys.type,
   };
 
+  /// 预测**精确**（误差 0.0px，spike 实测）的块类型——实测值不再替换预测值
+  /// （方案 A'，2026-11-23）：文字/标题/列表/引用/代码/分隔线的高度可由
+  /// TextPainter 干跑逐像素算出，用实测替换只会引入舍入差 ⇒ 总高抖动。
+  ///
+  /// 不在此列的块（图片/表格/公式/附件等）仍保留实测替换。
+  static bool hasExactPrediction(String type) =>
+      textBlockTypes.contains(type) ||
+      type == CodeBlockKeys.type ||
+      type == DividerBlockKeys.type;
+
   /// 需要让出标记宽度的块类型。
   static const Set<String> _markerBlockTypes = <String>{
     BulletedListBlockKeys.type,
