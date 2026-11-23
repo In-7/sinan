@@ -255,10 +255,9 @@ class _NoteEditorViewAppFlowyState
 
   /// 目录跳转后**短暂高亮**的落点块（node id；null = 当前没有）。
   ///
-  /// 为什么需要：末尾留白是一屏（官方口径 600）时，**仍差一点点**才够让末尾
-  /// 标题停到视口顶部（视口高 ≈690 − 末块高 ≈80 > 600）；另外目标块本来就在
-  /// 视口里时跳转**有意不动**（见 `tocJumpCanReachTop`）。两种情况都靠高亮补
-  /// "我落在哪"。
+  /// 为什么需要：末尾留白只有一小截（120px）时，末尾标题**够不到**视口顶部
+  /// （视口高 ≈690，而它下方只剩 120）；另外目标块本来就在视口里时跳转**有意
+  /// 不动**（见 `tocJumpCanReachTop`）。两种情况都靠高亮补"我落在哪"。
   ///
   /// 用 `ValueNotifier` + 官方逐块的口子（`AppFlowyEditor.blockWrapper`）实现：
   /// **纯渲染层**——不改文档、不进撤销栈、也不动选区（动选区的话，随手敲一个
@@ -1450,7 +1449,7 @@ class _NoteEditorViewAppFlowyState
       // `page_block_component.dart` 的 `itemBuilder` 一致（我们只挂 footer、
       // 不挂 header ⇒ 就是"节点数"这个下标）。
       //
-      // 它是列表里**最高的项**（一屏 600px）：官方那套外推在它没被构建时只按
+      // 它是列表里**较高的一项**（120px）：官方那套外推在它没被构建时只按
       // 平均块高计入 ⇒ 滚到尾部估算被修正一次（滑块变短）。这里给它真值，
       // 那处尾部修正随之消失（见 [editorTrailingSpace] 的"代价"一节）。
       editorTrailingSpace,
@@ -1803,9 +1802,11 @@ class _NoteEditorViewAppFlowyState
                       // 右键「粘贴」与 Ctrl+V 同口径：图贴图、否则回退文字。
                       onPaste: pasteIntoEditor,
                     ),
-                // 末尾留白 = 官方口径的**一屏可点热区**：点它 = 继续写
+                // 末尾留白 = **一小块可点热区**（120px）：点它 = 继续写
                 // （官方 `editor_page.dart` 的 footer 就是这么挂的；取值与取舍见
-                // `editorTrailingSpace` 的文档）。
+                // `editorTrailingSpace` 的文档——2026-11-23 从官方的一屏 600 收到
+                // 120：末尾标题不再强求停在视口顶部，页面高度回到"内容 + 一个
+                // 小常数"）。
                 //
                 // 官方把 `footer` 作为滚动列表的**最后一项**（`page_block_component
                 // .dart` 的 ScrollablePositionedList.builder），所以它只加尾部空间，
