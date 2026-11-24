@@ -159,43 +159,6 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ───────────────────────── 双击检测 ─────────────────────────
-
-  /// 上次点击时间（双击检测）。
-  DateTime? _lastTapTime;
-
-  /// 上次点击世界坐标（双击检测）。
-  Offset? _lastTapWorld;
-
-  /// 双击检测窗口（毫秒）。
-  static const int _doubleTapMs = 500;
-
-  /// 双击位置容差（世界单位）。
-  static const double _doubleTapSlop = 10;
-
-  /// 检测是否为双击，是则返回目标 itemId（进入编辑），否则返回 null。
-  String? _detectDoubleTap(Offset world) {
-    final DateTime now = DateTime.now();
-    if (_lastTapTime != null &&
-        now.difference(_lastTapTime!).inMilliseconds < _doubleTapMs &&
-        _lastTapWorld != null &&
-        (world - _lastTapWorld!).distance < camera.toWorld(_doubleTapSlop)) {
-      // 双击！命中检测
-      final CanvasItem? item = document.hitItemAt(
-        world,
-        camera.toWorld(CanvasController._itemHitTolerance),
-      );
-      if (item is CardItem) {
-        _lastTapTime = null;
-        _lastTapWorld = null;
-        return item.id;
-      }
-    }
-    _lastTapTime = now;
-    _lastTapWorld = world;
-    return null;
-  }
-
   Rect? _marquee;
   Rect? get marquee => _marquee;
 

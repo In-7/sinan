@@ -272,9 +272,10 @@ class _StreamViewState extends ConsumerState<StreamView> {
     });
 
     return Padding(
-      // 上留白 **12**（2026-10-20 用户改；原来 24）：页眉 + 搜索框上移，
-      // 落笔更靠上；下 0、左右 0，留白区域也要能滚（见下方 [_pageColumn]）。
-      padding: const EdgeInsets.only(top: Tokens.spaceMd),
+      // 上留白 **4**（2026-11-24 用户定：与 AI 头部同口径）——页眉行高 28 +
+      // 上下各 4 = **36** 的顶部带，行中心 y=18，与 AI 面板的标题 / 折叠钮
+      // 同一条中心线。下 0、左右 0，留白区域也要能滚（见 [_pageColumn]）。
+      padding: const EdgeInsets.only(top: Tokens.spaceXs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -547,14 +548,14 @@ class _StreamViewState extends ConsumerState<StreamView> {
             ),
           ),
           const SizedBox(width: Tokens.spaceSm),
-          // **灵感 N 条** → 最右（2026-10-20 用户定：从最左挪到最右，右对齐贴住「选择」）。
-          // 用 Expanded + textAlign.right：既把计数推到最右，窄屏又能自动省略号收缩。
-          Expanded(
+          // **灵感 N 条 + 选择** → 紧贴搜索框右边（2026-11-24 用户定：从最右
+          // 挪到搜索框旁）。右缘要留给内容卡右角的 AI 折叠钮，靠右排会撞。
+          // 不再用 Expanded：整行左对齐，剩余空间留白。
+          Flexible(
             child: Text(
               '灵感 $openCount 条',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
               style: muted,
             ),
           ),
@@ -1502,30 +1503,22 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
     final bool lifted = active && !widget.archived && !widget.selectMode;
     // hover **不画描边**（2026-10-17 用户定：发丝边在常显底色上像"框"）。
     // 描边只留给选中——并且必须是单一颜色：`borderRadius` 与"四边异色"不能共存。
-    final Color edge = marked
-        ? scheme.primary.withValues(alpha: 0.4)
-        : Colors.transparent;
-    // **便签色**（2026-11-19 用户定）：满墙同色毫无区分，改 Google Keep 式
-    // 多彩便签——每条按 id 稳定分配一个 Bauhaus 便签色（零操作、相邻几乎必然
-    // 不同色 ⇒ 一眼区分），不违背灵感"低摩擦收件箱"。
-    //
     // 底色**烤实**（alphaBlend 进 surface）：半透明底会让对比度检查把文字算在
     // "未知/低对比"背景上，a11y 会红；而且行底本来就压在 panel 的 surface 上，
     // 合成结果完全相同（2026-10-17 教训沿用）。
-    final int noteIdx = noteIndexOf(widget.item.id);
     final Color rowFill = Color.alphaBlend(
       AppTheme.hoverOverlay(brightness),
       scheme.surface,
     );
-    // 便签纸底（Keep 式粉彩纸片）；归档退灰（中性，已"放下"）；选中压过走 primary。
-    // hover **不换底色**（2026-11-19 用户定：只放大就够，不变色）。
+    // 卡片底：素色 surface（2026-11-23 用户定"恢复原色"，去掉便签多彩底）。
+    // 归档退灰（中性，已"放下"）；选中压过走 primary。
     final Color bg;
     if (marked) {
       bg = scheme.primaryContainer.withValues(alpha: 0.35);
     } else if (widget.archived) {
       bg = rowFill;
     } else {
-      bg = Bauhaus.noteSwatch(brightness, noteIdx);
+      bg = scheme.surface;
     }
 
     // Semantics **下移到内容**（见下方 _stripeAround 的 child）：它的 label 边界
@@ -1595,17 +1588,17 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
               decoration: BoxDecoration(
                 color: bg,
                 borderRadius: BorderRadius.circular(Tokens.radiusMd),
-                // 描边**永远占位**（透明也算 1px）：宽度恒定 ⇒ hover 不挤动文字。
-                border: Border.all(color: edge),
               ),
               // 归档行只读、只在聚焦视图出现；普通卡全文上墙——高度都随
               // 内容（真瀑布，2026-11-17 用户定）。左侧便签色带由
               // [_stripeAround] 包在内容外（Positioned，不参与卡高）。
-              child: _stripeAround(
-                child: Semantics(
-                  button: !widget.archived,
-                  selected: widget.selectMode ? marked : null,
-                  label: widget.item.text,
+              child: Stack(
+                children: <Widget>[
+                  _stripeAround(
+                    child: Semantics(
+                      button: !widget.archived,
+                      selected: widget.selectMode ? marked : null,
+                      label: widget.item.text,
                   child: widget.archived
                       ? Column(
                           mainAxisSize: MainAxisSize.min,
@@ -1713,7 +1706,9 @@ class _StreamCardState extends ConsumerState<_StreamCard> {
                               ),
                           ],
                         ),
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

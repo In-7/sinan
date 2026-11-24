@@ -34,10 +34,12 @@ class _SelectHandler extends CanvasToolHandler {
       c.camera.toWorld(CanvasController._itemHitTolerance),
     );
     if (item != null) {
-      // 双击卡片 → 进入文本编辑态
-      final String? editId = c._detectDoubleTap(world);
-      if (editId != null) {
-        c.beginEdit(editId);
+      // 再次点击**已选中的单张卡片** → 进入文本编辑态
+      // （2026-11-23 从双击改为"点选中→再点编辑"，同 Figma / tldraw）。
+      if (item is CardItem &&
+          c._selectedItems.length == 1 &&
+          c._selectedItems.first == item) {
+        c.beginEdit(item.id);
         return;
       }
       // 已在多选集合内 ⇒ 保持选区整体拖动；否则单选该 item。

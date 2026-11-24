@@ -336,6 +336,17 @@ class HomeScreen extends ConsumerWidget {
                                 child: SidebarCollapseButton(),
                               ),
                             ),
+                          // **AI 折叠钮**：悬浮在内容卡右上角的固定件（2026-11-24
+                          // 用户定：与左侧折叠钮对称，固定位置不随面板开合移动）。
+                          // Tab 序给 45（AI 轨 40 之后）。
+                          const Positioned(
+                            right: _kCollapseButtonRight,
+                            top: _kCollapseButtonTop,
+                            child: FocusTraversalOrder(
+                              order: NumericFocusOrder(45),
+                              child: AiCollapseButton(),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -441,26 +452,36 @@ class HomeScreen extends ConsumerWidget {
     final Color forwardInk = nav.canGoForward
         ? onChrome
         : AppTheme.disabledInk(onChrome);
+    // 24×24 按钮 + 18px 图标（2026-11-24 用户定：比原来小一圈，更紧凑）。
+    final ButtonStyle smallStyle = IconButton.styleFrom(
+      minimumSize: const Size.square(24),
+      maximumSize: const Size.square(24),
+      padding: EdgeInsets.zero,
+      iconSize: Tokens.iconSm,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
     return <Widget>[
       IconButton(
         tooltip: '上一步（Alt+←）',
+        style: smallStyle,
         onPressed: nav.canGoBack
             ? () => unawaited(runCommandById(ref, 'nav.back'))
             : null,
         icon: tabler.ArrowLeft(
-          height: Tokens.iconMdSm,
-          width: Tokens.iconMdSm,
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
           colorFilter: ui.ColorFilter.mode(backInk, ui.BlendMode.srcIn),
         ),
       ),
       IconButton(
         tooltip: '下一步（Alt+→）',
+        style: smallStyle,
         onPressed: nav.canGoForward
             ? () => unawaited(runCommandById(ref, 'nav.forward'))
             : null,
         icon: tabler.ArrowRight(
-          height: Tokens.iconMdSm,
-          width: Tokens.iconMdSm,
+          height: Tokens.iconSm,
+          width: Tokens.iconSm,
           colorFilter: ui.ColorFilter.mode(forwardInk, ui.BlendMode.srcIn),
         ),
       ),
@@ -776,8 +797,10 @@ const double _kCollapseButtonTop = 4;
 /// ⚠️ 与纵向**拆开**：纵向必须留在 4（对齐按钮带的中心线），不能跟着变。
 /// 📌 `note_list_column.dart` 的 `_kHeadToolInset` 依赖同一算式（7 + 28 + 4 = 39），
 /// 改这里要同步那边，否则工具行 / 搜索框会压到钮上。
-const double _kCollapseButtonLeft =
-    Tokens.spaceMd - (Tokens.headerActionSize - Tokens.iconSm) / 2;
+const double _kCollapseButtonLeft = Tokens.collapseButtonInset;
+
+/// AI 折叠钮**热区**的横向内缩（右侧，与 [_kCollapseButtonLeft] 对称）。
+const double _kCollapseButtonRight = Tokens.collapseButtonInset;
 
 /// 标题栏**最左缘**的「折叠 / 展开**列表列**」钮（2026-10-16 起改折卡内列表列；60 轨
 /// 常驻不折）。点按切 [listCollapsedProvider]——本钮与 [HomeScreen] 卡内列表列
@@ -817,6 +840,32 @@ class SidebarCollapseButton extends ConsumerWidget {
       onPressed: narrow
           ? null
           : () => ref.read(listCollapsedProvider.notifier).toggle(),
+    );
+  }
+}
+
+/// 标题栏**右缘**的「折叠 / 展开 **AI 面板**」钮（2026-11-24 用户定：与左侧
+/// [SidebarCollapseButton] 对称，固定位置不随面板开合移动）。
+///
+/// 与左侧折叠钮同规格：[AppIconButton] + [Tokens.headerActionSize] 热区 +
+/// [Tokens.iconSm] 图标。点按切 [aiPanelOpenProvider]——与标题栏「问笔记」
+/// 共用这一个布尔（单一真相源）。
+class AiCollapseButton extends ConsumerWidget {
+  const AiCollapseButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bool railFits =
+        MediaQuery.sizeOf(context).width >= Tokens.askRailBreakpoint;
+    final bool open = ref.watch(aiPanelOpenProvider);
+    return AppIconButton(
+      icon: CustomIcons.panelRight(size: Tokens.iconSm),
+      tooltip: railFits
+          ? (open ? '收起 AI 面板' : '展开 AI 面板')
+          : '展开 AI 面板（窗口宽度需 ≥ ${Tokens.askRailBreakpoint.toInt()}）',
+      onPressed: railFits
+          ? () => ref.read(aiPanelOpenProvider.notifier).toggle()
+          : null,
     );
   }
 }

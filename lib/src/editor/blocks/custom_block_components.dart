@@ -855,22 +855,25 @@ class _SinanBulletedIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const List<String> icons = ['•', '◦', '▪'];
     final EditorState editorState = context.read<EditorState>();
     final double tsf = editorState.editorStyle.textScaleFactor;
-    // 用正文字体样式作为基础，保证符号与正文在同一套字体度量里对齐；
-    // 只覆盖颜色，尺寸交给 textScaler。
-    final TextStyle baseStyle =
-        editorState.editorStyle.textStyleConfiguration.text;
+    // 画实心圆（2026-11-24，对标 Notion/Figma/Linear）：`•` 字符太小，
+    // 改画圆点——直径 0.35em（17px 正文 ≈ 6px），层级用大小/实心区分。
+    final double fontSize =
+        editorState.editorStyle.textStyleConfiguration.text.fontSize ?? 16;
+    final double diameter = fontSize * (level == 0 ? 0.35 : level == 1 ? 0.28 : 0.22);
     return markerBox(
       context,
-      Text(
-        icons[level % icons.length],
-        style: baseStyle.copyWith(color: color),
-        textScaler: TextScaler.linear(0.5 * tsf),
+      Container(
+        width: diameter * tsf,
+        height: diameter * tsf,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          // 二级/三级用空心圆（描边），与实心区分层级。
+          color: level == 0 ? color : null,
+          border: level == 0 ? null : Border.all(color: color, width: 1.2),
+        ),
       ),
-      // 圆点是缩放文本，自身有墨迹偏移（0.5×）⇒ 抵掉（见 [bulletInkOffset]）。
-      childInk: bulletInkOffset,
     );
   }
 }

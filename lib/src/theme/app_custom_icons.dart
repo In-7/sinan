@@ -77,6 +77,13 @@ class CustomIcons {
   static Widget panelLeft({double size = Tokens.iconMd, Color? color}) =>
       _stroke('fluent-panel-left-default', size: size, color: color);
 
+  /// **面板右**（AI 折叠钮）：[panelLeft] 水平镜像（2026-11-24）。
+  static Widget panelRight({double size = Tokens.iconMd, Color? color}) =>
+      Transform.flip(
+        flipX: true,
+        child: _stroke('fluent-panel-left-default', size: size, color: color),
+      );
+
   /// **新建（标签页 + 加号）**：Fluent `tab-add` **32 档 Regular**
   /// （2026-10-28 用户定：先用 Light 实机看过，线太细，改 Regular）。
   /// 语义贴"新建一条"；画布页同枚。

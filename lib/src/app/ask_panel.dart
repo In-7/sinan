@@ -87,27 +87,37 @@ class _AskRailState extends ConsumerState<AskRail> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // 头部条（2026-11-24）：行高 = headerActionSize（28）⇒ 标题中心与
+            // 右上折叠钮中心**同 y**；上下留白都取 spaceXs（4/4，与折叠钮的
+            // 上边距一致，2026-11-24 用户定"下边距缩到和上边距一样"）；
+            // 右留白 = 折叠钮内缩 + 热区 + 一档呼吸 ⇒ 标题不钻到折叠钮底下。
             Padding(
-              padding: const EdgeInsets.fromLTRB(
-                Tokens.spaceMd,
-                Tokens.spaceXs,
-                Tokens.spaceXs,
-                Tokens.spaceXs,
+              padding: const EdgeInsets.only(
+                left: Tokens.spaceMd,
+                top: Tokens.spaceXs,
+                right:
+                    Tokens.collapseButtonInset +
+                    Tokens.headerActionSize +
+                    Tokens.spaceSm,
+                bottom: Tokens.spaceXs,
               ),
-              child: Row(
-                children: <Widget>[
-                  tabler.Sparkles(
-                    height: Tokens.iconMdSm,
-                    width: Tokens.iconMdSm,
-                    strokeWidth: 1.5,
-                    colorFilter: ui.ColorFilter.mode(
-                      scheme.onSurfaceVariant,
-                      ui.BlendMode.srcIn,
+              child: SizedBox(
+                height: Tokens.headerActionSize,
+                child: Row(
+                  children: <Widget>[
+                    tabler.Sparkles(
+                      height: Tokens.iconMdSm,
+                      width: Tokens.iconMdSm,
+                      strokeWidth: 1.5,
+                      colorFilter: ui.ColorFilter.mode(
+                        scheme.onSurfaceVariant,
+                        ui.BlendMode.srcIn,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: Tokens.spaceSm),
-                  Text('问笔记', style: theme.textTheme.titleSmall),
-                ],
+                    const SizedBox(width: Tokens.spaceSm),
+                    Text('问笔记', style: theme.textTheme.titleSmall),
+                  ],
+                ),
               ),
             ),
             Container(height: 1, color: AppTheme.divider(scheme)),

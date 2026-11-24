@@ -111,11 +111,14 @@ void main() {
     // 浮岛内边距 2 + (32-28)/2 ⇒ 两端 28 按钮顶缘回到 **4**（与加浮岛前一致）。
     expect(undo.top, closeTo(4, 0.5), reason: '两端按钮位置不变（顶缘 4）');
     expect(find_.top, closeTo(4, 0.5), reason: '右端同样在 4');
-    // 撤销在左、三只耳在右（标签最靠右，右内距 = Tokens.spaceMd）。
+    // 撤销在左、三只耳在右（标签最靠右，右内距 = spaceMd + 折叠钮避让）。
+    // 2026-11-24：右缘避让 AI 折叠钮（热区 28 + 呼吸 12 + 浮岛内距 12）。
     expect(undo.left, closeTo(Tokens.spaceMd, 1));
     final double screenRight =
         tester.view.physicalSize.width / tester.view.devicePixelRatio;
-    expect(tags.right, closeTo(screenRight - Tokens.spaceMd, 1));
+    const double aiCollapseAvoidance =
+        Tokens.collapseButtonSlotWidth + Tokens.spaceMd;
+    expect(tags.right, closeTo(screenRight - aiCollapseAvoidance, 1));
     expect(find_.right, lessThan(tags.left), reason: '顺序：搜索 → 反链 → 标签');
 
     await teardown(tester, c);

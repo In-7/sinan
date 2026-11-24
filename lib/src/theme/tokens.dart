@@ -296,6 +296,23 @@ class Tokens {
   // 那三档里的上 / 下留白，保证**和仍是 40**（否则侧栏页头与它脱锚）。
   static const double headerActionSize = 28;
 
+  /// 内容卡**左右缘折叠钮**热区的横向内缩（2026-11-24 抽成公共常量）。
+  ///
+  /// = [spaceMd] − ([headerActionSize] − [iconSm]) / 2 = 12 − 5 = **7**。
+  /// 要对齐的是**图标墨迹缘**而不是热区缘：热区 28、图标 18 ⇒ 居中后左右各 5，
+  /// 故热区从 7 起算，图标缘才落在 12（与标题左右留白同档）。
+  ///
+  /// 消费方：`home_screen.dart` 的左右两枚折叠钮、`ask_panel.dart` 的 AI 头部
+  /// （右侧要让出"内缩 + 热区"）。**改这里三处同时生效**。
+  static const double collapseButtonInset =
+      spaceMd - (headerActionSize - iconSm) / 2;
+
+  /// 内容卡右缘为**折叠钮**预留的横向槽宽（热区 + 两侧各一档呼吸）。
+  ///
+  /// 编辑页耳钮 / 画布工具栏的右边界收到槽左边，不与折叠钮重叠。
+  static const double collapseButtonSlotWidth =
+      headerActionSize + spaceMd;
+
   // 动效
   // Apple 口径（§9.2）：比 M3 略长、收尾更缓——"精致"有一半在节奏。
   static const Duration durationFast = Duration(milliseconds: 150);

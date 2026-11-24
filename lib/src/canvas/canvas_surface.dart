@@ -112,17 +112,23 @@ class _CanvasSurfaceState extends State<CanvasSurface> {
           ),
           // 顶部**一条浮岛带**（2026-11-21 用户定案）：撤销/重做 │ 8 个绘制
           // 工具 │ 搜索/反链/标签。底部中间因此完全腾空。
+          // 右缘避让 AI 折叠钮（2026-11-24）：折叠钮热区 28 + 呼吸 12。
           Align(
             alignment: Alignment.topLeft,
-            child: CanvasHeaderBar(
-              key: _headerKey,
-              controller: widget.controller,
-              noteId: widget.noteId,
-              onOpenNote: widget.onOpenNote,
-              center: CanvasToolStrip(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                right: Tokens.collapseButtonSlotWidth,
+              ),
+              child: CanvasHeaderBar(
+                key: _headerKey,
                 controller: widget.controller,
-                onInsertImage: () => _insertImage(context, widget.controller),
-                onAiRun: widget.onAiRun,
+                noteId: widget.noteId,
+                onOpenNote: widget.onOpenNote,
+                center: CanvasToolStrip(
+                  controller: widget.controller,
+                  onInsertImage: () => _insertImage(context, widget.controller),
+                  onAiRun: widget.onAiRun,
+                ),
               ),
             ),
           ),

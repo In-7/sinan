@@ -1647,7 +1647,9 @@ class _NoteEditorViewAppFlowyState
                       padding: EdgeInsets.only(
                         top: _kHeaderActionTopPadding,
                         left: gutter + EditorTypography.blockPadding.left,
-                        right: Tokens.spaceMd,
+                        // 右缘避让 AI 折叠钮（2026-11-24）：耳钮收到槽左边，
+                        // 不与折叠钮重叠（槽宽见 [Tokens.collapseButtonSlotWidth]）。
+                        right: Tokens.collapseButtonSlotWidth,
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,

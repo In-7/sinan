@@ -371,9 +371,19 @@ void main() {
     expect(find.text('乙'), findsNothing);
   });
 
-  test('版式闸门：灵感页零投影 / 零模糊 / 零 Opacity（Bauhaus 口径）', () {
+  test('版式闸门：灵感页零外投影 / 零模糊 / 零 Opacity（Bauhaus 口径）', () {
     final String src = File('lib/src/app/stream_view.dart').readAsStringSync();
-    expect(src.contains('BoxShadow'), isFalse, reason: '全站零投影：浮起靠边线与留白');
+    // 允许 `BoxShadow(blurStyle: BlurStyle.inner)`（十字内斜边，2026-11-23），
+    // 但禁止外投影（drop shadow）——"浮起靠边线与留白"不变。
+    // 判据：每个 BoxShadow 都必须是 BlurStyle.inner（计数相等）。
+    final int shadowCount = RegExp(r'BoxShadow\(').allMatches(src).length;
+    final int innerCount =
+        RegExp(r'BlurStyle\.inner').allMatches(src).length;
+    expect(
+      shadowCount,
+      innerCount,
+      reason: '全站零外投影：每个 BoxShadow 都必须是 BlurStyle.inner（内斜边）',
+    );
     expect(src.contains('BackdropFilter'), isFalse);
     expect(
       RegExp(r'\bOpacity\(').hasMatch(src),
